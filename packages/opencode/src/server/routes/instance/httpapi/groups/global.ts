@@ -62,12 +62,40 @@ const GlobalUpgradeResult = Schema.Union([
   }),
 ])
 
+const GlobalMemoryStats = Schema.Struct({
+  process: Schema.Struct({
+    rss: Schema.Number,
+    heap_total: Schema.Number,
+    heap_used: Schema.Number,
+    external: Schema.Number,
+    array_buffers: Schema.Number,
+  }),
+  jsc_heap: Schema.Struct({
+    heap_size: Schema.Number,
+    heap_capacity: Schema.Number,
+    extra_memory_size: Schema.Number,
+    object_count: Schema.Number,
+    protected_object_count: Schema.Number,
+    global_object_count: Schema.Number,
+    object_type_counts: Schema.Record(Schema.String, Schema.Number),
+  }),
+  jsc_memory: Schema.Struct({
+    current: Schema.Number,
+    peak: Schema.Number,
+    current_commit: Schema.Number,
+    peak_commit: Schema.Number,
+    page_faults: Schema.Number,
+  }),
+  captured_at: Schema.String,
+})
+
 export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
+  memory: "/global/memory",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -129,6 +157,16 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.upgrade",
           summary: "Upgrade opencode",
           description: "Upgrade opencode to the specified version or latest if not specified.",
+        }),
+      ),
+      HttpApiEndpoint.get("memory", GlobalPaths.memory, {
+        success: described(GlobalMemoryStats, "Process + JSC memory diagnostics"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.memory",
+          summary: "Get memory diagnostics",
+          description:
+            "Returns process.memoryUsage(), bun:jsc.heapStats(), bun:jsc.memoryUsage(). Use to diagnose RSS bloat by comparing JS heap to RSS - a large gap indicates native (off-heap) memory growth.",
         }),
       ),
     )
