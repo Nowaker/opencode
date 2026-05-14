@@ -5,6 +5,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { heapStats, memoryUsage as jscMemoryUsage } from "bun:jsc"
 import { Effect, Queue } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -115,6 +116,38 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return HttpServerResponse.jsonUnsafe(result)
     })
 
+    const memory = Effect.fn("GlobalHttpApi.memory")(function* () {
+      const proc = process.memoryUsage()
+      const jscHeap = heapStats()
+      const jscMem = jscMemoryUsage()
+      return {
+        process: {
+          rss: proc.rss,
+          heap_total: proc.heapTotal,
+          heap_used: proc.heapUsed,
+          external: proc.external,
+          array_buffers: proc.arrayBuffers,
+        },
+        jsc_heap: {
+          heap_size: jscHeap.heapSize,
+          heap_capacity: jscHeap.heapCapacity,
+          extra_memory_size: jscHeap.extraMemorySize,
+          object_count: jscHeap.objectCount,
+          protected_object_count: jscHeap.protectedObjectCount,
+          global_object_count: jscHeap.globalObjectCount,
+          object_type_counts: jscHeap.objectTypeCounts,
+        },
+        jsc_memory: {
+          current: jscMem.current,
+          peak: jscMem.peak,
+          current_commit: jscMem.currentCommit,
+          peak_commit: jscMem.peakCommit,
+          page_faults: jscMem.pageFaults,
+        },
+        captured_at: new Date().toISOString(),
+      }
+    })
+
     return handlers
       .handle("health", health)
       .handleRaw("event", event)
@@ -122,5 +155,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handle("upgrade", upgrade)
+      .handle("memory", memory)
   }),
 )
