@@ -176,6 +176,15 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
       }),
+    anthropic2: () =>
+      Effect.succeed({
+        autoload: false,
+        options: {
+          headers: {
+            "anthropic-beta": "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+          },
+        },
+      }),
     opencode: Effect.fnUntraced(function* (input: Info) {
       const env = yield* dep.env()
       const hasKey = iife(() => {
@@ -200,6 +209,14 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       }
     }),
     openai: () =>
+      Effect.succeed({
+        autoload: false,
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
+          return sdk.responses(modelID)
+        },
+        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
+      }),
+    openai2: () =>
       Effect.succeed({
         autoload: false,
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
@@ -1341,6 +1358,26 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
+        // Register `<provider>2` siblings as code-level clones of well-known
+        // providers, so config can point one at an alternative baseURL (e.g.
+        // a local Claude subscription proxy, an OpenAI-compatible gateway)
+        // while the original keeps its upstream wiring. Both expose the full
+        // catalog under their own providerID; the SDK module (model.api.npm)
+        // is shared.
+        for (const [srcID, cloneID] of [
+          ["anthropic", "anthropic2"],
+          ["openai", "openai2"],
+        ] as const) {
+          if (!catalog[srcID] || catalog[cloneID]) continue
+          const src = catalog[srcID]
+          const cloned: Info = JSON.parse(JSON.stringify(src))
+          cloned.id = ProviderV2.ID.make(cloneID)
+          cloned.name = `${src.name} (alt)`
+          for (const m of Object.values(cloned.models)) {
+            m.providerID = ProviderV2.ID.make(cloneID)
+          }
+          catalog[cloneID] = cloned
+        }
         const database = mapValues(catalog, toPublicInfo)
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
@@ -1619,6 +1656,7 @@ const layer = Layer.effect(
               // built-in providers below, but custom providers may support them.
               (modelID === "gpt-5-chat-latest" &&
                 (providerID === ProviderV2.ID.openai ||
+                  providerID === ProviderV2.ID.make("openai2") ||
                   providerID === ProviderV2.ID.githubCopilot ||
                   providerID === ProviderV2.ID.openrouter)) ||
               (providerID === ProviderV2.ID.openrouter && modelID === "openai/gpt-5-chat")
