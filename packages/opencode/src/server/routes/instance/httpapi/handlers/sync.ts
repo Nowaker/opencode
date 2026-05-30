@@ -5,12 +5,9 @@ import { Database } from "@opencode-ai/core/database/database"
 import { EventV2 } from "@opencode-ai/core/event"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventTable } from "@opencode-ai/core/event/sql"
-import { asc } from "drizzle-orm"
-import { and } from "drizzle-orm"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { asc, inArray } from "drizzle-orm"
 import { eq } from "drizzle-orm"
-import { lte } from "drizzle-orm"
-import { not } from "drizzle-orm"
-import { or } from "drizzle-orm"
 import { Effect, Scope } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -70,18 +67,41 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
     })
 
     const history = Effect.fn("SyncHttpApi.history")(function* (ctx: { payload: typeof HistoryPayload.Type }) {
-      const exclude = Object.entries(ctx.payload)
-      return yield* db
+      const workspaceID = yield* InstanceState.workspaceID
+      const sessionIDs = workspaceID
+        ? yield* db
+            .select({ id: SessionTable.id })
+            .from(SessionTable)
+            .where(eq(SessionTable.workspace_id, workspaceID))
+            .all()
+            .pipe(Effect.orDie)
+        : undefined
+
+      if (sessionIDs?.length === 0) return []
+
+      const history = yield* db
         .select()
         .from(EventTable)
         .where(
-          exclude.length > 0
-            ? not(or(...exclude.map(([id, seq]) => and(eq(EventTable.aggregate_id, id), lte(EventTable.seq, seq))))!)
+          sessionIDs
+            ? inArray(
+                EventTable.aggregate_id,
+                sessionIDs.map((row) => row.id),
+              )
             : undefined,
         )
         .orderBy(asc(EventTable.seq))
         .all()
         .pipe(Effect.orDie)
+
+      const exclude = Object.entries(ctx.payload)
+      if (exclude.length === 0) return history
+
+      const excludeMap = new Map(exclude)
+      return history.filter((event) => {
+        const maxSeq = excludeMap.get(event.aggregate_id)
+        return maxSeq === undefined || event.seq > maxSeq
+      })
     })
 
     return handlers.handle("start", start).handle("replay", replay).handle("steal", steal).handle("history", history)
