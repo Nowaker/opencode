@@ -1254,12 +1254,24 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+            // An interrupted/aborted assistant turn (no finish reason, or an
+            // error) can survive as the trailing history message and get
+            // re-dispatched with no new user turn. That makes the request end
+            // on an assistant message, which claude-opus-4.x and gpt-5.x-codex
+            // reject as an unsupported prefill (HTTP 400). Drop that tail so
+            // the request ends on the preceding user/tool content.
+            const lastMsg = msgs[msgs.length - 1]
+            const promptMsgs =
+              lastMsg && lastMsg.info.role === "assistant" && (!lastMsg.info.finish || lastMsg.info.error)
+                ? msgs.slice(0, -1)
+                : msgs
+
             const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(promptMsgs, model),
             ])
             const system = [
               ...env,

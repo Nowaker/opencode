@@ -444,6 +444,52 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 
 // Loop semantics
 
+it.instance("drops an interrupted trailing assistant so the request does not end on a prefill", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    const firstUser = yield* user(chat.id, "first request")
+    const aborted: SessionV1.Assistant = {
+      id: MessageID.ascending(),
+      role: "assistant",
+      parentID: firstUser.id,
+      sessionID: chat.id,
+      mode: "build",
+      agent: "build",
+      cost: 0,
+      path: { cwd: "/tmp", root: "/tmp" },
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+      error: new SessionV1.AbortedError({ message: "interrupted" }).toObject(),
+    }
+    yield* sessions.updateMessage(aborted)
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: aborted.id,
+      sessionID: chat.id,
+      type: "text",
+      text: "partial answer before interruption",
+    })
+
+    yield* llm.text("done")
+
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const hits = yield* llm.hits
+    expect(hits.length).toBeGreaterThan(0)
+    const sent = hits[0]!.body as { messages: { role: string }[] }
+    expect(sent.messages.at(-1)?.role).not.toBe("assistant")
+  }),
+)
+
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",
   () =>
