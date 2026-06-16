@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { appendFile, mkdir } from "node:fs/promises"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import os from "os"
@@ -13,6 +14,7 @@ import { Provider } from "@/provider/provider"
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
+import { usable } from "./overflow"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
@@ -91,6 +93,29 @@ function formatMcpResourceBytes(value: number) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
   return `${Math.ceil(value / (1024 * 1024))} MB`
+}
+
+const COMPACTION_DEBUG_LOG = path.join(os.homedir(), ".local/share/opencode/log/compaction-debug.log")
+let compactionDebugDirectory: Promise<string | undefined> | undefined
+
+function compactionDebug(input: {
+  event: string
+  sessionID: SessionID
+  step: number
+  payload?: Record<string, unknown>
+}) {
+  return Effect.tryPromise(async () => {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      event: input.event,
+      sessionID: input.sessionID,
+      step: input.step,
+      ...(input.payload ?? {}),
+    })
+    compactionDebugDirectory ??= mkdir(path.dirname(COMPACTION_DEBUG_LOG), { recursive: true })
+    await compactionDebugDirectory
+    await appendFile(COMPACTION_DEBUG_LOG, line + "\n")
+  }).pipe(Effect.ignore)
 }
 
 function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
@@ -1147,6 +1172,19 @@ const layer = Layer.effect(
           }
 
           if (task?.type === "compaction") {
+            yield* compactionDebug({
+              event: "compaction_task_start",
+              sessionID,
+              step,
+              payload: {
+                auto: task.auto,
+                overflowTask: task.overflow === true,
+                lastUserID: lastUser.id,
+                messagesVisible: msgs.length,
+                lastAssistantID: lastAssistant?.id,
+                lastFinishedID: lastFinished?.id,
+              },
+            })
             const result = yield* compaction.process({
               messages: msgs,
               parentID: lastUser.id,
@@ -1154,15 +1192,74 @@ const layer = Layer.effect(
               auto: task.auto,
               overflow: task.overflow,
             })
+            yield* compactionDebug({
+              event: "compaction_task_end",
+              sessionID,
+              step,
+              payload: {
+                result,
+              },
+            })
             if (result === "stop") break
             continue
           }
 
-          if (
-            lastFinished &&
-            lastFinished.summary !== true &&
-            (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
-          ) {
+          let overflowDecision = false
+          if (lastFinished && lastFinished.summary !== true) {
+            const cfg = yield* config.get()
+            const usableBudget = usable({
+              cfg,
+              model,
+              outputTokenMax: flags.outputTokenMax,
+            })
+            const tokenCount =
+              lastFinished.tokens.total ||
+              lastFinished.tokens.input +
+                lastFinished.tokens.output +
+                lastFinished.tokens.cache.read +
+                lastFinished.tokens.cache.write
+            overflowDecision = yield* compaction.isOverflow({ tokens: lastFinished.tokens, model })
+            yield* compactionDebug({
+              event: "overflow_check",
+              sessionID,
+              step,
+              payload: {
+                lastFinishedID: lastFinished.id,
+                lastFinishedSummary: false,
+                lastFinishedHasError: !!lastFinished.error,
+                modelID: model.id,
+                providerID: model.providerID,
+                modelContextLimit: model.limit.context,
+                modelInputLimit: model.limit.input ?? null,
+                modelOutputLimit: model.limit.output,
+                outputTokenMax: flags.outputTokenMax ?? null,
+                compactionReserved: cfg.compaction?.reserved ?? null,
+                compactionAuto: cfg.compaction?.auto ?? null,
+                usableBudget,
+                tokenCount,
+                tokenInput: lastFinished.tokens.input,
+                tokenOutput: lastFinished.tokens.output,
+                tokenReasoning: lastFinished.tokens.reasoning,
+                tokenCacheRead: lastFinished.tokens.cache.read,
+                tokenCacheWrite: lastFinished.tokens.cache.write,
+                overflowDecision,
+              },
+            })
+          }
+
+          if (lastFinished && lastFinished.summary !== true && overflowDecision) {
+            yield* compactionDebug({
+              event: "compaction_create_auto",
+              sessionID,
+              step,
+              payload: {
+                reason: "overflow",
+                parentUserID: lastUser.id,
+                agent: lastUser.agent,
+                modelID: lastUser.model.modelID,
+                providerID: lastUser.model.providerID,
+              },
+            })
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
           }
@@ -1330,6 +1427,17 @@ const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
+              yield* compactionDebug({
+                event: "assistant_result_compact",
+                sessionID,
+                step,
+                payload: {
+                  messageID: handle.message.id,
+                  finish: handle.message.finish ?? null,
+                  hasError: !!handle.message.error,
+                  inferredOverflow: !handle.message.finish,
+                },
+              })
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,
