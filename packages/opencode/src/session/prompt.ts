@@ -1557,6 +1557,15 @@ const layer = Layer.effect(
         (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
       )
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+      if (cmd.native && isSubtask) {
+        const reason =
+          cmd.subtask === true ? "subtask: true" : `agent "${agent.name}" is a subagent, which implies subtask`
+        const error = new NamedError.Unknown({
+          message: `Command "${input.command}" sets native: true but ${reason}. A native command never reaches the model, so the subtask it describes would never run. Set subtask: false or drop native.`,
+        })
+        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+        throw error
+      }
       const parts = isSubtask
         ? [
             {
@@ -1590,6 +1599,9 @@ const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
+        // A native command is done once its parts are persisted, which is
+        // exactly where prompt() stops when noReply is set.
+        noReply: cmd.native,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
