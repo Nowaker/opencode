@@ -86,6 +86,8 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
+  GlobalMemoryErrors,
+  GlobalMemoryResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeErrors,
@@ -1373,6 +1375,18 @@ export class Global extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get memory diagnostics
+   *
+   * Returns process.memoryUsage(), bun:jsc.heapStats(), bun:jsc.memoryUsage(). Use to diagnose RSS bloat by comparing JS heap to RSS - a large gap indicates native (off-heap) memory growth.
+   */
+  public memory<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GlobalMemoryResponses, GlobalMemoryErrors, ThrowOnError>({
+      url: "/global/memory",
+      ...options,
     })
   }
 
