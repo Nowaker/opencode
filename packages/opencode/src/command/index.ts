@@ -7,6 +7,7 @@ import { Effect, Layer, Context, Schema } from "effect"
 import { Config } from "@/config/config"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
+import { ToolRegistry } from "@/tool/registry"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
@@ -24,11 +25,19 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
-  source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
+  source: Schema.optional(Schema.Literals(["command", "mcp", "skill", "tool"])),
   // Some command templates are lazy promises from MCP prompt resolution.
   template: Schema.Unknown,
   subtask: Schema.optional(Schema.Boolean),
   native: Schema.optional(Schema.Boolean),
+  /**
+   * Run this TOOL rather than prompt with a template. Implies `native`: there
+   * is no reply to wait for, so the command persists the tool's output and
+   * returns. The value is the tool's registry id, which is not the command's
+   * own name - `bash` is both, but `vibeterm_restart_tab` is typed as
+   * `/vibeterm-restart-tab`.
+   */
+  tool: Schema.optional(Schema.String),
   hints: Schema.Array(Schema.String),
 }).annotate({ identifier: "Command" })
 
@@ -49,6 +58,99 @@ export const Default = {
   REVIEW: "review",
 } as const
 
+/**
+ * A tool id is typed with dashes: `vibeterm_restart_tab` -> `/vibeterm-restart-tab`.
+ *
+ * Underscores are how tool ids are namespaced - a plugin tool keeps its key
+ * verbatim and an MCP tool is `sanitize(server)_sanitize(tool)` - and a slash
+ * command is typed rather than emitted, so it reads as a command instead of an
+ * identifier. Any client that registers its own command for a tool must use
+ * this same spelling or the skip below will not match it and the tool ends up
+ * exposed twice.
+ */
+export function toolCommandName(toolId: string) {
+  return toolId.replaceAll("_", "-")
+}
+
+/**
+ * A tool's description is written for a model and runs to paragraphs; a command
+ * palette shows one line. First sentence, capped.
+ */
+export function toolCommandDescription(description: string | undefined, limit = 100) {
+  const flat = (description ?? "").replace(/\s+/g, " ").trim()
+  if (!flat) return ""
+  const stop = flat.search(/[.:]\s/)
+  const first = stop > 0 ? flat.slice(0, stop) : flat
+  return first.length <= limit ? first : `${first.slice(0, limit - 1).trimEnd()}…`
+}
+
+export type ParsedToolCommand =
+  | { ok: true; hidden: boolean; args: Record<string, unknown> }
+  | { ok: false; error: string }
+
+/**
+ * `[--hide|--show] [<json object>]`, the text typed after a tool command.
+ *
+ * Returns a result rather than throwing: a synchronous throw inside the
+ * `Effect.gen` that calls this becomes a `Cause.Die`, which surfaces to the
+ * client as an opaque failure instead of the usage error the person needs.
+ *
+ * `--hide` persists the output but keeps it out of the model's context.
+ * Visible is the default, because the usual reason to run a tool by hand is to
+ * put its output in front of the model.
+ */
+export function parseToolCommandArguments(raw: string): ParsedToolCommand {
+  let rest = (raw ?? "").trim()
+  let hidden = false
+  for (;;) {
+    if (rest === "--hide" || rest.startsWith("--hide ")) {
+      hidden = true
+      rest = rest.slice("--hide".length).trim()
+      continue
+    }
+    if (rest === "--show" || rest.startsWith("--show ")) {
+      hidden = false
+      rest = rest.slice("--show".length).trim()
+      continue
+    }
+    break
+  }
+  if (!rest) return { ok: true, hidden, args: {} }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rest)
+  } catch {
+    return { ok: false, error: `expected a JSON object of arguments, got: ${rest}` }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      error: `expected arguments to be a JSON object, got ${Array.isArray(parsed) ? "array" : typeof parsed}`,
+    }
+  }
+  return { ok: true, hidden, args: parsed as Record<string, unknown> }
+}
+
+/** Line-oriented and greppable, so a transcript reads the same however it was run. */
+export function formatToolCommandResult(input: { tool: string; args: unknown; output: string }) {
+  const body = input.output.endsWith("\n") ? input.output.slice(0, -1) : input.output
+  return [`[tool: ${input.tool}] args=${JSON.stringify(input.args)}`, "----", body, "----"].join("\n")
+}
+
+function addToolCommand(commands: Record<string, Info>, toolId: string, description?: string) {
+  const name = toolCommandName(toolId)
+  if (commands[name]) return
+  commands[name] = {
+    name,
+    description: toolCommandDescription(description),
+    source: "tool",
+    tool: toolId,
+    native: true,
+    template: "",
+    hints: ["$ARGUMENTS"],
+  }
+}
+
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
@@ -62,6 +164,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
+    const registry = yield* ToolRegistry.Service
 
     const init = Effect.fn("Command.state")(function* (ctx: InstanceContext) {
       const cfg = yield* config.get()
@@ -153,6 +256,30 @@ const layer = Layer.effect(
         }
       }
 
+      /**
+       * Every tool, as a command a human can type.
+       *
+       * Registered LAST, and only into a name nothing else has taken, so a
+       * command from a `.md` file, an MCP prompt, a skill or a plugin always
+       * wins - each of those was written deliberately, and this is generated.
+       * That skip is also the whole of the "do not double-expose" rule: a
+       * plugin that already publishes `/vibeterm-restart-tab` itself keeps it,
+       * and no second entry appears for the same tool.
+       *
+       * Builtin and plugin tools come from the registry; MCP tools are NOT in
+       * it - they are merged into the model's tool map later, in
+       * `SessionTools.resolve` - so they are listed separately here from the
+       * same `mcp.tools()` that merge reads. Both are cheap: the registry is
+       * already resolved and `mcp.tools()` reads cached defs of connected
+       * clients rather than calling any server.
+       */
+      for (const item of yield* registry.all()) {
+        addToolCommand(commands, item.id, item.description)
+      }
+      for (const [id, def] of Object.entries(yield* mcp.tools())) {
+        addToolCommand(commands, id, (def as { description?: string }).description)
+      }
+
       return {
         commands,
       }
@@ -174,6 +301,10 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Config.node, MCP.node, Skill.node, ToolRegistry.node],
+})
 
 export * as Command from "."

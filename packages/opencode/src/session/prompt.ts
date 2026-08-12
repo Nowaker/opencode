@@ -20,6 +20,7 @@ import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
 import { ToolRegistry } from "@/tool/registry"
+import { McpCatalog } from "@/mcp/catalog"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
 import { ulid } from "ulid"
@@ -1547,6 +1548,102 @@ const layer = Layer.effect(
         const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
+      }
+
+      /**
+       * A command that names a TOOL runs it and stops.
+       *
+       * `registry.all()` rather than `registry.tools(...)`: the filtered list
+       * drops tools by model, agent and permission, every one of which gates
+       * what the MODEL may reach for. A person who typed the command has
+       * already made that decision, and a tool missing from their own menu
+       * would be the confusing failure.
+       *
+       * MCP tools are not in that registry at all - they are merged into the
+       * model's tool map later, inside `SessionTools.resolve` - so they are
+       * looked up separately from the same `mcp.tools()` that merge reads.
+       * Their `execute` calls the server over RPC rather than being a
+       * `Tool.Def`, which is why this cannot be a single lookup.
+       */
+      if (cmd.tool) {
+        const toolID = cmd.tool
+        const messageID = input.messageID ?? MessageID.ascending()
+        const parsed = Command.parseToolCommandArguments(input.arguments ?? "")
+        const args = parsed.ok ? parsed.args : {}
+        const output = yield* Effect.gen(function* () {
+          if (!parsed.ok) return `error: ${parsed.error}\n\nusage: /${input.command} [--hide] {"key":"value"}`
+          const def = (yield* registry.all()).find((item) => item.id === toolID)
+          if (def)
+            return (
+              yield* def.execute(args, {
+                sessionID: input.sessionID,
+                messageID,
+                callID: PartID.ascending(),
+                agent: agent.name,
+                abort: new AbortController().signal,
+                messages: [],
+                metadata: () => Effect.void,
+                /* The person typed this. Permission gates what the MODEL may
+                   reach for, and there is no model on this path - nor any
+                   tool-call part for a dialog to attach to. */
+                ask: () => Effect.void,
+              })
+            ).output
+          const entry = (yield* mcp.tools())[toolID]
+          if (!entry) return `error: no tool named "${toolID}" is available in this session`
+          /* `mcp.tools()` hands back `{ def, client, timeout }`, not something
+             callable - the same conversion the merge point does is what makes
+             it executable. */
+          const exec = McpCatalog.convertTool(entry.def, entry.client, entry.timeout).execute
+          if (!exec) return `error: MCP tool "${toolID}" declares no executable form`
+          const result = yield* Effect.promise(async () =>
+            exec(args, {
+              toolCallId: PartID.ascending(),
+              messages: [],
+              abortSignal: new AbortController().signal,
+            }),
+          )
+          /* An MCP tool answers with a content array rather than a string. */
+          const text: string[] = []
+          for (const item of result.content) {
+            if (item.type === "text") text.push(item.text)
+            else if (item.type === "resource" && item.resource.text) text.push(item.resource.text)
+            else text.push(`[${item.type} content omitted]`)
+          }
+          return text.join("\n\n")
+        }).pipe(
+          /* Every outcome becomes text in the session. A failure that escaped
+             here would reach the client as an opaque 500 with the reason
+             replaced, which is exactly the shape that made an earlier
+             throw-to-skip-the-turn route unshippable. */
+          Effect.matchCauseEffect({
+            onSuccess: (text: string) => Effect.succeed(text),
+            onFailure: (cause) => Effect.succeed(`error: ${Cause.pretty(cause)}`),
+          }),
+        )
+
+        const result = yield* prompt({
+          sessionID: input.sessionID,
+          messageID,
+          model: taskModel,
+          agent: agent.name,
+          parts: [
+            {
+              type: "text" as const,
+              text: Command.formatToolCommandResult({ tool: toolID, args, output }),
+              ...(parsed.ok && parsed.hidden ? { ignored: true } : {}),
+            },
+          ],
+          variant: input.variant,
+          noReply: true,
+        })
+        yield* events.publish(Command.Event.Executed, {
+          name: input.command,
+          sessionID: input.sessionID,
+          arguments: input.arguments,
+          messageID: result.info.id,
+        })
+        return result
       }
 
       const templateParts = yield* resolvePromptParts(template)
