@@ -12,6 +12,34 @@ describe("what a tool is called as a slash command", () => {
   })
 })
 
+describe("the namespace an auto-registered tool command lives under", () => {
+  test("a builtin lands under the prefix, not at the top of the menu", () => {
+    expect(Command.toolCommandFullName("bash")).toBe("tool-bash")
+    expect(Command.toolCommandFullName("write")).toBe("tool-write")
+  })
+
+  test("an MCP tool is prefixed the same way", () => {
+    expect(Command.toolCommandFullName("panel-context_search_code")).toBe("tool-panel-context-search-code")
+  })
+
+  test("one constant, so nothing can spell the prefix differently", () => {
+    expect(Command.TOOL_COMMAND_PREFIX).toBe("tool-")
+  })
+
+  test("the skip checks BOTH spellings, prefixed first", () => {
+    expect(Command.toolCommandNames("vibeterm_restart_tab")).toEqual([
+      "tool-vibeterm-restart-tab",
+      "vibeterm-restart-tab",
+    ])
+  })
+
+  test("the bare spelling is in that list - it is what a plugin registers under", () => {
+    // Without it, `/vibeterm-list-sessions` from the plugin's own config hook
+    // would not count as taken and every tool would be exposed twice.
+    expect(Command.toolCommandNames("vibeterm_list_sessions")).toContain("vibeterm-list-sessions")
+  })
+})
+
 describe("the one line a / menu shows", () => {
   test("first sentence only - a tool description is written for a model", () => {
     expect(Command.toolCommandDescription("Runs a command. And then a great deal more.")).toBe("Runs a command")

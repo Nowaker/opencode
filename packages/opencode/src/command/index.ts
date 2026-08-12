@@ -59,7 +59,7 @@ export const Default = {
 } as const
 
 /**
- * A tool id is typed with dashes: `vibeterm_restart_tab` -> `/vibeterm-restart-tab`.
+ * A tool id is typed with dashes: `vibeterm_restart_tab` -> `vibeterm-restart-tab`.
  *
  * Underscores are how tool ids are namespaced - a plugin tool keeps its key
  * verbatim and an MCP tool is `sanitize(server)_sanitize(tool)` - and a slash
@@ -70,6 +70,40 @@ export const Default = {
  */
 export function toolCommandName(toolId: string) {
   return toolId.replaceAll("_", "-")
+}
+
+/**
+ * The namespace every auto-registered tool command lives under: `/tool-bash`,
+ * `/tool-grep`, `/tool-panel-context-search-code`.
+ *
+ * Generated commands would otherwise take the top of the `/` menu under names
+ * as generic as `bash`, `read`, `write` and `list`, where nothing distinguishes
+ * a command somebody wrote from one manufactured out of a tool id.
+ *
+ * `tool-` rather than `native-`, which would be a lie by omission - a plugin's
+ * own `/vibeterm-*` command is equally native, so a prefix carried by half of
+ * them implies a difference in behaviour that does not exist - and rather than
+ * `local-`, which names the wrong property, since an MCP tool is frequently a
+ * remote server. It matches the `source: "tool"` and `tool:` fields the entry
+ * already carries, and `/tool` filters the whole family.
+ */
+export const TOOL_COMMAND_PREFIX = "tool-"
+
+export function toolCommandFullName(toolId: string) {
+  return `${TOOL_COMMAND_PREFIX}${toolCommandName(toolId)}`
+}
+
+/**
+ * Both spellings a tool may already be reachable under.
+ *
+ * The prefixed one is what auto-registration would add. The BARE one is the
+ * trap the prefix introduced: a plugin publishes `/vibeterm-restart-tab` from
+ * its own `config` hook, so a skip that only looked for the prefixed name would
+ * find nothing taken and expose all twelve a second time - re-creating the
+ * exact double exposure the skip exists to prevent.
+ */
+export function toolCommandNames(toolId: string): string[] {
+  return [toolCommandFullName(toolId), toolCommandName(toolId)]
 }
 
 /**
@@ -138,8 +172,8 @@ export function formatToolCommandResult(input: { tool: string; args: unknown; ou
 }
 
 function addToolCommand(commands: Record<string, Info>, toolId: string, description?: string) {
-  const name = toolCommandName(toolId)
-  if (commands[name]) return
+  const name = toolCommandFullName(toolId)
+  for (const taken of toolCommandNames(toolId)) if (commands[taken]) return
   commands[name] = {
     name,
     description: toolCommandDescription(description),
@@ -259,12 +293,17 @@ const layer = Layer.effect(
       /**
        * Every tool, as a command a human can type.
        *
-       * Registered LAST, and only into a name nothing else has taken, so a
-       * command from a `.md` file, an MCP prompt, a skill or a plugin always
-       * wins - each of those was written deliberately, and this is generated.
-       * That skip is also the whole of the "do not double-expose" rule: a
-       * plugin that already publishes `/vibeterm-restart-tab` itself keeps it,
-       * and no second entry appears for the same tool.
+       * Each lands under `TOOL_COMMAND_PREFIX` - `/tool-bash`, `/tool-grep` -
+       * so a generated entry is never mistaken for one somebody wrote, and the
+       * generic ids (`bash`, `read`, `write`, `list`) stop occupying the top of
+       * the `/` menu under their bare names.
+       *
+       * Registered LAST, and only when NEITHER spelling is taken, so a command
+       * from a `.md` file, an MCP prompt, a skill or a plugin always wins -
+       * each of those was written deliberately, and this is generated. Checking
+       * the bare spelling too is the whole of the "do not double-expose" rule:
+       * a plugin already publishing `/vibeterm-restart-tab` keeps it and gains
+       * no `/tool-vibeterm-restart-tab` twin.
        *
        * Builtin and plugin tools come from the registry; MCP tools are NOT in
        * it - they are merged into the model's tool map later, in
