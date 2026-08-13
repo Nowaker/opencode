@@ -40,6 +40,134 @@ describe("the namespace an auto-registered tool command lives under", () => {
   })
 })
 
+describe("typing arguments the way a human would", () => {
+  const bash: Command.ToolParam[] = [
+    { name: "command", required: true, type: "string" },
+    { name: "description", required: false, type: "string" },
+    { name: "timeout", required: false, type: "number" },
+  ]
+  const notify: Command.ToolParam[] = [
+    { name: "session", required: true, type: "string" },
+    { name: "text", required: true, type: "string" },
+  ]
+
+  function args(raw: string, params: Command.ToolParam[]) {
+    const parsed = Command.parseToolCommandArguments(raw, params)
+    if (!parsed.ok) throw new Error(parsed.error)
+    return parsed.args
+  }
+
+  test("a bare value goes to the one required parameter", () => {
+    expect(args("git status", bash)).toEqual({ command: "git status" })
+  })
+
+  test("key=value and key: value both work, comma or space separated", () => {
+    expect(args("command=ls timeout=5", bash)).toEqual({ command: "ls", timeout: 5 })
+    expect(args("command: ls, timeout: 5", bash)).toEqual({ command: "ls", timeout: 5 })
+  })
+
+  test("an unquoted value runs over spaces until the next real parameter", () => {
+    expect(args("command=git commit -m wip timeout=5", bash)).toEqual({
+      command: "git commit -m wip",
+      timeout: 5,
+    })
+  })
+
+  test("a word that is not a parameter stays inside the value", () => {
+    expect(args("echo nope=1 done", bash)).toEqual({ command: "echo nope=1 done" })
+  })
+
+  test("a quoted value is kept whole and never re-read as a number", () => {
+    expect(args("timeout='30'", bash)).toEqual({ timeout: "30" })
+    expect(args(`command="git commit -m 'timeout=5'"`, bash)).toEqual({
+      command: "git commit -m 'timeout=5'",
+    })
+  })
+
+  test("the declared type decides, not the text", () => {
+    expect(args("command=42", bash)).toEqual({ command: "42" })
+    expect(args("timeout=42", bash)).toEqual({ timeout: 42 })
+  })
+
+  test("--hide still applies in front of friendly arguments", () => {
+    const parsed = Command.parseToolCommandArguments("--hide git status", bash)
+    expect(parsed).toEqual({ ok: true, hidden: true, args: { command: "git status" } })
+  })
+
+  test("JSON is unchanged", () => {
+    expect(args('{"command":"git status"}', bash)).toEqual({ command: "git status" })
+    expect(Command.parseToolCommandArguments('{"a":1}').ok).toBe(true)
+  })
+
+  test("broken JSON is reported as broken JSON, never read as a value", () => {
+    const parsed = Command.parseToolCommandArguments('{"command":', bash)
+    expect(parsed.ok).toBe(false)
+    if (!parsed.ok) expect(parsed.error).toContain("not valid JSON")
+  })
+
+  test("a bare value is refused where nothing is the obvious parameter", () => {
+    const parsed = Command.parseToolCommandArguments("ses_x hello", notify)
+    expect(parsed.ok).toBe(false)
+    if (!parsed.ok) expect(parsed.error).toContain("session, text")
+  })
+
+  test("it returns the refusal rather than throwing - a throw here becomes an opaque 500", () => {
+    expect(() => Command.parseToolCommandArguments("anything at all", notify)).not.toThrow()
+    expect(Command.parseToolCommandArguments("anything at all", notify).ok).toBe(false)
+  })
+
+  test("with no parameters known it says arguments must be JSON", () => {
+    const parsed = Command.parseToolCommandArguments("git status")
+    expect(parsed.ok).toBe(false)
+    if (!parsed.ok) expect(parsed.error).toContain("written as JSON")
+  })
+})
+
+describe("reading parameters off a tool's JSON Schema", () => {
+  test("takes names, the required list and types", () => {
+    expect(
+      Command.toolParamsFromJsonSchema({
+        type: "object",
+        properties: { command: { type: "string" }, timeout: { type: "number" } },
+        required: ["command"],
+      }),
+    ).toEqual([
+      { name: "command", required: true, type: "string" },
+      { name: "timeout", required: false, type: "number" },
+    ])
+  })
+
+  test("reads a nullable field as its one real type", () => {
+    expect(
+      Command.toolParamsFromJsonSchema({
+        properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] } },
+      }),
+    ).toEqual([{ name: "a", required: false, type: "string" }])
+  })
+
+  test("survives a schema with nothing in it", () => {
+    expect(Command.toolParamsFromJsonSchema(undefined)).toEqual([])
+    expect(Command.toolParamsFromJsonSchema({ type: "object" })).toEqual([])
+  })
+})
+
+describe("the usage shown when arguments could not be read", () => {
+  test("offers all three spellings when there is an obvious positional", () => {
+    const usage = Command.toolCommandUsage("tool-bash", [
+      { name: "command", required: true, type: "string" },
+      { name: "timeout", required: false, type: "number" },
+    ])
+    expect(usage).toContain("/tool-bash [--hide] command=…")
+    expect(usage).toContain("/tool-bash [--hide] <command>")
+    expect(usage).toContain(`/tool-bash [--hide] {"command":"…"}`)
+    expect(usage).toContain("command, [timeout]")
+  })
+
+  test("falls back to JSON when the tool's parameters are unknown", () => {
+    expect(Command.toolCommandUsage("tool-bash")).toBe(`usage: /tool-bash [--hide] {"key":"value"}`)
+  })
+})
+
 describe("the one line a / menu shows", () => {
   test("first sentence only - a tool description is written for a model", () => {
     expect(Command.toolCommandDescription("Runs a command. And then a great deal more.")).toBe("Runs a command")
@@ -92,16 +220,14 @@ describe("parsing what was typed after a tool command", () => {
   test("bad input returns a reason rather than throwing - a throw here becomes an opaque Die", () => {
     const result = Command.parseToolCommandArguments("git status")
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain("expected a JSON object")
+    if (!result.ok) expect(result.error).toContain("written as JSON")
   })
 
-  test("an array or a scalar is refused, naming which it got", () => {
-    const arr = Command.parseToolCommandArguments("[1]")
-    expect(arr.ok).toBe(false)
-    if (!arr.ok) expect(arr.error).toContain("array")
-    const num = Command.parseToolCommandArguments("42")
-    expect(num.ok).toBe(false)
-    if (!num.ok) expect(num.error).toContain("number")
+  test("a leading brace is read as JSON, and a broken one says so rather than being taken as a value", () => {
+    expect(Command.parseToolCommandArguments("{}", []).ok).toBe(true)
+    const broken = Command.parseToolCommandArguments("{ ", [])
+    expect(broken.ok).toBe(false)
+    if (!broken.ok) expect(broken.error).toContain("not valid JSON")
   })
 })
 
