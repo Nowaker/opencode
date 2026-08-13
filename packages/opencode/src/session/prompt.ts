@@ -20,6 +20,7 @@ import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
 import { ToolRegistry } from "@/tool/registry"
+import { ToolJsonSchema } from "@/tool/json-schema"
 import { McpCatalog } from "@/mcp/catalog"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -1568,11 +1569,29 @@ const layer = Layer.effect(
       if (cmd.tool) {
         const toolID = cmd.tool
         const messageID = input.messageID ?? MessageID.ascending()
-        const parsed = Command.parseToolCommandArguments(input.arguments ?? "")
+
+        /* The tool is resolved BEFORE its arguments are parsed, because the
+           parameter names and types are what let a person type `key=value`, or
+           a bare value, instead of JSON - and they come from the tool's own
+           schema. */
+        const def = (yield* registry.all()).find((item) => item.id === toolID)
+        const mcpEntry = def ? undefined : (yield* mcp.tools())[toolID]
+        let params: Command.ToolParam[] = []
+        try {
+          params = Command.toolParamsFromJsonSchema(
+            def
+              ? ToolJsonSchema.fromTool(def)
+              : (mcpEntry?.def as { inputSchema?: unknown } | undefined)?.inputSchema,
+          )
+        } catch {
+          /* A schema that will not convert costs the friendly forms, not the
+             command: `params` stays empty and JSON still works. */
+        }
+
+        const parsed = Command.parseToolCommandArguments(input.arguments ?? "", params)
         const args = parsed.ok ? parsed.args : {}
         const output = yield* Effect.gen(function* () {
-          if (!parsed.ok) return `error: ${parsed.error}\n\nusage: /${input.command} [--hide] {"key":"value"}`
-          const def = (yield* registry.all()).find((item) => item.id === toolID)
+          if (!parsed.ok) return `error: ${parsed.error}\n\n${Command.toolCommandUsage(input.command, params)}`
           if (def)
             return (
               yield* def.execute(args, {
@@ -1589,12 +1608,11 @@ const layer = Layer.effect(
                 ask: () => Effect.void,
               })
             ).output
-          const entry = (yield* mcp.tools())[toolID]
-          if (!entry) return `error: no tool named "${toolID}" is available in this session`
+          if (!mcpEntry) return `error: no tool named "${toolID}" is available in this session`
           /* `mcp.tools()` hands back `{ def, client, timeout }`, not something
              callable - the same conversion the merge point does is what makes
              it executable. */
-          const exec = McpCatalog.convertTool(entry.def, entry.client, entry.timeout).execute
+          const exec = McpCatalog.convertTool(mcpEntry.def, mcpEntry.client, mcpEntry.timeout).execute
           if (!exec) return `error: MCP tool "${toolID}" declares no executable form`
           const result = yield* Effect.promise(async () =>
             exec(args, {
