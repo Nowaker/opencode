@@ -2345,10 +2345,11 @@ export type Command = {
   description?: string
   agent?: string
   model?: string
-  source?: "command" | "mcp" | "skill"
+  source?: "command" | "mcp" | "skill" | "tool"
   template: string
   subtask?: boolean
   native?: boolean
+  tool?: string
   hints: Array<string>
 }
 
