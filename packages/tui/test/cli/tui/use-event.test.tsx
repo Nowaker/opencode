@@ -48,6 +48,20 @@ function update(version: string): Event {
   }
 }
 
+function delta(id: string, text: string): Event {
+  return {
+    id,
+    type: "message.part.delta",
+    properties: {
+      sessionID: "ses_stream",
+      messageID: "msg_stream",
+      partID: "prt_stream",
+      field: "text",
+      delta: text,
+    },
+  }
+}
+
 async function mount() {
   const events = createEventSource()
   const calls = createFetch()
@@ -141,6 +155,24 @@ describe("useEvent", () => {
       await wait(() => seen.length === 1)
 
       expect(seen).toEqual([update("1.2.3")])
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("delivers rapid part deltas as one combined update", async () => {
+    const { app, emit, seen } = await mount()
+
+    try {
+      emit(event(delta("evt_a", "a"), { directory: "/tmp/other", project: projectID }))
+      await wait(() => seen.length === 1)
+
+      emit(event(delta("evt_b", "b"), { directory: "/tmp/other", project: projectID }))
+      emit(event(delta("evt_c", "c"), { directory: "/tmp/other", project: projectID }))
+      emit(event(delta("evt_d", "d"), { directory: "/tmp/other", project: projectID }))
+      await wait(() => seen.length >= 2)
+
+      expect(seen).toEqual([delta("evt_a", "a"), delta("evt_d", "bcd")])
     } finally {
       app.renderer.destroy()
     }
