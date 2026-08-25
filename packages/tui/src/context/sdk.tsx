@@ -8,6 +8,90 @@ export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
 }
 
+export const EVENT_BATCH_INTERVAL_MS = 100
+
+type PartDeltaEvent = GlobalEvent & {
+  readonly payload: Extract<GlobalEvent["payload"], { readonly type: "message.part.delta" }>
+}
+
+type EventBatcherOptions<TimerHandle> = {
+  readonly emit: (events: readonly GlobalEvent[]) => void
+  readonly now: () => number
+  readonly schedule: (run: () => void, delay: number) => TimerHandle
+  readonly cancel: (timer: TimerHandle) => void
+}
+
+function isPartDelta(event: GlobalEvent | undefined): event is PartDeltaEvent {
+  return event?.payload.type === "message.part.delta"
+}
+
+function samePartDelta(previous: PartDeltaEvent, current: PartDeltaEvent) {
+  return (
+    previous.directory === current.directory &&
+    previous.project === current.project &&
+    previous.workspace === current.workspace &&
+    previous.payload.properties.sessionID === current.payload.properties.sessionID &&
+    previous.payload.properties.messageID === current.payload.properties.messageID &&
+    previous.payload.properties.partID === current.payload.properties.partID &&
+    previous.payload.properties.field === current.payload.properties.field
+  )
+}
+
+export function createEventBatcher<TimerHandle>(options: EventBatcherOptions<TimerHandle>) {
+  let queue: GlobalEvent[] = []
+  let timer: TimerHandle | undefined
+  let last = 0
+
+  const flush = () => {
+    if (timer !== undefined) {
+      options.cancel(timer)
+      timer = undefined
+    }
+    if (queue.length === 0) return
+    const events = queue
+    queue = []
+    last = options.now()
+    options.emit(events)
+  }
+
+  const push = (event: GlobalEvent) => {
+    const previous = queue.at(-1)
+    if (isPartDelta(previous) && isPartDelta(event) && samePartDelta(previous, event)) {
+      queue[queue.length - 1] = {
+        ...event,
+        payload: {
+          ...event.payload,
+          properties: {
+            ...event.payload.properties,
+            delta: previous.payload.properties.delta + event.payload.properties.delta,
+          },
+        },
+      }
+    } else {
+      queue.push(event)
+    }
+
+    if (timer !== undefined) return
+    const elapsed = options.now() - last
+    if (elapsed >= EVENT_BATCH_INTERVAL_MS) {
+      flush()
+      return
+    }
+    timer = options.schedule(() => {
+      timer = undefined
+      flush()
+    }, EVENT_BATCH_INTERVAL_MS - elapsed)
+  }
+
+  const dispose = () => {
+    if (timer !== undefined) options.cancel(timer)
+    timer = undefined
+    queue = []
+  }
+
+  return { push, flush, dispose }
+}
+
 export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
   name: "SDK",
   init: (props: {
@@ -45,39 +129,18 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       },
     }
 
-    let queue: GlobalEvent[] = []
-    let timer: Timer | undefined
-    let last = 0
     const retryDelay = 1000
     const maxRetryDelay = 30000
-
-    const flush = () => {
-      if (queue.length === 0) return
-      const events = queue
-      queue = []
-      timer = undefined
-      last = Date.now()
-      // Batch all event emissions so all store updates result in a single render
-      batch(() => {
-        for (const event of events) {
-          emitter.emit("event", event)
-        }
-      })
-    }
-
-    const handleEvent = (event: GlobalEvent) => {
-      queue.push(event)
-      const elapsed = Date.now() - last
-
-      if (timer) return
-      // If we just flushed recently (within 16ms), batch this with future events
-      // Otherwise, process immediately to avoid latency
-      if (elapsed < 16) {
-        timer = setTimeout(flush, 16)
-        return
-      }
-      flush()
-    }
+    const eventBatcher = createEventBatcher({
+      emit: (events) => {
+        batch(() => {
+          for (const event of events) emitter.emit("event", event)
+        })
+      },
+      now: Date.now,
+      schedule: setTimeout,
+      cancel: clearTimeout,
+    })
 
     function startSSE() {
       sse?.abort()
@@ -101,11 +164,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
           for await (const event of events.stream) {
             if (ctrl.signal.aborted) break
-            handleEvent(event)
+            eventBatcher.push(event)
           }
 
-          if (timer) clearTimeout(timer)
-          if (queue.length > 0) flush()
+          eventBatcher.flush()
           attempt += 1
           if (abort.signal.aborted || ctrl.signal.aborted) break
 
@@ -118,7 +180,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     onMount(async () => {
       if (props.events) {
-        const unsub = await props.events.subscribe(handleEvent)
+        const unsub = await props.events.subscribe(eventBatcher.push)
         onCleanup(unsub)
 
         if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
@@ -134,7 +196,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     onCleanup(() => {
       abort.abort()
       sse?.abort()
-      if (timer) clearTimeout(timer)
+      eventBatcher.dispose()
       handlers.clear()
     })
 
