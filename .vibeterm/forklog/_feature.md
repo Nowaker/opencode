@@ -1,8 +1,8 @@
 # <Short title>
 
-Use this template for one durable local customization. Name the copied file
-`YYYY-MM-DD-short-title.md`, using the customization's first workday. Track the
-file only on `master-nowaker`; feature branches must not carry forklog edits.
+Use this template for one durable local customization. Copy it to
+`features/YYYY-MM-DD-short-title.md`, using the customization's first user
+workday. Track the file only on `master-nowaker`.
 
 ## Identity
 
@@ -14,14 +14,13 @@ file only on `master-nowaker`; feature branches must not carry forklog edits.
 - Upstream base when introduced: `<commit or tag>`
 - Last checked against upstream: `<commit or tag>`
 
-Use `TBD` when the historical record does not establish a value. Never infer a
-branch, prompt, session ID, or verification result.
+Use `TBD` when the record does not establish a value. Never infer a branch,
+prompt, session ID, or verification result.
 
 ## Original request
 
-Quote the user's request verbatim when it survives in a transcript. If it does
-not, write `TBD - no surviving prompt found` and keep the reconstructed goal in
-the next section.
+Quote the user's request verbatim when it survives in a transcript. Otherwise
+write `TBD - no surviving prompt found` and keep the reconstructed goal below.
 
 > <verbatim prompt>
 
@@ -56,16 +55,18 @@ schema field, generated artifact, or test over a line number.
 Record only verification that actually ran. Historical verification copied
 from a session must say which session reported it.
 
-## Session ledger
+## Timeline
 
-Use the user's workday, not the calendar date after midnight. Work continuing
-from an evening into the following early morning stays on the evening's date.
-Use full session IDs and keep one row per session per workday.
+Use the user's workday, not the calendar date after midnight. Link a row to its
+session record when one exists:
 
-- YYYY-MM-DD `ses_<full-id>` - <initial build, upstream rebase, semantic change,
-  or other brief goal>. Evidence: <safe transcript phrase, commit, or command>.
+- YYYY-MM-DD [`ses_<full-id>`](../sessions/YYYY-MM-DD-short-title.md) -
+  <initial build, upstream integration, semantic change, or re-verification>.
+  Evidence: <commit, command, or linked session section>.
 
-If exhaustive local-session searches found no match, keep that fact visible:
+Preserve historical rows whose full session narrative was not recovered. Do
+not create a session file merely to make an old ID linkable. Keep exhaustive
+no-match results visible:
 
 - YYYY-MM-DD `TBD` - no matching session found. Searched: <stores, workdirs,
   date range, and discriminating queries>.
@@ -80,15 +81,13 @@ If exhaustive local-session searches found no match, keep that fact visible:
 - Locate each stable seam in the new upstream tree.
 - Classify the customization as preserved, conflicted, superseded, or removed.
 - Reverse any deliberate uncommitted patch before merging, then reapply its
-  canonical patch after the merge.
-- Regenerate derived clients or schemas instead of hand-editing generated files.
-- Run the customization's focused tests and affected package typechecks.
-- Build through the host's canonical installer and verify the installed
-  artifact, not only the source tree.
-- Confirm protected running services kept the same PID and start timestamp.
-- Append the new session-ledger row and update `Last checked against upstream`.
-- Commit the forklog change separately for that session and workday. Do not
-  squash it; keep forklog commits rebased above the current source head.
+  canonical patch afterward.
+- Regenerate derived clients or schemas instead of editing generated files.
+- Run the feature's focused tests and affected package typechecks.
+- Build through the host's canonical installer and verify the installed binary.
+- Confirm protected services kept the same PID and start timestamp.
+- Link a new timeline row to the current session record.
+- Update `Last checked against upstream`.
 
 ## Supersession or removal
 

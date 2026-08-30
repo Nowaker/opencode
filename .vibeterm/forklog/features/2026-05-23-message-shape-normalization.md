@@ -50,13 +50,17 @@ TBD - no surviving original prompt found. The recovered session title is:
 - 2026-08-29 semantic gate: message-v2, pagination, and compaction coverage is
   green inside 388 pass / 3 skip / 0 fail.
 
-## Session ledger
+## Timeline
 
 - 2026-05-23 `ses_1abc831d9ffeWO4PJ6S3qtd6I9` - diagnose the OpenCode GC
   death spiral and stabilize hydrated MessageV2 shapes. Confirmed by the
   session title, exact `GC death spiral` and MessageV2 investigation evidence,
   and commit `af19b7db7`. CWD: `~/projekty/nowaker/opencode-tools`; platform:
   OpenCode; development branch: `master-nowaker`.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve normalized message shapes and bounded caches through `v1.18.25`.
+  Evidence: the message, pagination, and compaction gate is green.
 
 ## Current maintenance notes
 
