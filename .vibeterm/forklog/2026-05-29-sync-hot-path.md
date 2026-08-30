@@ -1,0 +1,63 @@
+# Sync hot-path tuning
+
+## Identity
+
+- Status: active
+- Integration branch: `master-nowaker`
+- Development branch(es): `master-nowaker` (inferred)
+- First local commit: `ad228a28a`
+- Current local commit(s): `ad228a28a`
+- Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
+- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+
+## Original request
+
+TBD - no surviving original prompt found. Transcript searches recover the
+`event aggregate_id`, sync-indexing, and compression workstream.
+
+## Goals
+
+- Reduce CPU and query cost on event replay and HTTP sync responses.
+- Prefer throughput over maximum compression ratio on the sync hot path.
+
+## Non-goals
+
+- Do not change the sync wire contract.
+
+## Rationale and constraints
+
+- Event replay repeatedly filters by aggregate identity.
+- Compression CPU was more expensive than the additional bytes at the observed
+  sync workload.
+
+## Changes
+
+| Commit | Workday | Change | Stable seam |
+|---|---|---|---|
+| `ad228a28a` | 2026-05-29 | Tune sync replay and use compression level 1 | `handlers/sync.ts`, `middleware/compression.ts` |
+
+The commit also carries `test/perf/bench-fce.ts` for the replay hot path. The
+event aggregate index is generated through the repository's schema path rather
+than maintained as a handwritten runtime query.
+
+## Verification
+
+- 2026-08-29 semantic gate: HTTP sync and compression tests pass inside
+  388 pass / 3 skip / 0 fail.
+
+## Session ledger
+
+- 2026-05-29 `ses_18d75fa67ffeMRJOuGsqmrqq9h` - index aggregate replay and
+  tune sync compression. Inferred from same-day transcript matches for
+  `event aggregate_id`, sync indexing, and compression; no exact commit command
+  survived. CWD: `~/projekty/nowaker/opencode-tools`; platform: OpenCode;
+  development branch: `master-nowaker` (inferred).
+
+## Current maintenance notes
+
+- Preserve level-1 compression when upstream refactors middleware options.
+- Keep the event aggregate lookup indexed after schema or migration changes.
+
+## Supersession or removal
+
+- Not applicable; status is active.
