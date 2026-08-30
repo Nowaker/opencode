@@ -61,7 +61,7 @@ that exact two-file diff uncommitted.
   `OPENCODE_RETRY_MAX_HEADER_DELAY_MS` marker.
 - Protected service PIDs and start timestamps did not change during the build.
 
-## Session ledger
+## Timeline
 
 - 2026-08-06 no verified local coding-agent session found - introduce the cap
   and canonical patch in `opencode-tools:824532a2b`. Searches covered the exact
@@ -73,7 +73,9 @@ that exact two-file diff uncommitted.
 - 2026-08-15 no verified local coding-agent session found - rebase the patch
   onto `v1.18.18` in `opencode-tools:a88ab4589`; exact hash and subject searches
   across the relevant date window returned no match.
-- 2026-08-29 `ses_166c2c2b5ffe5Fr8aJwwuDgWT3` - reverse the patch, merge
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - reverse the patch, merge
   `v1.18.25`, reapply and test it, then refresh the canonical patch in
   `opencode-tools:1f16a2b66`. Confirmed by current-session continuity and the
   exact byte-for-byte comparison against the dirty source diff.

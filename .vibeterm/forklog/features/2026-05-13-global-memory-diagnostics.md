@@ -47,12 +47,16 @@ The response combines `process.memoryUsage()`, `bun:jsc.heapStats()`, and
 - 2026-08-29 semantic gate: `httpapi-global.test.ts` and the surrounding custom
   seam suite pass as part of 388 pass / 3 skip / 0 fail.
 
-## Session ledger
+## Timeline
 
 - 2026-05-13 `ses_229d7083fffem6lkaEj69adZ7H` - add the global memory
   diagnostic route. Inferred from the exact `GET /global/memory` transcript
   match, the session span, and commit date; no exact commit command survived.
   CWD: `/home/nowaker/projekty/ai-workspace`; platform: OpenCode.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve the route through the `v1.18.25` integration and re-run its
+  semantic gate. Evidence: 388 pass / 3 skip / 0 fail.
 
 ## Current maintenance notes
 
