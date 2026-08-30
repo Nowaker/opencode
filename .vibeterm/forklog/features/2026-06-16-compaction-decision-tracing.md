@@ -46,13 +46,17 @@ dirty OpenCode source change.
 - 2026-08-29 semantic gate: prompt and compaction tests pass inside
   388 pass / 3 skip / 0 fail.
 
-## Session ledger
+## Timeline
 
 - 2026-06-16 `ses_151d2dd79ffeEX3zcZ4QxoVsGF` - commit compaction overflow
   decision tracing. Confirmed by the final transcript statement, `Committed the
   previously dirty opencode source change as session: trace compaction overflow
   decisions.`, and commit `dd04c4f1b`. CWD: `~/projekty/nowaker/opencode-tools`;
   platform: OpenCode; development branch: `master-nowaker`.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve observational compaction tracing through `v1.18.25`. Evidence:
+  prompt and compaction tests pass inside the semantic gate.
 
 ## Current maintenance notes
 
