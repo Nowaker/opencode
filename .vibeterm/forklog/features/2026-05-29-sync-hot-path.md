@@ -45,13 +45,17 @@ than maintained as a handwritten runtime query.
 - 2026-08-29 semantic gate: HTTP sync and compression tests pass inside
   388 pass / 3 skip / 0 fail.
 
-## Session ledger
+## Timeline
 
 - 2026-05-29 `ses_18d75fa67ffeMRJOuGsqmrqq9h` - index aggregate replay and
   tune sync compression. Inferred from same-day transcript matches for
   `event aggregate_id`, sync indexing, and compression; no exact commit command
   survived. CWD: `~/projekty/nowaker/opencode-tools`; platform: OpenCode;
   development branch: `master-nowaker` (inferred).
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve indexed replay and level-1 compression through `v1.18.25`.
+  Evidence: HTTP sync and compression tests pass in the semantic gate.
 
 ## Current maintenance notes
 

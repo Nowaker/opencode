@@ -44,13 +44,17 @@ found. The session's final report records the published strict-global-bus fix.
 - The semantic custom-seam diff still contains only the expected wrapper and
   event-ID assignment behavior against `v1.18.25`.
 
-## Session ledger
+## Timeline
 
 - 2026-07-21 `ses_151d2dd79ffeEX3zcZ4QxoVsGF` - publish the standalone
   strict global event-typing fix. Confirmed by the final transcript's exact
   `bus: preserve strict global event typing` report and matching HEAD commit
   `1c1c90344`. CWD: `~/projekty/nowaker/opencode-tools`; platform: OpenCode;
   development branch: `master-nowaker`.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve strict wrapper typing and event-ID ordering through `v1.18.25`.
+  Evidence: `packages/opencode` typecheck exits 0.
 
 ## Current maintenance notes
 

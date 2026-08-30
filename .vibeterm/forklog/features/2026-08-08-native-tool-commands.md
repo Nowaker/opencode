@@ -64,7 +64,7 @@ catalog.
 - `packages/opencode` typecheck exits 0.
 - Both generators leave no second-run diff after the `v1.18.25` merge.
 
-## Session ledger
+## Timeline
 
 - 2026-08-08 `ses_01bbb0b5affeZ1mADldfa0VF1D` - introduce native slash
   commands on `feat/native-slash-commands`. Confirmed by the exact prompt above,
@@ -86,6 +86,10 @@ catalog.
   missing SDK fields in `daab8893a`. Exact hash, SDK, version, date-window,
   likely-workdir, and subagent searches across all indexed platforms returned
   no direct transcript match.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve native and `/tool-*` commands through `v1.18.25` and regenerate
+  both SDK surfaces. Evidence: command tests and typecheck pass.
 
 ## Current maintenance notes
 

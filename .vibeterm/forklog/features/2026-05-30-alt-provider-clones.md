@@ -51,13 +51,17 @@ provider because its model resolver cannot serve that chat alias.
 - The effective OMO audit reads Anthropic and OpenAI model catalogs without
   requiring these alternates to appear as defaults.
 
-## Session ledger
+## Timeline
 
 - 2026-05-30 `ses_188220dadffeb8GepIK8xraEoj` - add code-level
   `anthropic2` and `openai2` catalog clones. Confirmed by the exact session
   title, commit subject, and matching purpose. CWD:
   `~/projekty/nowaker/opencode-tools`; platform: OpenCode; development branch:
   `master-nowaker`.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve both catalog clones through `v1.18.25`. Evidence: provider tests
+  pass inside the 388-test semantic gate.
 
 ## Current maintenance notes
 
