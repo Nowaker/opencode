@@ -45,13 +45,17 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
 - 2026-08-29 semantic gate: `prompt.test.ts` passes inside
   388 pass / 3 skip / 0 fail.
 
-## Session ledger
+## Timeline
 
 - 2026-05-29 `ses_18c948de5ffemtqJrtPZrtMiMf` - prevent interrupted
   assistant tails from reaching model dispatch. Inferred from the exact
   behavior terms and prefill investigation matching `58b643c52`; no exact
   commit command survived. CWD: `~/projekty/nowaker/opencode-tools`; platform:
   OpenCode; development branch not recoverable.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve final-send tail filtering through `v1.18.25`. Evidence:
+  `prompt.test.ts` passes inside the 388-test semantic gate.
 
 ## Current maintenance notes
 

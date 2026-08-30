@@ -49,13 +49,17 @@ evening-to-early-morning convention does not move this work to August 24.
   tests.
 - `packages/tui` typecheck exits 0.
 
-## Session ledger
+## Timeline
 
 - 2026-08-25 `333bd0f1-6d75-4c64-b8e2-003f45ce2379` - coalesce streaming
   deltas and throttle renders. Confirmed by the Claude transcript's exact
   `4a2673957` checkout, its session timestamp, and its implementation worktree
   `/home/nowaker/projekty/nowaker/opencode-tools-qpane-ux`; the original prompt
   remains unavailable.
+- 2026-08-29
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
+  - preserve same-part coalescing and the 10 FPS cap through `v1.18.25`.
+  Evidence: 5 targeted TUI tests pass and `packages/tui` typecheck exits 0.
 
 ## Current maintenance notes
 
