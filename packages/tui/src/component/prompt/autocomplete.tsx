@@ -699,11 +699,14 @@ export function Autocomplete(props: {
           return
         }
 
-        // Check for "@" trigger - find the nearest "@" before cursor with no whitespace between
-        const idx = mentionTriggerIndex(value, offset)
+        // Check for "@" trigger - find the nearest "@" before cursor with no whitespace between.
+        // A trigger holds no whitespace so it never crosses a newline, and reading just the
+        // current line out of the rope keeps a keystroke off the whole-buffer path.
+        const lineStart = props.input().editBuffer.positionToOffset(props.input().logicalCursor.row, 0)
+        const idx = mentionTriggerIndex(props.input().getTextRange(lineStart, offset), offset - lineStart)
         if (idx !== undefined) {
           show("@")
-          setStore("index", idx)
+          setStore("index", lineStart + idx)
         }
       },
     })
