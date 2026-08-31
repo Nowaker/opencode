@@ -1,4 +1,4 @@
-import { positionalToolParam, toolArgumentExcerpt, toolParamSummary, type ToolParam } from "./tool-params"
+import { positionalToolParams, toolArgumentExcerpt, toolParamSummary, type ToolParam } from "./tool-params"
 
 export type ParsedToolCommand =
   | { ok: true; hidden: boolean; args: Record<string, unknown> }
@@ -11,8 +11,9 @@ export type ParsedToolCommand =
  * implied, and the parameter NAMES are known, so `key=value` pairs can be found
  * in free text without a quoting discipline: a word is an assignment only when
  * it is a parameter this tool really has. That is what lets an unquoted value
- * contain spaces. A tool with one parameter - or several with exactly one
- * required - also takes a bare value, so `/tool-bash git status` works.
+ * contain spaces. Required parameters also take bare values in schema order,
+ * so `/tool-bash git status` and
+ * `/tool-vibeterm-prompt-session ses_123 "continue"` work.
  *
  * Returns a result rather than throwing: a synchronous throw inside the
  * `Effect.gen` that calls this becomes a `Cause.Die`, which surfaces to the
@@ -138,22 +139,52 @@ function parseTypedArguments(text: string, params?: readonly ToolParam[]): Recor
   const lead = trimSeparators(assignments[0] ? text.slice(0, assignments[0].nameStart) : text)
   if (!lead) return args
 
-  const positional = positionalToolParam(params)
-  if (!positional) {
+  const positional = positionalToolParams(params)
+  const available = positional.filter((param) => !(param.name in args))
+  if (available.length === 0) {
+    const assigned = positional[0]
+    if (assigned) {
+      throw new Error(
+        `${JSON.stringify(toolArgumentExcerpt(lead))} has no parameter name in front of it, and ${assigned.name} - ` +
+          `the one it would have gone to - was already given`,
+      )
+    }
+    const firstName = params[0]?.name ?? "key"
     throw new Error(
       `cannot tell which parameter ${JSON.stringify(toolArgumentExcerpt(lead))} is - this tool takes ` +
         `${toolParamSummary(params)}, and none of them is the obvious one, so name it: ` +
-        `${params[0]!.name}=${JSON.stringify(toolArgumentExcerpt(lead))}`,
+        `${firstName}=${JSON.stringify(toolArgumentExcerpt(lead))}`,
     )
   }
-  if (positional.name in args) {
-    throw new Error(
-      `${JSON.stringify(toolArgumentExcerpt(lead))} has no parameter name in front of it, and ${positional.name} - ` +
-        `the one it would have gone to - was already given`,
-    )
+
+  const values = positionalValues(lead, available.length)
+  for (const [index, value] of values.entries()) {
+    const param = available[index]
+    if (param) args[param.name] = readValue(value, param)
   }
-  args[positional.name] = readValue(lead, positional)
   return args
+}
+
+function positionalValues(text: string, count: number): readonly string[] {
+  if (count <= 1) return [text]
+
+  const values: string[] = []
+  let rest = text.trim()
+  while (rest && values.length < count - 1) {
+    const end = positionalValueEnd(rest)
+    values.push(rest.slice(0, end))
+    rest = rest.slice(end).trimStart()
+  }
+  if (rest) values.push(rest)
+  return values
+}
+
+function positionalValueEnd(text: string): number {
+  if (text[0] === "'" || text[0] === '"') return skipQuoted(text, 0)
+  for (let index = 0; index < text.length; index += 1) {
+    if (/\s/.test(text.charAt(index))) return index
+  }
+  return text.length
 }
 
 function readValue(raw: string, param: ToolParam): unknown {
