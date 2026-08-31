@@ -11,17 +11,10 @@ export interface ToolParam {
   type?: string
 }
 
-/**
- * The parameter a bare value goes to, when there is an obvious one.
- *
- * Two required parameters cannot be told apart by position when either may
- * contain spaces, so that is refused rather than guessed at.
- */
-export function positionalToolParam(params: readonly ToolParam[]) {
+export function positionalToolParams(params: readonly ToolParam[]): readonly ToolParam[] {
   const required = params.filter((param) => param.required)
-  if (required.length === 1) return required[0]
-  if (params.length === 1) return params[0]
-  return undefined
+  if (required.length > 0) return required
+  return params.length === 1 ? params : []
 }
 
 export function toolArgumentExcerpt(text: string, limit = 40) {
@@ -42,8 +35,10 @@ export function toolCommandUsage(commandName: string, params?: readonly ToolPara
   const first = shown[0]?.name ?? "key"
   const lines = [`usage: /${commandName} [--hide] ${shown.map((param) => `${param.name}=…`).join(" ")}`]
 
-  const positional = positionalToolParam(params)
-  if (positional) lines.push(`       /${commandName} [--hide] <${positional.name}>`)
+  const positional = positionalToolParams(params)
+  if (positional.length > 0) {
+    lines.push(`       /${commandName} [--hide] ${positional.map((param) => `<${param.name}>`).join(" ")}`)
+  }
   lines.push(`       /${commandName} [--hide] {${JSON.stringify(first)}:"…"}`)
   if (params.length > 1) lines.push(`parameters: ${toolParamSummary(params)}  ([optional])`)
   return lines.join("\n")

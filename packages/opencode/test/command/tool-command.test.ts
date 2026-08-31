@@ -105,15 +105,13 @@ describe("typing arguments the way a human would", () => {
     if (!parsed.ok) expect(parsed.error).toContain("not valid JSON")
   })
 
-  test("a bare value is refused where nothing is the obvious parameter", () => {
-    const parsed = Command.parseToolCommandArguments("ses_x hello", notify)
-    expect(parsed.ok).toBe(false)
-    if (!parsed.ok) expect(parsed.error).toContain("session, text")
+  test("required parameters take positional values in schema order", () => {
+    expect(args("ses_x hello there", notify)).toEqual({ session: "ses_x", text: "hello there" })
   })
 
-  test("it returns the refusal rather than throwing - a throw here becomes an opaque 500", () => {
+  test("multiple required positionals return rather than throwing - a throw here becomes an opaque 500", () => {
     expect(() => Command.parseToolCommandArguments("anything at all", notify)).not.toThrow()
-    expect(Command.parseToolCommandArguments("anything at all", notify).ok).toBe(false)
+    expect(Command.parseToolCommandArguments("anything at all", notify).ok).toBe(true)
   })
 
   test("with no parameters known it says arguments must be JSON", () => {
