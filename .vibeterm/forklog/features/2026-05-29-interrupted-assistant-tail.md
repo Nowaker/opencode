@@ -8,7 +8,7 @@
 - First local commit: `58b643c52`
 - Current local commit(s): `58b643c52`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -56,6 +56,10 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve final-send tail filtering through `v1.18.25`. Evidence:
   `prompt.test.ts` passes inside the 388-test semantic gate.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve final-send tail filtering through `v1.18.27`. Evidence: prompt
+  dispatch coverage passes in the focused semantic gate.
 
 ## Current maintenance notes
 
