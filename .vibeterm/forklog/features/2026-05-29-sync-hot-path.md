@@ -8,7 +8,7 @@
 - First local commit: `ad228a28a`
 - Current local commit(s): `ad228a28a`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -56,6 +56,10 @@ than maintained as a handwritten runtime query.
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve indexed replay and level-1 compression through `v1.18.25`.
   Evidence: HTTP sync and compression tests pass in the semantic gate.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve indexed replay and level-1 compression through `v1.18.27`.
+  Evidence: sync and compression coverage passes in the focused gate.
 
 ## Current maintenance notes
 

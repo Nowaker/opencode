@@ -30,12 +30,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Retry-header delay cap](./features/2026-08-06-retry-header-delay-cap.md)
 - [Native tool commands](./features/2026-08-08-native-tool-commands.md)
 - [TUI streaming render throttle](./features/2026-08-25-tui-stream-throttle.md)
+- [Prompt input latency](./features/2026-08-31-prompt-input-latency.md)
 
 ## Session records
 
 - [2026-08-29 `ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](./sessions/2026-08-29-upstream-bump-and-forklog.md)
   - Integrate `v1.18.25`, verify every seam, rebuild, and establish linked
     feature/session provenance.
+- [2026-09-02 `ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](./sessions/2026-09-02-opencode-omo-refresh.md)
+  - Reconcile Linux and macOS feature work, integrate `v1.18.27`, rebuild both
+    hosts, and refresh OMO assignments.
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
@@ -43,8 +47,8 @@ session does not get a fabricated file when its full narrative was not found.
 ## Upstream integration history
 
 Upstream integration is a session activity, not a durable customization. Full
-evidence and no-match searches are preserved in the current
-[integration session record](./sessions/2026-08-29-upstream-bump-and-forklog.md).
+evidence and no-match searches are preserved in the applicable linked session
+records.
 
 - `0ac3fad6f` (2026-07-28) - merge `github/dev`.
 - `421923926` (2026-08-04) - merge upstream `v1.18.13`.
@@ -53,6 +57,8 @@ evidence and no-match searches are preserved in the current
 - `0a12138e8` (2026-08-29) - merge upstream `v1.18.25`.
 - `ca4200381` (2026-08-29) - join patch-equivalent remote ancestry; the tree
   stays unchanged.
+- `5b80c26d6` (2026-09-02) - merge upstream `v1.18.27` after reconciling the
+  Linux prompt-latency and macOS native-command work.
 
 ## Update workflow
 
