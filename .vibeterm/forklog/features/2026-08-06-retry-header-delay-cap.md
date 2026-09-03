@@ -10,7 +10,7 @@
 - Current local commit(s): `opencode-tools:824532a2b`, `2dfe1da2f`,
   `a88ab4589`, `1f16a2b66`; OpenCode source diff remains uncommitted
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -60,6 +60,8 @@ that exact two-file diff uncommitted.
 - Installed `1.18.26` contains one
   `OPENCODE_RETRY_MAX_HEADER_DELAY_MS` marker.
 - Protected service PIDs and start timestamps did not change during the build.
+- 2026-09-02: the unchanged canonical patch applies to `v1.18.27` byte for
+  byte; both installed `1.18.28` binaries contain one marker.
 
 ## Timeline
 
@@ -79,6 +81,11 @@ that exact two-file diff uncommitted.
   `v1.18.25`, reapply and test it, then refresh the canonical patch in
   `opencode-tools:1f16a2b66`. Confirmed by current-session continuity and the
   exact byte-for-byte comparison against the dirty source diff.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - reverse the patch, merge `v1.18.27`, then reapply it unchanged on Linux
+  and macOS. Evidence: retry tests, bytewise comparison, and both binary marker
+  checks pass.
 
 ## Current maintenance notes
 
