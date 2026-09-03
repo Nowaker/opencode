@@ -8,7 +8,7 @@
 - First local commit: `4a2673957`
 - Current local commit(s): `4a2673957`
 - Upstream base when introduced: `4643e65ad6` (`v1.18.18`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -60,6 +60,10 @@ evening-to-early-morning convention does not move this work to August 24.
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve same-part coalescing and the 10 FPS cap through `v1.18.25`.
   Evidence: 5 targeted TUI tests pass and `packages/tui` typecheck exits 0.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve same-part coalescing and the 10 FPS cap through `v1.18.27`.
+  Evidence: 7 focused and 32 full-suite TUI tests pass, plus typecheck.
 
 ## Current maintenance notes
 

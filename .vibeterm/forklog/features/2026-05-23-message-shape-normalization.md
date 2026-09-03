@@ -8,7 +8,7 @@
 - First local commit: `af19b7db7`
 - Current local commit(s): `af19b7db7`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -61,6 +61,10 @@ TBD - no surviving original prompt found. The recovered session title is:
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve normalized message shapes and bounded caches through `v1.18.25`.
   Evidence: the message, pagination, and compaction gate is green.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve normalized shapes and bounded caches through `v1.18.27`.
+  Evidence: message, pagination, and compaction coverage passes.
 
 ## Current maintenance notes
 

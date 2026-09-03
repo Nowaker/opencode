@@ -8,7 +8,7 @@
 - First local commit: `1c1c90344`
 - Current local commit(s): `1c1c90344`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -54,6 +54,10 @@ found. The session's final report records the published strict-global-bus fix.
 - 2026-08-29
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve strict wrapper typing and event-ID ordering through `v1.18.25`.
+  Evidence: `packages/opencode` typecheck exits 0.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve strict wrapper typing and event-ID ordering through `v1.18.27`.
   Evidence: `packages/opencode` typecheck exits 0.
 
 ## Current maintenance notes
