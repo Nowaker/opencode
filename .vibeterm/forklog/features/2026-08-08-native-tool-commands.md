@@ -6,12 +6,12 @@
 - Integration branch: `master-nowaker`
 - Development branch(es): `feat/native-slash-commands`,
   `feat/native-tool-commands`, `feat/tool-command-prefix`,
-  `feat/friendly-tool-args`
+  `feat/friendly-tool-args`, macOS `master-nowaker`
 - First local commit: `f39c4abf8`
 - Current local commit(s): `f39c4abf8`, `32457b6d1`, `615d27bad`,
-  `dd5bc77d1`, `a209a8289`, `daab8893a`
+  `dd5bc77d1`, `a209a8289`, `daab8893a`, `24326cf48`, `6630dbc2c`
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -19,10 +19,13 @@
 
 > native slash commands: run a tool from /command with no LLM turn
 
+> i'm telling you that it, and ANY tool, should accept positional arguments for
+> required parameters.
+
 The first prompt belongs to the source-worktree session that introduced the
 `native` command flag. The second belongs to the longer orchestration session
 that regenerated the SDK and extended native commands to the whole tool
-catalog.
+catalog. The third drove the macOS extension imported during this workday.
 
 ## Goals
 
@@ -56,13 +59,17 @@ catalog.
 | `dd5bc77d1` | 2026-08-12 | Put generated commands under `/tool-` | tool-command naming and dedup |
 | `a209a8289` | 2026-08-13 | Parse schema-driven human arguments | tool argument parser and schema lookup |
 | `daab8893a` | 2026-08-15 | Regenerate missing tool-command SDK fields | generated v2 command type |
+| `24326cf48` | 2026-08-31 | Isolate the native argument parser below the module size ceiling | `command/tool-args.ts`, `command/tool-params.ts` |
+| `6630dbc2c` | 2026-08-31 | Bind every required parameter positionally in schema order | `parseToolArguments`, positional command tests |
 
 ## Verification
 
 - 2026-08-29 semantic gate includes `tool-command.test.ts` and passes inside
   388 pass / 3 skip / 0 fail.
 - `packages/opencode` typecheck exits 0.
-- Both generators leave no second-run diff after the `v1.18.25` merge.
+- Both generators leave no second-run diff after the `v1.18.27` merge.
+- 2026-09-02: the OpenCode command coverage passes in the 339-test focused
+  gate; the shared native-command suite passes 385 tests.
 
 ## Timeline
 
@@ -90,6 +97,15 @@ catalog.
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve native and `/tool-*` commands through `v1.18.25` and regenerate
   both SDK surfaces. Evidence: command tests and typecheck pass.
+- 2026-08-31 `ses_faf0eb9eeffetWvwBHm3DEkcse` - accept positional values for
+  every required parameter, skip parameters already supplied by name, and let
+  the final positional value consume remaining text. Evidence: original macOS
+  commits `a544c70d8` and `97940fdbe`, 42 fork tests, and installed-TUI QA.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - rebase the macOS work as `24326cf48` and `6630dbc2c`, preserve it through
+  the `v1.18.27` integration, and build it for both hosts. Evidence: command
+  tests, 385 shared tests, typecheck, and generator no-op checks pass.
 
 ## Current maintenance notes
 

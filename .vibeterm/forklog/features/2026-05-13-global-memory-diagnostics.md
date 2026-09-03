@@ -8,7 +8,7 @@
 - First local commit: `20a24f2eb`
 - Current local commit(s): `20a24f2eb`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `10765ff2a` (`v1.18.25`)
+- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
 
 ## Original request
 
@@ -57,6 +57,10 @@ The response combines `process.memoryUsage()`, `bun:jsc.heapStats()`, and
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-08-29-upstream-bump-and-forklog.md)
   - preserve the route through the `v1.18.25` integration and re-run its
   semantic gate. Evidence: 388 pass / 3 skip / 0 fail.
+- 2026-09-02
+  [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
+  - preserve the route through the `v1.18.27` integration. Evidence: global
+  HTTP API coverage passes in the 339-test focused gate.
 
 ## Current maintenance notes
 
