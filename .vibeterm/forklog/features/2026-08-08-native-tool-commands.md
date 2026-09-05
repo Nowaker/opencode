@@ -106,6 +106,10 @@ catalog. The third drove the macOS extension imported during this workday.
   - rebase the macOS work as `24326cf48` and `6630dbc2c`, preserve it through
   the `v1.18.27` integration, and build it for both hosts. Evidence: command
   tests, 385 shared tests, typecheck, and generator no-op checks pass.
+- 2026-09-04
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
+  - preserve native builtin and MCP tool commands through `v1.18.28`.
+  Evidence: 102 focused tests, the full package suite, and typecheck pass.
 
 ## Current maintenance notes
 
