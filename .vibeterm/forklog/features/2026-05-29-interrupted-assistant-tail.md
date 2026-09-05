@@ -60,6 +60,10 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
   - preserve final-send tail filtering through `v1.18.27`. Evidence: prompt
   dispatch coverage passes in the focused semantic gate.
+- 2026-09-04
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
+  - preserve final-send tail filtering through `v1.18.28`. Evidence: the
+  3596-test package suite passes.
 
 ## Current maintenance notes
 
