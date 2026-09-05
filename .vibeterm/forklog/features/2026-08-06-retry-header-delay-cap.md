@@ -86,6 +86,10 @@ that exact two-file diff uncommitted.
   - reverse the patch, merge `v1.18.27`, then reapply it unchanged on Linux
   and macOS. Evidence: retry tests, bytewise comparison, and both binary marker
   checks pass.
+- 2026-09-04
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
+  - reverse the patch, merge `v1.18.28`, and reapply it unchanged on macOS.
+  Evidence: 102 focused tests, bytewise comparison, and the binary marker pass.
 
 ## Current maintenance notes
 
