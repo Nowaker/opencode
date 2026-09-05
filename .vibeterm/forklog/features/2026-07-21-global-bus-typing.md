@@ -59,6 +59,10 @@ found. The session's final report records the published strict-global-bus fix.
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
   - preserve strict wrapper typing and event-ID ordering through `v1.18.27`.
   Evidence: `packages/opencode` typecheck exits 0.
+- 2026-09-04
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
+  - preserve strict wrapper typing and event-ID ordering through `v1.18.28`.
+  Evidence: `packages/opencode` typecheck exits 0.
 
 ## Current maintenance notes
 

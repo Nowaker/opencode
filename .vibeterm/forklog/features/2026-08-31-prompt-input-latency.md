@@ -73,6 +73,10 @@
   [`ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](../sessions/2026-09-02-opencode-omo-refresh.md)
   - preserve both optimizations through the `v1.18.27` integration and rerun
   the TUI gates. Evidence: 7 focused and 32 full-suite tests pass.
+- 2026-09-04
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
+  - preserve both optimizations through `v1.18.28`. Evidence: 196 TUI tests
+  pass, one skips, and `packages/tui` typecheck exits 0.
 
 ## Current maintenance notes
 
