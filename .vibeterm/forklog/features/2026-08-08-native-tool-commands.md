@@ -11,7 +11,7 @@
 - Current local commit(s): `f39c4abf8`, `32457b6d1`, `615d27bad`,
   `dd5bc77d1`, `a209a8289`, `daab8893a`, `24326cf48`, `6630dbc2c`
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -110,6 +110,11 @@ catalog. The third drove the macOS extension imported during this workday.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve native builtin and MCP tool commands through `v1.18.28`.
   Evidence: 102 focused tests, the full package suite, and typecheck pass.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve native builtin and MCP tool commands through upstream dev
+  `5cd8e68fd`. Evidence: 45 command and message-shape tests plus typecheck pass.
 
 ## Current maintenance notes
 

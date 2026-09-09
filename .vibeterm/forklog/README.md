@@ -43,6 +43,9 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-09-04 `ses_fb9a784deffe7zkW0r8oo25Nkg`](./sessions/2026-09-04-opencode-omo-refresh.md)
   - Integrate `v1.18.29`, rebuild the macOS fork, and migrate OMO overrides to
     canonical reasoning without changing effective assignments.
+- [2026-09-08 `ses_fb9a784deffe7zkW0r8oo25Nkg`](./sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - Integrate upstream `dev` past `v1.18.29` for the Astra prompt, rebuild the
+    macOS fork, and report OMO assignments read-only around an OMO reinstall.
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
@@ -66,6 +69,9 @@ records.
   reapplying the canonical retry-header delay cap.
 - `9f8f2b0b5` (2026-09-04) - merge exact upstream tag `v1.18.29` while
   preserving the canonical retry-header delay cap.
+- `2e900eb2b` (2026-09-08) - merge upstream `dev` head `5cd8e68fd`. Upstream
+  published no release tag after `v1.18.29`, so this integrates 29 untagged
+  commits, including the Astra system prompt.
 
 ## Update workflow
 

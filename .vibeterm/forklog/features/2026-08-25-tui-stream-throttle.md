@@ -8,7 +8,7 @@
 - First local commit: `4a2673957`
 - Current local commit(s): `4a2673957`
 - Upstream base when introduced: `4643e65ad6` (`v1.18.18`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -68,6 +68,11 @@ evening-to-early-morning convention does not move this work to August 24.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve same-part coalescing and the 10 FPS cap through `v1.18.28`.
   Evidence: 196 TUI tests pass, one skips, and typecheck exits 0.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve same-part coalescing and the 10 FPS cap through upstream dev
+  `5cd8e68fd`. Evidence: 196 TUI tests pass, one skips, and typecheck exits 0.
 
 ## Current maintenance notes
 

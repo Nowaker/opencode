@@ -8,7 +8,7 @@
 - First local commit: `58b643c52`
 - Current local commit(s): `58b643c52`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -64,6 +64,11 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve final-send tail filtering through `v1.18.28`. Evidence: the
   3596-test package suite passes.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve final-send tail filtering through upstream dev `5cd8e68fd`.
+  Evidence: 66 session prompt and system tests pass.
 
 ## Current maintenance notes
 

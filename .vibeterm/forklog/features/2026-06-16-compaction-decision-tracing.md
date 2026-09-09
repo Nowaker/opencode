@@ -8,7 +8,7 @@
 - First local commit: `dd04c4f1b`
 - Current local commit(s): `dd04c4f1b`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -65,6 +65,11 @@ dirty OpenCode source change.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve observational compaction tracing through `v1.18.28`. Evidence:
   the 3596-test package suite passes.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve observational compaction tracing through upstream dev
+  `5cd8e68fd`. Evidence: `packages/opencode` typecheck exits 0.
 
 ## Current maintenance notes
 
