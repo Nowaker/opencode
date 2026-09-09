@@ -9,7 +9,7 @@
 - Current local commit(s): `f4f805ce3`, `800abed36`, `b895dc07c`,
   `c1edb418f`
 - Upstream base when introduced: `10765ff2a` (`v1.18.25`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -77,6 +77,11 @@
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve both optimizations through `v1.18.28`. Evidence: 196 TUI tests
   pass, one skips, and `packages/tui` typecheck exits 0.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve both optimizations through upstream dev `5cd8e68fd`. Evidence:
+  196 TUI tests pass, one skips, and `packages/tui` typecheck exits 0.
 
 ## Current maintenance notes
 

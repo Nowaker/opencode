@@ -10,7 +10,7 @@
 - Current local commit(s): `opencode-tools:824532a2b`, `2dfe1da2f`,
   `a88ab4589`, `1f16a2b66`; OpenCode source diff remains uncommitted
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -90,6 +90,13 @@ that exact two-file diff uncommitted.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - reverse the patch, merge `v1.18.28`, and reapply it unchanged on macOS.
   Evidence: 102 focused tests, bytewise comparison, and the binary marker pass.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - reverse the patch, merge upstream dev `5cd8e68fd`, and reapply it
+  unchanged. Upstream left `session/retry.ts` untouched across the range.
+  Evidence: 688 focused tests, byte-identical comparison against both canonical
+  copies, and one binary marker in the installed build.
 
 ## Current maintenance notes
 
