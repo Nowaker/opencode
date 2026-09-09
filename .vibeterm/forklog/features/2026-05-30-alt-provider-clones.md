@@ -8,7 +8,7 @@
 - First local commit: `77e7572d5`
 - Current local commit(s): `77e7572d5`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `f12e14cf1` (`v1.18.27`)
+- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
 
 ## Original request
 
@@ -70,6 +70,12 @@ provider because its model resolver cannot serve that chat alias.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-04-opencode-omo-refresh.md)
   - preserve both catalog clones through `v1.18.28`. Evidence: the 3596-test
   package suite passes.
+
+- 2026-09-08
+  [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
+  - preserve both catalog clones through upstream dev `5cd8e68fd`, whose
+  range edits `provider/provider.ts` and `provider/transform.ts`. Evidence:
+  688 focused provider, transform, retry, and Codex tests pass.
 
 ## Current maintenance notes
 
