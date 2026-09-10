@@ -50,6 +50,10 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-09-09 `ses_f76ce0cf6ffejNGTCJyk7ooYc5`](./sessions/2026-09-09-watcher-emfile-wedge.md)
   - Stop a refused inotify instance from parking the JS main thread and wedging
     every turn, authored on upstream `a9a6fad0f` and cherry-picked in.
+- [2026-09-10 `ses_f76ce0cf6ffejNGTCJyk7ooYc5`](./sessions/2026-09-10-watcher-emfile-acceptance.md)
+  - Establish whole-turn acceptance for the inotify preflight on throwaway
+    Linux VMs, including Arch's packaged `opencode-bin` reproducing the wedge
+    and a compiled patched binary surviving it.
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.

@@ -137,15 +137,20 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
 
 ## Unknowns and blocked verification
 
+Both entries below were resolved on the next workday; see
+[Watcher EMFILE whole-turn acceptance](./2026-09-10-watcher-emfile-acceptance.md).
+
 - Whole-turn acceptance (`opencode run` completing under exhaustion on a fixed
-  binary) was NOT established. `opencode run` on nwkr-desktop does not complete
-  even with inotify free and no fix applied: 301s in a fresh git directory,
-  120s with `--pure`, and 90s with `--pure` in an already-known project, all
-  killed by timeout. The same box logged
+  binary) was NOT established during this workday. `opencode run` on
+  nwkr-desktop does not complete even with inotify free and no fix applied:
+  301s in a fresh git directory, 120s with `--pure`, and 90s with `--pure` in
+  an already-known project, all killed by timeout. The same box logged
   `ERROR ... message=process ... error="Failed to execute statement"` from a
   live session while roughly twenty opencode processes shared the database.
   That failure is unrelated to the watcher and predates the fix, so the box
-  currently provides no working instrument for a whole-turn before/after. Not
-  investigated; out of scope for this session.
-- Consequently no Linux binary containing the fix was built or exercised. The
-  fix is established at the native boundary and by the unit regression only.
+  provided no working instrument for a whole-turn before/after. Not
+  investigated; it was sidestepped on 2026-09-10 by testing on a throwaway
+  Linux VM instead.
+- Consequently no Linux binary containing the fix was built or exercised during
+  this workday. The fix was established at the native boundary and by the unit
+  regression only.
