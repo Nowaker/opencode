@@ -98,12 +98,44 @@ Stable seams an upstream bump must inspect:
   an unguarded `subscribe()` printed its "calling" line and never executed the
   next statement, killed at 20s; the guarded path logged the errno and exited 0
   in 0s.
+- Whole turn, on a throwaway Linux VM under real exhaustion (124 of that
+  image's 128 instances held), driving a mock provider so a turn could complete
+  without credentials. Two runs each way:
+
+  | Tree | RC | Elapsed | Turn output | Watcher log |
+  |---|---|---|---|---|
+  | patched | 0 | 7s / 8s | `MOCK-OK` | `WARN watcher unavailable, continuing without it ... errno=24 code=EMFILE` |
+  | pristine `a9a6fad0f` | 137 | 120s, never returned | none | `INFO watcher backend`, then silence |
+
+  The wedged run's last log line is `project copy refresh started`, matching the
+  original incident on nwkr-desktop.
+- Whole turn, compiled, on Arch Linux under real exhaustion (1020 of that host's
+  1024 instances held). This covers the artifact a user installs, which the
+  source-tree run above does not:
+
+  | Binary | Pressure | RC | Turn output | Watcher log |
+  |---|---|---|---|---|
+  | packaged `opencode-bin` 1.18.30 | exhausted | 137 at 120s | none | silence after `INFO watcher backend` |
+  | self-compiled patched | exhausted | 0 in 5s | `MOCK-OK` | `WARN watcher unavailable ... errno=24 code=EMFILE` |
+  | self-compiled unpatched | exhausted | 137 at 120s | none | silence after `INFO watcher backend` |
+
+  Patched and unpatched binaries came from the same build command on the same
+  host, so the delta is the patch rather than the build method, and the warning
+  proves the `bun:ffi` probe runs inside `bun build --compile` output.
+- `bun test` for both watcher files on Linux - 8 pass, 0 fail, this time against
+  the real inotify backend rather than macOS fs-events.
 
 ## Timeline
 
 - 2026-09-09 [`ses_f76ce0cf6ffejNGTCJyk7ooYc5`](../sessions/2026-09-09-watcher-emfile-wedge.md) -
   initial build against upstream `a9a6fad0f`, cherry-picked to `master-nowaker`.
   Evidence: `84b8fcdfe`, `34aa414cf`, and the native-boundary table above.
+- 2026-09-10 [`ses_f76ce0cf6ffejNGTCJyk7ooYc5`](../sessions/2026-09-10-watcher-emfile-acceptance.md) -
+  re-verified, unchanged, on throwaway Linux VMs: whole-turn acceptance under
+  real exhaustion from source on Ubuntu, then compiled on Arch, where Arch's
+  packaged `opencode-bin` reproduced the wedge and a self-compiled patched
+  binary did not. Evidence: both whole-turn tables above, and that session's
+  results.
 
 ## Current maintenance notes
 
@@ -117,7 +149,10 @@ Stable seams an upstream bump must inspect:
 - The probe depends on `bun:ffi`. An upstream bump that moves `packages/core`
   off Bun would silently disable the probe - the import failure is swallowed by
   design - so check that `watcher-inotify.ts` still loads if the runtime
-  changes.
+  changes. Verified on 2026-09-10 that both `bun:ffi` and the dynamic
+  `import()` survive `bun build --compile`, which is the form opencode ships;
+  re-check that after a Bun major bump, since a silent loss looks exactly like
+  a healthy machine until the kernel refuses an instance.
 
 ### Upstream integration checklist
 
