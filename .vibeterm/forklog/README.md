@@ -31,6 +31,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Native tool commands](./features/2026-08-08-native-tool-commands.md)
 - [TUI streaming render throttle](./features/2026-08-25-tui-stream-throttle.md)
 - [Prompt input latency](./features/2026-08-31-prompt-input-latency.md)
+- [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
 
 ## Session records
 
@@ -46,6 +47,9 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-09-08 `ses_fb9a784deffe7zkW0r8oo25Nkg`](./sessions/2026-09-08-opencode-dev-omo-refresh.md)
   - Integrate upstream `dev` past `v1.18.29` for the Astra prompt, rebuild the
     macOS fork, and report OMO assignments read-only around an OMO reinstall.
+- [2026-09-09 `ses_f76ce0cf6ffejNGTCJyk7ooYc5`](./sessions/2026-09-09-watcher-emfile-wedge.md)
+  - Stop a refused inotify instance from parking the JS main thread and wedging
+    every turn, authored on upstream `a9a6fad0f` and cherry-picked in.
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
