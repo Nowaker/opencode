@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { EffectDrizzleSqlite } from "@opencode-ai/effect-drizzle-sqlite"
 import { SessionMaintenanceSql } from "./session-maintenance-sql"
+import { SessionMaintenanceConflict } from "./session-maintenance-conflict"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -48,6 +49,20 @@ export function install(db: Database) {
             const target = { table: table.name, columns }
             for (const statement of SessionMaintenanceSql.triggers(target)) yield* db.run(sql.raw(statement))
             for (const statement of SessionMaintenanceSql.generationTriggers(target)) yield* db.run(sql.raw(statement))
+            const keys: SessionMaintenanceConflict.Key[] = []
+            const layout = yield* db.get<{ wr: number }>(sql`SELECT wr FROM pragma_table_list WHERE schema='main' AND name=${table.name}`)
+            if (layout?.wr === 0) keys.push([{ name: "rowid", collation: "BINARY" }])
+            const indexes = yield* db.all<{ name: string }>(sql`SELECT name FROM pragma_index_list(${table.name}) WHERE "unique"=1`)
+            for (const index of indexes) {
+              const fields = yield* db.all<{ name: string | null; coll: string }>(sql`SELECT name,coll FROM pragma_index_xinfo(${index.name}) WHERE "key"=1 ORDER BY seqno`)
+              const key: Array<{ name: string; collation: string }> = []
+              for (const field of fields) {
+                if (field.name === null) return yield* Effect.die(new Error("maintenance cannot guard an expression-based unique index"))
+                key.push({ name: field.name, collation: field.coll })
+              }
+              if (key.length) keys.push(key)
+            }
+            for (const statement of SessionMaintenanceConflict.triggers(target, keys)) yield* db.run(sql.raw(statement))
           }
           const protocol = started === "unsupported" ? 0 : SessionMaintenanceSql.protocol
           yield* db.run(
