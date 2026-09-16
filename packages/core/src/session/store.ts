@@ -10,6 +10,7 @@ import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionMessageTable, SessionTable } from "./sql"
 import { fromRow } from "./info"
+import { SessionMaintenance } from "../database/session-maintenance"
 
 export interface Interface {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
@@ -33,6 +34,7 @@ const layer = Layer.effect(
 
     return Service.of({
       get: Effect.fn("SessionStore.get")(function* (sessionID) {
+        yield* SessionMaintenance.assertCurrent(db, sessionID).pipe(Effect.orDie)
         const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
         return row ? fromRow(row) : undefined
       }),

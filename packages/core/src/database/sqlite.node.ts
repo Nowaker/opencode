@@ -14,6 +14,7 @@ import type { Connection } from "effect/unstable/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
 import { Sqlite } from "./sqlite"
+import { SessionMaintenanceWrite } from "./session-maintenance-write"
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -58,7 +59,7 @@ const make = (options: Config) =>
         const statement = native.prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, Client.SafeIntegers))
         try {
-          return Effect.succeed(statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>)
+          return Effect.succeed(SessionMaintenanceWrite.run(native, () => statement.all(...(params as SQLInputValue[])) as Array<Record<string, unknown>>))
         } catch (cause) {
           return Effect.fail(
             new SqlError({
@@ -75,7 +76,7 @@ const make = (options: Config) =>
         statement.setReturnArrays(true)
         try {
           return Effect.succeed(
-            statement.all(...(params as SQLInputValue[])) as unknown as ReadonlyArray<ReadonlyArray<unknown>>,
+            SessionMaintenanceWrite.run(native, () => statement.all(...(params as SQLInputValue[])) as unknown as ReadonlyArray<ReadonlyArray<unknown>>),
           )
         } catch (cause) {
           return Effect.fail(
