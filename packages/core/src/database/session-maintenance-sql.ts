@@ -3,7 +3,7 @@ export * as SessionMaintenanceSql from "./session-maintenance-sql"
 import { sql } from "drizzle-orm"
 import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core"
 
-export const protocol = 1
+export const protocol = 2
 export const schema = [
   "CREATE TABLE IF NOT EXISTS session_maintenance_generation(session_id TEXT PRIMARY KEY, generation INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS session_maintenance_fence(session_id TEXT PRIMARY KEY, operation TEXT NOT NULL, purpose TEXT NOT NULL)",
