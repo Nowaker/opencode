@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import type { EffectDrizzleSqlite } from "@opencode-ai/effect-drizzle-sqlite"
 import { SessionMaintenanceSql } from "./session-maintenance-sql"
 import { SessionMaintenanceConflict } from "./session-maintenance-conflict"
+import { SessionMaintenanceTrigger } from "./session-maintenance-trigger"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
@@ -82,7 +83,7 @@ export function install(db: Database) {
               }
               if (key.length) keys.push(key)
             }
-            for (const statement of SessionMaintenanceConflict.triggers(target, keys)) yield* db.run(sql.raw(statement))
+            for (const statement of SessionMaintenanceConflict.triggers(target, keys)) yield* SessionMaintenanceTrigger.install(db, statement)
           }
           const protocol = emergency || started === "unsupported" ? 0 : SessionMaintenanceSql.protocol
           yield* db.run(

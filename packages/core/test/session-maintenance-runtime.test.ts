@@ -13,7 +13,7 @@ test("real runtime connection refuses stale admissions and direct writes after a
   await Effect.runPromise(
     Effect.gen(function* () {
       const { db } = yield* Service
-      expect(yield* db.get(sql`SELECT protocol FROM session_maintenance_runtime`)).toEqual({ protocol: 2 })
+      expect(yield* db.get(sql`SELECT protocol FROM session_maintenance_runtime`)).toEqual({ protocol: 3 })
       using maintenance = new Database(filename)
       maintenance.exec("INSERT INTO session_maintenance_generation VALUES('ses_replaced',1)")
       // When the same runtime tries to resume the replaced identity.
