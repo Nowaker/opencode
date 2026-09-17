@@ -73,8 +73,9 @@ export function install(db: Database) {
             const keys: SessionMaintenanceConflict.Key[] = []
             const layout = yield* db.get<{ wr: number }>(sql`SELECT wr FROM pragma_table_list WHERE schema='main' AND name=${table.name}`)
             if (layout?.wr === 0) keys.push([{ name: "rowid", collation: "BINARY" }])
-            const indexes = yield* db.all<{ name: string }>(sql`SELECT name FROM pragma_index_list(${table.name}) WHERE "unique"=1`)
+            const indexes = yield* db.all<{ name: string; partial: number }>(sql`SELECT name,partial FROM pragma_index_list(${table.name}) WHERE "unique"=1`)
             for (const index of indexes) {
+              if (index.partial) return yield* Effect.die(new Error("maintenance cannot guarantee indexed lookup for a partial unique index"))
               const fields = yield* db.all<{ name: string | null; coll: string }>(sql`SELECT name,coll FROM pragma_index_xinfo(${index.name}) WHERE "key"=1 ORDER BY seqno`)
               const key: Array<{ name: string; collation: string }> = []
               for (const field of fields) {
