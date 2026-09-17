@@ -20,6 +20,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Session replacement maintenance](./features/session-maintenance.md)
+
 - [Global memory diagnostics](./features/2026-05-13-global-memory-diagnostics.md)
 - [Message shape normalization](./features/2026-05-23-message-shape-normalization.md)
 - [Interrupted assistant tail filtering](./features/2026-05-29-interrupted-assistant-tail.md)
@@ -34,6 +36,8 @@ carries every feature forward unchanged. That commit includes the full
 - [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
 
 ## Session records
+
+- [Session maintenance protocol-3 distribution](./sessions/session-maintenance.md)
 
 - [2026-08-29 `ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](./sessions/2026-08-29-upstream-bump-and-forklog.md)
   - Integrate `v1.18.25`, verify every seam, rebuild, and establish linked
