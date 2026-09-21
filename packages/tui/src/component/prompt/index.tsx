@@ -9,7 +9,7 @@ import {
   type Renderable,
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
+import { createComputed, createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
 import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -87,6 +87,13 @@ function pastedFilepath(value: string, platform: string) {
 }
 
 export type PromptRef = {
+  readonly handoff?: {
+    readonly revision: number
+    readonly visible: boolean
+    readonly disabled: boolean
+    readonly ready: boolean
+    submit?(expected: { input: string; parts: number }): void
+  }
   focused: boolean
   current: PromptInfo
   set(prompt: PromptInfo): void
@@ -579,12 +586,43 @@ export function Prompt(props: PromptProps) {
     ]),
   }))
 
+  let handoffRevision = 0
+  // Reads every property the prompt holds, which is what a solid store
+  // subscribes on - but WITHOUT serializing them. This computation reruns on
+  // each keystroke, and a single pasted part can be megabytes, so
+  // `JSON.stringify` escaped and copied the whole prompt per character typed.
+  // The dependency set is identical because both traverse the same properties;
+  // touching a megabyte string is one read rather than a megabyte of escaping.
+  function trackPrompt(value: unknown): void {
+    if (Array.isArray(value)) {
+      for (const item of value) trackPrompt(item)
+      return
+    }
+    if (typeof value === "object" && value !== null) {
+      for (const key of Object.keys(value)) trackPrompt((value as Record<string, unknown>)[key])
+    }
+  }
+  createComputed(() => {
+    trackPrompt(store.prompt)
+    store.mode
+    handoffRevision++
+  })
   const ref: PromptRef = {
+    get handoff() {
+      return {
+        revision: handoffRevision,
+        visible: props.visible !== false,
+        disabled: props.disabled === true,
+        ready: !!input && !input.isDestroyed && sync.ready && local.model.ready
+          && !workspace.creating() && !move.creating() && !auto()?.visible,
+        submit(expected: { input: string; parts: number }) { void submit(expected) },
+      }
+    },
     get focused() {
       return input.focused
     },
     get current() {
-      return store.prompt
+      return { ...store.prompt, input: input.plainText, mode: store.mode }
     },
     focus() {
       input.focus()
@@ -595,6 +633,7 @@ export function Prompt(props: PromptProps) {
     set(prompt) {
       input.setText(prompt.input)
       setStore("prompt", prompt)
+      if (prompt.mode !== undefined) setStore("mode", prompt.mode)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
     },
@@ -928,7 +967,7 @@ export function Prompt(props: PromptProps) {
   })
 
   let submitting = false
-  async function submit() {
+  async function submit(expected?: { input: string; parts: number }) {
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -938,13 +977,13 @@ export function Prompt(props: PromptProps) {
     if (submitting) return false
     submitting = true
     try {
-      return await submitInner()
+      return await submitInner(expected)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner() {
+  async function submitInner(expected?: { input: string; parts: number }) {
     workspace.clearNotice()
 
     // IME: double-defer may fire before onContentChange flushes the last
@@ -954,6 +993,7 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", "input", input.plainText)
       syncExtmarksWithPromptParts()
     }
+    if (expected && (store.prompt.input !== expected.input || store.prompt.parts.length !== expected.parts)) return false
     if (props.disabled) return false
     if (workspace.creating() || move.creating()) return false
     if (auto()?.visible) return false
@@ -1023,6 +1063,7 @@ export function Prompt(props: PromptProps) {
       sessionID = res.data.id
     }
 
+    if (expected && (store.prompt.input !== expected.input || store.prompt.parts.length !== expected.parts)) return false
     const inputText = expandTrackedPastedText(
       store.prompt.input,
       input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((extmark) => {
