@@ -16,6 +16,8 @@ import { Prompt } from "../component/prompt"
 import type { useToast } from "../ui/toast"
 import * as Keymap from "../keymap"
 import { createCommandShim } from "./command-shim"
+import { createPromptControl } from "./prompt-control"
+import type { usePromptRef } from "../context/prompt"
 import type { PluginRoutes } from "./api"
 export type { RouteMap } from "./api"
 export { createPluginRoutes, createTuiApi } from "./api"
@@ -35,6 +37,7 @@ type Input = {
   toast: ReturnType<typeof useToast>
   renderer: TuiPluginApi["renderer"]
   attention: TuiPluginApi["attention"]
+  promptRef?: ReturnType<typeof usePromptRef>
   Slot: TuiPluginApi["ui"]["Slot"]
 }
 
@@ -174,6 +177,11 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
   return {
     app: appApi(input.version),
     attention: input.attention,
+    prompt: createPromptControl(() => input.promptRef?.current, () => ({
+      dialog: input.dialog.stack.length > 0,
+      ready: input.sync.ready,
+      sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
+    })),
     // Keep deprecated `api.command` working for v1 plugins; remove in v2.
     command: createCommandShim(input.keymap, input.dialog, input.tuiConfig.keybinds),
     keys: {

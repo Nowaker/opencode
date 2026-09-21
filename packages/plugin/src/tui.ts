@@ -27,6 +27,8 @@ import {
 } from "@opentui/keymap/extras"
 import type { JSX, SolidPlugin } from "@opentui/solid"
 import type { Config as PluginConfig, PluginOptions } from "./index.js"
+import type { TuiComposerApi } from "./tui-prompt.js"
+export type { TuiComposerApi, TuiComposerGuard, TuiComposerResult, TuiComposerSnapshot } from "./tui-prompt.js"
 
 export type { CliRenderer, KeyEvent, Renderable, SlotMode } from "@opentui/core"
 export { stringifyKeySequence, stringifyKeyStroke } from "@opentui/keymap"
@@ -199,6 +201,14 @@ export type TuiPromptInfo = {
 }
 
 export type TuiPromptRef = {
+  /** Optional capability for revision-safe automation; custom providers may opt in. */
+  readonly handoff?: {
+    readonly revision: number
+    readonly visible: boolean
+    readonly disabled: boolean
+    readonly ready: boolean
+    submit?(expected: { input: string; parts: number }): void
+  }
   focused: boolean
   current: TuiPromptInfo
   set(prompt: TuiPromptInfo): void
@@ -579,6 +589,12 @@ export type TuiWorkspace = {
 }
 
 export type TuiPluginApi = {
+  /**
+   * Active host-registered composer, independent of slot providers. Always
+   * present: a composer that cannot be driven right now says so in its
+   * snapshot's `reason`, so absence never has to mean unavailability.
+   */
+  prompt: TuiComposerApi
   app: TuiApp
   attention: TuiAttention
   /**

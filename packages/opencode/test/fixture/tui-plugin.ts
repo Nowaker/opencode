@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { RGBA, type CliRenderer } from "@opentui/core"
 import type { HostPluginApi } from "@opencode-ai/tui/plugin/slots"
@@ -184,6 +185,23 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     return value
   }
 
+  const composer: ReturnType<HostPluginApi["prompt"]["snapshot"]> = {
+    generation: "fixture-composer",
+    revision: 0,
+    ready: false,
+    reason: "unsupported",
+    focused: false,
+    visible: false,
+    disabled: true,
+    dialog: false,
+    sessionID: null,
+    sha256: createHash("sha256").update("").digest("hex"),
+    partsSha256: createHash("sha256").update("[]").digest("hex"),
+    inputBytes: 0,
+    parts: 0,
+    mode: "normal",
+  }
+
   return {
     app: {
       get version() {
@@ -241,6 +259,11 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     mode: opts.mode ?? {
       current: () => "base",
       push: () => () => {},
+    },
+    prompt: {
+      snapshot: () => composer,
+      replace: () => ({ status: "not-ready", snapshot: composer }),
+      submit: () => ({ status: "not-ready", snapshot: composer }),
     },
     route: {
       register: () => {
