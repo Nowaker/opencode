@@ -617,6 +617,9 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
     keys: api.keys,
     keymap,
     mode: createScopedMode(api.mode, scope),
+    /* One composer per TUI, so every plugin addresses the same control: its
+       own guards already refuse a request that lost the race to another. */
+    prompt: api.prompt,
     route,
     ui: api.ui,
     tuiConfig: api.tuiConfig,

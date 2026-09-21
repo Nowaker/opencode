@@ -401,6 +401,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       toast,
       renderer,
       attention,
+      promptRef,
       Slot: pluginRuntime.Slot,
     }),
   )

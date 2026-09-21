@@ -417,6 +417,49 @@ Theme install behavior:
 - Global plugins persist installed themes under the global `themes` dir.
 - Invalid or unreadable theme files are ignored.
 
+### Composer handoff
+
+- `api.prompt` is present on every plugin api: the per-plugin projection
+  forwards the host control unchanged, so a plugin never distinguishes an
+  absent capability from an unavailable composer. Unavailability is a
+  snapshot `reason`, never a missing field.
+- `api.prompt.snapshot()` reports the active host-registered composer without
+  replacing a slot: mount generation, SHA-256 of the UTF-8 input, SHA-256 of
+  the parts, byte count, part count, mode, session ID, focus and readiness
+  flags, plus an advisory edit revision.
+- `api.prompt.replace({ generation, sha256, partsSha256, correlationId, text })`
+  synchronously compares that guard against what the composer currently holds,
+  sets plain text with no parts, and acknowledges only an exact readback in
+  normal mode. A guard describing anything else returns `conflict`; blocked
+  composers return `not-ready`; a differing readback returns `mismatch`.
+  Repeating a correlation returns its original receipt while the composer still
+  holds what that receipt described, and writes nothing on that path.
+- The guard is state, not history. `revision` is reported but never compared:
+  a write of our own settles on a later tick and advances it with the content
+  unchanged, so guarding on it would refuse the caller's own replay. An edit
+  undone back to the exact prior state is therefore not a conflict, since
+  nothing of the user's remains to preserve, while any differing byte or part
+  still is. `partsSha256` rather than the count is what catches an attachment
+  added to, or swapped in, a composer whose text did not change.
+- `api.prompt.submit({ generation, sha256, partsSha256, correlationId })`
+  requests submission only at that receipt and never invokes the same
+  correlation twice. `submitted` means invocation, not server admission or a
+  persisted user row. The built-in prompt re-checks the input and part count
+  after async session creation.
+- Built-in refs expose `handoff` with visibility, disabled and readiness flags,
+  an advisory revision, and submission guarded by the expected input and part
+  count. Replacement providers using `ui.Prompt` retain this capability. Custom
+  refs without it remain unchanged and report `unsupported`; they may opt in by
+  implementing the same readiness contract.
+- Unmounted, syncing, hidden, disabled and dialog-covered composers are not
+  writable. A composer in shell mode reports `shell` and is not writable
+  either, because its next submission runs a command; the mode is left as the
+  user set it rather than converted. Callers must independently refuse initial
+  takeover of nonempty input or parts and preserve recovery copies on conflicts.
+- The API is local to the TUI thread. It creates no listener and publishes no
+  raw text, credential or draft file. A transport plugin must authenticate its
+  caller and preserve the generation and content guard.
+
 ### Slots
 
 Current host slot names:
