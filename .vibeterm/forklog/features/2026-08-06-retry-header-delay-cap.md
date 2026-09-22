@@ -3,14 +3,14 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): deliberate uncommitted OpenCode divergence;
   canonical patch history on `opencode-tools/master`
 - First local commit: `opencode-tools:824532a2b`
 - Current local commit(s): `opencode-tools:824532a2b`, `2dfe1da2f`,
   `a88ab4589`, `1f16a2b66`; OpenCode source diff remains uncommitted
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 ## Original request
 
@@ -97,6 +97,9 @@ that exact two-file diff uncommitted.
   unchanged. Upstream left `session/retry.ts` untouched across the range.
   Evidence: 688 focused tests, byte-identical comparison against both canonical
   copies, and one binary marker in the installed build.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 

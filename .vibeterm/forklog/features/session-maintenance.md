@@ -33,3 +33,6 @@
 - [Implementation and phase-1 distribution](../sessions/session-maintenance.md):
   original fence commits, independently identified performance regression,
   emergency override, indexed repair, and isolated verification.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`. Evidence:
+  all `session-maintenance*` tests pass in that session's 24-test core gate.
