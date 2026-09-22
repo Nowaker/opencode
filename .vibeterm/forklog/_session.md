@@ -10,7 +10,7 @@ bump carries every customization forward unchanged.
 - Session: `ses_<full-id>`
 - Agent/platform: `<agent>` / `<platform>`
 - Repository: `<absolute or repository-relative identity>`
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker`
 - Development branch(es): `<branch or direct integration work>`
 - Upstream base: `<commit and tag>`
 - Source result commit(s): `<merge, rebase, or feature commits>`
