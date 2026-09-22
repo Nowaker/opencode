@@ -1,14 +1,14 @@
 # OpenCode forklog
 
 This directory is the tracked source of truth for local OpenCode behavior on
-`master-nowaker`. It answers two different questions through linked views:
+`dev-nowaker`. It answers two different questions through linked views:
 
 - [`features/`](./features/) explains why each durable customization exists,
   where its stable seams live, and how its behavior changed over time.
 - [`sessions/`](./sessions/) records what one coding-agent session did to which
   branch and upstream base, including verification, build, and install facts.
 
-Track forklog changes only on `master-nowaker`. Each coding-agent session gets
+Track forklog changes only on `dev-nowaker`. Each coding-agent session gets
 one unsquashed forklog commit per user workday, even when an upstream bump
 carries every feature forward unchanged. That commit includes the full
 `AI-Session-ID` trailer.
@@ -58,6 +58,9 @@ carries every feature forward unchanged. That commit includes the full
   - Establish whole-turn acceptance for the inotify preflight on throwaway
     Linux VMs, including Arch's packaged `opencode-bin` reproducing the wedge
     and a compiled patched binary surviving it.
+- [2026-09-22 `ses_fb9a784deffe7zkW0r8oo25Nkg`](./sessions/2026-09-22-dev-nowaker-rebuild.md)
+  - Replay every customization onto upstream `dev` as the linear `dev-nowaker`,
+    retire `master-nowaker`, and stamp builds with the contained release.
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
@@ -84,6 +87,10 @@ records.
 - `2e900eb2b` (2026-09-08) - merge upstream `dev` head `5cd8e68fd`. Upstream
   published no release tag after `v1.18.29`, so this integrates 29 untagged
   commits, including the Astra system prompt.
+- `7946757514` (2026-09-22) - start `dev-nowaker` at upstream `dev` head
+  `2406400f0` (contains `v1.18.32`) and cherry-pick the 37 first-parent fork
+  commits. The tree equals merging `dev` into `master-nowaker`; later bumps
+  rebase `dev-nowaker` onto upstream `dev` instead of merging.
 
 ## Update workflow
 

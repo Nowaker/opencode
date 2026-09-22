@@ -3,12 +3,12 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): direct commit on `master-nowaker`
 - First local commit: `4a2673957`
 - Current local commit(s): `4a2673957`
 - Upstream base when introduced: `4643e65ad6` (`v1.18.18`)
-- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 ## Original request
 
@@ -73,6 +73,9 @@ evening-to-early-morning convention does not move this work to August 24.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
   - preserve same-part coalescing and the 10 FPS cap through upstream dev
   `5cd8e68fd`. Evidence: 196 TUI tests pass, one skips, and typecheck exits 0.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 
