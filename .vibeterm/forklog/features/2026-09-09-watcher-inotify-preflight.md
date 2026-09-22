@@ -3,12 +3,12 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): `watcher-emfile-degrade`
 - First local commit: `34aa414cf`
 - Current local commit(s): `34aa414cf`
 - Upstream base when introduced: `a9a6fad0f` (upstream `dev`, past `v1.18.29`)
-- Last checked against upstream: `a9a6fad0f`
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 Authored upstream-first as `84b8fcdfe` on `watcher-emfile-degrade`, based
 directly on `a9a6fad0f`, so it can be offered upstream unchanged.
@@ -136,6 +136,9 @@ Stable seams an upstream bump must inspect:
   packaged `opencode-bin` reproduced the wedge and a self-compiled patched
   binary did not. Evidence: both whole-turn tables above, and that session's
   results.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 

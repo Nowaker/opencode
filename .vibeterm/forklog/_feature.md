@@ -2,12 +2,12 @@
 
 Use this template for one durable local customization. Copy it to
 `features/YYYY-MM-DD-short-title.md`, using the customization's first user
-workday. Track the file only on `master-nowaker`.
+workday. Track the file only on `dev-nowaker`.
 
 ## Identity
 
 - Status: active | superseded | removed
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker`
 - Development branch(es): `<branch>`
 - First local commit: `<full or short commit>`
 - Current local commit(s): `<full or short commit>`

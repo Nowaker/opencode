@@ -3,12 +3,12 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): `TBD - not recoverable from the surviving record`
 - First local commit: `58b643c52`
 - Current local commit(s): `58b643c52`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 ## Original request
 
@@ -69,6 +69,9 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
   - preserve final-send tail filtering through upstream dev `5cd8e68fd`.
   Evidence: 66 session prompt and system tests pass.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 

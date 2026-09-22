@@ -3,7 +3,7 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): `feat/native-slash-commands`,
   `feat/native-tool-commands`, `feat/tool-command-prefix`,
   `feat/friendly-tool-args`, macOS `master-nowaker`
@@ -11,7 +11,7 @@
 - Current local commit(s): `f39c4abf8`, `32457b6d1`, `615d27bad`,
   `dd5bc77d1`, `a209a8289`, `daab8893a`, `24326cf48`, `6630dbc2c`
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 ## Original request
 
@@ -115,6 +115,9 @@ catalog. The third drove the macOS extension imported during this workday.
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
   - preserve native builtin and MCP tool commands through upstream dev
   `5cd8e68fd`. Evidence: 45 command and message-shape tests plus typecheck pass.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 

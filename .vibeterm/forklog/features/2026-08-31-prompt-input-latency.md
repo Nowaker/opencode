@@ -3,13 +3,13 @@
 ## Identity
 
 - Status: active
-- Integration branch: `master-nowaker`
+- Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): `perf/prompt-editor-large-input`
 - First local commit: `f4f805ce3`
 - Current local commit(s): `f4f805ce3`, `800abed36`, `b895dc07c`,
   `c1edb418f`
 - Upstream base when introduced: `10765ff2a` (`v1.18.25`)
-- Last checked against upstream: `5cd8e68fd` (upstream `dev`, post-`v1.18.29`)
+- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
 ## Original request
 
@@ -82,6 +82,9 @@
   [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-08-opencode-dev-omo-refresh.md)
   - preserve both optimizations through upstream dev `5cd8e68fd`. Evidence:
   196 TUI tests pass, one skips, and `packages/tui` typecheck exits 0.
+- 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
+  replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
+  the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
 
 ## Current maintenance notes
 
