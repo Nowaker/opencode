@@ -265,6 +265,14 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         },
         options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
       }),
+    "openai-meridian": () =>
+      Effect.succeed({
+        autoload: false,
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
+          return sdk.responses(modelID)
+        },
+        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
+      }),
     meta: () =>
       Effect.succeed({
         autoload: false,
@@ -1477,15 +1485,16 @@ const layer = Layer.effect(
         // while the original keeps its upstream wiring. Both expose the full
         // catalog under their own providerID; the SDK module (model.api.npm)
         // is shared.
-        for (const [srcID, cloneID] of [
-          ["anthropic", "anthropic2"],
-          ["openai", "openai2"],
+        for (const [srcID, cloneID, suffix] of [
+          ["anthropic", "anthropic2", "alt"],
+          ["openai", "openai2", "alt"],
+          ["openai", "openai-meridian", "Meridian"],
         ] as const) {
           if (!catalog[srcID] || catalog[cloneID]) continue
           const src = catalog[srcID]
           const cloned: Info = JSON.parse(JSON.stringify(src))
           cloned.id = ProviderV2.ID.make(cloneID)
-          cloned.name = `${src.name} (alt)`
+          cloned.name = `${src.name} (${suffix})`
           for (const m of Object.values(cloned.models)) {
             m.providerID = ProviderV2.ID.make(cloneID)
           }
@@ -1774,6 +1783,7 @@ const layer = Layer.effect(
               (modelID === "gpt-5-chat-latest" &&
                 (providerID === ProviderV2.ID.openai ||
                   providerID === ProviderV2.ID.make("openai2") ||
+                  providerID === ProviderV2.ID.make("openai-meridian") ||
                   providerID === ProviderV2.ID.githubCopilot ||
                   providerID === ProviderV2.ID.openrouter)) ||
               (providerID === ProviderV2.ID.openrouter && modelID === "openai/gpt-5-chat")

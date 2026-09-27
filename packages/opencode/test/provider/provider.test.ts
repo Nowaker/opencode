@@ -131,6 +131,27 @@ it.instance(
 )
 
 it.instance(
+  "openai-meridian clones the openai catalog under its own id and baseURL",
+  Effect.gen(function* () {
+    yield* remove("OPENAI_API_KEY")
+    const providers = yield* list
+    const meridian = providers[ProviderV2.ID.make("openai-meridian")]
+    expect(meridian).toBeDefined()
+    expect(meridian.name).toBe("OpenAI (Meridian)")
+    expect(meridian.options.baseURL).toBe("http://127.0.0.1:3457/v1")
+    expect(Object.keys(meridian.models).length).toBeGreaterThan(0)
+    expect(Object.values(meridian.models).every((m) => m.providerID === "openai-meridian")).toBe(true)
+    expect(meridian.models["gpt-5-chat-latest"]).toBeUndefined()
+    expect(providers[ProviderV2.ID.openai]).toBeUndefined()
+  }),
+  {
+    config: {
+      provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: "http://127.0.0.1:3457/v1" } } },
+    },
+  },
+)
+
+it.instance(
   "disabled_providers excludes provider",
   Effect.gen(function* () {
     yield* setProcessEnv("ANTHROPIC_API_KEY", "test-api-key")
