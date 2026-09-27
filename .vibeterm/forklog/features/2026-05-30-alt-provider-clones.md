@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): direct work on `master-nowaker`
 - First local commit: `77e7572d5`
-- Current local commit(s): `77e7572d5`
+- Current local commit(s): `77e7572d5`, `eea39ba935`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
 - Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
@@ -40,6 +40,7 @@ TBD - no surviving original prompt found. The recovered session title is:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `77e7572d5` | 2026-05-30 | Register `anthropic2` and `openai2` catalog clones | provider catalog construction and `custom` provider map |
+| `eea39ba935` | 2026-09-27 | Give each clone its own name suffix for the [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; `anthropic2` and `openai2` keep `(alt)` | provider catalog clone loop |
 
 The OpenAI clone applies the same `gpt-5-chat-latest` exclusion as the original
 provider because its model resolver cannot serve that chat alias.
@@ -79,6 +80,12 @@ provider because its model resolver cannot serve that chat alias.
 - 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
   replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
   the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
+- 2026-09-27
+  [`ses_f1b584ed7ffe6o2WMYwwpxohpL`](../sessions/2026-09-27-openai-meridian-provider.md)
+  - extend the clone loop with a per-clone name suffix for the
+  [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; both
+  existing clones are unchanged. Evidence: `test/provider/provider.test.ts`
+  103 pass / 0 fail on `dev-nowaker`.
 
 ## Current maintenance notes
 

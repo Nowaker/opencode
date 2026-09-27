@@ -36,8 +36,13 @@ carries every feature forward unchanged. That commit includes the full
 - [TUI streaming render throttle](./features/2026-08-25-tui-stream-throttle.md)
 - [Prompt input latency](./features/2026-08-31-prompt-input-latency.md)
 - [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
+- [OpenAI Meridian provider clone](./features/2026-09-27-openai-meridian-provider.md)
 
 ## Session records
+
+- [2026-09-27 `ses_f1b584ed7ffe6o2WMYwwpxohpL`](./sessions/2026-09-27-openai-meridian-provider.md)
+  - Land the `openai-meridian` provider clone, build, install, and configure it
+    for the Meridian ChatGPT gateway without restarting existing processes.
 
 - [2026-09-26 `ses_f1f9b9b74ffe8xPPTsmvM4op8M`](./sessions/2026-09-26-summary-event-dedup.md)
   - Integrate the emitter-only guard and verify the installed desktop binary
