@@ -20,6 +20,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Unchanged message summary event suppression](./features/2026-09-26-summary-event-dedup.md)
+
 - [Session replacement maintenance](./features/session-maintenance.md)
 
 - [Global memory diagnostics](./features/2026-05-13-global-memory-diagnostics.md)
@@ -36,6 +38,10 @@ carries every feature forward unchanged. That commit includes the full
 - [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
 
 ## Session records
+
+- [2026-09-26 `ses_f1f9b9b74ffe8xPPTsmvM4op8M`](./sessions/2026-09-26-summary-event-dedup.md)
+  - Integrate the emitter-only guard and verify the installed desktop binary
+    without pruning, a version bump, or restarting existing processes.
 
 - [Session maintenance protocol-3 distribution](./sessions/session-maintenance.md)
 
