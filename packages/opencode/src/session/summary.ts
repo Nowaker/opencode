@@ -6,6 +6,7 @@ import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
 import { SessionID, MessageID } from "./schema"
 import { Config } from "@/config/config"
+import { isDeepStrictEqual } from "node:util"
 
 function unquoteGitPath(input: string) {
   if (!input.startsWith('"')) return input
@@ -122,6 +123,7 @@ const layer = Layer.effect(
       const target = messages.find((m) => m.info.id === input.messageID)
       if (!target || target.info.role !== "user") return
       const msgDiffs = yield* computeDiff({ messages })
+      if (isDeepStrictEqual(target.info.summary?.diffs, msgDiffs)) return
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)
     })
