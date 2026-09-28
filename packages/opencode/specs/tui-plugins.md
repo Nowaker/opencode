@@ -427,10 +427,15 @@ Theme install behavior:
   replacing a slot: mount generation, SHA-256 of the UTF-8 input, SHA-256 of
   the parts, byte count, part count, mode, session ID, focus and readiness
   flags, plus an advisory edit revision.
-- `api.prompt.replace({ generation, sha256, partsSha256, correlationId, text })`
+- `api.prompt.read()` returns the composer's `input`, `parts` and `mode` with
+  the generation, advisory revision, readiness, `reason` and session ID, and
+  hashes nothing. An `unmounted` reason means there is no composer to read,
+  not an empty one. A plugin that keeps drafts compares `generation` and `revision` to
+  learn that something changed without serializing the prompt on every poll.
+- `api.prompt.replace({ generation, sha256, partsSha256, correlationId, text, promptParts? })`
   synchronously compares that guard against what the composer currently holds,
-  sets plain text with no parts, and acknowledges only an exact readback in
-  normal mode. A guard describing anything else returns `conflict`; blocked
+  sets the text with the given parts (none when omitted), and acknowledges only
+  an exact readback of both in normal mode. A guard describing anything else returns `conflict`; blocked
   composers return `not-ready`; a differing readback returns `mismatch`.
   Repeating a correlation returns its original receipt while the composer still
   holds what that receipt described, and writes nothing on that path.
