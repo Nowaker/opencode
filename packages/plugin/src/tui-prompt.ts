@@ -1,3 +1,5 @@
+import type { TuiPromptInfo } from "./tui.js"
+
 export type TuiComposerSnapshot = {
   generation: string
   revision: number
@@ -27,9 +29,18 @@ export type TuiComposerResult = {
   snapshot: TuiComposerSnapshot
 }
 
+/** What the composer holds, for a plugin that keeps or restores drafts. */
+export type TuiComposerDraft = Pick<TuiComposerSnapshot, "generation" | "revision" | "ready" | "reason" | "sessionID" | "mode"> & {
+  input: string
+  parts: TuiPromptInfo["parts"]
+}
+
 export type TuiComposerApi = {
   snapshot(): TuiComposerSnapshot
-  replace(request: TuiComposerGuard & { text: string }): TuiComposerResult
+  /** The composer's text and parts. Nothing is hashed, so it is cheap to poll by revision. */
+  read(): TuiComposerDraft
+  /** `promptParts` defaults to none; given, they must describe ranges of `text`. */
+  replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"] }): TuiComposerResult
   /** A submitted receipt acknowledges invocation, not server admission. */
   submit(request: TuiComposerGuard): TuiComposerResult
 }

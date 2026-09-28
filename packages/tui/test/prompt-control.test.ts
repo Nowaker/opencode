@@ -134,6 +134,38 @@ describe("prompt compare and set", () => {
     expect(f.control.replace({ ...before, correlationId: "one", text: "required-prefix tail" }).status).toBe("mismatch")
   })
 
+  test("reads the text and parts it guards, with the revision that moved", () => {
+const f = fixture()
+const paste = { type: "text" as const, text: "line one\nline two", source: { text: { start: 4, end: 21, value: "[Pasted ~2 lines]" } } }
+f.ref.set({ input: "see [Pasted ~2 lines]\nand", parts: [paste] })
+expect(f.control.read()).toEqual({
+generation: f.control.snapshot().generation, revision: 1, ready: true, reason: "ready", sessionID: null,
+mode: "normal", input: "see [Pasted ~2 lines]\nand", parts: [paste],
+})
+f.edit("")
+expect(f.control.read().revision).toBe(2)
+f.bind()
+expect(f.control.read()).toMatchObject({ reason: "unmounted", input: "", parts: [] })
+})
+
+test("restores parts with the text and accepts only their exact readback", () => {
+const f = fixture()
+const paste = { type: "text" as const, text: "body", source: { text: { start: 0, end: 10, value: "[Pasted 1]" } } }
+const result = f.control.replace({ ...f.control.snapshot(), correlationId: "one", text: "[Pasted 1] tail", promptParts: [paste] })
+expect(result.status).toBe("accepted")
+expect(f.ref.current).toEqual({ input: "[Pasted 1] tail", parts: [paste] })
+expect(result.snapshot.partsSha256).toBe(new Bun.CryptoHasher("sha256").update(JSON.stringify([paste])).digest("hex"))
+const lossy = fixture()
+lossy.bind({
+...lossy.ref,
+get current() { return lossy.ref.current },
+set: (prompt) => lossy.ref.set({ ...prompt, parts: [] }),
+})
+const refused = lossy.control.replace({ ...lossy.control.snapshot(), correlationId: "one", text: "[Pasted 1]", promptParts: [paste] })
+expect(refused.status).toBe("mismatch")
+expect(lossy.ref.current.input).toBe("[Pasted 1]")
+})
+
   test("rejects correlation reuse with different contents", () => {
     const f = fixture()
     f.control.replace({ ...f.control.snapshot(), correlationId: "one", text: "first" })

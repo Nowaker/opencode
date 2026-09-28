@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto"
-import type { TuiComposerApi, TuiComposerGuard, TuiComposerResult, TuiComposerSnapshot, TuiPromptRef } from "@opencode-ai/plugin/tui"
+import type {
+  TuiComposerApi,
+  TuiComposerDraft,
+  TuiComposerGuard,
+  TuiComposerResult,
+  TuiComposerSnapshot,
+  TuiPromptRef,
+} from "@opencode-ai/plugin/tui"
 
 type State = { dialog: boolean; ready: boolean; sessionID: string | null }
 type Content = Pick<TuiComposerSnapshot, "generation" | "sha256" | "partsSha256">
@@ -11,7 +18,7 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
   const replacements = new Map<string, { key: string; receipt: TuiComposerResult }>()
   const submissions = new Map<string, { key: string; receipt: TuiComposerResult }>()
 
-  function snapshot(): TuiComposerSnapshot {
+  function observe() {
     const ref = read()
     if (active !== ref) {
       active = ref
@@ -21,10 +28,23 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
     const current = ref?.current
     const handoff = ref?.handoff
     const flags = state()
-    const reason = !ref ? "unmounted" : !handoff ? "unsupported" : flags.dialog ? "dialog"
+    const reason: TuiComposerSnapshot["reason"] = !ref ? "unmounted" : !handoff ? "unsupported" : flags.dialog ? "dialog"
       : !handoff.visible ? "hidden" : handoff.disabled ? "disabled"
       : current?.mode === "shell" ? "shell"
       : !flags.ready || !handoff.ready ? "syncing" : "ready"
+    return { ref, current, handoff, flags, reason }
+  }
+
+  function draft(): TuiComposerDraft {
+    const { current, handoff, flags, reason } = observe()
+    return {
+      generation, revision: handoff?.revision ?? 0, ready: reason === "ready", reason, sessionID: flags.sessionID,
+      mode: current?.mode ?? "normal", input: current?.input ?? "", parts: current?.parts ?? [],
+    }
+  }
+
+  function snapshot(): TuiComposerSnapshot {
+    const { ref, current, handoff, flags, reason } = observe()
     return {
       generation, revision: handoff?.revision ?? 0, ready: reason === "ready", reason,
       focused: ref?.focused ?? false, visible: handoff?.visible ?? false,
@@ -49,9 +69,15 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
 
   return {
     snapshot,
+    read: draft,
     replace(request) {
       const current = snapshot()
-      const requestKey = JSON.stringify([key(request), createHash("sha256").update(request.text).digest("hex")])
+      const parts = request.promptParts ?? []
+      const requestKey = JSON.stringify([
+        key(request),
+        createHash("sha256").update(request.text).digest("hex"),
+        createHash("sha256").update(JSON.stringify(parts)).digest("hex"),
+      ])
       const replacement = replacements.get(request.correlationId)
       if (replacement) {
         return replacement.key === requestKey && matches(replacement.receipt.snapshot, current)
@@ -59,9 +85,10 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
       }
       if (!matches(request, current)) return { status: "conflict", snapshot: current }
       if (!current.ready || !active) return { status: "not-ready", snapshot: current }
-      active.set({ input: request.text, parts: [] })
+      active.set({ input: request.text, parts: structuredClone(parts) })
       const accepted = snapshot()
-      const exact = active?.current.input === request.text && active.current.parts.length === 0
+      const exact = active?.current.input === request.text
+        && JSON.stringify(active.current.parts) === JSON.stringify(parts)
         && accepted.generation === current.generation && accepted.mode === "normal"
       const receipt: TuiComposerResult = { status: exact ? "accepted" : "mismatch", snapshot: accepted }
       replacements.set(request.correlationId, { key: requestKey, receipt })
