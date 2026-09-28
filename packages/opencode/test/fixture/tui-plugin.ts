@@ -262,6 +262,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     },
     prompt: {
       snapshot: () => composer,
+      read: () => ({ ...composer, input: "", parts: [] }),
       replace: () => ({ status: "not-ready", snapshot: composer }),
       submit: () => ({ status: "not-ready", snapshot: composer }),
     },

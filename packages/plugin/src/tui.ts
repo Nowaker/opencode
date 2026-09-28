@@ -28,7 +28,13 @@ import {
 import type { JSX, SolidPlugin } from "@opentui/solid"
 import type { Config as PluginConfig, PluginOptions } from "./index.js"
 import type { TuiComposerApi } from "./tui-prompt.js"
-export type { TuiComposerApi, TuiComposerGuard, TuiComposerResult, TuiComposerSnapshot } from "./tui-prompt.js"
+export type {
+  TuiComposerApi,
+  TuiComposerDraft,
+  TuiComposerGuard,
+  TuiComposerResult,
+  TuiComposerSnapshot,
+} from "./tui-prompt.js"
 
 export type { CliRenderer, KeyEvent, Renderable, SlotMode } from "@opentui/core"
 export { stringifyKeySequence, stringifyKeyStroke } from "@opentui/keymap"
