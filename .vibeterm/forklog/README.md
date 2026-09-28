@@ -37,8 +37,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Prompt input latency](./features/2026-08-31-prompt-input-latency.md)
 - [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
 - [OpenAI Meridian provider clone](./features/2026-09-27-openai-meridian-provider.md)
+- [TUI composer read and part-preserving replace](./features/2026-09-27-tui-composer-read.md)
 
 ## Session records
+
+- [2026-09-27 `ses_f19bcd194ffecw7EE6UaCiWdxI`](./sessions/2026-09-27-tui-composer-read.md)
+  - Let TUI plugins read the composer and restore its parts, for vibeterm's
+    native draft persistence; build and install without restarting services.
 
 - [2026-09-27 `ses_f1b584ed7ffe6o2WMYwwpxohpL`](./sessions/2026-09-27-openai-meridian-provider.md)
   - Land the `openai-meridian` provider clone, build, install, and configure it
