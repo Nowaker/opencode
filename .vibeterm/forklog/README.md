@@ -41,6 +41,10 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-09-28 `ses_f14dc2d9effeJ663ftS9g8dVoS`](./sessions/2026-09-28-openai-meridian-small-model.md)
+  - Give `openai-meridian` a small model its Codex backend serves, fold the
+    three provider clones into one table, build and install.
+
 - [2026-09-27 `ses_f19bcd194ffecw7EE6UaCiWdxI`](./sessions/2026-09-27-tui-composer-read.md)
   - Let TUI plugins read the composer and restore its parts, for vibeterm's
     native draft persistence; build and install without restarting services.

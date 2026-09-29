@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): direct work on `master-nowaker`
 - First local commit: `77e7572d5`
-- Current local commit(s): `77e7572d5`, `eea39ba935`
+- Current local commit(s): `77e7572d5`, `eea39ba935`, `67884b2f3f`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
 - Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 
@@ -41,6 +41,7 @@ TBD - no surviving original prompt found. The recovered session title is:
 |---|---|---|---|
 | `77e7572d5` | 2026-05-30 | Register `anthropic2` and `openai2` catalog clones | provider catalog construction and `custom` provider map |
 | `eea39ba935` | 2026-09-27 | Give each clone its own name suffix for the [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; `anthropic2` and `openai2` keep `(alt)` | provider catalog clone loop |
+| `67884b2f3f` | 2026-09-28 | One module-level `CLONES` table drives catalog registration, loaders (a clone runs its source's `custom` loader instead of a pasted copy), the `gpt-5-chat-latest` filter, and an optional per-clone `smallFamilies` | `CLONES` and `custom` in `provider.ts` |
 
 The OpenAI clone applies the same `gpt-5-chat-latest` exclusion as the original
 provider because its model resolver cannot serve that chat alias.
@@ -86,11 +87,28 @@ provider because its model resolver cannot serve that chat alias.
   [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; both
   existing clones are unchanged. Evidence: `test/provider/provider.test.ts`
   103 pass / 0 fail on `dev-nowaker`.
+- 2026-09-28
+  [`ses_f14dc2d9effeJ663ftS9g8dVoS`](../sessions/2026-09-28-openai-meridian-small-model.md)
+  - consolidate the clones into the `CLONES` table with inherited loaders;
+  `anthropic2` and `openai2` keep their source's small model
+  (`claude-haiku-4-5-20251001`, `gpt-5.4-nano`). Evidence: provider tests
+  107 pass, including loader and small-model parity for all three clones.
 
 ## Current maintenance notes
 
 - Preserve cloning immediately after the primary models.dev catalogs load.
+- A clone inherits its source's `custom` loader automatically; do not add
+  per-clone loader copies.
 - Audit new parent-specific filters for an equivalent alternate-provider case.
+  Known providerID-literal checks the clones do not match, all benign on
+  2026-09-28: `transform.ts` message-level cache options (`anthropic`; the
+  Anthropic SDK reads the same cache control from the last content part), the
+  `store: false` checks (`openai`; also matched by `@ai-sdk/openai`), the
+  built-in Codex plugin (`openai` only, by design), and the opt-in native LLM
+  runtime (clones fall back to the AI SDK path).
+- `~/.config/opencode/opencode.json` sets `limit.input` 870000 on five
+  `anthropic` models; `anthropic2` has no such override, so its long-context
+  models use the catalog limit. Config, not code.
 
 ## Supersession or removal
 
