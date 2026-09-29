@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/openai-meridian-provider`
 - First local commit: `eea39ba935`
-- Current local commit(s): `eea39ba935`
+- Current local commit(s): `eea39ba935`, `67884b2f3f`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `2406400f0`
 
@@ -49,6 +49,7 @@ The code change was authored by coordinator session
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `eea39ba935` | 2026-09-27 | Register `openai-meridian` catalog clone and custom loader | provider catalog clone loop and `custom` provider map in `packages/opencode/src/provider/provider.ts`; `test/provider/provider.test.ts` |
+| `67884b2f3f` | 2026-09-28 | Small model from family `gpt-luna` (base model, not `-fast` / `-pro`), because the Codex backend refuses every nano and mini for ChatGPT accounts | `CLONES[].smallFamilies` and `getSmallModel` in `provider.ts` |
 
 ## Verification
 
@@ -70,12 +71,20 @@ The code change was authored by coordinator session
   [`ses_f1b584ed7ffe6o2WMYwwpxohpL`](../sessions/2026-09-27-openai-meridian-provider.md)
   - fast-forward into `dev-nowaker`, build, install, configure the global
   provider entry, and verify from a new process.
+- 2026-09-28
+  [`ses_f14dc2d9effeJ663ftS9g8dVoS`](../sessions/2026-09-28-openai-meridian-small-model.md)
+  - `67884b2f3f`: small model `gpt-6-luna` instead of the refused
+  `gpt-5.4-nano`; config whitelist of the served models. Evidence: title
+  request `gpt-6-luna` 200 on meridian-gpt, sessions titled.
 
 ## Current maintenance notes
 
 - Configuration lives in `~/.config/opencode/opencode.jsonc` as
   `provider["openai-meridian"].options.{baseURL,apiKey}`, pointing at
-  `meridian-gpt.service` on `127.0.0.1:3459`.
+  `meridian-gpt.service` on `127.0.0.1:3459`, plus
+  `provider["openai-meridian"].whitelist` listing only the models the Codex
+  backend serves (probed 2026-09-28 on one seat; plan-dependent). If the
+  backend stops serving `gpt-luna`, change `smallFamilies` in `CLONES`.
 - Audit new `openai`-specific filters for an equivalent `openai-meridian` case,
   as with `openai2`.
 - A binary without this clone still loads that config: it reports
