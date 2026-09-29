@@ -206,18 +206,25 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   return sdk.responses?.(modelID) ?? sdk.languageModel(modelID)
 }
 
+// Code-level clones of well-known providers, so config can point one at an
+// alternative baseURL (e.g. a local Claude subscription proxy, an
+// OpenAI-compatible gateway) while the original keeps its upstream wiring.
+// A clone exposes the source's full catalog under its own providerID, runs
+// the source's custom loader, and shares its SDK module (model.api.npm).
+// `smallFamilies` replaces the default small-model family priority when the
+// clone's backend does not serve the source's small models.
+const CLONES: { source: string; id: string; suffix: string; smallFamilies?: string[] }[] = [
+  { source: "anthropic", id: "anthropic2", suffix: "alt" },
+  { source: "openai", id: "openai2", suffix: "alt" },
+  // Meridian's ChatGPT Codex backend refuses every nano and mini model for
+  // ChatGPT accounts ("not supported when using Codex with a ChatGPT
+  // account"); gpt-luna is the cheapest family it serves.
+  { source: "openai", id: "openai-meridian", suffix: "Meridian", smallFamilies: ["gpt-luna"] },
+]
+
 function custom(dep: CustomDep): Record<string, CustomLoader> {
-  return {
+  const loaders: Record<string, CustomLoader> = {
     anthropic: () =>
-      Effect.succeed({
-        autoload: false,
-        options: {
-          headers: {
-            "anthropic-beta": "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
-          },
-        },
-      }),
-    anthropic2: () =>
       Effect.succeed({
         autoload: false,
         options: {
@@ -250,22 +257,6 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       }
     }),
     openai: () =>
-      Effect.succeed({
-        autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          return sdk.responses(modelID)
-        },
-        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
-      }),
-    openai2: () =>
-      Effect.succeed({
-        autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          return sdk.responses(modelID)
-        },
-        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
-      }),
-    "openai-meridian": () =>
       Effect.succeed({
         autoload: false,
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
@@ -1078,6 +1069,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       }
     }),
   }
+  for (const clone of CLONES) loaders[clone.id] = loaders[clone.source]
+  return loaders
 }
 
 const ProviderApiInfo = Schema.Struct({
@@ -1479,26 +1472,16 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
-        // Register `<provider>2` siblings as code-level clones of well-known
-        // providers, so config can point one at an alternative baseURL (e.g.
-        // a local Claude subscription proxy, an OpenAI-compatible gateway)
-        // while the original keeps its upstream wiring. Both expose the full
-        // catalog under their own providerID; the SDK module (model.api.npm)
-        // is shared.
-        for (const [srcID, cloneID, suffix] of [
-          ["anthropic", "anthropic2", "alt"],
-          ["openai", "openai2", "alt"],
-          ["openai", "openai-meridian", "Meridian"],
-        ] as const) {
-          if (!catalog[srcID] || catalog[cloneID]) continue
-          const src = catalog[srcID]
+        for (const clone of CLONES) {
+          const src = catalog[clone.source]
+          if (!src || catalog[clone.id]) continue
           const cloned: Info = JSON.parse(JSON.stringify(src))
-          cloned.id = ProviderV2.ID.make(cloneID)
-          cloned.name = `${src.name} (${suffix})`
+          cloned.id = ProviderV2.ID.make(clone.id)
+          cloned.name = `${src.name} (${clone.suffix})`
           for (const m of Object.values(cloned.models)) {
-            m.providerID = ProviderV2.ID.make(cloneID)
+            m.providerID = ProviderV2.ID.make(clone.id)
           }
-          catalog[cloneID] = cloned
+          catalog[clone.id] = cloned
         }
         const database = mapValues(catalog, toPublicInfo)
 
@@ -1782,8 +1765,7 @@ const layer = Layer.effect(
               // built-in providers below, but custom providers may support them.
               (modelID === "gpt-5-chat-latest" &&
                 (providerID === ProviderV2.ID.openai ||
-                  providerID === ProviderV2.ID.make("openai2") ||
-                  providerID === ProviderV2.ID.make("openai-meridian") ||
+                  CLONES.some((clone) => clone.id === providerID && clone.source === ProviderV2.ID.openai) ||
                   providerID === ProviderV2.ID.githubCopilot ||
                   providerID === ProviderV2.ID.openrouter)) ||
               (providerID === ProviderV2.ID.openrouter && modelID === "openai/gpt-5-chat")
@@ -2038,11 +2020,14 @@ const layer = Layer.effect(
         return undefined
       }
 
-      const priority = providerID.startsWith("opencode")
-        ? ["gpt-nano"]
-        : providerID.startsWith("github-copilot")
-          ? ["gpt-mini", ...smallModelFamilyPriority]
-          : smallModelFamilyPriority
+      const clone = CLONES.find((item) => item.id === providerID)
+      const priority =
+        clone?.smallFamilies ??
+        (providerID.startsWith("opencode")
+          ? ["gpt-nano"]
+          : providerID.startsWith("github-copilot")
+            ? ["gpt-mini", ...smallModelFamilyPriority]
+            : smallModelFamilyPriority)
       const models = sortBy(
         Object.values(provider.models),
         [(model) => model.release_date, "desc"],
@@ -2068,6 +2053,12 @@ const layer = Layer.effect(
           const unprefixed = candidates.find((model) => !crossRegionPrefixes.some((p) => model.id.startsWith(p)))
           if (unprefixed) return unprefixed
           continue
+        }
+        // Skip same-API aliases such as `-fast` (priority tier) and `-pro`
+        // (pro reasoning), which cost more than the model they wrap.
+        if (clone?.smallFamilies) {
+          const base = candidates.find((model) => model.id === model.api.id)
+          if (base) return base
         }
         if (candidates[0]) return candidates[0]
       }

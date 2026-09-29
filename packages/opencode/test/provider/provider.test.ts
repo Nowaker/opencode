@@ -852,6 +852,109 @@ it.instance(
   { config: { small_model: "anthropic/not-a-real-model" } },
 )
 
+it.instance(
+  "provider clones run their source's custom loader",
+  Effect.gen(function* () {
+    yield* set("ANTHROPIC_API_KEY", "test-api-key")
+    yield* set("OPENAI_API_KEY", "test-openai-key")
+    const providers = yield* list
+    expect(providers[ProviderV2.ID.make("anthropic2")].options.headers).toEqual(
+      providers[ProviderV2.ID.anthropic].options.headers,
+    )
+    for (const id of ["openai2", "openai-meridian"]) {
+      expect(providers[ProviderV2.ID.make(id)].options.headerTimeout).toBe(
+        providers[ProviderV2.ID.openai].options.headerTimeout,
+      )
+      expect(providers[ProviderV2.ID.make(id)].models["gpt-5-chat-latest"]).toBeUndefined()
+    }
+  }),
+  {
+    config: {
+      provider: {
+        anthropic2: { options: { apiKey: "alt" } },
+        openai2: { options: { apiKey: "alt" } },
+        "openai-meridian": { options: { apiKey: "meridian" } },
+      },
+    },
+  },
+)
+
+it.instance(
+  "getSmallModel gives anthropic2 and openai2 their source's small model",
+  Effect.gen(function* () {
+    yield* set("ANTHROPIC_API_KEY", "test-api-key")
+    yield* set("OPENAI_API_KEY", "test-openai-key")
+    for (const [source, clone] of [
+      [ProviderV2.ID.anthropic, "anthropic2"],
+      [ProviderV2.ID.openai, "openai2"],
+    ] as const) {
+      const expected = yield* Provider.use.getSmallModel(source)
+      const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make(clone))
+      expect(expected).toBeDefined()
+      expect(String(model?.id)).toBe(String(expected?.id))
+      expect(String(model?.providerID)).toBe(clone)
+    }
+  }),
+  {
+    config: {
+      provider: {
+        anthropic2: { options: { apiKey: "alt" } },
+        openai2: { options: { apiKey: "alt" } },
+      },
+    },
+  },
+)
+
+it.instance(
+  "getSmallModel picks the base gpt-luna model for openai-meridian",
+  Effect.gen(function* () {
+    yield* set("OPENAI_API_KEY", "test-openai-key")
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("openai-meridian"))
+    expect(String(model?.id)).toBe("gpt-6-luna")
+    expect(String(model?.providerID)).toBe("openai-meridian")
+    const openai = yield* Provider.use.getSmallModel(ProviderV2.ID.openai)
+    expect(openai?.family).toBe("gpt-nano")
+  }),
+  {
+    config: {
+      provider: {
+        "openai-meridian": {
+          options: { apiKey: "meridian" },
+          models: {
+            "gpt-5.6-luna": { family: "gpt-luna", release_date: "2026-07-09" },
+            "gpt-6-luna": { family: "gpt-luna", release_date: "2026-09-22" },
+            "gpt-6-luna-fast": {
+              id: "gpt-6-luna",
+              family: "gpt-luna",
+              release_date: "2026-09-22",
+              options: { serviceTier: "priority" },
+            },
+            "gpt-6-luna-pro": {
+              id: "gpt-6-luna",
+              family: "gpt-luna",
+              release_date: "2026-09-22",
+              options: { reasoningMode: "pro" },
+            },
+          },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "getSmallModel never falls back to a nano model for openai-meridian",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("openai-meridian"))
+    expect(model).toBeUndefined()
+  }),
+  {
+    config: {
+      provider: { "openai-meridian": { options: { apiKey: "meridian" }, whitelist: ["gpt-5.4-nano", "gpt-5.4"] } },
+    },
+  },
+)
+
 test("provider.sort prioritizes preferred models", () => {
   const models = [
     { id: "random-model", name: "Random" },
