@@ -38,8 +38,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Watcher inotify preflight](./features/2026-09-09-watcher-inotify-preflight.md)
 - [OpenAI Meridian provider clone](./features/2026-09-27-openai-meridian-provider.md)
 - [TUI composer read and part-preserving replace](./features/2026-09-27-tui-composer-read.md)
+- [Tracked build script and vt version stamp](./features/2026-09-29-vt-version-stamp.md)
 
 ## Session records
+
+- [2026-09-29 `ses_f0fa472b3ffewPFKUIOfLnesvB`](./sessions/2026-09-29-vt-version-stamp.md)
+  - Track the build script in the fork, stamp builds `<base>-vt-<seq>-<sha>`,
+    keep registry and semver consumers on the base release, build and install.
 
 - [2026-09-29 `ses_f106b7eecffenW3xCMfi1WsXia`](./sessions/2026-09-29-openai-meridian-served-models.md)
   - Make `openai-meridian` offer exactly what meridian-gpt serves, drop the
