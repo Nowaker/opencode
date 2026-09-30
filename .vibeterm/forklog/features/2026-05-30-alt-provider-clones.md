@@ -42,6 +42,7 @@ TBD - no surviving original prompt found. The recovered session title is:
 | `77e7572d5` | 2026-05-30 | Register `anthropic2` and `openai2` catalog clones | provider catalog construction and `custom` provider map |
 | `eea39ba935` | 2026-09-27 | Give each clone its own name suffix for the [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; `anthropic2` and `openai2` keep `(alt)` | provider catalog clone loop |
 | `67884b2f3f` | 2026-09-28 | One module-level `CLONES` table drives catalog registration, loaders (a clone runs its source's `custom` loader instead of a pasted copy), the `gpt-5-chat-latest` filter, and an optional per-clone `smallFamilies` | `CLONES` and `custom` in `provider.ts` |
+| `e185addfe5` | 2026-09-29 | Optional per-clone `servedModels` narrows the catalog to what `<baseURL>/models` lists; set only on `openai-meridian`, so `anthropic2` and `openai2` keep their source catalogs | `CLONES[].servedModels` in `provider.ts` |
 
 The OpenAI clone applies the same `gpt-5-chat-latest` exclusion as the original
 provider because its model resolver cannot serve that chat alias.
@@ -93,6 +94,13 @@ provider because its model resolver cannot serve that chat alias.
   `anthropic2` and `openai2` keep their source's small model
   (`claude-haiku-4-5-20251001`, `gpt-5.4-nano`). Evidence: provider tests
   107 pass, including loader and small-model parity for all three clones.
+- 2026-09-29
+  [`ses_f106b7eecffenW3xCMfi1WsXia`](../sessions/2026-09-29-openai-meridian-served-models.md)
+  - add the `servedModels` clone flag for `openai-meridian`; `openai2` and
+  `anthropic2` unchanged. Evidence: a test keeps `openai2`'s full catalog
+  behind the same gateway; pre/post installed binaries list identical
+  `openai2` (60) and `anthropic2` (19) models, and `anthropic2` matches
+  `anthropic`.
 
 ## Current maintenance notes
 
