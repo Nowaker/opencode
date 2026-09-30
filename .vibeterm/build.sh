@@ -9,7 +9,12 @@
 #                 checkout ~/projekty/webapps/opencode, branch
 #                 dev-nowaker, when run through the shim).
 #                 OPENCODE_SRC overrides it, e.g. to build a worktree.
-# Install target: ~/projekty/webapps/opencode-build/bin/opencode
+# Install target: opencode-build/bin/opencode beside the primary
+#                 checkout (found through the git common dir, so a
+#                 worktree installs to the same place):
+#                 ~/projekty/webapps/opencode-build/bin/opencode on
+#                 Linux, ~/projects/webapps/opencode-build/bin/opencode
+#                 on the Macs. OPENCODE_INSTALL overrides it.
 #                 This path is what opencode-serve-tailscale.service
 #                 ExecStarts from. (opencode-serve-lan.service is off-
 #                 limits and must not be restarted by this workflow.)
@@ -17,7 +22,8 @@
 # Version stamp: <base>-vt-<seq>-<sha>, e.g. 1.18.32-vt-48-2406400f0a
 #   - OPENCODE_VERSION overrides detection when set, verbatim.
 #   - Otherwise, version tags are fetched from OPENCODE_TAG_REMOTE
-#     (default `github`, the upstream remote).
+#     (default: the upstream remote, `github`, or `upstream` where a
+#     checkout names it that).
 #   - If HEAD is exactly on a vX.Y.Z tag, build as plain X.Y.Z: that is
 #     an upstream release build, not a fork build.
 #   - Otherwise:
@@ -75,7 +81,18 @@ if [ "$#" -gt 1 ]; then
 fi
 
 SRC="${OPENCODE_SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-INSTALL="$HOME/projekty/webapps/opencode-build/bin/opencode"
+if [ ! -d "$SRC/packages/opencode" ]; then
+  echo "error: opencode source not found at $SRC" >&2
+  exit 1
+fi
+
+GIT_COMMON="$(git -C "$SRC" rev-parse --path-format=absolute --git-common-dir)"
+BUILD_ROOT="$(dirname "$(dirname "$GIT_COMMON")")/opencode-build"
+INSTALL="${OPENCODE_INSTALL:-$BUILD_ROOT/bin/opencode}"
+if [ -z "${OPENCODE_TAG_REMOTE-}" ] && ! git -C "$SRC" remote get-url github >/dev/null 2>&1 \
+  && git -C "$SRC" remote get-url upstream >/dev/null 2>&1; then
+  OPENCODE_TAG_REMOTE=upstream
+fi
 TAG_REMOTE="${OPENCODE_TAG_REMOTE:-github}"
 UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/dev}"
 LOCKFILE="$SRC/bun.lock"
@@ -87,11 +104,6 @@ restore_lockfile() {
     rm -f "$LOCKFILE_BACKUP"
   fi
 }
-
-if [ ! -d "$SRC/packages/opencode" ]; then
-  echo "error: opencode source not found at $SRC" >&2
-  exit 1
-fi
 
 version_from_tag() {
   local tag="$1"
@@ -162,7 +174,8 @@ if [ "$PRINT_VERSION" = 1 ]; then
 fi
 
 if [ -f "$LOCKFILE" ]; then
-  LOCKFILE_BACKUP="$HOME/projekty/webapps/opencode-build/.bun.lock.before-build.$$"
+  mkdir -p "$BUILD_ROOT"
+  LOCKFILE_BACKUP="$BUILD_ROOT/.bun.lock.before-build.$$"
   cp "$LOCKFILE" "$LOCKFILE_BACKUP"
   trap restore_lockfile EXIT
 fi
@@ -173,11 +186,14 @@ echo "Building opencode @ $VERSION from $SRC ..."
   OPENCODE_VERSION="$VERSION" bun ./script/build.ts --single
 )
 
-BUILT="$SRC/packages/opencode/dist/opencode-linux-x64/bin/opencode"
-if [ ! -f "$BUILT" ]; then
-  echo "error: build did not produce $BUILT" >&2
+shopt -s nullglob
+BUILT_CANDIDATES=("$SRC"/packages/opencode/dist/opencode-*/bin/opencode)
+shopt -u nullglob
+if [ "${#BUILT_CANDIDATES[@]}" -ne 1 ]; then
+  echo "error: expected one native binary under $SRC/packages/opencode/dist, found ${#BUILT_CANDIDATES[@]}" >&2
   exit 1
 fi
+BUILT="${BUILT_CANDIDATES[0]}"
 
 mkdir -p "$(dirname "$INSTALL")"
 
