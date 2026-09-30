@@ -8,7 +8,7 @@
 - First local commit: `4a2673957`
 - Current local commit(s): `4a2673957`
 - Upstream base when introduced: `4643e65ad6` (`v1.18.18`)
-- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -76,6 +76,9 @@ evening-to-early-morning convention does not move this work to August 24.
 - 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
   replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
   the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

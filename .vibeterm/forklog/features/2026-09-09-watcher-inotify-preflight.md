@@ -8,7 +8,7 @@
 - First local commit: `34aa414cf`
 - Current local commit(s): `34aa414cf`
 - Upstream base when introduced: `a9a6fad0f` (upstream `dev`, past `v1.18.29`)
-- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 Authored upstream-first as `84b8fcdfe` on `watcher-emfile-degrade`, based
 directly on `a9a6fad0f`, so it can be offered upstream unchanged.
@@ -139,6 +139,9 @@ Stable seams an upstream bump must inspect:
 - 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
   replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
   the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Current maintenance notes
 
