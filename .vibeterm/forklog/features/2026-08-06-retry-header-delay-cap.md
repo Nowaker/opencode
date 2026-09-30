@@ -10,7 +10,7 @@
 - Current local commit(s): `opencode-tools:824532a2b`, `2dfe1da2f`,
   `a88ab4589`, `1f16a2b66`; OpenCode source diff remains uncommitted
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -100,6 +100,10 @@ that exact two-file diff uncommitted.
 - 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
   replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`; tree equals
   the `master-nowaker` + `dev` merge tree. Evidence: that session's gates.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  reverse the patch, rebase onto upstream
+  `dev` `2fa3363c92` (contains `v1.18.33`), and reapply it unchanged; upstream left
+  `session/retry.ts` untouched. Evidence: `retry.test.ts` passes, patch body byte-identical.
 
 ## Current maintenance notes
 
