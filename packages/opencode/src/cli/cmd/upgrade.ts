@@ -2,7 +2,7 @@ import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationBaseVersion, InstallationVersion } from "@opencode-ai/core/installation/version"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
@@ -67,7 +67,7 @@ export const UpgradeCommand = {
 
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest()
 
-    if (InstallationVersion === target) {
+    if (InstallationBaseVersion === target) {
       prompts.log.warn(`opencode upgrade skipped: ${target} is already installed`)
       prompts.log.info("OpenCode 2 is available. Upgrade with `opencode upgrade --major`")
       prompts.outro("Done")

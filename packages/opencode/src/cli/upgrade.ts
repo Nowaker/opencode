@@ -2,7 +2,7 @@ import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Installation } from "@/installation"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationBaseVersion } from "@opencode-ai/core/installation/version"
 
 // Checking never installs anything. Updates only happen when the user runs `/update` or `opencode upgrade`.
 export function shouldNotify(input: {
@@ -28,7 +28,7 @@ export async function upgrade() {
       autoupdate: config.autoupdate,
       disabled: Flag.OPENCODE_DISABLE_AUTOUPDATE,
       always: Flag.OPENCODE_ALWAYS_NOTIFY_UPDATE,
-      current: InstallationVersion,
+      current: InstallationBaseVersion,
       latest,
     })
   )
