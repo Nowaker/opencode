@@ -8,7 +8,7 @@
 - First local commit: `77e7572d5`
 - Current local commit(s): `77e7572d5`, `eea39ba935`, `67884b2f3f`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `2406400f0` (upstream `dev`, contains `v1.18.32`)
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -101,6 +101,9 @@ provider because its model resolver cannot serve that chat alias.
   behind the same gateway; pre/post installed binaries list identical
   `openai2` (60) and `anthropic2` (19) models, and `anthropic2` matches
   `anthropic`.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

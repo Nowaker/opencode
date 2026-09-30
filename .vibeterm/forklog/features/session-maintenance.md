@@ -36,3 +36,6 @@
 - 2026-09-22 [`ses_fb9a784deffe7zkW0r8oo25Nkg`](../sessions/2026-09-22-dev-nowaker-rebuild.md) -
   replayed unchanged onto upstream `dev` `2406400f0` as `dev-nowaker`. Evidence:
   all `session-maintenance*` tests pass in that session's 24-test core gate.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.

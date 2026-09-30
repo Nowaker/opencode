@@ -42,6 +42,10 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-09-30 `ses_f0f108c6dffeMymgpAsLy9LESM`](./sessions/2026-09-30-upstream-1.18.33.md)
+  - Rebase `dev-nowaker` onto upstream `dev` past `v1.18.33`, reapply the
+    retry-header cap, build and install on both hosts.
+
 - [2026-09-29 `ses_f0fa472b3ffewPFKUIOfLnesvB`](./sessions/2026-09-29-vt-version-stamp.md)
   - Track the build script in the fork, stamp builds `<base>-vt-<seq>-<sha>`,
     keep registry and semver consumers on the base release, build and install.

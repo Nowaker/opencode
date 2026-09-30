@@ -7,7 +7,8 @@
 - Development branch: `summary-event-dedup`
 - First local commit: `927891b095f18c8de8f17ce2c181ec45166196bd`
 - Current integration commit: `ff79c7b333`
-- Upstream base when introduced and last checked: `b471c2b449`
+- Upstream base when introduced: `b471c2b449`
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -48,6 +49,9 @@ publication. Missing diffs and an empty array remain different states.
 
 - 2026-09-26 [ses_f1f9b9b74ffe8xPPTsmvM4op8M](../sessions/2026-09-26-summary-event-dedup.md)
   - Initial implementation, integration, and desktop installed-binary proof.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Maintenance and limits
 

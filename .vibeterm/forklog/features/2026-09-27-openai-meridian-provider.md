@@ -8,7 +8,7 @@
 - First local commit: `eea39ba935`
 - Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `2406400f0`
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -83,6 +83,9 @@ The code change was authored by coordinator session
   config whitelist is removed. Evidence: `test/provider` 726 pass;
   installed binary lists `gpt-6.1-sol`, not `gpt-5.4-nano`, and `run`
   against `gpt-6.1-sol` and `gpt-6-sol` replies.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

@@ -9,7 +9,7 @@
 - First local commit: `2638af5a71`
 - Current local commit(s): `2638af5a71`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `2406400f0`
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -69,6 +69,9 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
 
 - 2026-09-27 [`ses_f19bcd194ffecw7EE6UaCiWdxI`](../sessions/2026-09-27-tui-composer-read.md) -
   introduced, built and installed. Evidence: `2638af5a71`, linked session.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased unchanged onto upstream `dev`
+  `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

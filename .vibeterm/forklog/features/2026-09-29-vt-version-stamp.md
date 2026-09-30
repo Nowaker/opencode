@@ -8,7 +8,7 @@
 - First local commit: `8bfa57bb26`
 - Current local commit(s): `8bfa57bb26`
 - Upstream base when introduced: `2406400f0a` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `2406400f0a`
+- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
 ## Original request
 
@@ -80,6 +80,11 @@ ACP client info, the session `version` field, and the CLI daemon registry
 
 - 2026-09-29 [`ses_f0fa472b3ffewPFKUIOfLnesvB`](../sessions/2026-09-29-vt-version-stamp.md) -
   initial build. Evidence: `8bfa57bb26`.
+- 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
+  rebased onto upstream `dev` `2fa3363c92` (contains `v1.18.33`); `e469ed80f8`
+  makes `build.sh` install beside the primary checkout on either host and fall
+  back to an `upstream` tag remote. Evidence: both hosts build and report
+  `1.18.33-vt-52-2fa3363c92`.
 
 ## Current maintenance notes
 
