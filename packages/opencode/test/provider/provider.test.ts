@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterAll, afterEach, expect, test } from "bun:test"
 import { mkdir, unlink } from "fs/promises"
 import path from "path"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -84,6 +84,36 @@ const paid = (providers: Record<string, { models: Record<string, { cost: { input
 
 const languageBaseURL = (language: unknown) => (language as { config: { baseURL: string } }).config.baseURL
 
+// A real OpenAI-compatible gateway for openai-meridian's served-model read.
+// `closedBaseURL` names a port nothing listens on.
+const gateway = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch(request) {
+    const route = new URL(request.url).pathname
+    if (route === "/slow/v1/models") await Bun.sleep(5000)
+    if (route === "/broken/v1/models") return new Response("nope", { status: 502 })
+    if (route === "/claude/v1/models") return Response.json({ object: "list", data: [{ id: "claude-sonnet-5" }] })
+    return Response.json({
+      object: "list",
+      data: [
+        { id: "claude-sonnet-5", owned_by: "anthropic" },
+        { id: "gpt-5.6-sol", owned_by: "openai", context_window: 272000 },
+        { id: "gpt-5.5", owned_by: "openai" },
+        { id: "gpt-9-preview", owned_by: "openai", display_name: "GPT-9 Preview", context_window: 400000 },
+      ],
+    })
+  },
+})
+const gatewayURL = (route: string) => `http://127.0.0.1:${gateway.port}/${route}/v1`
+const closedBaseURL = await (async () => {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() })
+  const port = probe.port
+  await probe.stop(true)
+  return `http://127.0.0.1:${port}/v1`
+})()
+afterAll(() => gateway.stop(true))
+
 const it = testEffect(LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node])))
 const experimentalModels = testEffect(providerLayer({ enableExperimentalModels: true }))
 
@@ -138,7 +168,7 @@ it.instance(
     const meridian = providers[ProviderV2.ID.make("openai-meridian")]
     expect(meridian).toBeDefined()
     expect(meridian.name).toBe("OpenAI (Meridian)")
-    expect(meridian.options.baseURL).toBe("http://127.0.0.1:3457/v1")
+    expect(meridian.options.baseURL).toBe(closedBaseURL)
     expect(Object.keys(meridian.models).length).toBeGreaterThan(0)
     expect(Object.values(meridian.models).every((m) => m.providerID === "openai-meridian")).toBe(true)
     expect(meridian.models["gpt-5-chat-latest"]).toBeUndefined()
@@ -146,7 +176,7 @@ it.instance(
   }),
   {
     config: {
-      provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: "http://127.0.0.1:3457/v1" } } },
+      provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: closedBaseURL } } },
     },
   },
 )
@@ -953,6 +983,103 @@ it.instance(
       provider: { "openai-meridian": { options: { apiKey: "meridian" }, whitelist: ["gpt-5.4-nano", "gpt-5.4"] } },
     },
   },
+)
+
+const meridianModels = Effect.gen(function* () {
+  const providers = yield* list
+  return Object.keys(providers[ProviderV2.ID.make("openai-meridian")]?.models ?? {}).sort()
+})
+
+it.instance(
+  "openai-meridian offers exactly the OpenAI models its gateway serves",
+  Effect.gen(function* () {
+    expect(yield* meridianModels).toEqual([
+      "gpt-5.5",
+      "gpt-5.5-fast",
+      "gpt-5.6-sol",
+      "gpt-5.6-sol-fast",
+      "gpt-5.6-sol-pro",
+      "gpt-9-preview",
+    ])
+    const providers = yield* list
+    const meridian = providers[ProviderV2.ID.make("openai-meridian")]
+    expect(meridian.models["gpt-5.6-sol-fast"].options.serviceTier).toBe("priority")
+    const unknown = meridian.models["gpt-9-preview"]
+    expect(unknown.name).toBe("GPT-9 Preview")
+    expect(unknown.api.npm).toBe("@ai-sdk/openai")
+    expect(unknown.limit.context).toBe(400000)
+    expect(unknown.capabilities.reasoning).toBe(true)
+    expect(Object.keys(unknown.variants ?? {}).length).toBeGreaterThan(0)
+  }),
+  { config: { provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: gatewayURL("ok") } } } } },
+)
+
+it.instance(
+  "a configured whitelist narrows openai-meridian's served models",
+  Effect.gen(function* () {
+    expect(yield* meridianModels).toEqual(["gpt-5.6-sol"])
+  }),
+  {
+    config: {
+      provider: {
+        "openai-meridian": {
+          options: { apiKey: "meridian", baseURL: gatewayURL("ok") },
+          whitelist: ["gpt-5.6-sol", "gpt-5.4-nano"],
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "openai-meridian falls back to the configured whitelist when its gateway is unreachable",
+  Effect.gen(function* () {
+    expect(yield* meridianModels).toEqual(["gpt-5.4", "gpt-5.4-nano"])
+  }),
+  {
+    config: {
+      provider: {
+        "openai-meridian": {
+          options: { apiKey: "meridian", baseURL: closedBaseURL },
+          whitelist: ["gpt-5.4-nano", "gpt-5.4"],
+        },
+      },
+    },
+  },
+)
+
+for (const route of ["broken", "claude"]) {
+  it.instance(
+    `openai-meridian falls back to the models.dev catalog when its gateway answers ${route}`,
+    Effect.gen(function* () {
+      const models = yield* meridianModels
+      expect(models).toContain("gpt-5.4-nano")
+      expect(models).not.toContain("gpt-9-preview")
+    }),
+    { config: { provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: gatewayURL(route) } } } } },
+  )
+}
+
+it.instance(
+  "openai-meridian stops waiting on a slow gateway and falls back",
+  Effect.gen(function* () {
+    const started = Date.now()
+    const models = yield* meridianModels
+    expect(Date.now() - started).toBeLessThan(4000)
+    expect(models).toContain("gpt-5.4-nano")
+  }),
+  { config: { provider: { "openai-meridian": { options: { apiKey: "meridian", baseURL: gatewayURL("slow") } } } } },
+)
+
+it.instance(
+  "openai2 keeps the full openai catalog behind the same gateway",
+  Effect.gen(function* () {
+    const providers = yield* list
+    const models = Object.keys(providers[ProviderV2.ID.make("openai2")].models)
+    expect(models).toContain("gpt-5.4-nano")
+    expect(models).not.toContain("gpt-9-preview")
+  }),
+  { config: { provider: { openai2: { options: { apiKey: "alt", baseURL: gatewayURL("ok") } } } } },
 )
 
 test("provider.sort prioritizes preferred models", () => {
