@@ -41,6 +41,10 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-09-29 `ses_f106b7eecffenW3xCMfi1WsXia`](./sessions/2026-09-29-openai-meridian-served-models.md)
+  - Make `openai-meridian` offer exactly what meridian-gpt serves, drop the
+    config whitelist, build and install.
+
 - [2026-09-28 `ses_f14dc2d9effeJ663ftS9g8dVoS`](./sessions/2026-09-28-openai-meridian-small-model.md)
   - Give `openai-meridian` a small model its Codex backend serves, fold the
     three provider clones into one table, build and install.

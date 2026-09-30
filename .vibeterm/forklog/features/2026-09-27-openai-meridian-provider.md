@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/openai-meridian-provider`
 - First local commit: `eea39ba935`
-- Current local commit(s): `eea39ba935`, `67884b2f3f`
+- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `2406400f0`
 
@@ -50,6 +50,7 @@ The code change was authored by coordinator session
 |---|---|---|---|
 | `eea39ba935` | 2026-09-27 | Register `openai-meridian` catalog clone and custom loader | provider catalog clone loop and `custom` provider map in `packages/opencode/src/provider/provider.ts`; `test/provider/provider.test.ts` |
 | `67884b2f3f` | 2026-09-28 | Small model from family `gpt-luna` (base model, not `-fast` / `-pro`), because the Codex backend refuses every nano and mini for ChatGPT accounts | `CLONES[].smallFamilies` and `getSmallModel` in `provider.ts` |
+| `e185addfe5` | 2026-09-29 | Offer exactly the OpenAI ids `<baseURL>/models` lists (1.5 s timeout), keeping their models.dev metadata and `-fast`/`-pro` aliases, adding served ids models.dev lacks with defaults; a failed read is logged and falls back to the configured whitelist, else models.dev; a whitelist/blacklist still narrows the result | `CLONES[].servedModels`, `fetchServedModels`, `applyServedModels`, and the pass before the whitelist/blacklist loop in `provider.ts`; `test/provider/provider.test.ts` |
 
 ## Verification
 
@@ -76,15 +77,23 @@ The code change was authored by coordinator session
   - `67884b2f3f`: small model `gpt-6-luna` instead of the refused
   `gpt-5.4-nano`; config whitelist of the served models. Evidence: title
   request `gpt-6-luna` 200 on meridian-gpt, sessions titled.
+- 2026-09-29
+  [`ses_f106b7eecffenW3xCMfi1WsXia`](../sessions/2026-09-29-openai-meridian-served-models.md)
+  - `e185addfe5`: the model list follows meridian-gpt's `/v1/models`; the
+  config whitelist is removed. Evidence: `test/provider` 726 pass;
+  installed binary lists `gpt-6.1-sol`, not `gpt-5.4-nano`, and `run`
+  against `gpt-6.1-sol` and `gpt-6-sol` replies.
 
 ## Current maintenance notes
 
 - Configuration lives in `~/.config/opencode/opencode.jsonc` as
   `provider["openai-meridian"].options.{baseURL,apiKey}`, pointing at
-  `meridian-gpt.service` on `127.0.0.1:3459`, plus
-  `provider["openai-meridian"].whitelist` listing only the models the Codex
-  backend serves (probed 2026-09-28 on one seat; plan-dependent). If the
-  backend stops serving `gpt-luna`, change `smallFamilies` in `CLONES`.
+  `meridian-gpt.service` on `127.0.0.1:3459`. No whitelist: the offered
+  models are whatever meridian-gpt's `/v1/models` lists at provider load
+  (meridian reads the Codex backend's own catalog). An optional
+  `whitelist`/`blacklist` still narrows that and is the fallback when the
+  gateway is down. If the backend stops serving `gpt-luna`, change
+  `smallFamilies` in `CLONES`.
 - Audit new `openai`-specific filters for an equivalent `openai-meridian` case,
   as with `openai2`.
 - A binary without this clone still loads that config: it reports
