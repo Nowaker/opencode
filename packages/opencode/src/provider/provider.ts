@@ -212,15 +212,101 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
 // A clone exposes the source's full catalog under its own providerID, runs
 // the source's custom loader, and shares its SDK module (model.api.npm).
 // `smallFamilies` replaces the default small-model family priority when the
-// clone's backend does not serve the source's small models.
-const CLONES: { source: string; id: string; suffix: string; smallFamilies?: string[] }[] = [
+// clone's backend does not serve the source's small models. `servedModels`
+// narrows the catalog to what the configured gateway lists at
+// `<baseURL>/models` (see applyServedModels).
+const CLONES: { source: string; id: string; suffix: string; smallFamilies?: string[]; servedModels?: boolean }[] = [
   { source: "anthropic", id: "anthropic2", suffix: "alt" },
   { source: "openai", id: "openai2", suffix: "alt" },
   // Meridian's ChatGPT Codex backend refuses every nano and mini model for
   // ChatGPT accounts ("not supported when using Codex with a ChatGPT
   // account"); gpt-luna is the cheapest family it serves.
-  { source: "openai", id: "openai-meridian", suffix: "Meridian", smallFamilies: ["gpt-luna"] },
+  {
+    source: "openai",
+    id: "openai-meridian",
+    suffix: "Meridian",
+    smallFamilies: ["gpt-luna"],
+    servedModels: true,
+  },
 ]
+
+// A local gateway answers in well under a second; this only bounds a hung
+// or overloaded one so provider loading never stalls startup.
+const SERVED_MODELS_TIMEOUT_MS = 1500
+// OpenAI's families (gpt-*, chatgpt-*, codex, o<n>). Meridian lists its Claude
+// models on the same endpoint; those are not served through an OpenAI clone.
+const OPENAI_MODEL_ID = /^(?:gpt-|chatgpt-|codex(?:-|$)|o\d+(?:-|$))/
+
+type ServedModel = { id: string; name?: string; context?: number }
+
+// Reads the OpenAI-family models a gateway lists at `<baseURL>/models`.
+// Anything but a non-empty list of them is a failed read, returned as the
+// reason, so the caller falls back instead of offering nothing.
+async function fetchServedModels(baseURL: string, apiKey: unknown): Promise<ServedModel[] | string> {
+  const url = `${baseURL.replace(/\/+$/, "")}/models`
+  const response = await fetch(url, {
+    headers: typeof apiKey === "string" && apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+    signal: AbortSignal.timeout(SERVED_MODELS_TIMEOUT_MS),
+  }).catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
+  if (typeof response === "string") return response
+  if (!response.ok) return `HTTP ${response.status}`
+  const body: unknown = await response.json().catch(() => undefined)
+  const data = isRecord(body) ? body.data : undefined
+  if (!Array.isArray(data)) return "response has no data array"
+  const served = data.flatMap((entry): ServedModel[] => {
+    if (!isRecord(entry) || typeof entry.id !== "string" || !OPENAI_MODEL_ID.test(entry.id)) return []
+    return [
+      {
+        id: entry.id,
+        name: typeof entry.display_name === "string" && entry.display_name ? entry.display_name : undefined,
+        context:
+          typeof entry.context_window === "number" && entry.context_window > 0 ? entry.context_window : undefined,
+      },
+    ]
+  })
+  if (served.length === 0) return "lists no OpenAI models"
+  return served
+}
+
+// Keeps every catalog model whose API id the gateway serves, so a served base
+// id brings its `-fast`/`-pro` mode aliases (same api.id) and their models.dev
+// metadata along. A served id the catalog lacks is added with defaults: the
+// gateway can serve a model before models.dev lists it.
+function applyServedModels(provider: Info, served: ServedModel[]) {
+  const ids = new Set(served.map((model) => model.id))
+  const template = Object.values(provider.models)[0]
+  for (const [modelID, model] of Object.entries(provider.models)) {
+    if (!ids.has(model.api.id)) delete provider.models[modelID]
+  }
+  for (const item of served) {
+    if (Object.values(provider.models).some((model) => model.api.id === item.id)) continue
+    const model: Model = {
+      id: ModelV2.ID.make(item.id),
+      providerID: provider.id,
+      name: item.name ?? item.id,
+      family: "",
+      api: { id: item.id, url: template?.api.url ?? "", npm: template?.api.npm ?? "@ai-sdk/openai" },
+      status: "active",
+      headers: {},
+      options: {},
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: { context: item.context ?? 272_000, output: 128_000 },
+      capabilities: {
+        temperature: false,
+        reasoning: true,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      release_date: "",
+      variants: {},
+    }
+    model.variants = ProviderTransform.variants(model)
+    provider.models[item.id] = model
+  }
+}
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   const loaders: Record<string, CustomLoader> = {
@@ -1745,6 +1831,30 @@ const layer = Layer.effect(
                 }
               }
             } catch (e) {}
+          })
+        }
+
+        // Runs before the whitelist/blacklist pass below, so a configured list
+        // still narrows the served set and is the fallback when the read fails.
+        for (const clone of CLONES) {
+          const provider = providers[ProviderV2.ID.make(clone.id)]
+          if (!clone.servedModels || !provider || !isProviderAllowed(provider.id)) continue
+          const baseURL = provider.options.baseURL
+          if (typeof baseURL !== "string" || !baseURL) continue
+          const served = yield* Effect.promise(() => fetchServedModels(baseURL, provider.options.apiKey))
+          if (typeof served === "string") {
+            yield* Effect.logWarning("served model list unavailable, offering the configured catalog", {
+              providerID: clone.id,
+              reason: served,
+              fallback: cfg.provider?.[clone.id]?.whitelist ? "whitelist" : "models.dev",
+            })
+            continue
+          }
+          applyServedModels(provider, served)
+          yield* Effect.logInfo("offering the gateway's served models", {
+            providerID: clone.id,
+            served: served.length,
+            models: Object.keys(provider.models).length,
           })
         }
 
