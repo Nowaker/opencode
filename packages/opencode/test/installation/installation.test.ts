@@ -1,4 +1,5 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import path from "path"
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
@@ -9,6 +10,7 @@ import { Installation } from "../../src/installation"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
+import { tmpdir } from "../fixture/fixture"
 
 const encoder = new TextEncoder()
 
@@ -179,6 +181,45 @@ describe("installation", () => {
         expect(result).toBe("2.1.0")
       }),
     )
+  })
+
+  describe("method", () => {
+    // OPENCODE_INSTALL_METHOD is a build-time define, so it is exercised in a
+    // child bun with --define. Stub npm and Homebrew on PATH claim to have
+    // opencode installed and log every call; a stamped build must not ask them.
+    test("a stamped install method never consults npm or Homebrew copies on PATH", async () => {
+      await using tmp = await tmpdir({
+        init: async (dir) => {
+          const stubs: Record<string, string> = { npm: "opencode-ai@1.0.0", brew: "opencode" }
+          for (const [name, output] of Object.entries(stubs)) {
+            await Bun.write(
+              path.join(dir, name),
+              `#!/bin/sh\necho ${name} >> ${path.join(dir, "calls.log")}\necho ${output}\n`,
+              { mode: 0o755 },
+            )
+          }
+          await Bun.write(
+            path.join(dir, "method.ts"),
+            `import { Installation } from ${JSON.stringify(path.join(import.meta.dir, "../../src/installation"))}\n` +
+              "console.log(await Installation.method())\nprocess.exit(0)\n",
+          )
+        },
+      })
+      const child = Bun.spawn(
+        [process.execPath, "--define", 'OPENCODE_INSTALL_METHOD:"unknown"', path.join(tmp.path, "method.ts")],
+        {
+          cwd: path.join(import.meta.dir, "../.."),
+          env: { ...process.env, PATH: `${tmp.path}:/usr/bin:/bin` },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      )
+      const out = await new Response(child.stdout).text()
+      await child.exited
+
+      expect(out.trim().split("\n").at(-1)).toBe("unknown")
+      expect(await Bun.file(path.join(tmp.path, "calls.log")).exists()).toBe(false)
+    }, 30_000)
   })
 
   describe("upgrade", () => {
