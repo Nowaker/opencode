@@ -253,6 +253,19 @@ describe("plugin.codex", () => {
     ])
   })
 
+  test("leaves a configured baseURL to the provider instead of the OAuth Codex fetch", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const oauth = async () =>
+      ({ type: "oauth", refresh: "refresh", access: createTestJwt({}), expires: Date.now() + 60_000 }) as never
+
+    const gateway = await hooks.auth!.loader!(oauth, { options: { baseURL: "http://127.0.0.1:3459/v1" } } as never)
+    const chatgpt = await hooks.auth!.loader!(oauth, { options: {} } as never)
+
+    expect(gateway).toEqual({})
+    expect(chatgpt.fetch).toBeFunction()
+    expect(chatgpt.apiKey).toBeString()
+  })
+
   test("sends token residency through the WebSocket transport", async () => {
     await using server = await createCodexWebSocketServer()
     const hooks = await CodexAuthPlugin({} as never, {
