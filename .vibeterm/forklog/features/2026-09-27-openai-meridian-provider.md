@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/openai-meridian-provider`
 - First local commit: `eea39ba935`
-- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`
+- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `2475f7552b`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
@@ -32,7 +32,9 @@ The code change was authored by coordinator session
 
 - No gateway logic inside OpenCode. Meridian owns ChatGPT authentication and
   request adaptation.
-- No change to `openai`, `openai2`, `anthropic`, or `anthropic2` behavior.
+- No change to `openai2`, `anthropic`, or `anthropic2` behavior, nor to
+  `openai` without a configured baseURL. Since `2475f7552b`, `openai` with a
+  non-default `options.baseURL` takes this clone's gateway behaviour.
 
 ## Rationale and constraints
 
@@ -51,6 +53,7 @@ The code change was authored by coordinator session
 | `eea39ba935` | 2026-09-27 | Register `openai-meridian` catalog clone and custom loader | provider catalog clone loop and `custom` provider map in `packages/opencode/src/provider/provider.ts`; `test/provider/provider.test.ts` |
 | `67884b2f3f` | 2026-09-28 | Small model from family `gpt-luna` (base model, not `-fast` / `-pro`), because the Codex backend refuses every nano and mini for ChatGPT accounts | `CLONES[].smallFamilies` and `getSmallModel` in `provider.ts` |
 | `e185addfe5` | 2026-09-29 | Offer exactly the OpenAI ids `<baseURL>/models` lists (1.5 s timeout), keeping their models.dev metadata and `-fast`/`-pro` aliases, adding served ids models.dev lacks with defaults; a failed read is logged and falls back to the configured whitelist, else models.dev; a whitelist/blacklist still narrows the result | `CLONES[].servedModels`, `fetchServedModels`, `applyServedModels`, and the pass before the whitelist/blacklist loop in `provider.ts`; `test/provider/provider.test.ts` |
+| `2475f7552b` | 2026-10-02 | The built-in `openai` with a non-default `options.baseURL` gets the same `servedModels` + `smallFamilies` (`OPENAI_GATEWAY`) through `gatewayBehaviour()`; the Codex auth loader skips its chatgpt.com-rewriting OAuth fetch when a baseURL is configured | `OPENAI_GATEWAY`, `gatewayBehaviour` in `provider.ts`; `auth.loader` in `src/plugin/openai/codex.ts`; both test files |
 
 ## Verification
 
@@ -86,6 +89,13 @@ The code change was authored by coordinator session
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
   rebased unchanged onto upstream `dev`
   `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
+- 2026-10-02
+  [`ses_f01c05e81ffeH39PdmzetO2pyw`](../sessions/2026-10-02-openai-gateway-parity.md)
+  - `2475f7552b`: `openai` behind a gateway baseURL shares this clone's
+  served-models and small-model behaviour; a configured baseURL beats an
+  auth.json OAuth entry. Evidence: provider and codex tests; isolated-XDG
+  `opencode models openai` lists only meridian-gpt's served set and a
+  session is titled via `gpt-6-luna`.
 
 ## Current maintenance notes
 
