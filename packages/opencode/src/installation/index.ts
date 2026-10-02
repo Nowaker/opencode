@@ -17,6 +17,17 @@ import { InstallationEvent } from "@opencode-ai/schema/installation-event"
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
+declare const OPENCODE_INSTALL_METHOD: string | undefined
+
+const METHODS: Method[] = ["curl", "npm", "yarn", "pnpm", "bun", "brew", "scoop", "choco", "unknown"]
+
+// script/build.ts stamps OPENCODE_INSTALL_METHOD from the environment; the
+// fork's .vibeterm/build.sh sets it to "unknown". Such a build is replaced only
+// by rebuilding it, so its method must not be inferred from whichever npm or
+// Homebrew opencode also happens to be installed on the machine.
+export const stampedMethod =
+  typeof OPENCODE_INSTALL_METHOD === "string" ? METHODS.find((item) => item === OPENCODE_INSTALL_METHOD) : undefined
+
 export type ReleaseType = "patch" | "minor" | "major"
 
 export const Event = InstallationEvent
@@ -172,6 +183,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
+        if (stampedMethod) return stampedMethod
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()

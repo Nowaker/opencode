@@ -48,6 +48,11 @@
 # embedded in the version string. We do NOT want that. Always set
 # OPENCODE_VERSION to a real semver value.
 #
+# OPENCODE_INSTALL_METHOD=unknown stamps the binary as unmanaged: it never
+# infers an install method from an npm or Homebrew opencode elsewhere on the
+# machine, never checks for or offers upstream updates, and never upgrades
+# itself. Rebuilding with this script is its only update path.
+#
 # The running opencode-serve units keep the OLD binary via still-open
 # file descriptors after this script swaps the on-disk inode (mv+cp).
 # New binary activates on the NEXT service restart (do that yourself;
@@ -183,7 +188,7 @@ fi
 echo "Building opencode @ $VERSION from $SRC ..."
 (
   cd "$SRC/packages/opencode"
-  OPENCODE_VERSION="$VERSION" bun ./script/build.ts --single
+  OPENCODE_VERSION="$VERSION" OPENCODE_INSTALL_METHOD=unknown bun ./script/build.ts --single
 )
 
 shopt -s nullglob
