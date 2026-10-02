@@ -350,6 +350,25 @@ it.instance(
 )
 
 it.instance(
+  "renamed agent resolves by its configured name as well as its key",
+  () =>
+    Effect.gen(function* () {
+      const byKey = yield* load((svc) => svc.get("plan"))
+      const byName = yield* load((svc) => svc.get("OC-Plan"))
+      expect(byKey?.name).toBe("OC-Plan")
+      expect(byName).toBe(byKey)
+      expect(yield* load((svc) => svc.get("missing"))).toBeUndefined()
+    }),
+  {
+    config: {
+      agent: {
+        plan: { name: "OC-Plan", mode: "primary" },
+      },
+    },
+  },
+)
+
+it.instance(
   "agent prompt can be set from config",
   () =>
     Effect.gen(function* () {
