@@ -7,11 +7,12 @@
 - Agent/platform: `Sisyphus - ultraworker` on `anthropic/claude-opus-5-5` (variant high) / linux, Vibeterm
 - Repository: `~/projekty/webapps/opencode`
 - Integration branch: `dev-nowaker`
-- Development branch(es): `openai-gateway-parity` (worktree
-  `.vibeterm/worktrees/openai-gateway-parity`)
+- Development branch(es): `openai-gateway-parity`, `fork-install-method`
+  (worktrees under `.vibeterm/worktrees/`)
 - Upstream base: `2fa3363c92` (upstream `dev`, contains `v1.18.33`); unchanged
-- Source result commit(s): `2475f7552b`
-- Forklog commit: this file's introducing commit
+- Source result commit(s): `2475f7552b`, `c8ce109f25`
+- Forklog commit(s): `a7275d4b61` and the commit that adds the follow-up below;
+  the first was already pushed, so the follow-up is a separate commit
 
 ## User requests
 
@@ -24,6 +25,13 @@ condensed from the brief:
 > not duplicate it. [...] Check whether codex.ts's "auth.json has an openai
 > OAuth entry -> go straight to chatgpt.com" path takes precedence over a
 > configured baseURL.
+
+Follow-ups from the coordinator, condensed: bring m4max to the same build
+(diagnose its fetch refspec and uncommitted diff, back the diff up first),
+and make `.vibeterm/build.sh` binaries report install method `unknown`. The
+user's comment on the latter, verbatim:
+
+> vibeterm should not care about any other opencode binaries other than the one it is configured to use.
 
 ## Goals
 
@@ -45,6 +53,8 @@ condensed from the brief:
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `7f96412db7` | `2475f7552b` | fast-forward from `openai-gateway-parity`; pushed to `origin` and `nowaker-github` |
+| `opencode` | `dev-nowaker` | `a7275d4b61` | `c8ce109f25` | fast-forward from `fork-install-method`; pushed to both remotes |
+| `opencode` (m4max) | `dev-nowaker` | `7f96412db7` | `c8ce109f25` | fast-forward after fixing its fetch refspec |
 
 ## Features touched
 
@@ -52,6 +62,7 @@ condensed from the brief:
 |---|---|---|
 | [OpenAI Meridian provider clone](../features/2026-09-27-openai-meridian-provider.md) | changed: its gateway flags are shared with `openai` behind a baseURL | 5 new provider tests; isolated-XDG installed-binary check |
 | [Alternate provider clones](../features/2026-05-30-alt-provider-clones.md) | changed: `gatewayBehaviour()` replaces direct `CLONES` lookups; `anthropic2`/`openai2` preserved | `openai2` keeps the full catalog behind the same gateway in the new test |
+| [Unmanaged install method for fork builds](../features/2026-10-02-unmanaged-install-method.md) | introduced | installation test; m4max TUI probe with logging package-manager stubs |
 
 ## Other delivered work
 
@@ -75,6 +86,13 @@ condensed from the brief:
 - `opencode run --model openai/gpt-6-luna "Reply with exactly: pong"` -
   replied `pong`; session titled "Exact pong reply request"; the isolated log
   shows the title request on `gpt-6-luna` and no `nano`.
+- `bun test test/installation/installation.test.ts` - 13 pass; the new test
+  fails (`bun`) with `src/installation/index.ts` reverted. `bun typecheck`
+  exit 0.
+- m4max, fresh XDG config without `autoupdate`, logging npm/brew/bun/yarn/pnpm
+  stubs first on PATH, TUI left 40 s: `vt-55` - no modal, 0 package-manager
+  calls, also with `OPENCODE_ALWAYS_NOTIFY_UPDATE=1`; previous `vt-54` with
+  that flag - 7 calls and "A new release v2.0.20" from Homebrew's formula.
 
 ## Build and install
 
@@ -84,14 +102,25 @@ condensed from the brief:
 - Installed artifact: `1.18.33-vt-53-2fa3363c92`, inode 49977636 (previous
   49960363 archived as `opencode.prev-1790973269`); retry marker present.
 - Running services: none restarted by this session.
-- m4max: not built. Its checkout is on `dev-nowaker` at `7f96412db7` with
-  uncommitted `.gitignore` and retry-patch changes whose diff differs from
-  desktop's, and `git fetch origin` there leaves `origin/dev-nowaker` at
-  `7f96412db7` (only FETCH_HEAD updates).
+- Desktop rebuild at `c8ce109f25` plus the retry cap: `1.18.33-vt-55-2fa3363c92`,
+  inode 49977644, retry marker present.
+- m4max: `remote.origin.fetch` was the narrowed
+  `+refs/heads/master-nowaker:refs/remotes/origin/master-nowaker`, so
+  `git fetch origin` never moved `origin/dev-nowaker`; set to
+  `+refs/heads/*:refs/remotes/origin/*` in the repo's `.git/config`. Its
+  uncommitted diff (`.gitignore` `.opencode/` plus the retry cap) equals
+  desktop's and the canonical patch once `index` lines are normalized; the
+  earlier sha mismatch was only abbreviated blob-hash length. Backup before
+  any change: `~/projects/webapps/opencode-m4max-uncommitted-20261002.patch`.
+  Built with its own `build.sh` (bun needs `~/.bun/bin` on PATH in a
+  non-interactive ssh shell): `vt-54` at `a7275d4b61`, then
+  `1.18.33-vt-55-2fa3363c92` at `c8ce109f25`, inode 20630605, retry marker
+  present, diff sha256 `d59b769a...` identical to desktop's.
 
 ## Commit provenance
 
 - `2475f7552b` - feat(provider): give openai behind a gateway baseURL openai-meridian's behaviour
+- `c8ce109f25` - feat(installation): stamp .vibeterm/build.sh binaries as an unmanaged install
 - Required trailer: `AI-Session-ID: ses_f01c05e81ffeH39PdmzetO2pyw`
 
 ```sh
