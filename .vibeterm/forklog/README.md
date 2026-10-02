@@ -42,6 +42,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-02 `ses_f01c05e81ffeH39PdmzetO2pyw`](./sessions/2026-10-02-openai-gateway-parity.md)
+  - Give `openai/` behind a gateway baseURL `openai-meridian`'s served models
+    and small model, let a configured baseURL beat Codex OAuth, build and
+    install on desktop.
+
 - [2026-09-30 `ses_f0f108c6dffeMymgpAsLy9LESM`](./sessions/2026-09-30-upstream-1.18.33.md)
   - Rebase `dev-nowaker` onto upstream `dev` past `v1.18.33`, reapply the
     retry-header cap, build and install on both hosts.
