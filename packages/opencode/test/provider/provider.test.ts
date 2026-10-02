@@ -1082,6 +1082,94 @@ it.instance(
   { config: { provider: { openai2: { options: { apiKey: "alt", baseURL: gatewayURL("ok") } } } } },
 )
 
+it.instance(
+  "openai with a configured baseURL offers its gateway's served models, as openai-meridian does",
+  Effect.gen(function* () {
+    const providers = yield* list
+    expect(Object.keys(providers[ProviderV2.ID.openai].models).sort()).toEqual([
+      "gpt-5.5",
+      "gpt-5.5-fast",
+      "gpt-5.6-sol",
+      "gpt-5.6-sol-fast",
+      "gpt-5.6-sol-pro",
+      "gpt-9-preview",
+    ])
+    const alt = Object.keys(providers[ProviderV2.ID.make("openai2")].models)
+    expect(alt).toContain("gpt-5.4-nano")
+    expect(alt).not.toContain("gpt-9-preview")
+  }),
+  {
+    config: {
+      provider: {
+        openai: { options: { apiKey: "meridian", baseURL: gatewayURL("ok") } },
+        openai2: { options: { apiKey: "alt", baseURL: gatewayURL("ok") } },
+      },
+    },
+  },
+)
+
+it.instance(
+  "openai without a baseURL keeps the full catalog and its nano small model",
+  Effect.gen(function* () {
+    yield* set("OPENAI_API_KEY", "test-openai-key")
+    const providers = yield* list
+    expect(Object.keys(providers[ProviderV2.ID.openai].models)).toContain("gpt-5.4-nano")
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.openai)
+    expect(model?.family).toBe("gpt-nano")
+  }),
+)
+
+it.instance(
+  "openai pointed at its default baseURL keeps its nano small model",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.openai)
+    expect(model?.family).toBe("gpt-nano")
+  }),
+  { config: { provider: { openai: { options: { apiKey: "sk-test", baseURL: "https://api.openai.com/v1" } } } } },
+)
+
+it.instance(
+  "getSmallModel picks the base gpt-luna model for openai behind a gateway",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.openai)
+    expect(String(model?.id)).toBe("gpt-6-luna")
+    expect(String(model?.providerID)).toBe("openai")
+  }),
+  {
+    config: {
+      provider: {
+        openai: {
+          options: { apiKey: "meridian", baseURL: closedBaseURL },
+          models: {
+            "gpt-6-luna": { family: "gpt-luna", release_date: "2026-09-22" },
+            "gpt-6-luna-fast": {
+              id: "gpt-6-luna",
+              family: "gpt-luna",
+              release_date: "2026-09-22",
+              options: { serviceTier: "priority" },
+            },
+          },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "getSmallModel never falls back to a nano model for openai behind a gateway",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.openai)
+    expect(model).toBeUndefined()
+  }),
+  {
+    config: {
+      provider: {
+        openai: { options: { apiKey: "meridian", baseURL: closedBaseURL }, whitelist: ["gpt-5.4-nano", "gpt-5.4"] },
+      },
+    },
+  },
+)
+
 test("provider.sort prioritizes preferred models", () => {
   const models = [
     { id: "random-model", name: "Random" },

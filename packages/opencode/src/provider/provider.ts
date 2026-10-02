@@ -215,20 +215,32 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
 // clone's backend does not serve the source's small models. `servedModels`
 // narrows the catalog to what the configured gateway lists at
 // `<baseURL>/models` (see applyServedModels).
-const CLONES: { source: string; id: string; suffix: string; smallFamilies?: string[]; servedModels?: boolean }[] = [
+type GatewayBehaviour = { smallFamilies?: string[]; servedModels?: boolean }
+
+// Meridian's ChatGPT Codex backend refuses every nano and mini model for
+// ChatGPT accounts ("not supported when using Codex with a ChatGPT
+// account"); gpt-luna is the cheapest family it serves.
+const OPENAI_GATEWAY: GatewayBehaviour = { smallFamilies: ["gpt-luna"], servedModels: true }
+
+const CLONES: ({ source: string; id: string; suffix: string } & GatewayBehaviour)[] = [
   { source: "anthropic", id: "anthropic2", suffix: "alt" },
   { source: "openai", id: "openai2", suffix: "alt" },
-  // Meridian's ChatGPT Codex backend refuses every nano and mini model for
-  // ChatGPT accounts ("not supported when using Codex with a ChatGPT
-  // account"); gpt-luna is the cheapest family it serves.
-  {
-    source: "openai",
-    id: "openai-meridian",
-    suffix: "Meridian",
-    smallFamilies: ["gpt-luna"],
-    servedModels: true,
-  },
+  { source: "openai", id: "openai-meridian", suffix: "Meridian", ...OPENAI_GATEWAY },
 ]
+
+const OPENAI_DEFAULT_BASE_URL = /^https:\/\/api\.openai\.com\/v1\/?$/
+
+// A clone's own behaviour, or openai-meridian's for the built-in openai
+// provider once config points it at a gateway through a non-default baseURL.
+// Without one, openai keeps its upstream catalog and small-model choice.
+function gatewayBehaviour(provider: Info): GatewayBehaviour | undefined {
+  const clone = CLONES.find((item) => item.id === provider.id)
+  if (clone) return clone
+  const baseURL = provider.options.baseURL
+  if (provider.id !== ProviderV2.ID.openai || typeof baseURL !== "string" || !baseURL) return undefined
+  if (OPENAI_DEFAULT_BASE_URL.test(baseURL)) return undefined
+  return OPENAI_GATEWAY
+}
 
 // A local gateway answers in well under a second; this only bounds a hung
 // or overloaded one so provider loading never stalls startup.
@@ -1836,23 +1848,22 @@ const layer = Layer.effect(
 
         // Runs before the whitelist/blacklist pass below, so a configured list
         // still narrows the served set and is the fallback when the read fails.
-        for (const clone of CLONES) {
-          const provider = providers[ProviderV2.ID.make(clone.id)]
-          if (!clone.servedModels || !provider || !isProviderAllowed(provider.id)) continue
+        for (const provider of Object.values(providers)) {
+          if (!gatewayBehaviour(provider)?.servedModels || !isProviderAllowed(provider.id)) continue
           const baseURL = provider.options.baseURL
           if (typeof baseURL !== "string" || !baseURL) continue
           const served = yield* Effect.promise(() => fetchServedModels(baseURL, provider.options.apiKey))
           if (typeof served === "string") {
             yield* Effect.logWarning("served model list unavailable, offering the configured catalog", {
-              providerID: clone.id,
+              providerID: provider.id,
               reason: served,
-              fallback: cfg.provider?.[clone.id]?.whitelist ? "whitelist" : "models.dev",
+              fallback: cfg.provider?.[provider.id]?.whitelist ? "whitelist" : "models.dev",
             })
             continue
           }
           applyServedModels(provider, served)
           yield* Effect.logInfo("offering the gateway's served models", {
-            providerID: clone.id,
+            providerID: provider.id,
             served: served.length,
             models: Object.keys(provider.models).length,
           })
@@ -2130,9 +2141,9 @@ const layer = Layer.effect(
         return undefined
       }
 
-      const clone = CLONES.find((item) => item.id === providerID)
+      const gateway = gatewayBehaviour(provider)
       const priority =
-        clone?.smallFamilies ??
+        gateway?.smallFamilies ??
         (providerID.startsWith("opencode")
           ? ["gpt-nano"]
           : providerID.startsWith("github-copilot")
@@ -2166,7 +2177,7 @@ const layer = Layer.effect(
         }
         // Skip same-API aliases such as `-fast` (priority tier) and `-pro`
         // (pro reasoning), which cost more than the model they wrap.
-        if (clone?.smallFamilies) {
+        if (gateway?.smallFamilies) {
           const base = candidates.find((model) => model.id === model.api.id)
           if (base) return base
         }
