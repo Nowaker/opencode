@@ -327,7 +327,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
     },
     auth: {
       provider: "openai",
-      async loader(getAuth) {
+      async loader(getAuth, provider) {
         const auth = await getAuth()
         const websocketFetch = options.experimentalWebSockets
           ? OpenAIWebSocketPool.createWebSocketFetch({ httpFetch: fetch })
@@ -336,7 +336,10 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           websocketFetches.push(websocketFetch)
           websocketFetchInstalled = true
         }
-        if (auth.type !== "oauth") return websocketFetch ? { fetch: websocketFetch } : {}
+        // A configured baseURL names the backend explicitly; the OAuth fetch
+        // would rewrite its /v1/responses calls to the ChatGPT Codex endpoint.
+        if (auth.type !== "oauth" || provider?.options?.baseURL)
+          return websocketFetch ? { fetch: websocketFetch } : {}
 
         let refreshPromise:
           | Promise<{
