@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): direct work on `master-nowaker`
 - First local commit: `77e7572d5`
-- Current local commit(s): `77e7572d5`, `eea39ba935`, `67884b2f3f`
+- Current local commit(s): `77e7572d5`, `eea39ba935`, `67884b2f3f`, `e185addfe5`, `2475f7552b`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
 - Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
 
@@ -43,6 +43,7 @@ TBD - no surviving original prompt found. The recovered session title is:
 | `eea39ba935` | 2026-09-27 | Give each clone its own name suffix for the [`openai-meridian`](./2026-09-27-openai-meridian-provider.md) clone; `anthropic2` and `openai2` keep `(alt)` | provider catalog clone loop |
 | `67884b2f3f` | 2026-09-28 | One module-level `CLONES` table drives catalog registration, loaders (a clone runs its source's `custom` loader instead of a pasted copy), the `gpt-5-chat-latest` filter, and an optional per-clone `smallFamilies` | `CLONES` and `custom` in `provider.ts` |
 | `e185addfe5` | 2026-09-29 | Optional per-clone `servedModels` narrows the catalog to what `<baseURL>/models` lists; set only on `openai-meridian`, so `anthropic2` and `openai2` keep their source catalogs | `CLONES[].servedModels` in `provider.ts` |
+| `2475f7552b` | 2026-10-02 | `gatewayBehaviour(provider)` resolves the clone flags (and, for `openai` with a non-default baseURL, `openai-meridian`'s); the served-models pass and `getSmallModel` read it instead of `CLONES` | `GatewayBehaviour`, `gatewayBehaviour` in `provider.ts` |
 
 The OpenAI clone applies the same `gpt-5-chat-latest` exclusion as the original
 provider because its model resolver cannot serve that chat alias.
@@ -104,6 +105,11 @@ provider because its model resolver cannot serve that chat alias.
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
   rebased unchanged onto upstream `dev`
   `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
+- 2026-10-02
+  [`ses_f01c05e81ffeH39PdmzetO2pyw`](../sessions/2026-10-02-openai-gateway-parity.md)
+  - route clone flags through `gatewayBehaviour()`; `openai2` and
+  `anthropic2` unchanged. Evidence: a test keeps `openai2`'s full catalog
+  behind the same gateway that narrows `openai`.
 
 ## Current maintenance notes
 
