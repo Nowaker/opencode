@@ -309,8 +309,10 @@ const layer = Layer.effect(
           )
         }
 
+        // Agents are keyed by config key, but a configured `name` renames one, and that name is
+        // what list() exposes and what messages record. Resolve either so a renamed agent stays reachable.
         const get = Effect.fnUntraced(function* (agent: string) {
-          return agents[agent]
+          return agents[agent] ?? Object.values(agents).find((item) => item.name === agent)
         })
 
         const list = Effect.fnUntraced(function* () {
