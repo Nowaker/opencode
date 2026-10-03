@@ -40,8 +40,14 @@ carries every feature forward unchanged. That commit includes the full
 - [TUI composer read and part-preserving replace](./features/2026-09-27-tui-composer-read.md)
 - [Tracked build script and vt version stamp](./features/2026-09-29-vt-version-stamp.md)
 - [Unmanaged install method for fork builds](./features/2026-10-02-unmanaged-install-method.md)
+- [Agent lookup by configured name](./features/2026-10-02-agent-name-lookup.md)
 
 ## Session records
+
+- [2026-10-02 `ses_f011ccc18ffeZAKpRC9OjZ40a8`](./sessions/2026-10-02-agent-name-lookup.md)
+  - Resolve a renamed agent (`agent.plan.name = "OC-Plan"`) by its name so
+    `opencode run --agent plan` works; explain the lost error-ref log line
+    (upstream exit-before-flush); build and install on desktop and m4max.
 
 - [2026-10-02 `ses_f01c05e81ffeH39PdmzetO2pyw`](./sessions/2026-10-02-openai-gateway-parity.md)
   - Give `openai/` behind a gateway baseURL `openai-meridian`'s served models
