@@ -70,6 +70,10 @@ export const Info = Schema.Struct({
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
+  keep_scroll_on_submit: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false)",
+  }),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
