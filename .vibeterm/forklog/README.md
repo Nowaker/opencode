@@ -47,8 +47,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Per-turn completion time and duration in the TUI](./features/2026-10-04-tui-turn-timing.md)
 - [Pin the session title at the top of the sidebar](./features/2026-10-04-sidebar-pin-title.md)
 - [Compact sidebar Context display](./features/2026-10-04-sidebar-context-compact.md)
+- [Keep a scrolled-up reader's place in a long session](./features/2026-10-04-scroll-anchor.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81ca107ffet5DwnFLaGWlUap`](./sessions/2026-10-04-scroll-anchor.md)
+  - Stop new AI output from sliding a scrolled-up transcript in sessions past
+    100 messages; upstream PR #53219 closing #41243; build and install on
+    desktop and m4max.
 
 - [2026-10-04 `ses_f01c05e81ffeH39PdmzetO2pyw`](./sessions/2026-10-04-llm-test-models-read.md)
   - Fix `llm.test.ts`'s mock queue, which `openai`'s served-model read
