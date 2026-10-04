@@ -82,6 +82,11 @@ evening-to-early-morning convention does not move this work to August 24.
 - 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
   rebased unchanged onto upstream `dev`
   `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
+- 2026-10-04 [`ses_ef81ca107ffet5DwnFLaGWlUap`](../sessions/2026-10-04-scroll-anchor.md) -
+  unchanged; it does not interact with the scrolled-up drift, which comes
+  from the 100-message prune. Evidence: the installed
+  `1.18.34-vt-61-907b3bc518` held a scrolled-up view through a streamed
+  agent run, the same as vanilla `dev`.
 
 ## Current maintenance notes
 
