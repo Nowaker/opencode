@@ -43,8 +43,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Agent lookup by configured name](./features/2026-10-02-agent-name-lookup.md)
 - [Reopen opencode.log after an external rotation](./features/2026-10-03-log-reopen.md)
 - [One-line "LSPs are disabled" in the sidebar](./features/2026-10-04-sidebar-lsp-disabled-oneline.md)
+- [Keep the scroll position when a prompt is submitted](./features/2026-10-04-keep-scroll-on-submit.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81c7229ffeqHzmyR9O4v0AMH`](./sessions/2026-10-04-keep-scroll-on-submit.md)
+  - Add `keep_scroll_on_submit` and `/keep-scroll` so a submitted prompt does
+    not yank a scrolled-up view down; upstream issue #53186 and PR #53187;
+    build and install on both hosts, enabled in their `tui.json`.
 
 - [2026-10-04 `ses_ef81db9cdffe5vRz7Y2HqCmvNs`](./sessions/2026-10-04-upstream-1.18.34.md)
   - Rebase `dev-nowaker` onto upstream `dev` past `v1.18.34` without
