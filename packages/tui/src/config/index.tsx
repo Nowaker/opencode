@@ -39,6 +39,12 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const Sidebar = Schema.Struct({
+  pin_title: Schema.optional(Schema.Boolean).annotate({
+    description: "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content",
+  }),
+}).annotate({ description: "Session sidebar settings" })
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -75,6 +81,7 @@ export const Info = Schema.Struct({
       "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false)",
   }),
   cursor: Schema.optional(Cursor),
+  sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>

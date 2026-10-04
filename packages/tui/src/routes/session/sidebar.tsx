@@ -3,6 +3,7 @@ import { useSync } from "../../context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../config"
+import { useKV } from "../../context/kv"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { usePluginRuntime } from "../../plugin/runtime"
 
@@ -15,6 +16,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
+  const kv = useKV()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const workspace = () => {
     const workspaceID = session()?.workspaceID
@@ -22,6 +24,45 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     return project.workspace.get(workspaceID)
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
+  const pinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
+  const title = () => (
+    <pluginRuntime.Slot
+      name="sidebar_title"
+      mode="single_winner"
+      session_id={props.sessionID}
+      title={session()!.title}
+      share_url={session()!.share?.url}
+    >
+      <box paddingRight={1}>
+        <text fg={theme.text}>
+          <b>{session()!.title}</b>
+        </text>
+        <Show when={InstallationChannel !== "latest"}>
+          <text fg={theme.textMuted}>{props.sessionID}</text>
+        </Show>
+        <Show when={session()!.workspaceID}>
+          <text fg={theme.textMuted}>
+            <Show
+              when={workspace()}
+              fallback={<WorkspaceLabel type="unknown" name={session()!.workspaceID!} status="error" icon />}
+            >
+              {(item) => (
+                <WorkspaceLabel
+                  type={item().type}
+                  name={item().name}
+                  status={project.workspace.status(item().id) ?? "error"}
+                  icon
+                />
+              )}
+            </Show>
+          </text>
+        </Show>
+        <Show when={session()!.share?.url}>
+          <text fg={theme.textMuted}>{session()!.share!.url}</text>
+        </Show>
+      </box>
+    </pluginRuntime.Slot>
+  )
 
   return (
     <Show when={session()}>
@@ -35,6 +76,11 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         paddingRight={2}
         position={props.overlay ? "absolute" : "relative"}
       >
+        <Show when={pinned()}>
+          <box flexShrink={0} paddingRight={1} paddingBottom={1}>
+            {title()}
+          </box>
+        </Show>
         <scrollbox
           flexGrow={1}
           scrollAcceleration={scrollAcceleration()}
@@ -46,42 +92,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           }}
         >
           <box flexShrink={0} gap={1} paddingRight={1}>
-            <pluginRuntime.Slot
-              name="sidebar_title"
-              mode="single_winner"
-              session_id={props.sessionID}
-              title={session()!.title}
-              share_url={session()!.share?.url}
-            >
-              <box paddingRight={1}>
-                <text fg={theme.text}>
-                  <b>{session()!.title}</b>
-                </text>
-                <Show when={InstallationChannel !== "latest"}>
-                  <text fg={theme.textMuted}>{props.sessionID}</text>
-                </Show>
-                <Show when={session()!.workspaceID}>
-                  <text fg={theme.textMuted}>
-                    <Show
-                      when={workspace()}
-                      fallback={<WorkspaceLabel type="unknown" name={session()!.workspaceID!} status="error" icon />}
-                    >
-                      {(item) => (
-                        <WorkspaceLabel
-                          type={item().type}
-                          name={item().name}
-                          status={project.workspace.status(item().id) ?? "error"}
-                          icon
-                        />
-                      )}
-                    </Show>
-                  </text>
-                </Show>
-                <Show when={session()!.share?.url}>
-                  <text fg={theme.textMuted}>{session()!.share!.url}</text>
-                </Show>
-              </box>
-            </pluginRuntime.Slot>
+            <Show when={!pinned()}>{title()}</Show>
             <pluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />
           </box>
         </scrollbox>
