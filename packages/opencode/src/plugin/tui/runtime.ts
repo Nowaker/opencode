@@ -1060,7 +1060,7 @@ async function load(input: {
 }) {
   const { api, config } = input
   const cwd = process.cwd()
-  const slots = input.runtime.setupSlots(api)
+  const slots = input.runtime.setupSlots(api, config.sidebar)
   const next: RuntimeState = {
     directory: cwd,
     api,

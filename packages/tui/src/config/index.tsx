@@ -60,7 +60,15 @@ export const Sidebar = Schema.Struct({
   pin_title: Schema.optional(Schema.Boolean).annotate({
     description: "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content",
   }),
+  order: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Sidebar sections in display order, by name (context, mcp, lsp, todo, files) or plugin id. Sections not listed follow in their default order",
+  }),
+  hidden: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
+  }),
 }).annotate({ description: "Session sidebar settings" })
+export type Sidebar = Schema.Schema.Type<typeof Sidebar>
 
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>

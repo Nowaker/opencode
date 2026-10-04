@@ -32,7 +32,7 @@ test("validates config constraints", () => {
       scroll_speed: 0.001,
       diff_style: "stacked",
       cursor: { blinking: false },
-      sidebar: { context: "compact" },
+      sidebar: { context: "compact", order: ["mcp", "context"], hidden: ["lsp"] },
       plugin: ["example-plugin"],
     }),
   ).toMatchObject({
@@ -40,8 +40,9 @@ test("validates config constraints", () => {
     attention: { volume: 1 },
     diff_style: "stacked",
     cursor: { blinking: false },
-    sidebar: { context: "compact" },
+    sidebar: { context: "compact", order: ["mcp", "context"], hidden: ["lsp"] },
   })
+  expect(() => decodeInfo({ sidebar: { order: "mcp" } })).toThrow()
   expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
   expect(() => decodeInfo({ attention: { volume: 1.1 } })).toThrow()
   expect(() => decodeInfo({ prompt: { max_width: 0 } })).toThrow()
