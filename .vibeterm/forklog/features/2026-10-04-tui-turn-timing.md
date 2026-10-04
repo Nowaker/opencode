@@ -81,6 +81,8 @@ quoting the user:
   - `17dca85fb5`: introduce (cherry-pick of `2fda6d8d7a`, conflicts with
     `keep_scroll_on_submit` resolved by keeping both); open upstream issue
     #53192 and PR #53195.
+  - Build and install: desktop `1.18.34-vt-70-907b3bc518`, m4max
+    `1.18.34-vt-71-907b3bc518`; host `tui.json` left at defaults.
 
 ## Current maintenance notes
 
