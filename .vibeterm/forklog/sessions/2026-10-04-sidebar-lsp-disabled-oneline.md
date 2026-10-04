@@ -69,8 +69,13 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 4C
 
 ## Build and install
 
-- Recorded by this session's follow-up forklog commit, after the build on
-  both hosts.
+- Build command: `.vibeterm/build.sh` at `440ff5e133` on desktop, and on
+  m4max after fast-forwarding its checkout from `6636d662fa` (under `zsh -ic`
+  for `bun` on PATH).
+- Installed artifact: `1.18.34-vt-63-907b3bc518` on both hosts; desktop
+  inode `49955440` (the previous `vt-61` was inode `49955430`); retry-header
+  marker and the ` are disabled` span present in both binaries.
+- Running services: none restarted on either host.
 
 ## Commit provenance
 
