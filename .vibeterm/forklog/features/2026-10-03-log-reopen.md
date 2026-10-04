@@ -71,8 +71,8 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 
 - 2026-10-03
   [`ses_efb698c02ffefXlxsxKlISKpRH`](../sessions/2026-10-03-log-reopen.md)
-  - `d1442208f5`: introduce; build and install on desktop; open upstream
-    issue #53089 and PR #53090.
+  - `d1442208f5`: introduce; build and install on desktop and m4max
+    (`vt-60`); open upstream issue #53089 and PR #53090.
 
 ## Current maintenance notes
 
