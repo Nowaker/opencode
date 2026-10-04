@@ -32,6 +32,7 @@ test("validates config constraints", () => {
       scroll_speed: 0.001,
       diff_style: "stacked",
       cursor: { blinking: false },
+      sidebar: { context: "compact" },
       plugin: ["example-plugin"],
     }),
   ).toMatchObject({
@@ -39,6 +40,7 @@ test("validates config constraints", () => {
     attention: { volume: 1 },
     diff_style: "stacked",
     cursor: { blinking: false },
+    sidebar: { context: "compact" },
   })
   expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
   expect(() => decodeInfo({ attention: { volume: 1.1 } })).toThrow()
@@ -47,6 +49,7 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
   expect(decodeInfo({ sidebar: { pin_title: true } })).toEqual({ sidebar: { pin_title: true } })
   expect(() => decodeInfo({ sidebar: { pin_title: "yes" } })).toThrow()
+  expect(() => decodeInfo({ sidebar: { context: "tiny" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
