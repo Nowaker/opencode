@@ -8,7 +8,7 @@
 - First local commit: `77e7572d5`
 - Current local commit(s): `77e7572d5`, `eea39ba935`, `67884b2f3f`, `e185addfe5`, `2475f7552b`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -110,6 +110,9 @@ provider because its model resolver cannot serve that chat alias.
   - route clone flags through `gatewayBehaviour()`; `openai2` and
   `anthropic2` unchanged. Evidence: a test keeps `openai2`'s full catalog
   behind the same gateway that narrows `openai`.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

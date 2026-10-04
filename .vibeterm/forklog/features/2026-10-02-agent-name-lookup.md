@@ -8,7 +8,7 @@
 - First local commit: `d6665aba3d`
 - Current local commit(s): `d6665aba3d`
 - Upstream base when introduced: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -69,6 +69,9 @@ Relayed by Meridian coordinator `ses_fe8a27c6effe6KEx3TRNvOLgUo`, condensed:
   [`ses_f011ccc18ffeZAKpRC9OjZ40a8`](../sessions/2026-10-02-agent-name-lookup.md)
   - `d6665aba3d`: introduce the fallback; build and install on desktop and
     m4max.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

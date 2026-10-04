@@ -8,7 +8,7 @@
 - First local commit: `8bfa57bb26`
 - Current local commit(s): `8bfa57bb26`
 - Upstream base when introduced: `2406400f0a` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -85,6 +85,11 @@ ACP client info, the session `version` field, and the CLI daemon registry
   makes `build.sh` install beside the primary checkout on either host and fall
   back to an `upstream` tag remote. Evidence: both hosts build and report
   `1.18.33-vt-52-2fa3363c92`.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: both hosts build
+  `1.18.34-vt-61-907b3bc518`; upstream's darwin ad-hoc re-sign in `build.ts`
+  runs under `--single` and the macOS binary passes `codesign -v`.
 
 ## Current maintenance notes
 

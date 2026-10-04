@@ -8,7 +8,7 @@
 - First local commit: `af19b7db7`
 - Current local commit(s): `af19b7db7`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -80,6 +80,9 @@ TBD - no surviving original prompt found. The recovered session title is:
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
   rebased unchanged onto upstream `dev`
   `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

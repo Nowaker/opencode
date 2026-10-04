@@ -46,6 +46,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-04 `ses_ef81db9cdffe5vRz7Y2HqCmvNs`](./sessions/2026-10-04-upstream-1.18.34.md)
+  - Rebase `dev-nowaker` onto upstream `dev` past `v1.18.34` without
+    conflicts, reapply the retry-header cap, build and install on both hosts;
+    bisect a pre-existing `llm.test.ts` regression to `eb573a78de`.
+
 - [2026-10-04 `ses_ef81b0c61ffe9TD8cftI93JGis`](./sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
   - Fold the sidebar's "LSPs are disabled" into the LSP heading line;
     upstream issue #53183 and PR #53185.
@@ -147,6 +152,8 @@ records.
   `2406400f0` (contains `v1.18.32`) and cherry-pick the 37 first-parent fork
   commits. The tree equals merging `dev` into `master-nowaker`; later bumps
   rebase `dev-nowaker` onto upstream `dev` instead of merging.
+- `6636d662fa` (2026-10-04) - rebase `dev-nowaker` onto upstream `dev` head
+  `907b3bc518` (contains `v1.18.34`); 61 commits, all patch-identical.
 
 ## Update workflow
 

@@ -8,7 +8,7 @@
 - First local commit: `c8ce109f25`
 - Current local commit(s): `c8ce109f25`
 - Upstream base when introduced: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -62,6 +62,9 @@ verbatim:
 - 2026-10-02
   [`ses_f01c05e81ffeH39PdmzetO2pyw`](../sessions/2026-10-02-openai-gateway-parity.md)
   - `c8ce109f25`: introduce the stamp; build and install on desktop and m4max.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 
