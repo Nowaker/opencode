@@ -1,6 +1,7 @@
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
+import { onHeaderClick } from "./click"
 import { createMemo, createSignal, Show } from "solid-js"
 import { useTuiConfig } from "../../config"
 import { useBindings } from "../../keymap"
@@ -89,9 +90,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         when={mode() === "compact"}
         fallback={
           <>
-            <box flexDirection="row" gap={1} onMouseDown={toggle}>
-              <text fg={theme().text}>▼</text>
-              <text fg={theme().text}>
+            <box flexDirection="row" gap={1} {...onHeaderClick(toggle)}>
+              <text fg={theme().text} selectable={false}>
+                ▼
+              </text>
+              <text fg={theme().text} selectable={false}>
                 <b>Context</b>
               </text>
             </box>
@@ -101,9 +104,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </>
         }
       >
-        <box flexDirection="row" gap={1} onMouseDown={toggle}>
-          <text fg={theme().text}>▶</text>
-          <text fg={theme().textMuted}>{line()}</text>
+        <box flexDirection="row" gap={1} {...onHeaderClick(toggle)}>
+          <text fg={theme().text} selectable={false}>
+            ▶
+          </text>
+          <text fg={theme().textMuted} selectable={false}>
+            {line()}
+          </text>
         </box>
       </Show>
     </box>

@@ -1,5 +1,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
+import { onHeaderClick } from "./click"
 import { createMemo, For, Show, createSignal } from "solid-js"
 
 const id = "internal:sidebar-lsp"
@@ -12,11 +13,13 @@ function View(props: { api: TuiPluginApi }) {
 
   return (
     <box>
-      <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
+      <box flexDirection="row" gap={1} {...onHeaderClick(() => list().length > 2 && setOpen((x) => !x))}>
         <Show when={list().length > 2}>
-          <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
+          <text fg={theme().text} selectable={false}>
+            {open() ? "▼" : "▶"}
+          </text>
         </Show>
-        <text fg={theme().text}>
+        <text fg={theme().text} selectable={false}>
           <b>{off() ? "LSPs" : "LSP"}</b>
           <Show when={off()}>
             <span style={{ fg: theme().textMuted }}> are disabled</span>
