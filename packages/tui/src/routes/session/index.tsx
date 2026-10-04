@@ -275,6 +275,11 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
+  // Read without kv.signal: its in-memory default would be persisted by the next
+  // unrelated kv.set and then shadow later tui.json edits.
+  const keepScrollOnSubmit = createMemo<boolean>(() =>
+    kv.get("keep_scroll_on_submit", tuiConfig.keep_scroll_on_submit ?? false),
+  )
   const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
@@ -425,6 +430,11 @@ export function Session() {
       if (!scroll || scroll.isDestroyed) return
       scroll.scrollTo(scroll.scrollHeight)
     }, 50)
+  }
+
+  function onPromptSubmit() {
+    if (keepScrollOnSubmit()) return
+    toBottom()
   }
 
   const local = useLocal()
@@ -701,6 +711,18 @@ export function Session() {
       },
       run: () => {
         setTimestamps((prev) => (prev === "show" ? "hide" : "show"))
+        dialog.clear()
+      },
+    },
+    {
+      title: keepScrollOnSubmit() ? "Scroll to bottom on submit" : "Keep scroll position on submit",
+      value: "session.toggle.keep_scroll_on_submit",
+      category: "Session",
+      slash: {
+        name: "keep-scroll",
+      },
+      run: () => {
+        kv.set("keep_scroll_on_submit", !keepScrollOnSubmit())
         dialog.clear()
       },
     },
@@ -1316,16 +1338,14 @@ export function Session() {
                     session_id={route.sessionID}
                     visible={visible()}
                     disabled={disabled()}
-                    on_submit={toBottom}
+                    on_submit={onPromptSubmit}
                     ref={bind}
                   >
                     <Prompt
                       visible={visible()}
                       ref={bind}
                       disabled={disabled()}
-                      onSubmit={() => {
-                        toBottom()
-                      }}
+                      onSubmit={onPromptSubmit}
                       sessionID={route.sessionID}
                       right={<pluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
                     />
