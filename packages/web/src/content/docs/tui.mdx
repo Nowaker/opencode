@@ -402,6 +402,8 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
+- `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
+- `sidebar.hidden` - Session sidebar sections to hide, using the same names as `sidebar.order`.
 
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 

@@ -39,6 +39,17 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const Sidebar = Schema.Struct({
+  order: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Sidebar sections in display order, by name (context, mcp, lsp, todo, files) or plugin id. Sections not listed follow in their default order",
+  }),
+  hidden: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
+  }),
+}).annotate({ description: "Session sidebar settings" })
+export type Sidebar = Schema.Schema.Type<typeof Sidebar>
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -71,6 +82,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
+  sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
