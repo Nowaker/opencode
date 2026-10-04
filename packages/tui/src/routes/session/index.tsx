@@ -76,6 +76,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration, keepScrollAnchor } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
+import { SIDEBAR_ORDER_KEY } from "../../plugin/slots"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
@@ -712,6 +713,16 @@ export function Session() {
       },
       run: () => {
         kv.set("sidebar_pin_title", !sidebarTitlePinned())
+        dialog.clear()
+      },
+    },
+    {
+      title: "Reset sidebar order",
+      value: "session.sidebar.reset_order",
+      category: "Session",
+      enabled: kv.get(SIDEBAR_ORDER_KEY) !== undefined,
+      run: () => {
+        kv.set(SIDEBAR_ORDER_KEY, undefined)
         dialog.clear()
       },
     },

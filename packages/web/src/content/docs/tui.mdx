@@ -413,6 +413,8 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
 - `sidebar.hidden` - Session sidebar sections to hide, using the same names as `sidebar.order`.
 
+You can also drag a sidebar section by its header to a new place with the mouse. That order is saved and takes precedence over `sidebar.order` until you run **Reset sidebar order** from the command palette.
+
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 
 ### Attention
