@@ -38,6 +38,18 @@ export const Cursor = Schema.Struct({
     description: "Whether the cursor blinks. Has no effect when style is 'default'",
   }),
 }).annotate({ description: "Terminal cursor settings" })
+export const TurnTiming = Schema.Struct({
+  time: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show when each assistant turn finished: the time of day if today, the date and time otherwise (default: false)",
+  }),
+  duration: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show how long each assistant turn took; the final turn also keeps the total since the prompt (default: false)",
+  }),
+}).annotate({
+  description: "Default per-turn timing in assistant message footers; toggle at runtime from the command palette",
+})
 
 export const Sidebar = Schema.Struct({
   pin_title: Schema.optional(Schema.Boolean).annotate({
@@ -80,6 +92,7 @@ export const Info = Schema.Struct({
     description:
       "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false)",
   }),
+  turn_timing: Schema.optional(TurnTiming),
   cursor: Schema.optional(Cursor),
   sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
