@@ -45,8 +45,15 @@ carries every feature forward unchanged. That commit includes the full
 - [One-line "LSPs are disabled" in the sidebar](./features/2026-10-04-sidebar-lsp-disabled-oneline.md)
 - [Keep the scroll position when a prompt is submitted](./features/2026-10-04-keep-scroll-on-submit.md)
 - [Per-turn completion time and duration in the TUI](./features/2026-10-04-tui-turn-timing.md)
+- [Pin the session title at the top of the sidebar](./features/2026-10-04-sidebar-pin-title.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81bccccffeaNpV0Vw2TPKgyP`](./sessions/2026-10-04-sidebar-pin-title.md)
+  - Add `sidebar.pin_title` and `/pin-title` so a scrolling sidebar keeps the
+    session title on top with the scrollbar below it; upstream issue #53193
+    and PR #53194; build and install on both hosts, enabled in their
+    `tui.json`.
 
 - [2026-10-04 `ses_ef81c7229ffeqHzmyR9O4v0AMH`](./sessions/2026-10-04-keep-scroll-on-submit.md)
   - Add `keep_scroll_on_submit` and `/keep-scroll` so a submitted prompt does
