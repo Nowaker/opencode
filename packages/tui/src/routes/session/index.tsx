@@ -125,6 +125,8 @@ const sessionBindingCommands = [
   "session.sidebar.pin_title",
   "session.toggle.conceal",
   "session.toggle.timestamps",
+  "session.toggle.turn_time",
+  "session.toggle.turn_duration",
   "session.toggle.thinking",
   "session.toggle.actions",
   "session.toggle.scrollbar",
@@ -161,6 +163,8 @@ const context = createContext<{
   thinkingMode: () => ThinkingMode
   showThinking: () => boolean
   showTimestamps: () => boolean
+  showTurnTime: () => boolean
+  showTurnDuration: () => boolean
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
@@ -281,6 +285,11 @@ export function Session() {
   // unrelated kv.set and then shadow later tui.json edits.
   const keepScrollOnSubmit = createMemo<boolean>(() =>
     kv.get("keep_scroll_on_submit", tuiConfig.keep_scroll_on_submit ?? false),
+  )
+  // tui.json supplies the default; a palette toggle persists its own choice in kv.
+  const showTurnTime = createMemo(() => kv.get("turn_timing_time", tuiConfig.turn_timing?.time ?? false) === true)
+  const showTurnDuration = createMemo(
+    () => kv.get("turn_timing_duration", tuiConfig.turn_timing?.duration ?? false) === true,
   )
   const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
@@ -737,6 +746,30 @@ export function Session() {
       },
       run: () => {
         kv.set("keep_scroll_on_submit", !keepScrollOnSubmit())
+        dialog.clear()
+      },
+    },
+    {
+      title: showTurnTime() ? "Hide turn times" : "Show turn times",
+      value: "session.toggle.turn_time",
+      category: "Session",
+      slash: {
+        name: "turn-times",
+      },
+      run: () => {
+        kv.set("turn_timing_time", !showTurnTime())
+        dialog.clear()
+      },
+    },
+    {
+      title: showTurnDuration() ? "Hide turn durations" : "Show turn durations",
+      value: "session.toggle.turn_duration",
+      category: "Session",
+      slash: {
+        name: "turn-durations",
+      },
+      run: () => {
+        kv.set("turn_timing_duration", !showTurnDuration())
         dialog.clear()
       },
     },
@@ -1202,6 +1235,8 @@ export function Session() {
           thinkingMode,
           showThinking,
           showTimestamps,
+          showTurnTime,
+          showTurnDuration,
           showDetails,
           showGenericToolOutput,
           diffWrapMode,
@@ -1520,6 +1555,12 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     return props.message.time.completed - user.time.created
   })
 
+  const completed = createMemo(() =>
+    (ctx.showTurnTime() || ctx.showTurnDuration()) && props.message.time.completed
+      ? props.message.time.completed
+      : undefined,
+  )
+
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
 
@@ -1580,7 +1621,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         </box>
       </Show>
       <Switch>
-        <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
+        <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError" || completed()}>
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
             <text marginTop={1}>
               <span
@@ -1595,8 +1636,23 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
+              <Show when={ctx.showTurnTime() && completed()}>
+                {(time) => <span style={{ fg: theme.textMuted }}> · {Locale.todayTimeOrDateTime(time())}</span>}
+              </Show>
+              <Show when={ctx.showTurnDuration() && completed()}>
+                {(time) => (
+                  <span style={{ fg: theme.textMuted }}>
+                    {" "}
+                    · {Locale.duration(Math.max(0, time() - props.message.time.created))}
+                  </span>
+                )}
+              </Show>
               <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
+                <span style={{ fg: theme.textMuted }}>
+                  {" "}
+                  · {Locale.duration(duration())}
+                  {ctx.showTurnDuration() ? " total" : ""}
+                </span>
               </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>

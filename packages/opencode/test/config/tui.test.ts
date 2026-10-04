@@ -141,6 +141,19 @@ it.instance("loads tui config with the same precedence order as server config pa
   ),
 )
 
+it.instance("loads turn timing config", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const test = yield* TestInstance
+      yield* fs.writeJson(path.join(test.directory, "tui.json"), { turn_timing: { time: true } })
+
+      const config = yield* getTuiConfig(test.directory)
+      expect(config.turn_timing).toEqual({ time: true })
+    }),
+  ),
+)
+
 it.instance("resolves attention config defaults and overrides", () =>
   withCleanState(
     Effect.gen(function* () {
