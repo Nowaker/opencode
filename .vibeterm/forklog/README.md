@@ -46,8 +46,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Keep the scroll position when a prompt is submitted](./features/2026-10-04-keep-scroll-on-submit.md)
 - [Per-turn completion time and duration in the TUI](./features/2026-10-04-tui-turn-timing.md)
 - [Pin the session title at the top of the sidebar](./features/2026-10-04-sidebar-pin-title.md)
+- [Compact sidebar Context display](./features/2026-10-04-sidebar-context-compact.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81b7a80ffeaAyKTHFHlHGXVs`](./sessions/2026-10-04-sidebar-context-compact.md)
+  - Add an expanded/compact sidebar Context display with a header toggle;
+    upstream issue #53200 and PR #53205.
 
 - [2026-10-04 `ses_ef81bccccffeaNpV0Vw2TPKgyP`](./sessions/2026-10-04-sidebar-pin-title.md)
   - Add `sidebar.pin_title` and `/pin-title` so a scrolling sidebar keeps the
