@@ -6,7 +6,8 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/openai-meridian-provider`
 - First local commit: `eea39ba935`
-- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `2475f7552b`
+- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `eb573a78de`
+  (was `2475f7552b` before the `v1.18.34` rebase), `192f58aec9`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
@@ -101,6 +102,12 @@ The code change was authored by coordinator session
   `907b3bc518` (contains `v1.18.34`). `test/session/llm.test.ts` fails 6-7 of 33
   since `eb573a78de` (pristine upstream 33/33); bisect and likely cause in that
   session record. Not fixed there.
+- 2026-10-04
+  [`ses_f01c05e81ffeH39PdmzetO2pyw`](../sessions/2026-10-04-llm-test-models-read.md)
+  - `192f58aec9`: the regression was the test, not the feature. The served-model
+  read's `GET <baseURL>/models` consumed `llm.test.ts`'s queued `/responses`
+  mock; the mock now answers it with 404 outside the queue. Evidence:
+  `llm.test.ts` 33/33 on `dev-nowaker`; 5 OpenAI tests fail without the fix.
 
 ## Current maintenance notes
 
