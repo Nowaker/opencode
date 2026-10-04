@@ -77,7 +77,8 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-04 `ses_ef81c1485ffeC5Sb59U9mVI77g`](./sessions/2026-10-04-tui-turn-timing.md)
   - Show completion time and duration on every assistant turn and the total
     on the final one (`turn_timing`, `/turn-times`, `/turn-durations`);
-    upstream issue #53192 and PR #53195.
+    upstream issue #53192 and PR #53195; build and install on desktop and
+    m4max.
 
 - [2026-10-03 `ses_efb698c02ffefXlxsxKlISKpRH`](./sessions/2026-10-03-log-reopen.md)
   - Reopen `opencode.log` when a rotator renames or deletes it, so

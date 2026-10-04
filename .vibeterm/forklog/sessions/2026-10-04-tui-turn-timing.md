@@ -71,8 +71,24 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 3
 
 ## Build and install
 
-- Recorded by this session's follow-up forklog commit, after the build on
-  both hosts.
+- desktop: `.vibeterm/build.sh` from the primary checkout at `544b0214bb`
+  (with the uncommitted retry-header cap), `TMPDIR` under the worktree's
+  `tmp/`; installed `1.18.34-vt-70-907b3bc518`, inode `49955444`. The
+  binary contains `turn_timing_duration` and
+  `OPENCODE_RETRY_MAX_HEADER_DELAY_MS`. Driven in throwaway tmux against the
+  fake provider: `/turn-times` gave `· 2:28 PM`, `· 2:28 PM`,
+  `· 2:29 PM · 22.2s`.
+- m4max: checkout fast-forwarded to `c4cff78b67` (contains `17dca85fb5` and
+  the sidebar pin-title forklog); `.vibeterm/build.sh` installed
+  `1.18.34-vt-71-907b3bc518` at
+  `/Volumes/projects/webapps/opencode-build/bin/opencode`, with the same two
+  markers present.
+- No serve unit, TUI tab or vibeterm tmux server restarted. Running TUIs pick
+  the feature up on their next restart.
+- Host `tui.json`: unchanged on both hosts. The request asks for upstream
+  defaults and the coordinator named no host value for this item; enable
+  with `/turn-times` / `/turn-durations` or
+  `"turn_timing": { "time": true, "duration": true }`.
 
 ## Commit provenance
 
