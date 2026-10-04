@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { ACPCapability } from "@/acp/capability"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
@@ -204,7 +205,10 @@ const layer = Layer.effect(
         }
 
         yield* config.get()
-        const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+        const questionEnabled =
+          ["app", "cli", "desktop"].includes(flags.client) ||
+          flags.enableQuestionTool ||
+          (flags.client === "acp" && ACPCapability.questions())
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),

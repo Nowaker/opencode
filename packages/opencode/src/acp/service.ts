@@ -37,6 +37,7 @@ import * as ACPError from "./error"
 import { buildConfigOptions, DEFAULT_VARIANT_VALUE, parseModelSelection } from "./config-option"
 import { promptContentToParts } from "./content"
 import { Directory } from "./directory"
+import { ACPCapability } from "./capability"
 import { ACPEvent } from "./event"
 import { ACPSession } from "./session"
 import { UsageService } from "./usage"
@@ -50,7 +51,7 @@ export const AuthMethodID = "opencode-login"
 
 export type Error = ACPError.Error
 type ServiceConnection = Pick<AgentSideConnection, "sessionUpdate"> &
-  Partial<Pick<AgentSideConnection, "requestPermission" | "writeTextFile">>
+  Partial<Pick<AgentSideConnection, "requestPermission" | "writeTextFile" | "unstable_createElicitation">>
 
 export type Interface = {
   readonly initialize: (input: InitializeRequest) => Effect.Effect<InitializeResponse, Error>
@@ -93,6 +94,12 @@ export function make(input: {
 
   const initialize = Effect.fn("ACP.initialize")(function* (params: InitializeRequest) {
     const started = performance.now()
+    // Decided here rather than per question: the tool registry resolves a
+    // session's tools long before one is asked, and `initialize` is the only
+    // point at which the client says whether it can show a form at all.
+    ACPCapability.setQuestions(
+      !!params.clientCapabilities?.elicitation?.form && !!input.connection?.unstable_createElicitation,
+    )
     const authMethod: AuthMethod = {
       description: "Run `opencode auth login` in the terminal",
       name: "Login with opencode",
