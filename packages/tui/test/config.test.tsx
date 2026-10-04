@@ -81,12 +81,14 @@ test("resolves overrides without mutating input", () => {
     },
     keybinds: { session_list: "ctrl+l" },
     cursor: { blinking: false },
+    keep_scroll_on_submit: true,
   }
   const config = resolve(input, { terminalSuspend: true })
 
   expect(config).toMatchObject({
     theme: "custom",
     mouse: false,
+    keep_scroll_on_submit: true,
     leader_timeout: 750,
     attention: input.attention,
     cursor: { style: "block", blinking: false },
