@@ -1,4 +1,4 @@
-import { Formatter, Logger, type LogLevel } from "effect"
+import { Effect, Exit, FileSystem, Formatter, Logger, Option, Scope, type LogLevel } from "effect"
 import path from "path"
 import { Global } from "../global"
 import { runID } from "./shared"
@@ -46,9 +46,49 @@ function format(input: unknown) {
   return /^[^\s="\\]+$/.test(value) ? value : JSON.stringify(value)
 }
 
+// Logger.toFile holds one descriptor for the life of the process, so a log
+// rotator that renames the file aside would keep receiving every later line.
+// Before each batch, reopen the path when it no longer names the open file:
+// one stat per flush, nothing per line, and no signal for the rotator to send.
 export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id: string = runID) {
-  // Do not set batchWindow to 0; it causes high idle CPU usage.
-  return Logger.toFile(formatter(id), file, { flag: "a" })
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const encoder = new TextEncoder()
+    const open = Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const handle = yield* fs.open(file, { flag: "a" }).pipe(Scope.provide(scope))
+      return { scope, handle }
+    })
+    let current = yield* open
+    // Finalizers run in reverse, so this closes after the batcher's final flush.
+    yield* Effect.addFinalizer(() => Scope.close(current.scope, Exit.void))
+    // Open the new file before closing the old one: if the reopen fails, the
+    // batch still lands in the old file instead of being dropped.
+    const reopen = Effect.gen(function* () {
+      const next = yield* open
+      yield* Scope.close(current.scope, Exit.void)
+      current = next
+    })
+    return yield* Logger.batched(formatter(id), {
+      // Do not set window to 0; it causes high idle CPU usage.
+      window: 1000,
+      flush: (output) =>
+        Effect.gen(function* () {
+          if (!(yield* sameFile(fs, file, current.handle))) yield* Effect.ignore(reopen)
+          yield* current.handle.write(encoder.encode(output.join("\n") + "\n"))
+        }).pipe(Effect.ignore),
+    })
+  })
+}
+
+// A missing path counts as moved, so a deleted log is recreated.
+function sameFile(fs: FileSystem.FileSystem, file: string, handle: FileSystem.File) {
+  return Effect.all([fs.stat(file), handle.stat]).pipe(
+    Effect.map(
+      ([named, held]) => named.dev === held.dev && Option.getOrUndefined(named.ino) === Option.getOrUndefined(held.ino),
+    ),
+    Effect.orElseSucceed(() => false),
+  )
 }
 
 const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
