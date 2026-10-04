@@ -8,7 +8,7 @@
 - First local commit: `d1442208f5`
 - Current local commit(s): `d1442208f5`
 - Upstream base when introduced: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Upstream: issue [#53089](https://github.com/anomalyco/opencode/issues/53089), PR [#53090](https://github.com/anomalyco/opencode/pull/53090)
 
 ## Original request
@@ -73,6 +73,9 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
   [`ses_efb698c02ffefXlxsxKlISKpRH`](../sessions/2026-10-03-log-reopen.md)
   - `d1442208f5`: introduce; build and install on desktop and m4max
     (`vt-60`); open upstream issue #53089 and PR #53090.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

@@ -9,7 +9,7 @@
 - Current local commit(s): `f4f805ce3`, `800abed36`, `b895dc07c`,
   `c1edb418f`
 - Upstream base when introduced: `10765ff2a` (`v1.18.25`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -88,6 +88,9 @@
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
   rebased unchanged onto upstream `dev`
   `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 

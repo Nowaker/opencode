@@ -11,7 +11,7 @@
 - Current local commit(s): `f39c4abf8`, `32457b6d1`, `615d27bad`,
   `dd5bc77d1`, `a209a8289`, `daab8893a`, `24326cf48`, `6630dbc2c`
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
+- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 
 ## Original request
 
@@ -121,6 +121,9 @@ catalog. The third drove the macOS extension imported during this workday.
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
   rebased unchanged onto upstream `dev`
   `2fa3363c92` (contains `v1.18.33`). Evidence: that session's gates.
+- 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
+  rebased unchanged onto upstream `dev`
+  `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
 
 ## Current maintenance notes
 
