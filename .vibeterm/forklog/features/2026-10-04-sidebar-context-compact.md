@@ -84,6 +84,11 @@ quoting the user:
   - `f2fd2979ad`: introduce; open upstream issue #53200 and PR #53205;
     build and install on desktop (`vt-73`) and m4max (`vt-74`); `compact`
     set in both hosts' `tui.json`.
+- 2026-10-04
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-04-sidebar-section-order.md)
+  - `dc68262b8a`: the Context header toggles through `onHeaderClick` (press
+    and release on the same cell) with non-selectable header text, so it
+    can be dragged; click toggle re-verified in tmux.
 
 ## Current maintenance notes
 

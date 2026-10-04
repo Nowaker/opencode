@@ -48,8 +48,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Pin the session title at the top of the sidebar](./features/2026-10-04-sidebar-pin-title.md)
 - [Compact sidebar Context display](./features/2026-10-04-sidebar-context-compact.md)
 - [Keep a scrolled-up reader's place in a long session](./features/2026-10-04-scroll-anchor.md)
+- [Order, hide and drag session sidebar sections](./features/2026-10-04-sidebar-section-order.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81ad30fffeo7m3HoZisuJdli`](./sessions/2026-10-04-sidebar-section-order.md)
+  - Order and hide sidebar sections from `tui.json` (`sidebar.order`,
+    `sidebar.hidden`) and reorder them by dragging headers; upstream issue
+    #53198, PRs #53201 and #53217; build and install on both hosts.
 
 - [2026-10-04 `ses_ef81ca107ffet5DwnFLaGWlUap`](./sessions/2026-10-04-scroll-anchor.md)
   - Stop new AI output from sliding a scrolled-up transcript in sessions past
