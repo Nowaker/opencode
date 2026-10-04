@@ -641,6 +641,12 @@ beforeAll(() => {
   state.server = Bun.serve({
     port: 0,
     async fetch(req) {
+      // openai with a configured baseURL reads `<baseURL>/models` while the
+      // provider loads. This mock lists no models, so the provider keeps its
+      // configured catalog and the queue stays reserved for the LLM calls.
+      if (req.method === "GET" && new URL(req.url).pathname.endsWith("/models")) {
+        return new Response("not a model list", { status: 404 })
+      }
       const next = state.queue.shift()
       if (!next) {
         return new Response("unexpected request", { status: 500 })
