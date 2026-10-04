@@ -8,7 +8,7 @@ function View(props: { api: TuiPluginApi }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.lsp())
-  const off = createMemo(() => !props.api.state.config.lsp)
+  const off = createMemo(() => !props.api.state.config.lsp && list().length === 0)
 
   return (
     <box>
@@ -17,12 +17,15 @@ function View(props: { api: TuiPluginApi }) {
           <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
         </Show>
         <text fg={theme().text}>
-          <b>LSP</b>
+          <b>{off() ? "LSPs" : "LSP"}</b>
+          <Show when={off()}>
+            <span style={{ fg: theme().textMuted }}> are disabled</span>
+          </Show>
         </text>
       </box>
       <Show when={list().length <= 2 || open()}>
-        <Show when={list().length === 0}>
-          <text fg={theme().textMuted}>{off() ? "LSPs are disabled" : "LSPs will activate as files are read"}</text>
+        <Show when={list().length === 0 && !off()}>
+          <text fg={theme().textMuted}>LSPs will activate as files are read</text>
         </Show>
         <For each={list()}>
           {(item) => (
