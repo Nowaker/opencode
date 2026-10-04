@@ -42,8 +42,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Unmanaged install method for fork builds](./features/2026-10-02-unmanaged-install-method.md)
 - [Agent lookup by configured name](./features/2026-10-02-agent-name-lookup.md)
 - [Reopen opencode.log after an external rotation](./features/2026-10-03-log-reopen.md)
+- [One-line "LSPs are disabled" in the sidebar](./features/2026-10-04-sidebar-lsp-disabled-oneline.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef81b0c61ffe9TD8cftI93JGis`](./sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
+  - Fold the sidebar's "LSPs are disabled" into the LSP heading line;
+    upstream issue #53183 and PR #53185.
 
 - [2026-10-03 `ses_efb698c02ffefXlxsxKlISKpRH`](./sessions/2026-10-03-log-reopen.md)
   - Reopen `opencode.log` when a rotator renames or deletes it, so
