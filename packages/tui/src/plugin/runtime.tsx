@@ -28,8 +28,8 @@ export function createPluginRuntime() {
       setStatus([])
       slots.clear()
     },
-    setupSlots(api: TuiPluginApi): HostSlots {
-      return slots.setup(api)
+    setupSlots(api: TuiPluginApi, sidebar?: TuiConfig.Sidebar): HostSlots {
+      return slots.setup(api, sidebar)
     },
   }
 }
