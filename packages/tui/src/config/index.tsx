@@ -38,6 +38,18 @@ export const Cursor = Schema.Struct({
     description: "Whether the cursor blinks. Has no effect when style is 'default'",
   }),
 }).annotate({ description: "Terminal cursor settings" })
+export const TurnTiming = Schema.Struct({
+  time: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show when each assistant turn finished: the time of day if today, the date and time otherwise (default: false)",
+  }),
+  duration: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show how long each assistant turn took; the final turn also keeps the total since the prompt (default: false)",
+  }),
+}).annotate({
+  description: "Default per-turn timing in assistant message footers; toggle at runtime from the command palette",
+})
 
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
@@ -70,6 +82,7 @@ export const Info = Schema.Struct({
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
+  turn_timing: Schema.optional(TurnTiming),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
