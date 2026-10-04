@@ -56,7 +56,8 @@ carries every feature forward unchanged. That commit includes the full
 
 - [2026-10-04 `ses_ef81b7a80ffeaAyKTHFHlHGXVs`](./sessions/2026-10-04-sidebar-context-compact.md)
   - Add an expanded/compact sidebar Context display with a header toggle;
-    upstream issue #53200 and PR #53205.
+    upstream issue #53200 and PR #53205; build and install on both hosts,
+    `compact` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef81bccccffeaNpV0Vw2TPKgyP`](./sessions/2026-10-04-sidebar-pin-title.md)
   - Add `sidebar.pin_title` and `/pin-title` so a scrolling sidebar keeps the
