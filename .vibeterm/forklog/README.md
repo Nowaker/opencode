@@ -44,6 +44,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Reopen opencode.log after an external rotation](./features/2026-10-03-log-reopen.md)
 - [One-line "LSPs are disabled" in the sidebar](./features/2026-10-04-sidebar-lsp-disabled-oneline.md)
 - [Keep the scroll position when a prompt is submitted](./features/2026-10-04-keep-scroll-on-submit.md)
+- [Per-turn completion time and duration in the TUI](./features/2026-10-04-tui-turn-timing.md)
 
 ## Session records
 
@@ -60,6 +61,11 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-04 `ses_ef81b0c61ffe9TD8cftI93JGis`](./sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
   - Fold the sidebar's "LSPs are disabled" into the LSP heading line;
     upstream issue #53183 and PR #53185.
+
+- [2026-10-04 `ses_ef81c1485ffeC5Sb59U9mVI77g`](./sessions/2026-10-04-tui-turn-timing.md)
+  - Show completion time and duration on every assistant turn and the total
+    on the final one (`turn_timing`, `/turn-times`, `/turn-durations`);
+    upstream issue #53192 and PR #53195.
 
 - [2026-10-03 `ses_efb698c02ffefXlxsxKlISKpRH`](./sessions/2026-10-03-log-reopen.md)
   - Reopen `opencode.log` when a rotator renames or deletes it, so
