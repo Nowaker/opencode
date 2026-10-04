@@ -39,6 +39,14 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const SidebarContext = Schema.Literals(["expanded", "compact"]).annotate({
+  description:
+    "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width",
+})
+export const Sidebar = Schema.Struct({
+  context: Schema.optional(SidebarContext),
+}).annotate({ description: "Sidebar settings" })
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -71,6 +79,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
+  sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
