@@ -61,7 +61,19 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 4B
 
 ## Build and install
 
-- Recorded in this session's follow-up forklog commit after both hosts build.
+- Build command: `.vibeterm/build.sh` (with `TMPDIR` in the checkout's `tmp/`)
+  on desktop at `8bbc3300a4`, and on m4max after fast-forwarding its checkout
+  from `c4cff78b67`; another session fast-forwarded the m4max checkout to
+  `ee0a8c04e5` (forklog-only on top of `8bbc3300a4`) before the stamp was
+  taken.
+- Installed artifact: desktop `1.18.34-vt-73-907b3bc518` (inode `49955445`),
+  m4max `1.18.34-vt-74-907b3bc518`; both binaries contain
+  `sidebar_context` and "Compact sidebar context".
+- Host setting: `sidebar.context: "compact"` added to
+  `~/.config/opencode/tui.json` on both hosts by an atomic read-modify-write
+  that kept every other key (including 4A's `sidebar.pin_title`); the
+  desktop file decodes with `TuiConfig.Info`.
+- Running services: none restarted on either host.
 
 ## Commit provenance
 

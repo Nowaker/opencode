@@ -81,7 +81,9 @@ quoting the user:
 
 - 2026-10-04
   [`ses_ef81b7a80ffeaAyKTHFHlHGXVs`](../sessions/2026-10-04-sidebar-context-compact.md)
-  - `f2fd2979ad`: introduce; open upstream issue #53200 and PR #53205.
+  - `f2fd2979ad`: introduce; open upstream issue #53200 and PR #53205;
+    build and install on desktop (`vt-73`) and m4max (`vt-74`); `compact`
+    set in both hosts' `tui.json`.
 
 ## Current maintenance notes
 
