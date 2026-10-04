@@ -122,6 +122,7 @@ const sessionBindingCommands = [
   "session.undo",
   "session.redo",
   "session.sidebar.toggle",
+  "session.sidebar.pin_title",
   "session.toggle.conceal",
   "session.toggle.timestamps",
   "session.toggle.thinking",
@@ -255,6 +256,7 @@ export function Session() {
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
+  const sidebarTitlePinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -679,6 +681,18 @@ export function Session() {
           setSidebar(() => (isVisible ? "hide" : "auto"))
           setSidebarOpen(!isVisible)
         })
+        dialog.clear()
+      },
+    },
+    {
+      title: sidebarTitlePinned() ? "Unpin sidebar title" : "Pin sidebar title",
+      value: "session.sidebar.pin_title",
+      category: "Session",
+      slash: {
+        name: "pin-title",
+      },
+      run: () => {
+        kv.set("sidebar_pin_title", !sidebarTitlePinned())
         dialog.clear()
       },
     },
