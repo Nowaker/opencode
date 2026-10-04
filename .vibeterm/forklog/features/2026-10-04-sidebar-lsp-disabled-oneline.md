@@ -64,7 +64,8 @@ quoting the user:
 
 - 2026-10-04
   [`ses_ef81b0c61ffe9TD8cftI93JGis`](../sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
-  - `1f2bfda9bd`: introduce; open upstream issue #53183 and PR #53185.
+  - `1f2bfda9bd`: introduce; open upstream issue #53183 and PR #53185;
+    build and install on desktop and m4max (`vt-63`).
 
 ## Current maintenance notes
 
