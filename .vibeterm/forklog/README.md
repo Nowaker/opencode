@@ -50,6 +50,10 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-04 `ses_f01c05e81ffeH39PdmzetO2pyw`](./sessions/2026-10-04-llm-test-models-read.md)
+  - Fix `llm.test.ts`'s mock queue, which `openai`'s served-model read
+    consumed after the `v1.18.34` rebase; no build.
+
 - [2026-10-04 `ses_ef81b7a80ffeaAyKTHFHlHGXVs`](./sessions/2026-10-04-sidebar-context-compact.md)
   - Add an expanded/compact sidebar Context display with a header toggle;
     upstream issue #53200 and PR #53205.
