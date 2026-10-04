@@ -41,8 +41,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Tracked build script and vt version stamp](./features/2026-09-29-vt-version-stamp.md)
 - [Unmanaged install method for fork builds](./features/2026-10-02-unmanaged-install-method.md)
 - [Agent lookup by configured name](./features/2026-10-02-agent-name-lookup.md)
+- [Reopen opencode.log after an external rotation](./features/2026-10-03-log-reopen.md)
 
 ## Session records
+
+- [2026-10-03 `ses_efb698c02ffefXlxsxKlISKpRH`](./sessions/2026-10-03-log-reopen.md)
+  - Reopen `opencode.log` when a rotator renames or deletes it, so
+    rename-based rotation is lossless; build and install on desktop; upstream
+    issue #53089 and PR #53090.
 
 - [2026-10-02 `ses_f011ccc18ffeZAKpRC9OjZ40a8`](./sessions/2026-10-02-agent-name-lookup.md)
   - Resolve a renamed agent (`agent.plan.name = "OC-Plan"`) by its name so
