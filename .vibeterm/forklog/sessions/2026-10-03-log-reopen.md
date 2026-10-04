@@ -40,6 +40,7 @@ Spawned by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `2c4830012d` | `d1442208f5` | cherry-pick from `log-reopen`; pushed to `origin` and `nowaker-github` |
 | `opencode` (GitHub fork) | `log-reopen` | - | `7724dab730` | new branch off upstream `dev` `907b3bc518`; head of PR #53090 |
+| `opencode` (m4max) | `dev-nowaker` | `2c4830012d` | `0391133349` | fast-forward from `origin` |
 
 ## Features touched
 
@@ -70,10 +71,16 @@ Spawned by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 
 ## Build and install
 
-- Build command: `.vibeterm/build.sh` on desktop.
-- Installed artifact: `1.18.33-vt-59-2fa3363c92`, inode `49955403`;
-  retry-header marker present.
-- Running services: none restarted.
+- Build command: `.vibeterm/build.sh` on desktop at `d1442208f5`, then on
+  both hosts at `0391133349` (the forklog commit counts toward the stamp).
+  On m4max a non-interactive ssh shell lacks `bun` on PATH, so the build ran
+  under `zsh -ic`.
+- Installed artifact: `1.18.33-vt-60-2fa3363c92` on both hosts; desktop
+  inode `49955406` (the earlier `vt-59` was inode `49955403`); retry-header
+  marker present on both; m4max `opencode --version` -> `vt-60`.
+- Running services: none restarted on either host.
+- m4max `opencode-tools` was already on `master` `711e1414` with only an
+  untracked video file; it was not touched.
 
 ## Commit provenance
 
@@ -82,4 +89,4 @@ Spawned by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 
 ## Unknowns and blocked verification
 
-- m4max not rebuilt in this session.
+- None.
