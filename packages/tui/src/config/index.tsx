@@ -51,7 +51,12 @@ export const TurnTiming = Schema.Struct({
   description: "Default per-turn timing in assistant message footers; toggle at runtime from the command palette",
 })
 
+export const SidebarContext = Schema.Literals(["expanded", "compact"]).annotate({
+  description:
+    "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width",
+})
 export const Sidebar = Schema.Struct({
+  context: Schema.optional(SidebarContext),
   pin_title: Schema.optional(Schema.Boolean).annotate({
     description: "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content",
   }),

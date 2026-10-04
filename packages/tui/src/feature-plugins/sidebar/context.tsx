@@ -1,7 +1,9 @@
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
-import { createMemo } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
+import { useTuiConfig } from "../../config"
+import { useBindings } from "../../keymap"
 
 const id = "internal:sidebar-context"
 
@@ -10,11 +12,42 @@ const money = new Intl.NumberFormat("en-US", {
   currency: "USD",
 })
 
+const wholeMoney = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+})
+
+const shortNumber = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
+  const tuiConfig = useTuiConfig()
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => session()?.cost ?? 0)
+  const mode = createMemo(() => props.api.kv.get("sidebar_context", tuiConfig.sidebar?.context ?? "expanded"))
+  const toggle = () => props.api.kv.set("sidebar_context", mode() === "compact" ? "expanded" : "compact")
+  const [width, setWidth] = createSignal(0)
+
+  useBindings(() => ({
+    commands: [
+      {
+        name: "sidebar.context.toggle",
+        title: mode() === "compact" ? "Expand sidebar context" : "Compact sidebar context",
+        category: "Session",
+        namespace: "palette",
+        run() {
+          toggle()
+          props.api.ui.dialog.clear()
+        },
+      },
+    ],
+    bindings: props.api.tuiConfig.keybinds.get("sidebar.context.toggle"),
+  }))
 
   const state = createMemo(() => {
     const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
@@ -34,14 +67,45 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
   })
 
+  // The sidebar width is not fixed, so compact mode shows the most detailed line that fits beside the toggle icon.
+  const line = createMemo(() => {
+    const tokens = state().tokens
+    const percent = state().percent ?? 0
+    const variants = [
+      `${tokens.toLocaleString()} tokens • ${percent}% used • ${money.format(cost())} spent`,
+      `${tokens.toLocaleString()} • ${percent}% • ${money.format(cost())}`,
+      `${shortNumber.format(tokens)} • ${percent}% • ${(cost() >= 1 ? wholeMoney : money).format(cost())}`,
+    ]
+    return variants.find((item) => item.length <= width() - 2) ?? variants[variants.length - 1]
+  })
+
   return (
-    <box>
-      <text fg={theme().text}>
-        <b>Context</b>
-      </text>
-      <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-      <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+    <box
+      onSizeChange={function () {
+        setWidth(this.width)
+      }}
+    >
+      <Show
+        when={mode() === "compact"}
+        fallback={
+          <>
+            <box flexDirection="row" gap={1} onMouseDown={toggle}>
+              <text fg={theme().text}>▼</text>
+              <text fg={theme().text}>
+                <b>Context</b>
+              </text>
+            </box>
+            <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
+            <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
+            <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+          </>
+        }
+      >
+        <box flexDirection="row" gap={1} onMouseDown={toggle}>
+          <text fg={theme().text}>▶</text>
+          <text fg={theme().textMuted}>{line()}</text>
+        </box>
+      </Show>
     </box>
   )
 }
