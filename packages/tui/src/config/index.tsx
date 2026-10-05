@@ -65,6 +65,10 @@ export const SidebarMcpSummary = Schema.Literals(["default", "collapsed", "never
   description:
     "MCP header summary: 'default' shows the active and error counts while collapsed, 'collapsed' shows a colored dot and count per status while collapsed, 'always' shows them in both states, 'never' shows nothing",
 })
+export const SidebarMcpList = Schema.Literals(["descriptive", "compact"]).annotate({
+  description:
+    "Sidebar MCP server rows: 'descriptive' shows the status dot, name and status text, 'compact' shows the status dot and name only",
+})
 export const SidebarTodoSummary = Schema.Literals(["never", "collapsed", "always"]).annotate({
   description:
     "When to show todo counts after the sidebar Todo heading: 'never' (default), 'collapsed' only while the list is collapsed, or 'always'",
@@ -94,6 +98,7 @@ export const Sidebar = Schema.Struct({
     description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
   }),
   mcp_summary: Schema.optional(SidebarMcpSummary),
+  mcp_list: Schema.optional(SidebarMcpList),
   todo_summary: Schema.optional(SidebarTodoSummary),
   todo_summary_style: Schema.optional(SidebarTodoSummaryStyle),
 }).annotate({ description: "Session sidebar settings" })

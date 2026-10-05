@@ -37,6 +37,7 @@ test("validates config constraints", () => {
         order: ["mcp", "context"],
         hidden: ["lsp"],
         mcp_summary: "always",
+        mcp_list: "compact",
         todo_summary: "always",
         todo_summary_style: "icons",
         context_color: "colored",
@@ -55,6 +56,7 @@ test("validates config constraints", () => {
       order: ["mcp", "context"],
       hidden: ["lsp"],
       mcp_summary: "always",
+      mcp_list: "compact",
       todo_summary: "always",
       todo_summary_style: "icons",
       context_color: "colored",
@@ -75,6 +77,7 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ sidebar: { todo_summary: "sometimes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { context_color: "rainbow" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { cost_thresholds: [-1] } })).toThrow()
+  expect(() => decodeInfo({ sidebar: { mcp_list: "terse" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
