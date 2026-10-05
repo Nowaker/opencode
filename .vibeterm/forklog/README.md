@@ -49,8 +49,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Compact sidebar Context display](./features/2026-10-04-sidebar-context-compact.md)
 - [Keep a scrolled-up reader's place in a long session](./features/2026-10-04-scroll-anchor.md)
 - [Order, hide and drag session sidebar sections](./features/2026-10-04-sidebar-section-order.md)
+- [Per-status MCP counts in the sidebar heading](./features/2026-10-04-sidebar-mcp-summary.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef63ef95cffeIfyDzjCjdXqrYc`](./sessions/2026-10-04-sidebar-mcp-summary.md)
+  - Add `sidebar.mcp_summary` for per-status colored counts on the sidebar
+    MCP heading; upstream issue #53260 and PR #53261; build and install on
+    both hosts, `always` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef81ad30fffeo7m3HoZisuJdli`](./sessions/2026-10-04-sidebar-section-order.md)
   - Order and hide sidebar sections from `tui.json` (`sidebar.order`,
