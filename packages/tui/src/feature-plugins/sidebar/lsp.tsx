@@ -21,10 +21,10 @@ function View(props: { api: TuiPluginApi }) {
         </Show>
         <text fg={theme().text} selectable={false}>
           <b>{off() ? "LSPs" : "LSP"}</b>
-          <Show when={off()}>
-            <span style={{ fg: theme().textMuted }}> are disabled</span>
-          </Show>
         </text>
+        <Show when={off()}>
+          <text fg={theme().textMuted}>are disabled</text>
+        </Show>
       </box>
       <Show when={list().length <= 2 || open()}>
         <Show when={list().length === 0 && !off()}>

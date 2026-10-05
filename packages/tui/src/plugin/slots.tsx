@@ -142,11 +142,13 @@ export function createSlots() {
         })
 
       /*
-       * The press is remembered on mouse down because opentui captures whatever is under the
-       * pointer at the first drag event, which can be a gap between sections or another one.
-       * Drag events then go to that capture only, so a drag is recognized from the `over`
-       * events (they carry `source` while a capture drag is in progress). A drag that started
-       * on selectable text is a text selection, which sends neither, and never reorders.
+       * A section is dragged by its first line, its header; a press anywhere below it never
+       * moves the section. The press is remembered on mouse down because opentui captures
+       * whatever is under the pointer at the first drag event, which can be a gap between
+       * sections or another one. Drag events then go to that capture only, so a drag is
+       * recognized from the `over` events (they carry `source` while a capture drag is in
+       * progress). A drag that started on selectable text is a text selection, which sends
+       * neither, so only the header's unselectable name and blank cells are the handle.
        */
       const wrap = (name: string, content: SidebarRenderer<RuntimeSlotMap, TuiSlotContext>) =>
         ((ctx, props) => {
@@ -159,7 +161,9 @@ export function createSlots() {
                   ? api.theme.current.backgroundElement
                   : undefined
               }
-              onMouseDown={() => (pressed = name)}
+              onMouseDown={function (event) {
+                pressed = event.y === this.y ? name : undefined
+              }}
               onMouseDrag={(event) => {
                 if (!event.isDragging && pressed) setDragging(pressed)
               }}
