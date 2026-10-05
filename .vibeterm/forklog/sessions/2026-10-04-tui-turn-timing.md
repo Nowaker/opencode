@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-turn-timing` (worktree under `.vibeterm/worktrees/`, off upstream `dev` `907b3bc518`); landing worktree `tui-turn-timing-land` off `dev-nowaker` `35bba9112a`
 - Upstream base: `907b3bc518` (upstream `dev`); unchanged
-- Source result commit(s): `17dca85fb5` (cherry-pick of `2fda6d8d7a` on `tui-turn-timing`)
+- Source result commit(s): `17dca85fb5` (cherry-pick of `2fda6d8d7a` on `tui-turn-timing`); `d80de8e705` (date-first fix, amended into `tui-turn-timing` as `b14b75e5d8`)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -23,6 +23,12 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 3
 > entire interaction since the prompt that triggered this turn. configurable in
 > tui and in /tui commands. defaults: matching current defaults, whatever they
 > are.
+
+Follow-up relayed by the coordinator after midnight (same workday), on a
+live footer reading `11:26 PM · 10/4/2026`:
+
+> when date is to be shown because it's not today, show it before time;
+> datetime good, timedate weird.
 
 ## Goals
 
@@ -46,12 +52,14 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 3
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `35bba9112a` | `17dca85fb5` + this forklog commit | cherry-pick from `tui-turn-timing` (conflicts with `keep_scroll_on_submit` resolved by keeping both), fast-forward; pushed to `origin` and `nowaker-github` |
 | `opencode` (GitHub fork) | `tui-turn-timing` | - | `2fda6d8d7a` | new branch off upstream `dev` `907b3bc518`; head of PR #53195 |
+| `opencode` | `dev-nowaker` | `8e1d9b7aa6` | `d80de8e705` + this session's follow-up forklog commit | date-first fix on top (no rewrite); pushed to `origin` and `nowaker-github` |
+| `opencode` (GitHub fork + GitLab) | `tui-turn-timing` | `2fda6d8d7a` | `b14b75e5d8` | fix amended into the feature commit, `--force-with-lease` to both remotes; PR #53195 and issue #53192 bodies updated |
 
 ## Features touched
 
 | Feature | Outcome | Evidence |
 |---|---|---|
-| [Per-turn completion time and duration in the TUI](../features/2026-10-04-tui-turn-timing.md) | introduced | typecheck; config test; before/after tmux frames |
+| [Per-turn completion time and duration in the TUI](../features/2026-10-04-tui-turn-timing.md) | introduced; date order fixed | typecheck; config test; locale test; before/after tmux frames incl. a turn dated yesterday |
 
 ## Other delivered work
 
@@ -89,10 +97,17 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 3
   defaults and the coordinator named no host value for this item; enable
   with `/turn-times` / `/turn-durations` or
   `"turn_timing": { "time": true, "duration": true }`.
+- Date-first fix (`d80de8e705`): desktop built from the primary checkout at
+  `d80de8e705` and installed `1.18.34-vt-91-907b3bc518` (inode `49955921`);
+  m4max fast-forwarded to `d80de8e705` and installed the same version. The
+  installed desktop binary, run on the scratch session, showed
+  `· 10/4/2026 4:59 AM · 7.1s` for the shifted turn and `· 5:09 AM · 14.2s`
+  for today's.
 
 ## Commit provenance
 
 - `17dca85fb5` - TUI change, docs, config test.
+- `d80de8e705` - date before time for turns not finished today, locale test.
 - Required trailer: `AI-Session-ID: ses_ef81c1485ffeC5Sb59U9mVI77g`
 
 ## Unknowns and blocked verification
