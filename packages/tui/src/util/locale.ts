@@ -15,16 +15,24 @@ export function datetime(input: number): string {
 }
 
 export function todayTimeOrDateTime(input: number): string {
-  const date = new Date(input)
-  const now = new Date()
-  const isToday =
-    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
-
-  if (isToday) {
+  if (isToday(input)) {
     return time(input)
   } else {
     return datetime(input)
   }
+}
+
+export function todayTimeOrDateFirst(input: number): string {
+  if (isToday(input)) return time(input)
+  return `${new Date(input).toLocaleDateString()} ${time(input)}`
+}
+
+function isToday(input: number) {
+  const date = new Date(input)
+  const now = new Date()
+  return (
+    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  )
 }
 
 export function number(num: number): string {
