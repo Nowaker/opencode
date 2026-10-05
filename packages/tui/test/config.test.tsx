@@ -40,6 +40,7 @@ test("validates config constraints", () => {
         mcp_list: "compact",
         todo_summary: "always",
         todo_summary_style: "icons",
+        todo_completed: "collapsed",
       },
       usage: { context_color: "colored", context_thresholds: [50, 75], cost_thresholds: [5, 20] },
       plugin: ["example-plugin"],
@@ -57,6 +58,7 @@ test("validates config constraints", () => {
       mcp_list: "compact",
       todo_summary: "always",
       todo_summary_style: "icons",
+      todo_completed: "collapsed",
     },
     usage: { context_color: "colored", context_thresholds: [50, 75], cost_thresholds: [5, 20] },
   })
@@ -71,6 +73,7 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ sidebar: { context: "tiny" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_summary: "sometimes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { todo_summary: "sometimes" } })).toThrow()
+  expect(() => decodeInfo({ sidebar: { todo_completed: "sometimes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_list: "terse" } })).toThrow()
   expect(() => decodeInfo({ usage: { context_color: "rainbow" } })).toThrow()
   expect(() => decodeInfo({ usage: { cost_thresholds: [-1] } })).toThrow()
