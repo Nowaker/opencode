@@ -75,9 +75,24 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 4B
   desktop file decodes with `TuiConfig.Info`.
 - Running services: none restarted on either host.
 
+## Follow-up: footer separator
+
+- Coordinator relayed the user: "for ctx . pct . cost use the small dot,
+  like the one on the bottom bar of opencode, not that big one you used
+  there".
+- PR branch `tui-context-display`: feature commit amended `cf42e21f81` ->
+  `7d9790cb1c`, force-pushed with lease to `nowaker-github` and `origin`; PR
+  #53205 and issue #53200 bodies updated. Stacked item 5
+  (`ses_ef6439100ffea6UZ1MqYyvXDjR`) told to rebase.
+- `dev-nowaker`: fix commit `b433a219dd` on top of `f8f513a75a` (not
+  force-pushed). Typecheck and config/keymap tests pass; tmux captures at
+  widths 60/42/26 show ` · ` (`c2 b7`). No build or install; items 5-7
+  rebuild both hosts.
+
 ## Commit provenance
 
 - `f2fd2979ad` - sidebar change.
+- `b433a219dd` - footer-dot separator fix.
 - Required trailer: `AI-Session-ID: ses_ef81b7a80ffeaAyKTHFHlHGXVs`
 
 ## Unknowns and blocked verification
