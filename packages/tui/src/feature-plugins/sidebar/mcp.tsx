@@ -1,13 +1,23 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Match, Show, Switch, createSignal } from "solid-js"
+import { useTuiConfig } from "../../config"
 
 const id = "internal:sidebar-mcp"
+
+const statuses = ["connected", "failed", "needs_client_registration", "needs_auth", "disabled"] as const
 
 function View(props: { api: TuiPluginApi }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
+  const tuiConfig = useTuiConfig()
+  const summary = () => tuiConfig.sidebar?.mcp_summary ?? "default"
   const list = createMemo(() => props.api.state.mcp())
+  const counts = createMemo(() =>
+    statuses
+      .map((status) => ({ status, count: list().filter((item) => item.status === status).length }))
+      .filter((item) => item.count > 0),
+  )
   const on = createMemo(() => list().filter((item) => item.status === "connected").length)
   const bad = createMemo(
     () =>
@@ -35,11 +45,21 @@ function View(props: { api: TuiPluginApi }) {
           </Show>
           <text fg={theme().text}>
             <b>MCP</b>
-            <Show when={!open()}>
+            <Show when={summary() === "default" && !open()}>
               <span style={{ fg: theme().textMuted }}>
                 {" "}
                 ({on()} active{bad() > 0 ? `, ${bad()} error${bad() > 1 ? "s" : ""}` : ""})
               </span>
+            </Show>
+            <Show when={summary() === "always" || (summary() === "collapsed" && !open())}>
+              <For each={counts()}>
+                {(item) => (
+                  <>
+                    <span style={{ fg: dot(item.status) }}> •</span>
+                    <span style={{ fg: theme().textMuted }}>{item.count}</span>
+                  </>
+                )}
+              </For>
             </Show>
           </text>
         </box>
