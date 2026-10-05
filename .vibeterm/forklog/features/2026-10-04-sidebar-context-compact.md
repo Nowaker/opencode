@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-context-display` (off upstream `dev` `907b3bc518`; also the upstream PR head)
 - First local commit: `f2fd2979ad`
-- Current local commit(s): `f2fd2979ad`
+- Current local commit(s): `f2fd2979ad`, `b433a219dd`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
 - Last checked against upstream: `907b3bc518` (upstream `dev`)
 - Upstream: issue [#53200](https://github.com/anomalyco/opencode/issues/53200), PR [#53205](https://github.com/anomalyco/opencode/pull/53205)
@@ -64,6 +64,7 @@ quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `f2fd2979ad` | 2026-10-04 | expanded/compact Context block, header toggle, palette command, `sidebar.context` option, docs line | `View` in `packages/tui/src/feature-plugins/sidebar/context.tsx`; `Sidebar`/`SidebarContext` in `packages/tui/src/config/index.tsx`; `sidebar_context_toggle` in `packages/tui/src/config/keybind.ts` |
+| `b433a219dd` | 2026-10-04 | compact variants joined with ` · ` (U+00B7, the prompt footer separator) instead of ` • ` | `variants` in `View`, `packages/tui/src/feature-plugins/sidebar/context.tsx` |
 
 ## Verification
 
@@ -73,8 +74,9 @@ quoting the user:
   throwaway tmux socket `oc-tui-ctx`, isolated `XDG_*` dirs, a fake
   OpenAI-compatible provider on 127.0.0.1 returning 175,019 tokens. Vanilla
   `907b3bc518`: four-line block. Patched: `sidebar.context: "compact"` gives
-  `▶ 175,019 • 18% • $1,215.20` at width 42, `▶ 175,019 tokens • 18% used •
-  $1,215.20 spent` at 60, `▶ 175K • 18% • $1,215` at 26; palette and mouse
+  `▶ 175,019 · 18% · $1,215.20` at width 42, `▶ 175,019 tokens · 18% used ·
+  $1,215.20 spent` at 60, `▶ 175K · 18% · $1,215` at 26 (` · ` since
+  `b433a219dd`; captured bytes `c2 b7`); palette and mouse
   toggles switch modes and kv `sidebar_context` persists across restart.
 
 ## Timeline
@@ -89,6 +91,12 @@ quoting the user:
   - `dc68262b8a`: the Context header toggles through `onHeaderClick` (press
     and release on the same cell) with non-selectable header text, so it
     can be dragged; click toggle re-verified in tmux.
+- 2026-10-04
+  [`ses_ef81b7a80ffeaAyKTHFHlHGXVs`](../sessions/2026-10-04-sidebar-context-compact.md)
+  - `b433a219dd`: user asked for the footer's small dot; compact variants
+    use ` · ` instead of ` • `, re-verified at widths 26/42/60 in tmux. PR
+    #53205 head amended to `7d9790cb1c`. Not built; later items rebuild
+    both hosts.
 
 ## Current maintenance notes
 
