@@ -52,8 +52,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Per-status MCP counts in the sidebar heading](./features/2026-10-04-sidebar-mcp-summary.md)
 - [Todo counts after the sidebar Todo heading](./features/2026-10-04-sidebar-todo-summary.md)
 - [Color context usage and cost by thresholds](./features/2026-10-04-sidebar-context-colors.md)
+- [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef48e41cfffeCewCXcQUj6z1n2`](./sessions/2026-10-04-sidebar-mcp-list.md)
+  - Add `sidebar.mcp_list` (`descriptive`/`compact`) so the sidebar MCP rows
+    can drop their status text; upstream issue #53321 and PR #53322; build
+    and install on both hosts, `compact` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef6439100ffea6UZ1MqYyvXDjR`](./sessions/2026-10-04-sidebar-context-colors.md)
   - Add `usage.context_color`, `usage.context_thresholds` and
