@@ -4,6 +4,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, createSignal, Show } from "solid-js"
 import { useTuiConfig } from "../../config"
 import { useBindings } from "../../keymap"
+import { usageColors } from "../../util/usage-color"
 
 const id = "internal:sidebar-context"
 
@@ -67,16 +68,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
   })
 
+  const colors = createMemo(() => usageColors(theme(), tuiConfig.usage, state().percent, cost()))
+
   // The sidebar width is not fixed, so compact mode shows the most detailed line that fits beside the toggle icon.
   const line = createMemo(() => {
     const tokens = state().tokens
     const percent = state().percent ?? 0
     const variants = [
-      `${tokens.toLocaleString()} tokens · ${percent}% used · ${money.format(cost())} spent`,
-      `${tokens.toLocaleString()} · ${percent}% · ${money.format(cost())}`,
-      `${shortNumber.format(tokens)} · ${percent}% · ${(cost() >= 1 ? wholeMoney : money).format(cost())}`,
+      [`${tokens.toLocaleString()} tokens`, `${percent}% used`, `${money.format(cost())} spent`],
+      [tokens.toLocaleString(), `${percent}%`, money.format(cost())],
+      [shortNumber.format(tokens), `${percent}%`, (cost() >= 1 ? wholeMoney : money).format(cost())],
     ]
-    return variants.find((item) => item.length <= width() - 2) ?? variants[variants.length - 1]
+    return variants.find((item) => item.join(" · ").length <= width() - 2) ?? variants[variants.length - 1]
   })
 
   return (
@@ -95,15 +98,21 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
                 <b>Context</b>
               </text>
             </box>
-            <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-            <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-            <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+            <text fg={colors().context}>{state().tokens.toLocaleString()} tokens</text>
+            <text fg={colors().context}>{state().percent ?? 0}% used</text>
+            <text fg={colors().cost}>{money.format(cost())} spent</text>
           </>
         }
       >
         <box flexDirection="row" gap={1} onMouseDown={toggle}>
           <text fg={theme().text}>▶</text>
-          <text fg={theme().textMuted}>{line()}</text>
+          <text fg={theme().textMuted}>
+            <span style={{ fg: colors().context }}>{line()[0]}</span>
+            {" · "}
+            <span style={{ fg: colors().context }}>{line()[1]}</span>
+            {" · "}
+            <span style={{ fg: colors().cost }}>{line()[2]}</span>
+          </text>
         </box>
       </Show>
     </box>

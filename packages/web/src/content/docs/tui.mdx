@@ -401,6 +401,9 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
 - `sidebar.context` - Controls the sidebar Context block. `"expanded"` (default) shows tokens, percent used, and cost on separate lines; `"compact"` fits them on one line, abbreviating as the sidebar narrows. Click the block's arrow or run "Compact sidebar context" from the command palette to switch at runtime; that choice is remembered and overrides this setting.
+- `usage.context_color` - Colors the context usage in the sidebar Context block (expanded and compact) and in the prompt footer. `"plain"` (default) keeps the muted text color; `"colored"` colors the token count and percent used by `usage.context_thresholds`.
+- `usage.context_thresholds` - Percent-used thresholds for `"colored"`. Defaults to `[60, 70, 80, 90]`: up to 60% stays muted, above 60% uses the theme's warning color, above 90% its error color, and the thresholds in between blend from warning to error.
+- `usage.cost_thresholds` - Dollar thresholds for the session cost in the sidebar and the prompt footer, colored the same way: above the first uses the warning color, above the last the error color. Unset by default, so cost stays muted. For example, `[5, 20]` shows the cost in the warning color above $5 and in the error color above $20.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
 
