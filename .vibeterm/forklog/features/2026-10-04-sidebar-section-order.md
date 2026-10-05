@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-sidebar-order` (config, off upstream `dev` `907b3bc518`), `tui-sidebar-drag` (drag-and-drop, stacked on it); both are upstream PR heads
 - First local commit: `bc5aa4ec1e`
-- Current local commit(s): `bc5aa4ec1e`, `dc68262b8a`
+- Current local commit(s): `bc5aa4ec1e`, `dc68262b8a`, `1c06f291b3`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
 - Last checked against upstream: `907b3bc518` (upstream `dev`)
 - Upstream: issue [#53198](https://github.com/anomalyco/opencode/issues/53198), PR [#53201](https://github.com/anomalyco/opencode/pull/53201) (config), PR [#53217](https://github.com/anomalyco/opencode/pull/53217) (drag-and-drop, builds on #53201)
@@ -45,8 +45,13 @@ quoting the user:
 - opentui captures the renderable under the pointer at the first drag event,
   which can be a gap; the dragged section is the one pressed on mouse down and
   a drag is recognized from `over` events carrying a `source`.
-- Header text is `selectable={false}` so a press starts a drag, not a text
-  selection; content text still selects and never reorders.
+- A press on selectable text starts a text selection, never a drag, so a
+  cell is either the drag handle or copyable text. Only the section name and
+  its arrow are `selectable={false}`; values after them on the header line
+  (compact Context, MCP summary and counts, Todo summary, "are disabled") are
+  their own selectable text. A drag reorders only when it starts on the
+  section's first line, so a blank cell lower down (the gap after an MCP
+  row's bullet) never moves the section.
 - Collapsible headers (MCP, LSP, Todo, Files, and 4B's Context) toggle only
   when pressed and released on the same cell (`feature-plugins/sidebar/click.ts`),
   so a drag or a drop onto a header does not toggle it.
@@ -59,6 +64,7 @@ quoting the user:
 |---|---|---|---|
 | `bc5aa4ec1e` | 2026-10-04 | `sidebar.order` / `sidebar.hidden`; `placeSidebarSection` applied in slot registration; config passed via `setupSlots(api, config.sidebar)` | `createSlots` in `packages/tui/src/plugin/slots.tsx`; `TuiConfig.Sidebar`; `load()` in `packages/opencode/src/plugin/tui/runtime.ts` |
 | `dc68262b8a` | 2026-10-04 | drag-and-drop wrapper, kv `sidebar_order`, live `registry.updateOrder`, reset command, non-selectable headers, `onHeaderClick` | `packages/tui/src/plugin/slots.tsx`; `packages/tui/src/feature-plugins/sidebar/*.tsx`; `routes/session/index.tsx` command list |
+| `1c06f291b3` | 2026-10-05 | header values split out of the non-selectable name text so they copy again; a drag starts only on a section's first line | `onMouseDown` of the `wrap` box in `packages/tui/src/plugin/slots.tsx`; header rows in `feature-plugins/sidebar/{context,mcp,todo,lsp}.tsx` |
 
 ## Verification
 
@@ -76,6 +82,14 @@ quoting the user:
   a header without toggling it, 4B's compact Context toggle.
 - Installed desktop binary `1.18.34-vt-80-907b3bc518` with
   `{"order":["lsp"],"hidden":["context"]}`: LSP first, Context hidden, MCP next.
+- 2026-10-05 fix: `slots.test.tsx` drives the real slot host with `mockMouse`
+  (header drag reorders, drag from a cell below the header does not, values
+  after a name select, the real MCP section's collapsed summary selects and
+  still toggles). In tmux, copy-on-select via the OSC 52 buffer: compact
+  Context `234,124 · 40`, MCP `•3`, Todo `1+1/3`, `are disabled`, MCP rows
+  copy; clicks on names and values toggle; dragging the `MCP` name or the
+  compact Context arrow reorders; a drag from a row gap does not. Same copy
+  and click result on the installed desktop `1.18.34-vt-101-907b3bc518`.
 
 ## Timeline
 
@@ -83,6 +97,12 @@ quoting the user:
   [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-04-sidebar-section-order.md)
   - `bc5aa4ec1e`, `dc68262b8a`: introduce; issue #53198, PRs #53201 and
     #53217; build and install on desktop and m4max.
+- 2026-10-05
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-05-sidebar-header-select.md)
+  - `1c06f291b3`: user could not drag-select the compact Context line or
+    the MCP counts; only names and arrows stay the drag handle now, and a
+    drag starts only on a section's first line. PR #53217 head amended to
+    `937fde86d9`. Build and install on desktop and m4max.
 
 ## Current maintenance notes
 
@@ -97,7 +117,8 @@ quoting the user:
 - Run `bun typecheck` and `bun test test/plugin test/config.test.tsx` in
   `packages/tui`.
 - In a TUI: configured order applies, a header drag reorders, a click still
-  collapses.
+  collapses, and the values after a header name (compact Context, MCP
+  counts) still copy on drag-select.
 - Link a new timeline row to the current session record.
 
 ## Supersession or removal

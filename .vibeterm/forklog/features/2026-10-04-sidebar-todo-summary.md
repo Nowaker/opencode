@@ -76,6 +76,11 @@ quoting the user:
 - 2026-10-05
   [`ses_ef49a49d9ffeKmNRrjg4DFrQtW`](../sessions/2026-10-05-sidebar-todo-completed.md)
   - Preserved: merged with `sidebar.todo_completed` in the same `View`.
+- 2026-10-05
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-05-sidebar-header-select.md)
+  - `1c06f291b3`: the summary moves out of the non-selectable `Todo` text
+    into its own text, so it copies on drag-select (`1+1/3`); rendering
+    unchanged.
 
 ## Current maintenance notes
 

@@ -77,6 +77,11 @@ quoting the user:
   - `712382574a`: introduce; open upstream issue #53260 and PR #53261;
     build and install on desktop and m4max (`vt-85`); `always` set in both
     hosts' `tui.json`.
+- 2026-10-05
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-05-sidebar-header-select.md)
+  - `1c06f291b3`: the counts and the collapsed `(N active, M errors)`
+    summary move out of the non-selectable `MCP` text into their own text,
+    so they copy on drag-select (`•3`); rendering unchanged (`▼ MCP •3`).
 
 ## Current maintenance notes
 

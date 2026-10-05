@@ -66,6 +66,11 @@ quoting the user:
   [`ses_ef81b0c61ffe9TD8cftI93JGis`](../sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
   - `1f2bfda9bd`: introduce; open upstream issue #53183 and PR #53185;
     build and install on desktop and m4max (`vt-63`).
+- 2026-10-05
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-05-sidebar-header-select.md)
+  - `1c06f291b3`: "are disabled" moves out of the non-selectable `LSPs`
+    text into its own text, so it copies on drag-select; rendering
+    unchanged.
 
 ## Current maintenance notes
 

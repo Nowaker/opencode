@@ -58,6 +58,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-05 `ses_ef81ad30fffeo7m3HoZisuJdli`](./sessions/2026-10-05-sidebar-header-select.md)
+  - Make the values on sidebar header lines (compact Context, MCP counts,
+    Todo summary, "are disabled") drag-copyable again beside the section
+    drag handle; PR #53217 head amended; build and install on both hosts.
+
 - [2026-10-05 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-05-tui-block-nav.md)
   - Add block (`ctrl+up`/`ctrl+down`) and landmark (`ctrl+shift+up`/
     `ctrl+shift+down`) transcript navigation and `ctrl+home`/`ctrl+end`;
