@@ -49,23 +49,24 @@ function View(props: { api: TuiPluginApi }) {
           </Show>
           <text fg={theme().text} selectable={false}>
             <b>MCP</b>
-            <Show when={summary() === "default" && !open()}>
-              <span style={{ fg: theme().textMuted }}>
-                {" "}
-                ({on()} active{bad() > 0 ? `, ${bad()} error${bad() > 1 ? "s" : ""}` : ""})
-              </span>
-            </Show>
-            <Show when={summary() === "always" || (summary() === "collapsed" && !open())}>
+          </text>
+          <Show when={summary() === "default" && !open()}>
+            <text fg={theme().textMuted}>
+              ({on()} active{bad() > 0 ? `, ${bad()} error${bad() > 1 ? "s" : ""}` : ""})
+            </text>
+          </Show>
+          <Show when={summary() === "always" || (summary() === "collapsed" && !open())}>
+            <text>
               <For each={counts()}>
-                {(item) => (
+                {(item, index) => (
                   <>
-                    <span style={{ fg: dot(item.status) }}> •</span>
+                    <span style={{ fg: dot(item.status) }}>{index() > 0 ? " •" : "•"}</span>
                     <span style={{ fg: theme().textMuted }}>{item.count}</span>
                   </>
                 )}
               </For>
-            </Show>
-          </text>
+            </text>
+          </Show>
         </box>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>

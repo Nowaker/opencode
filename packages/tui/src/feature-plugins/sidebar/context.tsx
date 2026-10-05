@@ -111,7 +111,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           <text fg={theme().text} selectable={false}>
             ▶
           </text>
-          <text fg={theme().textMuted} selectable={false}>
+          <text fg={theme().textMuted}>
             <span style={{ fg: colors().context }}>{line()[0]}</span>
             {" · "}
             <span style={{ fg: colors().context }}>{line()[1]}</span>

@@ -41,10 +41,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </Show>
           <text fg={theme().text} selectable={false}>
             <b>Todo</b>
-            <Show when={summary()}>
-              <span style={{ fg: theme().text }}> {summary()}</span>
-            </Show>
           </text>
+          <Show when={summary()}>
+            <text fg={theme().text}>{summary()}</text>
+          </Show>
         </box>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>{(item) => <TodoItem status={item.status} content={item.content} />}</For>
