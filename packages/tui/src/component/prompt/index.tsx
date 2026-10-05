@@ -41,6 +41,7 @@ import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { formatDuration } from "../../util/format"
+import { usageColors } from "../../util/usage-color"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
@@ -280,11 +281,12 @@ export function Prompt(props: PromptProps) {
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
+    const pct = model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null
     const cost = session?.cost ?? 0
     return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
+      context: pct === null ? Locale.number(tokens) : `${Locale.number(tokens)} (${pct}%)`,
       cost: cost > 0 ? money.format(cost) : undefined,
+      colors: usageColors(theme, tuiConfig.usage, pct, cost),
     }
   })
 
@@ -1706,7 +1708,9 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text fg={theme.textMuted} wrapMode="none">
-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
+                          <span style={{ fg: item().colors.context }}>{item().context}</span>
+                          {item().cost ? " · " : ""}
+                          <span style={{ fg: item().colors.cost }}>{item().cost ?? ""}</span>
                         </text>
                       )}
                     </Match>
