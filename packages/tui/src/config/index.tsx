@@ -59,6 +59,13 @@ export const SidebarMcpSummary = Schema.Literals(["default", "collapsed", "never
   description:
     "MCP header summary: 'default' shows the active and error counts while collapsed, 'collapsed' shows a colored dot and count per status while collapsed, 'always' shows them in both states, 'never' shows nothing",
 })
+export const SidebarTodoSummary = Schema.Literals(["never", "collapsed", "always"]).annotate({
+  description:
+    "When to show todo counts after the sidebar Todo heading: 'never' (default), 'collapsed' only while the list is collapsed, or 'always'",
+})
+export const SidebarTodoSummaryStyle = Schema.Literals(["progress", "icons"]).annotate({
+  description: "Todo summary format: 'progress' is done+in_progress/total (10+1/12), 'icons' is ✓10 •1 ○1",
+})
 export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
   pin_title: Schema.optional(Schema.Boolean).annotate({
@@ -72,6 +79,8 @@ export const Sidebar = Schema.Struct({
     description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
   }),
   mcp_summary: Schema.optional(SidebarMcpSummary),
+  todo_summary: Schema.optional(SidebarTodoSummary),
+  todo_summary_style: Schema.optional(SidebarTodoSummaryStyle),
 }).annotate({ description: "Session sidebar settings" })
 export type Sidebar = Schema.Schema.Type<typeof Sidebar>
 
