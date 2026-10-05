@@ -55,6 +55,10 @@ export const SidebarContext = Schema.Literals(["expanded", "compact"]).annotate(
   description:
     "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width",
 })
+export const SidebarMcpSummary = Schema.Literals(["default", "collapsed", "never", "always"]).annotate({
+  description:
+    "MCP header summary: 'default' shows the active and error counts while collapsed, 'collapsed' shows a colored dot and count per status while collapsed, 'always' shows them in both states, 'never' shows nothing",
+})
 export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
   pin_title: Schema.optional(Schema.Boolean).annotate({
@@ -67,6 +71,7 @@ export const Sidebar = Schema.Struct({
   hidden: Schema.optional(Schema.Array(Schema.String)).annotate({
     description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
   }),
+  mcp_summary: Schema.optional(SidebarMcpSummary),
 }).annotate({ description: "Session sidebar settings" })
 export type Sidebar = Schema.Schema.Type<typeof Sidebar>
 
