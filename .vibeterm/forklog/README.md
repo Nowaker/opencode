@@ -50,8 +50,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Keep a scrolled-up reader's place in a long session](./features/2026-10-04-scroll-anchor.md)
 - [Order, hide and drag session sidebar sections](./features/2026-10-04-sidebar-section-order.md)
 - [Per-status MCP counts in the sidebar heading](./features/2026-10-04-sidebar-mcp-summary.md)
+- [Todo counts after the sidebar Todo heading](./features/2026-10-04-sidebar-todo-summary.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef6415913ffeq4hyR0MCqsjDsn`](./sessions/2026-10-04-sidebar-todo-summary.md)
+  - Show todo counts after the sidebar Todo heading (`sidebar.todo_summary`,
+    `sidebar.todo_summary_style`); upstream issue #53258 and PR #53259;
+    build and install on both hosts, `always` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef63ef95cffeIfyDzjCjdXqrYc`](./sessions/2026-10-04-sidebar-mcp-summary.md)
   - Add `sidebar.mcp_summary` for per-status colored counts on the sidebar
