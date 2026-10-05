@@ -70,6 +70,10 @@ export const SidebarTodoSummary = Schema.Literals(["never", "collapsed", "always
 export const SidebarTodoSummaryStyle = Schema.Literals(["progress", "icons"]).annotate({
   description: "Todo summary format: 'progress' is done+in_progress/total (10+1/12), 'icons' is ✓10 •1 ○1",
 })
+export const SidebarTodoCompleted = Schema.Literals(["hide", "collapsed", "show"]).annotate({
+  description:
+    "Sidebar Todo section once every item is completed: 'hide' (default) removes it, 'collapsed' keeps the heading with the list collapsed, 'show' keeps the list open",
+})
 export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
   pin_title: Schema.optional(Schema.Boolean).annotate({
@@ -86,6 +90,7 @@ export const Sidebar = Schema.Struct({
   mcp_list: Schema.optional(SidebarMcpList),
   todo_summary: Schema.optional(SidebarTodoSummary),
   todo_summary_style: Schema.optional(SidebarTodoSummaryStyle),
+  todo_completed: Schema.optional(SidebarTodoCompleted),
 }).annotate({ description: "Session sidebar settings" })
 export type Sidebar = Schema.Schema.Type<typeof Sidebar>
 
