@@ -102,6 +102,12 @@ quoting the user:
     use ` · ` instead of ` • `, re-verified at widths 26/42/60 in tmux. PR
     #53205 head amended to `7d9790cb1c`. Not built; later items rebuild
     both hosts.
+- 2026-10-05
+  [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-05-sidebar-header-select.md)
+  - `1c06f291b3`: the compact line is selectable text again (the user could
+    not drag-copy it); its `▶` arrow stays the section drag handle and a
+    click on the line still toggles. Re-verified in tmux and on desktop
+    `vt-101`.
 
 ## Current maintenance notes
 
