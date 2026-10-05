@@ -47,6 +47,25 @@ export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
 }).annotate({ description: "Sidebar settings" })
 
+export const UsageContextColor = Schema.Literals(["plain", "colored"]).annotate({
+  description:
+    "Context usage color: 'plain' keeps the muted text color, 'colored' colors tokens and percent used by context_thresholds",
+})
+export const UsageContextThresholdsDefault = [60, 70, 80, 90]
+const Thresholds = Schema.Array(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
+export const Usage = Schema.Struct({
+  context_color: Schema.optional(UsageContextColor),
+  context_thresholds: Schema.optional(Thresholds).annotate({
+    description:
+      "Percent-used thresholds for 'colored': above the first is the warning color, above the last the error color, blended between (default: [60, 70, 80, 90])",
+  }),
+  cost_thresholds: Schema.optional(Thresholds).annotate({
+    description:
+      "Dollar thresholds for the session cost: above the first is the warning color, above the last the error color, blended between (default: none)",
+  }),
+}).annotate({ description: "Context usage and cost coloring in the sidebar Context block and the prompt footer" })
+export type Usage = Schema.Schema.Type<typeof Usage>
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -80,6 +99,7 @@ export const Info = Schema.Struct({
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
   sidebar: Schema.optional(Sidebar),
+  usage: Schema.optional(Usage),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
