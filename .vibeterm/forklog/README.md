@@ -52,9 +52,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Per-status MCP counts in the sidebar heading](./features/2026-10-04-sidebar-mcp-summary.md)
 - [Todo counts after the sidebar Todo heading](./features/2026-10-04-sidebar-todo-summary.md)
 - [Color context usage and cost by thresholds](./features/2026-10-04-sidebar-context-colors.md)
+- [Keep a completed todo list in the sidebar](./features/2026-10-05-sidebar-todo-completed.md)
 - [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
 
 ## Session records
+
+- [2026-10-05 `ses_ef49a49d9ffeKmNRrjg4DFrQtW`](./sessions/2026-10-05-sidebar-todo-completed.md)
+  - Add `sidebar.todo_completed` (`hide`, `collapsed`, `show`) so an
+    all-completed todo list stays in the sidebar; build and install on both
+    hosts, `show` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef48e41cfffeCewCXcQUj6z1n2`](./sessions/2026-10-04-sidebar-mcp-list.md)
   - Add `sidebar.mcp_list` (`descriptive`/`compact`) so the sidebar MCP rows
