@@ -39,6 +39,14 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const SidebarMcpList = Schema.Literals(["descriptive", "compact"]).annotate({
+  description:
+    "Sidebar MCP server rows: 'descriptive' shows the status dot, name and status text, 'compact' shows the status dot and name only",
+})
+export const Sidebar = Schema.Struct({
+  mcp_list: Schema.optional(SidebarMcpList),
+}).annotate({ description: "Sidebar settings" })
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -71,6 +79,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
+  sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
