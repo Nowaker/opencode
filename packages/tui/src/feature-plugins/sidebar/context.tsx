@@ -73,9 +73,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const tokens = state().tokens
     const percent = state().percent ?? 0
     const variants = [
-      `${tokens.toLocaleString()} tokens • ${percent}% used • ${money.format(cost())} spent`,
-      `${tokens.toLocaleString()} • ${percent}% • ${money.format(cost())}`,
-      `${shortNumber.format(tokens)} • ${percent}% • ${(cost() >= 1 ? wholeMoney : money).format(cost())}`,
+      `${tokens.toLocaleString()} tokens · ${percent}% used · ${money.format(cost())} spent`,
+      `${tokens.toLocaleString()} · ${percent}% · ${money.format(cost())}`,
+      `${shortNumber.format(tokens)} · ${percent}% · ${(cost() >= 1 ? wholeMoney : money).format(cost())}`,
     ]
     return variants.find((item) => item.length <= width() - 2) ?? variants[variants.length - 1]
   })
