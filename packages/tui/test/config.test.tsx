@@ -40,10 +40,8 @@ test("validates config constraints", () => {
         mcp_list: "compact",
         todo_summary: "always",
         todo_summary_style: "icons",
-        context_color: "colored",
-        context_thresholds: [50, 75],
-        cost_thresholds: [5, 20],
       },
+      usage: { context_color: "colored", context_thresholds: [50, 75], cost_thresholds: [5, 20] },
       plugin: ["example-plugin"],
     }),
   ).toMatchObject({
@@ -59,10 +57,8 @@ test("validates config constraints", () => {
       mcp_list: "compact",
       todo_summary: "always",
       todo_summary_style: "icons",
-      context_color: "colored",
-      context_thresholds: [50, 75],
-      cost_thresholds: [5, 20],
     },
+    usage: { context_color: "colored", context_thresholds: [50, 75], cost_thresholds: [5, 20] },
   })
   expect(() => decodeInfo({ sidebar: { order: "mcp" } })).toThrow()
   expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
@@ -75,9 +71,9 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ sidebar: { context: "tiny" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_summary: "sometimes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { todo_summary: "sometimes" } })).toThrow()
-  expect(() => decodeInfo({ sidebar: { context_color: "rainbow" } })).toThrow()
-  expect(() => decodeInfo({ sidebar: { cost_thresholds: [-1] } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_list: "terse" } })).toThrow()
+  expect(() => decodeInfo({ usage: { context_color: "rainbow" } })).toThrow()
+  expect(() => decodeInfo({ usage: { cost_thresholds: [-1] } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
