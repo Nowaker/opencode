@@ -32,7 +32,14 @@ test("validates config constraints", () => {
       scroll_speed: 0.001,
       diff_style: "stacked",
       cursor: { blinking: false },
-      sidebar: { context: "compact", order: ["mcp", "context"], hidden: ["lsp"], mcp_summary: "always" },
+      sidebar: {
+        context: "compact",
+        order: ["mcp", "context"],
+        hidden: ["lsp"],
+        mcp_summary: "always",
+        todo_summary: "always",
+        todo_summary_style: "icons",
+      },
       plugin: ["example-plugin"],
     }),
   ).toMatchObject({
@@ -40,7 +47,14 @@ test("validates config constraints", () => {
     attention: { volume: 1 },
     diff_style: "stacked",
     cursor: { blinking: false },
-    sidebar: { context: "compact", order: ["mcp", "context"], hidden: ["lsp"], mcp_summary: "always" },
+    sidebar: {
+      context: "compact",
+      order: ["mcp", "context"],
+      hidden: ["lsp"],
+      mcp_summary: "always",
+      todo_summary: "always",
+      todo_summary_style: "icons",
+    },
   })
   expect(() => decodeInfo({ sidebar: { order: "mcp" } })).toThrow()
   expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
@@ -52,6 +66,7 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ sidebar: { pin_title: "yes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { context: "tiny" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_summary: "sometimes" } })).toThrow()
+  expect(() => decodeInfo({ sidebar: { todo_summary: "sometimes" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
@@ -89,6 +104,7 @@ test("resolves overrides without mutating input", () => {
     keybinds: { session_list: "ctrl+l" },
     cursor: { blinking: false },
     keep_scroll_on_submit: true,
+    sidebar: { todo_summary: "always", todo_summary_style: "icons" },
   }
   const config = resolve(input, { terminalSuspend: true })
 
