@@ -92,6 +92,11 @@ quoting the user:
     and release on the same cell) with non-selectable header text, so it
     can be dragged; click toggle re-verified in tmux.
 - 2026-10-04
+  [`ses_ef6439100ffea6UZ1MqYyvXDjR`](../sessions/2026-10-04-sidebar-context-colors.md)
+  - `dc76be7263`: compact variants become three-part arrays rendered as
+    spans so tokens, percent and cost can be colored; width selection and
+    the ` · ` separator are unchanged; all three variants re-verified in tmux.
+- 2026-10-04
   [`ses_ef81b7a80ffeaAyKTHFHlHGXVs`](../sessions/2026-10-04-sidebar-context-compact.md)
   - `b433a219dd`: user asked for the footer's small dot; compact variants
     use ` · ` instead of ` • `, re-verified at widths 26/42/60 in tmux. PR

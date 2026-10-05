@@ -51,8 +51,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Order, hide and drag session sidebar sections](./features/2026-10-04-sidebar-section-order.md)
 - [Per-status MCP counts in the sidebar heading](./features/2026-10-04-sidebar-mcp-summary.md)
 - [Todo counts after the sidebar Todo heading](./features/2026-10-04-sidebar-todo-summary.md)
+- [Color sidebar Context usage and cost by thresholds](./features/2026-10-04-sidebar-context-colors.md)
 
 ## Session records
+
+- [2026-10-04 `ses_ef6439100ffea6UZ1MqYyvXDjR`](./sessions/2026-10-04-sidebar-context-colors.md)
+  - Add `sidebar.context_color`, `sidebar.context_thresholds` and
+    `sidebar.cost_thresholds` to color the sidebar Context usage and cost;
+    upstream issue #53263 and PR #53264; build and install on both hosts,
+    `colored` set in their `tui.json`.
 
 - [2026-10-04 `ses_ef6415913ffeq4hyR0MCqsjDsn`](./sessions/2026-10-04-sidebar-todo-summary.md)
   - Show todo counts after the sidebar Todo heading (`sidebar.todo_summary`,
