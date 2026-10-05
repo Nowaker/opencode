@@ -55,6 +55,12 @@ export const SidebarContext = Schema.Literals(["expanded", "compact"]).annotate(
   description:
     "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width",
 })
+export const SidebarContextColor = Schema.Literals(["plain", "colored"]).annotate({
+  description:
+    "Sidebar context color: 'plain' keeps the muted text color, 'colored' colors tokens and percent used by context_thresholds",
+})
+export const SidebarContextThresholdsDefault = [60, 70, 80, 90]
+const Thresholds = Schema.Array(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
 export const SidebarMcpSummary = Schema.Literals(["default", "collapsed", "never", "always"]).annotate({
   description:
     "MCP header summary: 'default' shows the active and error counts while collapsed, 'collapsed' shows a colored dot and count per status while collapsed, 'always' shows them in both states, 'never' shows nothing",
@@ -68,6 +74,15 @@ export const SidebarTodoSummaryStyle = Schema.Literals(["progress", "icons"]).an
 })
 export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
+  context_color: Schema.optional(SidebarContextColor),
+  context_thresholds: Schema.optional(Thresholds).annotate({
+    description:
+      "Percent-used thresholds for 'colored': above the first is the warning color, above the last the error color, blended between (default: [60, 70, 80, 90])",
+  }),
+  cost_thresholds: Schema.optional(Thresholds).annotate({
+    description:
+      "Dollar thresholds for the session cost: above the first is the warning color, above the last the error color, blended between (default: none)",
+  }),
   pin_title: Schema.optional(Schema.Boolean).annotate({
     description: "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content",
   }),

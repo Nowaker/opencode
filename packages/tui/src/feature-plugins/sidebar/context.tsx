@@ -1,9 +1,10 @@
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
-import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi, TuiThemeCurrent } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { onHeaderClick } from "./click"
 import { createMemo, createSignal, Show } from "solid-js"
-import { useTuiConfig } from "../../config"
+import { SidebarContextThresholdsDefault, useTuiConfig } from "../../config"
+import { tint } from "../../context/theme"
 import { useBindings } from "../../keymap"
 
 const id = "internal:sidebar-context"
@@ -68,16 +69,23 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
   })
 
+  const contextColor = createMemo(() => {
+    const percent = state().percent
+    if (percent === null || tuiConfig.sidebar?.context_color !== "colored") return theme().textMuted
+    return levelColor(theme(), percent, tuiConfig.sidebar?.context_thresholds ?? SidebarContextThresholdsDefault)
+  })
+  const costColor = createMemo(() => levelColor(theme(), cost(), tuiConfig.sidebar?.cost_thresholds ?? []))
+
   // The sidebar width is not fixed, so compact mode shows the most detailed line that fits beside the toggle icon.
   const line = createMemo(() => {
     const tokens = state().tokens
     const percent = state().percent ?? 0
     const variants = [
-      `${tokens.toLocaleString()} tokens · ${percent}% used · ${money.format(cost())} spent`,
-      `${tokens.toLocaleString()} · ${percent}% · ${money.format(cost())}`,
-      `${shortNumber.format(tokens)} · ${percent}% · ${(cost() >= 1 ? wholeMoney : money).format(cost())}`,
+      [`${tokens.toLocaleString()} tokens`, `${percent}% used`, `${money.format(cost())} spent`],
+      [tokens.toLocaleString(), `${percent}%`, money.format(cost())],
+      [shortNumber.format(tokens), `${percent}%`, (cost() >= 1 ? wholeMoney : money).format(cost())],
     ]
-    return variants.find((item) => item.length <= width() - 2) ?? variants[variants.length - 1]
+    return variants.find((item) => item.join(" · ").length <= width() - 2) ?? variants[variants.length - 1]
   })
 
   return (
@@ -98,9 +106,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
                 <b>Context</b>
               </text>
             </box>
-            <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-            <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-            <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+            <text fg={contextColor()}>{state().tokens.toLocaleString()} tokens</text>
+            <text fg={contextColor()}>{state().percent ?? 0}% used</text>
+            <text fg={costColor()}>{money.format(cost())} spent</text>
           </>
         }
       >
@@ -109,12 +117,29 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
             ▶
           </text>
           <text fg={theme().textMuted} selectable={false}>
-            {line()}
+            <span style={{ fg: contextColor() }}>{line()[0]}</span>
+            {" · "}
+            <span style={{ fg: contextColor() }}>{line()[1]}</span>
+            {" · "}
+            <span style={{ fg: costColor() }}>{line()[2]}</span>
           </text>
         </box>
       </Show>
     </box>
   )
+}
+
+// Above the first threshold is the warning color and above the last the error color; the ones between blend the two.
+export function levelColor(
+  theme: Pick<TuiThemeCurrent, "textMuted" | "warning" | "error">,
+  value: number,
+  thresholds: readonly number[],
+) {
+  const crossed = thresholds.filter((item) => value > item).length
+  if (crossed === 0) return theme.textMuted
+  if (crossed === 1) return theme.warning
+  if (crossed === thresholds.length) return theme.error
+  return tint(theme.warning, theme.error, (crossed - 1) / (thresholds.length - 1))
 }
 
 const tui: TuiPlugin = async (api) => {
