@@ -1,15 +1,27 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
-import { createMemo, For, Show, createSignal } from "solid-js"
+import { createEffect, createMemo, For, on, Show, createSignal } from "solid-js"
 import { TodoItem } from "../../component/todo-item"
+import { useTuiConfig } from "../../config"
 
 const id = "internal:sidebar-todo"
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
+  const tuiConfig = useTuiConfig()
+  const completed = () => tuiConfig.sidebar?.todo_completed ?? "hide"
   const list = createMemo(() => props.api.state.session.todo(props.session_id))
-  const show = createMemo(() => list().length > 0 && list().some((item) => item.status !== "completed"))
+  const done = createMemo(() => list().length > 0 && list().every((item) => item.status === "completed"))
+  const show = createMemo(() => list().length > 0 && (!done() || completed() !== "hide"))
+
+  // "collapsed" folds the list when its last item completes and unfolds it when
+  // open work returns; a click in between still toggles it as usual.
+  createEffect(
+    on(done, (isDone) => {
+      if (completed() === "collapsed") setOpen(!isDone)
+    }),
+  )
 
   return (
     <Show when={show()}>
