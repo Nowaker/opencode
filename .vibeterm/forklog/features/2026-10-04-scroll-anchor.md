@@ -77,6 +77,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   [`ses_ef81ca107ffet5DwnFLaGWlUap`](../sessions/2026-10-04-scroll-anchor.md)
   - `6ff168d896`: introduce; upstream PR #53219 closing #41243; build and
   install on desktop and m4max.
+- 2026-10-05
+  [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-05-tui-block-nav.md)
+  - re-verified beside block and landmark navigation (`79251bcdf3`); the
+  import conflict kept `keepScrollAnchor`.
 
 ## Current maintenance notes
 

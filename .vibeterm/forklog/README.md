@@ -54,8 +54,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Color context usage and cost by thresholds](./features/2026-10-04-sidebar-context-colors.md)
 - [Keep a completed todo list in the sidebar](./features/2026-10-05-sidebar-todo-completed.md)
 - [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
+- [Navigate the transcript by block and landmark](./features/2026-10-05-tui-block-nav.md)
 
 ## Session records
+
+- [2026-10-05 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-05-tui-block-nav.md)
+  - Add block (`ctrl+up`/`ctrl+down`) and landmark (`ctrl+shift+up`/
+    `ctrl+shift+down`) transcript navigation and `ctrl+home`/`ctrl+end`;
+    upstream issue #53331 and PR #53333; build and install on both hosts.
 
 - [2026-10-05 `ses_ef49a49d9ffeKmNRrjg4DFrQtW`](./sessions/2026-10-05-sidebar-todo-completed.md)
   - Add `sidebar.todo_completed` (`hide`, `collapsed`, `show`) so an
