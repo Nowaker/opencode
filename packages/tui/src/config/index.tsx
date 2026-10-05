@@ -39,6 +39,18 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const SidebarTodoSummary = Schema.Literals(["never", "collapsed", "always"]).annotate({
+  description:
+    "When to show todo counts after the sidebar Todo heading: 'never' (default), 'collapsed' only while the list is collapsed, or 'always'",
+})
+export const SidebarTodoSummaryStyle = Schema.Literals(["progress", "icons"]).annotate({
+  description: "Todo summary format: 'progress' is done+in_progress/total (10+1/12), 'icons' is ✓10 •1 ○1",
+})
+export const Sidebar = Schema.Struct({
+  todo_summary: Schema.optional(SidebarTodoSummary),
+  todo_summary_style: Schema.optional(SidebarTodoSummaryStyle),
+}).annotate({ description: "Sidebar settings" })
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -71,6 +83,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
+  sidebar: Schema.optional(Sidebar),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
