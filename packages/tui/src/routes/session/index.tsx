@@ -1651,7 +1651,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={ctx.showTurnTime() && completed()}>
-                {(time) => <span style={{ fg: theme.textMuted }}> · {Locale.todayTimeOrDateTime(time())}</span>}
+                {(time) => <span style={{ fg: theme.textMuted }}> · {Locale.todayTimeOrDateFirst(time())}</span>}
               </Show>
               <Show when={ctx.showTurnDuration() && completed()}>
                 {(time) => (
