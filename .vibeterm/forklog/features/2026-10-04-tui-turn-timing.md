@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-turn-timing` (off upstream `dev` `907b3bc518`; also the upstream PR head)
 - First local commit: `17dca85fb5`
-- Current local commit(s): `17dca85fb5`
+- Current local commit(s): `17dca85fb5`, `d80de8e705`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
 - Last checked against upstream: `907b3bc518` (upstream `dev`)
 - Upstream: issue [#53192](https://github.com/anomalyco/opencode/issues/53192), PR [#53195](https://github.com/anomalyco/opencode/pull/53195)
@@ -26,8 +26,9 @@ quoting the user:
 ## Goals
 
 - Every completed assistant turn can show when it finished
-  (`Locale.todayTimeOrDateTime`: time of day if today, date and time
-  otherwise) and how long it took (`completed - created`).
+  (`Locale.todayTimeOrDateFirst`: time of day if today, otherwise the date
+  then the time, `10/4/2026 11:26 PM`) and how long it took
+  (`completed - created`).
 - The final turn shows its own duration and keeps the existing total since
   the prompt, labelled `total`.
 - Configurable in `tui.json` and toggleable at runtime.
@@ -57,6 +58,7 @@ quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `17dca85fb5` | 2026-10-04 | `turn_timing` schema; `showTurnTime` / `showTurnDuration` memos, palette/slash commands, context fields; `AssistantMessage` footer shown for every completed turn when either is on, with time, per-turn duration and `total` suffix; docs and config test | `TurnTiming` in `packages/tui/src/config/index.tsx`; `AssistantMessage` footer in `packages/tui/src/routes/session/index.tsx`; `packages/tui/src/config/keybind.ts` |
+| `d80de8e705` | 2026-10-04 | Turns not finished today render date first (`10/4/2026 11:26 PM`) instead of `11:26 PM · 10/4/2026`; new `Locale.todayTimeOrDateFirst`, `todayTimeOrDateTime` unchanged for `/timestamps` and `opencode session list`; unit test | `todayTimeOrDateFirst` in `packages/tui/src/util/locale.ts`; turn-time span in `AssistantMessage` |
 
 ## Verification
 
@@ -73,6 +75,13 @@ quoting the user:
   3.5s`, `· 1:07 PM · 3.7s · 15.6s total`. Time only: `· 1:07 PM` on each,
   final `· 1:07 PM · 15.6s`. `tui.json` `{"turn_timing":{"duration":true}}`
   with no kv override, after restart: durations shown from the start.
+- Date order (`d80de8e705`): `packages/tui/test/util/locale.test.ts` 2/2.
+  In the isolated rig, one session's first-turn rows were shifted back 24h
+  in the scratch DB and a second prompt was sent today. Before:
+  `· 4:59 AM · 10/4/2026 · 7.1s`. After (source and installed desktop
+  `1.18.34-vt-91-907b3bc518`): `· 10/4/2026 4:59 AM · 7.1s` and
+  `· 10/4/2026 4:59 AM · 1.9s · 9.1s total`; today's turns
+  `· 5:09 AM · 14.2s` and `· 5:09 AM · 2.0s · 16.4s total`.
 
 ## Timeline
 
@@ -83,10 +92,15 @@ quoting the user:
     #53192 and PR #53195.
   - Build and install: desktop `1.18.34-vt-70-907b3bc518`, m4max
     `1.18.34-vt-71-907b3bc518`; host `tui.json` left at defaults.
+  - `d80de8e705`: date before time for turns not finished today, on user
+    feedback ("datetime good, timedate weird"); the same change amended into
+    the PR head (`b14b75e5d8`). Build and install: desktop and m4max
+    `1.18.34-vt-91-907b3bc518`.
 
 ## Current maintenance notes
 
-- Drop the fork commit once PR #53195 (or an equivalent) is in upstream `dev`.
+- Drop both fork commits once PR #53195 (or an equivalent) is in upstream
+  `dev`.
 - Adjacent to `keep_scroll_on_submit` in the `Info` schema and the session
   command list; an upstream bump touching either may conflict textually.
 
