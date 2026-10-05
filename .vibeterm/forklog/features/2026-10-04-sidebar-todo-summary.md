@@ -73,6 +73,9 @@ quoting the user:
   [`ses_ef6415913ffeq4hyR0MCqsjDsn`](../sessions/2026-10-04-sidebar-todo-summary.md)
   - `5c5fc747e0`: introduce; open upstream issue #53258 and PR #53259; build
     and install on desktop and m4max; `always` set in both hosts' `tui.json`.
+- 2026-10-05
+  [`ses_ef49a49d9ffeKmNRrjg4DFrQtW`](../sessions/2026-10-05-sidebar-todo-completed.md)
+  - Preserved: merged with `sidebar.todo_completed` in the same `View`.
 
 ## Current maintenance notes
 
