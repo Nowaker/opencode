@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-context-colors` (worktree under `.vibeterm/worktrees/`, stacked on `tui-context-display`); landing branch `ctx-colors-land`
 - Upstream base: `907b3bc518` (upstream `dev`); unchanged
-- Source result commit(s): `dc76be7263` (cherry-pick of `24e25a69cc` on `tui-context-colors`)
+- Source result commit(s): `dc76be7263` (cherry-pick of `24e25a69cc` on `tui-context-colors`); follow-up `6f6107700b` (mirrors the amended PR commit `94d6044030`)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -74,9 +74,44 @@ Spawned by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as effort item 5
   with `TuiConfig.Info`.
 - Running services: none restarted on either host.
 
+## Follow-up: prompt footer coloring
+
+- Coordinator relayed the user (2026-10-05 04:38, still this workday):
+  "colored context usage - make those colors also apply to bottom ctx and
+  usage indicator and for money threshold there too".
+- The prompt footer usage line now uses the same coloring: context by
+  `context_thresholds` when colored, cost by `cost_thresholds`, separator
+  muted; plain mode unchanged. `levelColor` moved to
+  `packages/tui/src/util/usage-color.ts` with `usageColors`, shared by the
+  sidebar and the footer. Because the keys now govern two places they moved
+  from `sidebar.*` to a top-level `usage` struct with unchanged field names.
+- PR branch `tui-context-colors`: feature commit amended `24e25a69cc` ->
+  `94d6044030`, force-pushed with lease to `nowaker-github` and `origin`;
+  PR #53264 and issue #53263 titles and bodies updated.
+- `dev-nowaker`: follow-up commit `6f6107700b` on `f17d9bd206` (not
+  force-pushed), rebased past the 4C date-first turn timing and the compact
+  MCP rows (`sidebar.mcp_list`) landings; `config.test.tsx` conflict
+  resolved as a union.
+- Verification: `bun test test/util/usage-color.test.ts test/config.test.tsx
+  test/keymap.test.tsx` 15 pass and `bun typecheck` on both branches; tmux
+  socket `oc-tui-ctxfoot`, isolated `XDG_*`, fake provider stepping 50k-95k
+  of 100k with `cost_thresholds: [1, 2, 3]`: colored footer `#f5a742` /
+  `#ee9353` / `#e78064` / `#e06c75`, cost `#f5a742` to `#e06c75`, plain
+  footer all `#808080`; landing tree spot-checked at 85% (`#e78064`, cost
+  under $1 muted).
+- Build and install: desktop `1.18.34-vt-94-907b3bc518` (inode
+  `49955973`), m4max `1.18.34-vt-94-907b3bc518` after fast-forwarding its
+  checkout to `6f6107700b`.
+- Host setting: `sidebar.context_color` removed and
+  `usage.context_color: "colored"` added in `~/.config/opencode/tui.json` on
+  both hosts by one atomic read-modify-write; every other key kept. The
+  desktop file decodes with `TuiConfig.Info`.
+- Running services: none restarted on either host.
+
 ## Commit provenance
 
 - `dc76be7263` - sidebar context coloring.
+- `6f6107700b` - prompt footer coloring and `usage.*` keys.
 - Required trailer: `AI-Session-ID: ses_ef6439100ffea6UZ1MqYyvXDjR`
 
 ## Unknowns and blocked verification
