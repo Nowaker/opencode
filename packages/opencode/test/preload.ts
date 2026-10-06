@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import fs from "fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
-import { afterAll } from "bun:test"
+import { afterAll, mock } from "bun:test"
 
 // Set XDG env vars FIRST, before any src/ imports
 const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
@@ -44,6 +44,13 @@ process.env["OPENCODE_EXPERIMENTAL_WORKSPACES"] = "true"
 const testHome = path.join(dir, "home")
 await fs.mkdir(testHome, { recursive: true })
 process.env["OPENCODE_TEST_HOME"] = testHome
+process.env["HOME"] = testHome
+process.env["USERPROFILE"] = testHome
+// Bun's direct homedir consumer can retain the process-start home after env changes.
+const isolatedOs = { ...os, homedir: () => testHome }
+const osModule = () => ({ ...isolatedOs, default: isolatedOs })
+mock.module("os", osModule)
+mock.module("node:os", osModule)
 
 // Set test managed config directory to isolate tests from system managed settings
 const testManagedConfigDir = path.join(dir, "managed")
