@@ -1,6 +1,5 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiKV, TuiPluginApi, TuiPluginMeta, TuiSlotPlugin, TuiState, TuiTheme } from "@opencode-ai/plugin/tui"
-import type { AssistantMessage, Model, Provider, Session } from "@opencode-ai/sdk/v2"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
 import { mkdir } from "node:fs/promises"
@@ -14,6 +13,7 @@ import { createSlots, type HostSlots } from "../../src/plugin/slots"
 import { TestTuiContexts } from "./tui-environment"
 import { createTuiPluginApi } from "./tui-plugin"
 import { createTuiResolvedConfig } from "./tui-runtime"
+export { sidebarSession, sidebarAssistantMessage, sidebarProvider } from "./sidebar-data"
 
 /* The parts of `api.state` a test replaces; everything else keeps an empty default. */
 export type SidebarState = Partial<Omit<TuiState, "session">> & { session?: Partial<TuiState["session"]> }
@@ -220,61 +220,4 @@ function meta(id: string) {
     fingerprint: "test",
     state: "same",
   } satisfies TuiPluginMeta
-}
-
-export function sidebarSession(overrides: Partial<Session> = {}): Session {
-  return {
-    id: "ses_test",
-    slug: "test",
-    projectID: "proj_test",
-    directory: "/tmp/opencode",
-    title: "Test session",
-    version: "test",
-    time: { created: 0, updated: 0 },
-    ...overrides,
-  }
-}
-
-export function sidebarAssistantMessage(
-  input: Pick<AssistantMessage, "providerID" | "modelID" | "tokens">,
-): AssistantMessage {
-  return {
-    id: "msg_test",
-    sessionID: "ses_test",
-    role: "assistant",
-    time: { created: 0 },
-    parentID: "msg_parent",
-    mode: "build",
-    agent: "build",
-    path: { cwd: "/tmp/opencode", root: "/tmp/opencode" },
-    cost: 0,
-    ...input,
-  }
-}
-
-// A provider serving one model with a `context` token window.
-export function sidebarProvider(input: { id: string; model: string; context: number }): Provider {
-  const modalities = { text: true, audio: false, image: false, video: false, pdf: false }
-  const model: Model = {
-    id: input.model,
-    providerID: input.id,
-    api: { id: input.model, url: "", npm: "" },
-    name: input.model,
-    capabilities: {
-      temperature: true,
-      reasoning: false,
-      attachment: false,
-      toolcall: true,
-      input: modalities,
-      output: modalities,
-      interleaved: false,
-    },
-    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-    limit: { context: input.context, output: 0 },
-    status: "active",
-    options: {},
-    headers: {},
-    release_date: "",
-  }
-  return { id: input.id, name: input.id, source: "config", env: [], options: {}, models: { [input.model]: model } }
 }
