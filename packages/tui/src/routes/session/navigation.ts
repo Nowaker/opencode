@@ -71,3 +71,28 @@ export function pickNavigationTarget(
   )
   return { id, y }
 }
+
+// messages_last (ctrl+end) remembers where a scrolled-up reader was, so the
+// next messages_first (ctrl+home) brings them back there instead of to the top;
+// a second messages_first then goes to the top. The mark is the block that was
+// at the top of the viewport and its offset from that edge, so it survives
+// content changing above or below it.
+export type ScrollReturn<T> = { sessionID: string; anchor: T; offset: number }
+
+// On messages_last. Leaving a scrolled-up view replaces the mark; pressing it
+// again at the bottom keeps the one already held for this session.
+export function rememberScroll<T>(
+  mark: ScrollReturn<T> | undefined,
+  view: { sessionID: string; atBottom: boolean; top?: { anchor: T; offset: number } },
+): ScrollReturn<T> | undefined {
+  if (!view.atBottom && view.top) return { sessionID: view.sessionID, ...view.top }
+  if (mark?.sessionID === view.sessionID) return mark
+}
+
+// On messages_first. The mark is used only in its own session and only while
+// the view is still at the bottom where messages_last left it. The caller
+// drops it afterwards either way, so it is used at most once.
+export function recallScroll<T>(mark: ScrollReturn<T> | undefined, view: { sessionID: string; atBottom: boolean }) {
+  if (mark?.sessionID !== view.sessionID || !view.atBottom) return
+  return mark
+}
