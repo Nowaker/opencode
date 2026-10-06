@@ -65,6 +65,10 @@ that exact two-file diff uncommitted.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  same-test behavioral red/green and real retry-policy driver prove the cap;
+  retain the canonical dirty overlay. Exact evidence is in the linked inventory.
+
 - 2026-08-06 no verified local coding-agent session found - introduce the cap
   and canonical patch in `opencode-tools:824532a2b`. Searches covered the exact
   original request above, patch symbol, measured `28800` header, commit hash and

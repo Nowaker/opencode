@@ -127,6 +127,10 @@ Stable seams an upstream bump must inspect:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify injected refusal and actual native/module happy path without exhausting
+  the operator's resources. Race/fallback limits are in the linked inventory.
+
 - 2026-09-09 [`ses_f76ce0cf6ffejNGTCJyk7ooYc5`](../sessions/2026-09-09-watcher-emfile-wedge.md) -
   initial build against upstream `a9a6fad0f`, cherry-picked to `master-nowaker`.
   Evidence: `84b8fcdfe`, `34aa414cf`, and the native-boundary table above.

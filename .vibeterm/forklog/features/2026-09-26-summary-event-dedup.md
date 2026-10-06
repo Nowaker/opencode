@@ -47,6 +47,10 @@ publication. Missing diffs and an empty array remain different states.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  prove duplicate-event suppression and repair cached-summary mutation on failed
+  persistence. Failure/retry proof and concurrency limits are in the inventory.
+
 - 2026-09-26 [ses_f1f9b9b74ffe8xPPTsmvM4op8M](../sessions/2026-09-26-summary-event-dedup.md)
   - Initial implementation, integration, and desktop installed-binary proof.
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -

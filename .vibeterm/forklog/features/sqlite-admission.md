@@ -1,0 +1,73 @@
+# SQLite admission recovery and safe diagnosis
+
+## Identity
+
+- Status: active
+- Integration branch: `dev-nowaker`
+- Development branches: `sqlite-begin-retry`, `sqlite-error-diagnosis`,
+  `fork-audit-ready`
+- First integrated commits: `651f31f376`, `c5764cbdbf`, `e49541777f`,
+  `28aa286c86`, `115310f98c`
+- Source workers: `ses_eecf4b409ffeFKx2qAXipWliKo`,
+  `ses_eecf11b3affevOqpKUU3vncF7S`
+- Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
+- Upstream PR: not yet submitted; requires a clean 24-hour live gate
+
+## Request and rationale
+
+The parent coordinator approved the reliability plan on the user's request
+to fix identified defects. Sanitized historical evidence found 277 recorded
+SQL turn deaths plus 91 silent persistence failures; 808/833 logged causes
+were locked. The rare long writer was not identified.
+
+An IMMEDIATE transaction whose BEGIN fails has executed no projector or
+commit callback. Retrying only that admission can survive transient writer
+contention without replaying tools, model calls, or non-idempotent callbacks.
+
+## Changes and stable seams
+
+| Seam | Behavior |
+|---|---|
+| `core/database/sqlite-error.ts`, `SqliteFailure.parse` | Bounded reason/code vocabulary, contradictory/unknown codes fail closed |
+| `core/database/transaction.ts`, `DatabaseTransaction.immediate` | Retry only typed BUSY/RECOVERY/TIMEOUT before callback entry, outside nested transactions |
+| `core/event.ts`, durable commit/remove/claim | IMMEDIATE admission recovery; durable wake remains protected and post-commit |
+| `opencode/session/sql-error.ts`, `SqlErrorMessage.message` | Known SQL/Drizzle cause becomes fixed safe diagnosis, never query/params/native free text |
+| `MessageV2.fromError` | Preserve `UnknownError` wire shape and provider classification |
+
+## Verification
+
+- Separate child writer regression fails the pre-fix tree and passes the
+  patched tree, including an unchanged 5000ms SQLite timeout.
+- Safety/clock tests prove callback construction/body, COMMIT, rollback,
+  notification, nested and unsafe-code failures do not replay work.
+- Privacy regressions fail the old serializer and pass direct/wrapped known
+  SQL errors, unknown metadata, ordinary errors, and provider controls.
+- Coordinator directly exercised actual DB/helper/serializer under child
+  contention: one callback, one notification, one persisted row, no private
+  parameter/path reflection.
+- Compiled installed before/after on both hosts: a 7s writer makes vt-101
+  return HTTP 500/no reply; vt-116 returns 200/mock reply in about 7.2s with
+  zero session errors and healthy serve.
+- B's serialized error was not observed in the compiled contention scenario
+  because A recovered it; diagnosis evidence remains source tests and actual
+  adapter/serializer drivers.
+
+## Limits and maintenance
+
+- 60 seconds is elapsed admission budget, not a hard request timeout.
+- Retry sleep is asynchronous, 50ms doubling to 1s; `busy_timeout=5000` stays.
+- Cancellation is checked before attempts/backoff, not promptly during an
+  already-running native BEGIN/reservation.
+- LOCKED, BUSY_SNAPSHOT, unknown/conflicting codes and failures after callback
+  entry never retry. Exhaustion returns the original SQL failure.
+- This does not remove startup registration/checkpoint/migration contention,
+  guarantee every writer releases, or guarantee external notification once
+  across a crash after COMMIT. Maintenance startup is a separate fork feature.
+- Exact tests, rollout coverage and live-gate status are in Vibeterm's
+  canonical `docs/opencode-patches/README.md` inventory.
+
+## Timeline
+
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  plan, prove, integrate and deliver A/B first; retain safe acquisition-only
+  boundary, bounded diagnostics, both-remotes/hosts provenance and live gate.

@@ -8,6 +8,12 @@ This directory is the tracked source of truth for local OpenCode behavior on
 - [`sessions/`](./sessions/) records what one coding-agent session did to which
   branch and upstream base, including verification, build, and install facts.
 
+The cross-repository inventory and upstream PR monitor live in Vibeterm's
+[`docs/opencode-patches/README.md`](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md).
+That inventory links fork commits, development branches, source-work sessions,
+upstream PR state, patch dispositions, and regression evidence. This README
+governs feature/session provenance; the Vibeterm inventory governs the audit.
+
 Track forklog changes only on `dev-nowaker`. Each coding-agent session gets
 one unsquashed forklog commit per user workday, even when an upstream bump
 carries every feature forward unchanged. That commit includes the full
@@ -19,6 +25,8 @@ carries every feature forward unchanged. That commit includes the full
 - [`_session.md`](./_session.md) - one coding-agent session and user workday.
 
 ## Active features
+
+- [SQLite admission recovery and safe diagnosis](./features/sqlite-admission.md)
 
 - [Unchanged message summary event suppression](./features/2026-09-26-summary-event-dedup.md)
 
@@ -64,6 +72,9 @@ carries every feature forward unchanged. That commit includes the full
     `ctrl+alt+shift+up`/`down` (PR #53333 amended); `ctrl+end` remembers a
     scrolled-up position for the next `ctrl+home` (issue #53629, stacked PR
     #53630); build and install on both hosts.
+
+- [Fork inventory and regression audit `ses_eeda1d251ffel81U5Y42j4kb33`](./sessions/fork-audit.md)
+  - Establish reciprocal inventory ownership and behavioral regression gates.
 
 - [2026-10-05 `ses_ef81ad30fffeo7m3HoZisuJdli`](./sessions/2026-10-05-sidebar-header-select.md)
   - Make the values on sidebar header lines (compact Context, MCP counts,
@@ -259,3 +270,37 @@ records.
 
 Work continuing after midnight belongs to the evening's workday. A feature
 starts on its first user workday; a session record uses that session's workday.
+
+## Audit and upstream lifecycle
+
+- Record every fork-only source commit, including work on retired
+  `master-nowaker`, and classify documentation/build/integration commits
+  separately from behavior changes.
+- Inspect local branches, both fork remotes, and linked worktrees. Distinguish
+  patch-equivalent landed content from unique unlanded work; ancestry alone
+  does not establish whether a rebased or cherry-picked change landed.
+- Link the originating source-work session by full ID. Flag a source-editing
+  session without a fork trace separately from a no-edit investigation or an
+  OpenCode-tools plugin change. Preserve failed searches and `TBD` values.
+- Record upstream PR URL, state, head, base, merge commit, and check time in
+  the Vibeterm inventory. A closed PR is not necessarily merged; a merged PR
+  is not necessarily present in the upstream base the fork currently runs.
+- For each bug/performance fix, keep a test that exercises its actual seam.
+  Run the same test with only the behavior patch disabled and enabled. Record
+  both commands, tree identities, exit codes, and the behavioral failure.
+  Missing imports or compilation failures do not prove the original defect.
+- Add a missing regression test before declaring a fix verified. Do not weaken
+  or delete tests to make either run pass. Keep unavailable checks explicit.
+- Reassess every carried change against current upstream source and its
+  user-visible purpose. Remove an upstream-equivalent patch only after its
+  regression passes without that patch; retain the supersession record.
+- Perform removal through the normal linear `dev-nowaker` integration,
+  preserving unrelated commits and the deliberate retry-header divergence.
+  Push fork changes to both remotes and follow the host build/restart contract.
+- Submit an upstream bug fix only after a clean day live. Keep upstream
+  commits free of AI trailers; put required attribution in the PR's final
+  body line per `/home/nowaker/projekty/forks/AGENTS.md`. Keep full AI trailers
+  on forklog commits on `dev-nowaker`.
+- Check all inventoried upstream PRs weekly through the coordinator's durable
+  schedule, update the Vibeterm inventory, and record source-backed upstream
+  supersession here. Coordinate with an existing feature owner before edits.

@@ -20,12 +20,14 @@ record. The surviving continuation prompt is:
 ## Goals
 
 - Coalesce adjacent streaming deltas for the same message part.
-- Limit event-driven TUI rendering to ten frames per second.
+- Reduce event-driven rendering work through 100ms SDK event batches.
 - Keep prompt input responsive in large retained sessions.
 
 ## Non-goals
 
-- Do not drop persisted events or delay non-stream lifecycle updates.
+- Do not drop persisted events. The current implementation batches lifecycle
+  events too; lifecycle immediacy was an intended constraint, not achieved
+  behavior.
 
 ## Rationale and constraints
 
@@ -38,7 +40,7 @@ record. The surviving continuation prompt is:
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
-| `4a2673957` | 2026-08-25 | Coalesce deltas and cap renders at 10 FPS | `packages/tui/src/context/sdk.tsx` event pipeline |
+| `4a2673957` | 2026-08-25 | Coalesce deltas and flush SDK batches at 100ms cadence | `packages/tui/src/context/sdk.tsx` event pipeline |
 
 The Claude session began at 2026-08-25 14:58:43 America/Chicago, so the
 evening-to-early-morning convention does not move this work to August 24.
@@ -50,6 +52,10 @@ evening-to-early-morning convention does not move this work to August 24.
 - `packages/tui` typecheck exits 0.
 
 ## Timeline
+
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  prove ordering/coalescing boundaries and compare real TUI CPU/echo behavior;
+  correct lifecycle-immediacy wording. Cadence choice remains explicitly pending.
 
 - 2026-08-25 `333bd0f1-6d75-4c64-b8e2-003f45ce2379` - coalesce streaming
   deltas and throttle renders. Confirmed by the Claude transcript's exact
@@ -90,8 +96,14 @@ evening-to-early-morning convention does not move this work to August 24.
 
 ## Current maintenance notes
 
-- Preserve same-part coalescing and lifecycle-event immediacy when upstream
-  changes event envelopes.
+- Preserve same-part coalescing and event ordering when upstream changes event
+  envelopes. A timer applies to all pending events, not only stream deltas;
+  SDK flush cadence does not establish a ten-FPS renderer guarantee.
+- The 2026-10-06 source audit corrected the earlier immediacy/cap wording.
+  Historical timeline entries retain what those sessions reported. The
+  coordinator's question pane asks whether lifecycle events should become
+  immediate, all-event 100ms batching should remain, or cadence should return
+  to upstream's 16ms. No policy change has been applied without an answer.
 - Keep the context SDK tests in the semantic bump gate.
 
 ## Supersession or removal

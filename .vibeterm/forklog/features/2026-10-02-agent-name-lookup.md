@@ -65,6 +65,10 @@ Relayed by Meridian coordinator `ses_fe8a27c6effe6KEx3TRNvOLgUo`, condensed:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  prove renamed-agent lookup failure without fallback and preserve key precedence;
+  full restored gate and remaining ambiguity are in the linked inventory.
+
 - 2026-10-02
   [`ses_f011ccc18ffeZAKpRC9OjZ40a8`](../sessions/2026-10-02-agent-name-lookup.md)
   - `d6665aba3d`: introduce the fallback; build and install on desktop and

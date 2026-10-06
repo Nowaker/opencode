@@ -30,6 +30,10 @@
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  audit admission/index/REPLACE guards and implement startup schema planning;
+  atomic emergency/quoted-target race proofs and delivery limits are in the inventory.
+
 - [Implementation and phase-1 distribution](../sessions/session-maintenance.md):
   original fence commits, independently identified performance regression,
   emergency override, indexed repair, and isolated verification.

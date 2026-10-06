@@ -85,6 +85,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify date-first locale regression and real intermediate/final footers;
+  elapsed-time meaning and full-route test gaps are in the linked inventory.
+
 - 2026-10-04
   [`ses_ef81c1485ffeC5Sb59U9mVI77g`](../sessions/2026-10-04-tui-turn-timing.md)
   - `17dca85fb5`: introduce (cherry-pick of `2fda6d8d7a`, conflicts with

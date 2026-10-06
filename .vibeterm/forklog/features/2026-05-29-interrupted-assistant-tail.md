@@ -47,6 +47,10 @@ TBD - no surviving original prompt found. Transcript evidence preserves the
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  reproduce the trailing-assistant dispatch regression with the guard disabled;
+  restored behavior passes. Exact evidence is in the linked inventory.
+
 - 2026-05-29 `ses_18c948de5ffemtqJrtPZrtMiMf` - prevent interrupted
   assistant tails from reaching model dispatch. Inferred from the exact
   behavior terms and prefill investigation matching `58b643c52`; no exact

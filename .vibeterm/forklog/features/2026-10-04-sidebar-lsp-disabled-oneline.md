@@ -62,6 +62,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify real rendering states and selectable disabled note; classify this as
+  presentation, not LSP activation repair, in the linked inventory.
+
 - 2026-10-04
   [`ses_ef81b0c61ffe9TD8cftI93JGis`](../sessions/2026-10-04-sidebar-lsp-disabled-oneline.md)
   - `1f2bfda9bd`: introduce; open upstream issue #53183 and PR #53185;

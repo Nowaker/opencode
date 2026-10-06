@@ -70,6 +70,10 @@ The code change was authored by coordinator session
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify served catalog, small-model and explicit baseURL boundaries; generic
+  gateway assumptions remain a human policy question in the linked inventory.
+
 - 2026-09-27 `ses_fe8a27c6effe6KEx3TRNvOLgUo` - author `eea39ba935` on
   `feat/openai-meridian-provider`. Evidence: commit trailer and worktree tests.
 - 2026-09-27

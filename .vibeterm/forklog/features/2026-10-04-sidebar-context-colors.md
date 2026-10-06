@@ -84,6 +84,10 @@ Follow-up relayed by the coordinator on 2026-10-05 (04:38, still the
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify thresholds and real sidebar/footer wiring, retaining catalog/accounting
+  limitations and default-control results in the linked inventory.
+
 - 2026-10-04
   [`ses_ef6439100ffea6UZ1MqYyvXDjR`](../sessions/2026-10-04-sidebar-context-colors.md)
   - `dc76be7263`: introduce; open upstream issue #53263 and PR #53264;

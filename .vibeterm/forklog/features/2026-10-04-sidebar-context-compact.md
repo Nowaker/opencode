@@ -81,6 +81,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add renderer width/click/KV/palette/selectability proofs and preserve the
+  exceptionally narrow-space limitation in the linked inventory.
+
 - 2026-10-04
   [`ses_ef81b7a80ffeaAyKTHFHlHGXVs`](../sessions/2026-10-04-sidebar-context-compact.md)
   - `f2fd2979ad`: introduce; open upstream issue #53200 and PR #53205;

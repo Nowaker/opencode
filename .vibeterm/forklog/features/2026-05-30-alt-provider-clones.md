@@ -57,6 +57,10 @@ provider because its model resolver cannot serve that chat alias.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add actual SDK generation-routing tests for source/clone independence;
+  catalog-disabled failures and local-policy limits are in the linked inventory.
+
 - 2026-05-30 `ses_188220dadffeb8GepIK8xraEoj` - add code-level
   `anthropic2` and `openai2` catalog clones. Confirmed by the exact session
   title, commit subject, and matching purpose. CWD:

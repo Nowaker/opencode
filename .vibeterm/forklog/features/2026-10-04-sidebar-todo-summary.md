@@ -69,6 +69,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify formatter, rendered headings and selection; cancelled-task and collapse
+  semantics remain explicitly recorded in the linked inventory.
+
 - 2026-10-04
   [`ses_ef6415913ffeq4hyR0MCqsjDsn`](../sessions/2026-10-04-sidebar-todo-summary.md)
   - `5c5fc747e0`: introduce; open upstream issue #53258 and PR #53259; build

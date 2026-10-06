@@ -73,6 +73,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add real SyncProvider pruning regression and compare approximately 300-message
+  TUI streams with the anchor disabled/restored; evidence is in the inventory.
+
 - 2026-10-04
   [`ses_ef81ca107ffet5DwnFLaGWlUap`](../sessions/2026-10-04-scroll-anchor.md)
   - `6ff168d896`: introduce; upstream PR #53219 closing #41243; build and

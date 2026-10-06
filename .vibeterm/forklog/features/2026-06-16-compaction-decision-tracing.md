@@ -48,6 +48,10 @@ dirty OpenCode source change.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  classify this as diagnostics, not a decision fix. Always-on I/O and the
+  hard-coded home path are explicit policy questions in the linked inventory.
+
 - 2026-06-16 `ses_151d2dd79ffeEX3zcZ4QxoVsGF` - commit compaction overflow
   decision tracing. Confirmed by the final transcript statement, `Committed the
   previously dirty opencode source change as session: trace compaction overflow

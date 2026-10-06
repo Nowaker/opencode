@@ -67,6 +67,10 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify read/parts/stale-write and host projection coverage, reconcile original
+  sessions, and flag the separate tools socket-path repair in the inventory.
+
 - 2026-09-27 [`ses_f19bcd194ffecw7EE6UaCiWdxI`](../sessions/2026-09-27-tui-composer-read.md) -
   introduced, built and installed. Evidence: `2638af5a71`, linked session.
 - 2026-09-30 [`ses_f0f108c6dffeMymgpAsLy9LESM`](../sessions/2026-09-30-upstream-1.18.33.md) -
