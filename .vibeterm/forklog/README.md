@@ -54,9 +54,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Color context usage and cost by thresholds](./features/2026-10-04-sidebar-context-colors.md)
 - [Keep a completed todo list in the sidebar](./features/2026-10-05-sidebar-todo-completed.md)
 - [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
-- [Navigate the transcript by block and landmark](./features/2026-10-05-tui-block-nav.md)
+- [Navigate the transcript by prompt, landmark and block](./features/2026-10-05-tui-block-nav.md)
+- [Return to the scrolled-up position on messages_first](./features/2026-10-06-tui-home-return.md)
 
 ## Session records
+
+- [2026-10-06 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-06-tui-nav-layout.md)
+  - Move prompt navigation to `ctrl+up`/`ctrl+down` and blocks to
+    `ctrl+alt+shift+up`/`down` (PR #53333 amended); `ctrl+end` remembers a
+    scrolled-up position for the next `ctrl+home` (issue #53629, stacked PR
+    #53630); build and install on both hosts.
 
 - [2026-10-05 `ses_ef81ad30fffeo7m3HoZisuJdli`](./sessions/2026-10-05-sidebar-header-select.md)
   - Make the values on sidebar header lines (compact Context, MCP counts,
