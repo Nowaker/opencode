@@ -144,10 +144,13 @@ export const Definitions = {
   messages_half_page_down: keybind("ctrl+alt+d", "Scroll messages down by half page"),
   messages_first: keybind("ctrl+g,home,ctrl+home", "Navigate to first message"),
   messages_last: keybind("ctrl+alt+g,end,ctrl+end", "Navigate to last message"),
-  messages_next: keybind("none", "Navigate to next message"),
-  messages_previous: keybind("none", "Navigate to previous message"),
-  messages_block_next: keybind("ctrl+down", "Navigate to next prompt, response, reasoning or tool call"),
-  messages_block_previous: keybind("ctrl+up", "Navigate to previous prompt, response, reasoning or tool call"),
+  messages_next: keybind("ctrl+down", "Navigate to next message"),
+  messages_previous: keybind("ctrl+up", "Navigate to previous message"),
+  messages_block_next: keybind("ctrl+alt+shift+down", "Navigate to next prompt, response, reasoning or tool call"),
+  messages_block_previous: keybind(
+    "ctrl+alt+shift+up",
+    "Navigate to previous prompt, response, reasoning or tool call",
+  ),
   messages_landmark_next: keybind(
     "ctrl+shift+down",
     "Navigate to next prompt, final response, question, todo list or subagent",

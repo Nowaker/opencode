@@ -1,6 +1,6 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2"
 
-export type NavigationScope = "block" | "landmark"
+export type NavigationScope = "prompt" | "block" | "landmark"
 
 // Tool calls worth stopping on when skipping between landmarks: the questions
 // the user answered, the todo lists that record the plan, and subagent tasks.
@@ -11,6 +11,8 @@ const LANDMARK_TOOLS = new Set(["question", "todowrite", "task"])
 // IDs of the transcript blocks a navigation scope stops on. A user prompt is
 // identified by its message ID, every assistant block by its part ID - the
 // same IDs the session route assigns to the rendered boxes.
+//
+// "prompt" stops only on user prompts.
 //
 // "block" stops on every prompt, text part, reasoning part with content, and
 // tool call. Reasoning without content (encrypted, or an empty "Thinking"
@@ -30,10 +32,13 @@ export function navigationTargets(
     if (message.role === "user") {
       if (final) targets.add(final)
       final = undefined
-      if (parts(message.id).some((part) => part.type === "text" && !part.synthetic && part.text.trim()))
+      if (
+        parts(message.id).some((part) => part.type === "text" && !part.synthetic && !part.ignored && part.text.trim())
+      )
         targets.add(message.id)
       continue
     }
+    if (scope === "prompt") continue
     for (const part of parts(message.id)) {
       if (part.type === "text" && part.text.trim()) {
         if (scope === "block") targets.add(part.id)
