@@ -65,6 +65,10 @@
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add deterministic production work-scope regressions and retain benchmark A/B
+  separately from test gates. Exact proof is in the linked inventory.
+
 - 2026-08-31 `ses_fa830212effeMiM1hcYBzUbIXW` - measure and flatten prompt
   input latency on `perf/prompt-editor-large-input`, then fast-forward it into
   `master-nowaker`. Evidence: commits `f4f805ce3` through `c1edb418f` and the

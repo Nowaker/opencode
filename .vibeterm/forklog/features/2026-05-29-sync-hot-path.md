@@ -47,6 +47,10 @@ than maintained as a handwritten runtime query.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  prove the 1,102-cursor HTTP boundary and measure compression CPU/size trade-off.
+  Indexes are already upstream; exact observations are in the linked inventory.
+
 - 2026-05-29 `ses_18d75fa67ffeMRJOuGsqmrqq9h` - index aggregate replay and
   tune sync compression. Inferred from same-day transcript matches for
   `event aggregate_id`, sync indexing, and compression; no exact commit command

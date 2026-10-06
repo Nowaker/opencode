@@ -49,6 +49,10 @@ The response combines `process.memoryUsage()`, `bun:jsc.heapStats()`, and
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  audit source, merit and coverage. Observed HTTP verification and diagnostic
+  limitations are recorded in the session's linked Vibeterm inventory.
+
 - 2026-05-13 `ses_229d7083fffem6lkaEj69adZ7H` - add the global memory
   diagnostic route. Inferred from the exact `GET /global/memory` transcript
   match, the session span, and commit date; no exact commit command survived.

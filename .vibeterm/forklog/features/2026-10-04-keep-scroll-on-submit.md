@@ -62,6 +62,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add real app/composer-submit default/config/toggle proofs and inverse red
+  probes; isolated real TUI outcomes are in the linked inventory.
+
 - 2026-10-04
   [`ses_ef81c7229ffeqHzmyR9O4v0AMH`](../sessions/2026-10-04-keep-scroll-on-submit.md)
   - `defa72ee22`: introduce; upstream issue #53186 and PR #53187; build and

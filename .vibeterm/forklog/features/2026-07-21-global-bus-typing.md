@@ -46,6 +46,10 @@ found. The session's final report records the published strict-global-bus fix.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify negative compiler cases and real ID-before-delivery behavior;
+  distinguish type compatibility from runtime fixes in the linked inventory.
+
 - 2026-07-21 `ses_151d2dd79ffeEX3zcZ4QxoVsGF` - publish the standalone
   strict global event-typing fix. Confirmed by the final transcript's exact
   `bus: preserve strict global event typing` report and matching HEAD commit

@@ -69,6 +69,10 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify rename/unlink regressions and actual replacement-file writes;
+  descriptor/check-write race limits are in the linked inventory.
+
 - 2026-10-03
   [`ses_efb698c02ffefXlxsxKlISKpRH`](../sessions/2026-10-03-log-reopen.md)
   - `d1442208f5`: introduce; build and install on desktop and m4max

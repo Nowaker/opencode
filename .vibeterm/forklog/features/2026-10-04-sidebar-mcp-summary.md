@@ -72,6 +72,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify expanded/collapsed summary modes and selectable counts with real
+  renderer tests; exact red/green results are in the linked inventory.
+
 - 2026-10-04
   [`ses_ef63ef95cffeIfyDzjCjdXqrYc`](../sessions/2026-10-04-sidebar-mcp-summary.md)
   - `712382574a`: introduce; open upstream issue #53260 and PR #53261;

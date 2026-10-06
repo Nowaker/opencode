@@ -108,6 +108,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify target helpers and real navigation keys; retained-history/exact-tool
+  landmark limits are in the linked inventory.
+
 - 2026-10-05
   [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-05-tui-block-nav.md)
   - `79251bcdf3`: introduce; upstream issue #53331 and PR #53333; build and

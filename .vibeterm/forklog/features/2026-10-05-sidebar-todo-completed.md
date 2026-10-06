@@ -72,6 +72,10 @@
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify real hide/show/collapsed rendering and default behavior; two-item
+  collapse eligibility and absence of an author PR are in the inventory.
+
 - 2026-10-05
   [`ses_ef49a49d9ffeKmNRrjg4DFrQtW`](../sessions/2026-10-05-sidebar-todo-completed.md)
   - `173921d2f3`: introduce; build and install on desktop and m4max; `show`

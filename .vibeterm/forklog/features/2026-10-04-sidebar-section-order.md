@@ -93,6 +93,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify real slot/KV order, drag, same-cell clicks and all header selection
+  boundaries; observed tests and type-cleanup evidence are in the inventory.
+
 - 2026-10-04
   [`ses_ef81ad30fffeo7m3HoZisuJdli`](../sessions/2026-10-04-sidebar-section-order.md)
   - `bc5aa4ec1e`, `dc68262b8a`: introduce; issue #53198, PRs #53201 and

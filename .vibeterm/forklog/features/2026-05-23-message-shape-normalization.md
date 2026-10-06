@@ -52,6 +52,10 @@ TBD - no surviving original prompt found. The recovered session title is:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add production hydration/cache regression proof and identify rejected-summary
+  cache poisoning. Fix, tests and limitations are in the linked inventory.
+
 - 2026-05-23 `ses_1abc831d9ffeWO4PJ6S3qtd6I9` - diagnose the OpenCode GC
   death spiral and stabilize hydrated MessageV2 shapes. Confirmed by the
   session title, exact `GC death spiral` and MessageV2 investigation evidence,

@@ -66,6 +66,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  compare pinned/default title and scrollbar placement in a real isolated TUI;
+  missing committed full-route coverage is explicit in the linked inventory.
+
 - 2026-10-04
   [`ses_ef81bccccffeaNpV0Vw2TPKgyP`](../sessions/2026-10-04-sidebar-pin-title.md)
   - `6ece456497`: introduce; open upstream issue #53193 and PR #53194;

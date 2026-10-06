@@ -24,8 +24,9 @@
 
 The first prompt belongs to the source-worktree session that introduced the
 `native` command flag. The second belongs to the longer orchestration session
-that regenerated the SDK and extended native commands to the whole tool
-catalog. The third drove the macOS extension imported during this workday.
+that extended native commands to the whole tool catalog. The source-worktree
+session authored the paired SDK regeneration too. The third drove the macOS
+extension imported during this workday.
 
 ## Goals
 
@@ -73,13 +74,19 @@ catalog. The third drove the macOS extension imported during this workday.
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add real dispatch/persistence/no-model and ordinary-command control coverage;
+  exact new tests and behavioral red/green evidence are in the linked inventory.
+
 - 2026-08-08 `ses_01bbb0b5affeZ1mADldfa0VF1D` - introduce native slash
-  commands on `feat/native-slash-commands`. Confirmed by the exact prompt above,
-  source checkout, branch containment, and commit `f39c4abf8`.
+  commands on `feat/native-slash-commands` and author the paired SDK
+  regeneration in `32457b6d1`. Confirmed by the exact prompt above, source
+  checkout, branch containment, `f39c4abf8`, and the originating session's
+  2026-10-06 read-only provenance report.
 - 2026-08-08 `ses_01bd110d8ffes7Zs71QSnn0HHJ` - drive the native-command
-  workstream from `opencode-tools` and regenerate the paired SDK in
-  `32457b6d1`. Inferred with high confidence from the exact prompt, activity
-  window, and branch containment.
+  workstream from `opencode-tools` and spawn the source-worktree author.
+  The SDK commit is attributed to the spawned session above, not to this
+  orchestrator; the author's 2026-10-06 report resolves the earlier inference.
 - 2026-08-11 `ses_01bd110d8ffes7Zs71QSnn0HHJ` - resolve and execute built-in
   and MCP tools on `feat/native-tool-commands`. Inferred with high confidence
   from the session's tool-registry subagent evidence and `615d27bad`.
@@ -124,6 +131,14 @@ catalog. The third drove the macOS extension imported during this workday.
 - 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
   rebased unchanged onto upstream `dev`
   `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  reconcile the originating author's report. `f39c4abf8` and `08cc0c56a4`
+  have patch-id `aa40c175abf0e2c847d8a691cda0487f54fbd590`; `32457b6d1`
+  and `2c566d1c67` have patch-id `a1a1703260f8dc71b877b57eb2f62fdf3659f32e`.
+  The feature landed despite changed ancestry. No upstream PR or stranded
+  source was found. Parser tests did not cover the native flag's no-model
+  command dispatch or native/subtask refusal; current regression audit covers
+  those gaps separately in the linked Vibeterm inventory.
 
 ## Current maintenance notes
 

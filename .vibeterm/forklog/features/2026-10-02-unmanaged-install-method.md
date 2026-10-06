@@ -59,6 +59,10 @@ verbatim:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  add startup lookup suppression proof and verify stamp priority without real
+  package-manager/network activity. Exact evidence is in the linked inventory.
+
 - 2026-10-02
   [`ses_f01c05e81ffeH39PdmzetO2pyw`](../sessions/2026-10-02-openai-gateway-parity.md)
   - `c8ce109f25`: introduce the stamp; build and install on desktop and m4max.

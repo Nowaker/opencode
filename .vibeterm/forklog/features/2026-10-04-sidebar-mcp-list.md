@@ -71,6 +71,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
+  verify real compact/descriptive rows and dot colors; loss of descriptive
+  failure reasons remains an intentional trade-off in the linked inventory.
+
 - 2026-10-04
   [`ses_ef48e41cfffeCewCXcQUj6z1n2`](../sessions/2026-10-04-sidebar-mcp-list.md)
   - `14eba13ee7`: introduce; open upstream issue #53321 and PR #53322;
