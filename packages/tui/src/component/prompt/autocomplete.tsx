@@ -21,7 +21,8 @@ import { Locale } from "../../util/locale"
 import type { PromptInfo } from "../../prompt/history"
 import { useFrecency } from "../../prompt/frecency"
 import { useBindings, useCommandSlashes, useOpencodeModeStack } from "../../keymap"
-import { displayCharAt, mentionTriggerIndex } from "../../prompt/display"
+import { displayCharAt } from "../../prompt/display"
+import { mentionTriggerOffset } from "../../prompt/mention"
 import type { FileSystemEntry } from "@opencode-ai/sdk/v2"
 
 function removeLineRange(input: string) {
@@ -699,14 +700,10 @@ export function Autocomplete(props: {
           return
         }
 
-        // Check for "@" trigger - find the nearest "@" before cursor with no whitespace between.
-        // A trigger holds no whitespace so it never crosses a newline, and reading just the
-        // current line out of the rope keeps a keystroke off the whole-buffer path.
-        const lineStart = props.input().editBuffer.positionToOffset(props.input().logicalCursor.row, 0)
-        const idx = mentionTriggerIndex(props.input().getTextRange(lineStart, offset), offset - lineStart)
+        const idx = mentionTriggerOffset(props.input())
         if (idx !== undefined) {
           show("@")
-          setStore("index", lineStart + idx)
+          setStore("index", idx)
         }
       },
     })

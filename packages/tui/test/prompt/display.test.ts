@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { displayCharAt, displaySlice, mentionTriggerIndex, promptOffsetWidth } from "../../src/prompt/display"
 
 // These helpers are the straightforward definition of the display-offset arithmetic:
@@ -118,5 +118,21 @@ describe("prompt display", () => {
         ])
       }
     }
+  })
+
+  test("keeps a mention lookup off the whole buffer in a 100 KB single-line prompt", () => {
+    // No newline anywhere: scoping the lookup to the cursor's line does not help here, so
+    // only skipping segmentation over plain ASCII keeps a keystroke cheap. Grapheme
+    // segmentation is the per-character cost, so the text it is handed is the work done.
+    const word = "@src/file"
+    const before = "the quick brown fox jumps over the lazy dog ".repeat(2_300)
+    const segment = spyOn(Intl.Segmenter.prototype, "segment")
+
+    const index = mentionTriggerIndex(before + word)
+    const segmented = segment.mock.calls.reduce((total, [input]) => total + input.length, 0)
+    segment.mockRestore()
+
+    expect(index).toBe(before.length)
+    expect(segmented).toBeLessThanOrEqual(word.length)
   })
 })
