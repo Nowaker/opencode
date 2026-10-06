@@ -1,6 +1,6 @@
 import { NodeHttpServer } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Auth } from "../../src/auth"
@@ -43,6 +43,53 @@ const apiLayer = HttpRouter.serve(
 const it = testEffect(apiLayer)
 
 describe("global HttpApi", () => {
+  it.live("returns current process and JSC memory diagnostics", () =>
+    Effect.gen(function* () {
+      const started = Date.now()
+      const response = yield* HttpClientRequest.get(GlobalPaths.memory).pipe(HttpClient.execute)
+      const memory = yield* response.json.pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            Schema.Struct({
+              process: Schema.Struct({
+                rss: Schema.Number,
+                heap_total: Schema.Number,
+                heap_used: Schema.Number,
+                external: Schema.Number,
+                array_buffers: Schema.Number,
+              }),
+              jsc_heap: Schema.Struct({
+                heap_size: Schema.Number,
+                heap_capacity: Schema.Number,
+                extra_memory_size: Schema.Number,
+                object_count: Schema.Number,
+                protected_object_count: Schema.Number,
+                global_object_count: Schema.Number,
+                object_type_counts: Schema.Record(Schema.String, Schema.Number),
+              }),
+              jsc_memory: Schema.Struct({
+                current: Schema.Number,
+                peak: Schema.Number,
+                current_commit: Schema.Number,
+                peak_commit: Schema.Number,
+                page_faults: Schema.Number,
+              }),
+              captured_at: Schema.String,
+            }),
+          ),
+        ),
+      )
+
+      expect(response.status).toBe(200)
+      expect(memory.process.rss).toBeGreaterThan(0)
+      expect(memory.jsc_heap.heap_capacity).toBeGreaterThan(0)
+      expect(memory.jsc_heap.object_count).toBeGreaterThan(0)
+      expect(memory.jsc_memory.peak).toBeGreaterThanOrEqual(memory.jsc_memory.current)
+      expect(Date.parse(memory.captured_at)).toBeGreaterThanOrEqual(started)
+      expect(Date.parse(memory.captured_at)).toBeLessThanOrEqual(Date.now())
+    }),
+  )
+
   it.live("upgrades to the requested version", () =>
     Effect.gen(function* () {
       const response = yield* HttpClientRequest.post(GlobalPaths.upgrade).pipe(
