@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2"
-import { navigationTargets, pickNavigationTarget } from "../../../src/routes/session/navigation"
+import {
+  navigationTargets,
+  pickNavigationTarget,
+  recallScroll,
+  rememberScroll,
+} from "../../../src/routes/session/navigation"
 
 const sessionID = "ses_test"
 
@@ -128,5 +133,38 @@ describe("session navigation pick", () => {
     expect(pickNavigationTarget(blocks, 20, "next")).toBeUndefined()
     expect(pickNavigationTarget(blocks, 2, "prev")).toBeUndefined()
     expect(pickNavigationTarget([], 0, "next")).toBeUndefined()
+  })
+})
+
+describe("session scroll return", () => {
+  const top = { anchor: "block-a", offset: -2 }
+  const held = { sessionID: "ses_a", anchor: "block-a", offset: -2 }
+
+  test("leaving a scrolled-up view remembers its top block", () => {
+    expect(rememberScroll(undefined, { sessionID: "ses_a", atBottom: false, top })).toEqual(held)
+  })
+
+  test("leaving a scrolled-up view again replaces the mark", () => {
+    const later = { anchor: "block-b", offset: 0 }
+    expect(rememberScroll(held, { sessionID: "ses_a", atBottom: false, top: later })).toEqual({
+      sessionID: "ses_a",
+      ...later,
+    })
+  })
+
+  test("going to the bottom from the bottom keeps the mark of this session only", () => {
+    expect(rememberScroll(held, { sessionID: "ses_a", atBottom: true, top })).toBe(held)
+    expect(rememberScroll(held, { sessionID: "ses_b", atBottom: true, top })).toBeUndefined()
+    expect(rememberScroll(undefined, { sessionID: "ses_a", atBottom: true, top })).toBeUndefined()
+  })
+
+  test("returning uses the mark while the view is still at the bottom", () => {
+    expect(recallScroll(held, { sessionID: "ses_a", atBottom: true })).toBe(held)
+  })
+
+  test("returning ignores a mark from another session or once the view moved off the bottom", () => {
+    expect(recallScroll(held, { sessionID: "ses_b", atBottom: true })).toBeUndefined()
+    expect(recallScroll(held, { sessionID: "ses_a", atBottom: false })).toBeUndefined()
+    expect(recallScroll(undefined, { sessionID: "ses_a", atBottom: true })).toBeUndefined()
   })
 })
