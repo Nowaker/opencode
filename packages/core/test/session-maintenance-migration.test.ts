@@ -83,3 +83,18 @@ test("partial unique indexes refuse installation rather than introduce an unboun
   // Then capability publication fails instead of installing a scanning predicate.
   expect(result._tag).toBe("Failure")
 })
+
+test("expression unique indexes refuse installation instead of publishing conflict protection", async () => {
+  // Given an expression constraint that the indexed-key protocol cannot represent.
+  await using tmp = await tmpdir()
+  const path = `${tmp.path}/expression.db`
+  await connect(path)
+  using db = new Database(path)
+  db.exec("CREATE UNIQUE INDEX expression_part ON part(lower(message_id))")
+  // When a new runtime discovers the unsupported key.
+  const result = await Effect.runPromiseExit(
+    Effect.gen(function* () { yield* Service }).pipe(Effect.provide(layerFromPath(path)), Effect.scoped),
+  )
+  // Then runtime startup fails instead of claiming the collision is protected.
+  expect(result._tag).toBe("Failure")
+})

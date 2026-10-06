@@ -6,6 +6,24 @@ import { Service, layerFromPath } from "../src/database/database"
 import { SessionMaintenance } from "../src/database/session-maintenance"
 import { tmpdir } from "./fixture/tmpdir"
 
+test("active maintenance fences reject admission even when the generation is current", async () => {
+  // Given a current runtime and a maintenance fence established by another connection.
+  await using tmp = await tmpdir()
+  const filename = `${tmp.path}/fenced.db`
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const { db } = yield* Service
+      using maintenance = new Database(filename)
+      maintenance.exec("INSERT INTO session_maintenance_fence VALUES('ses_fenced','fixture',0)")
+      // When the runtime admits the fenced session.
+      const admission = yield* SessionMaintenance.assertCurrent(db, "ses_fenced").pipe(Effect.exit)
+      // Then admission fails, but an unrelated identity remains available.
+      expect(admission._tag).toBe("Failure")
+      yield* SessionMaintenance.assertCurrent(db, "ses_unrelated")
+    }).pipe(Effect.provide(layerFromPath(filename)), Effect.scoped),
+  )
+})
+
 test("real runtime connection refuses stale admissions and direct writes after a generation advance", async () => {
   // Given a migrated runtime database with registered generation protection.
   await using tmp = await tmpdir()
