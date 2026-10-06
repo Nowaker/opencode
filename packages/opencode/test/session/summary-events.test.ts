@@ -1,15 +1,17 @@
 import { expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { and, eq, sql } from "drizzle-orm"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Database } from "@opencode-ai/core/database/database"
 import { EventTable } from "@opencode-ai/core/event/sql"
+import { MessageTable } from "@opencode-ai/core/session/sql"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Session } from "@/session/session"
 import { SessionSummary } from "@/session/summary"
+import { MessageV2 } from "@/session/message-v2"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
 import { provideTmpdirInstance } from "../fixture/fixture"
@@ -20,6 +22,7 @@ const it = testEffect(
     LayerNode.group([
       Session.node,
       SessionSummary.node,
+      MessageV2.node,
       Snapshot.node,
       SessionProjector.node,
       Database.node,
@@ -56,6 +59,65 @@ const updates = Effect.fn("test.updates")(function* (sessionID: SessionID, messa
     .all()
     .pipe(Effect.orDie)
 })
+
+it.live("keeps cached summaries unchanged when SQLite rejects persistence so a retry can publish", () =>
+  provideTmpdirInstance(() =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const summary = yield* SessionSummary.Service
+      const database = yield* Database.Service
+      const session = yield* sessions.create({})
+      const message = yield* user(session.id)
+      const input = { sessionID: session.id, messageID: message.id }
+      yield* database.db
+        .update(MessageTable)
+        .set({ time_updated: 1 })
+        .where(eq(MessageTable.id, message.id))
+        .run()
+        .pipe(Effect.orDie)
+      const before = yield* MessageV2.get(input)
+      const original = yield* updates(session.id, message.id)
+
+      const rejected = yield* Effect.acquireUseRelease(
+        database.db
+          .run(
+            "CREATE TEMP TRIGGER reject_summary BEFORE UPDATE OF data ON message WHEN json_type(NEW.data, '$.summary.diffs') = 'array' BEGIN SELECT RAISE(ABORT, 'summary write rejected'); END",
+          )
+          .pipe(Effect.orDie),
+        () =>
+          Effect.gen(function* () {
+            const exit = yield* summary.summarize(input).pipe(Effect.exit)
+            const cached = yield* MessageV2.get(input)
+            const stored = yield* database.db
+              .select()
+              .from(MessageTable)
+              .where(eq(MessageTable.id, message.id))
+              .get()
+              .pipe(Effect.orDie)
+            return { exit, cached, stored, events: yield* updates(session.id, message.id) }
+          }),
+        () => database.db.run("DROP TRIGGER reject_summary").pipe(Effect.orDie),
+      )
+      yield* summary.summarize(input)
+      const cached = yield* MessageV2.get(input)
+      const stored = yield* database.db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.id, message.id))
+        .get()
+        .pipe(Effect.orDie)
+
+      expect(Exit.isFailure(rejected.exit)).toBe(true)
+      expect(rejected.cached.info).toBe(before.info)
+      expect(rejected.cached.info.summary).toBeUndefined()
+      expect(rejected.stored?.data.summary).toBeUndefined()
+      expect(rejected.events).toEqual(original)
+      expect(stored?.data.summary).toEqual({ diffs: [] })
+      expect(cached.info.summary).toEqual(stored?.data.summary)
+      expect(yield* updates(session.id, message.id)).toHaveLength(original.length + 1)
+    }),
+  ),
+)
 
 it.live("publishes missing-to-empty diffs once without dropping existing events", () =>
   provideTmpdirInstance(() =>
