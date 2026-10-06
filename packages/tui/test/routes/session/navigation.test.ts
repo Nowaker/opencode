@@ -32,8 +32,8 @@ function assistant(id: string): Message {
   }
 }
 
-function text(id: string, messageID: string, value: string, synthetic?: boolean): Part {
-  return { id, sessionID, messageID, type: "text", text: value, synthetic }
+function text(id: string, messageID: string, value: string, synthetic?: boolean, ignored?: boolean): Part {
+  return { id, sessionID, messageID, type: "text", text: value, synthetic, ignored }
 }
 
 function reasoning(id: string, messageID: string, value: string): Part {
@@ -54,8 +54,9 @@ function tool(id: string, messageID: string, name: string): Part {
 
 // Two turns: the first with a GPT-style empty reasoning placeholder, an edit, a
 // todo list and two responses; the second with real reasoning, a question and a
-// response, followed by a prompt still waiting for its answer.
-const messages = [user("u1"), assistant("a1"), assistant("a2"), user("u2"), assistant("a3"), user("u3")]
+// response, followed by a prompt with only synthetic text and one whose text is
+// ignored.
+const messages = [user("u1"), assistant("a1"), assistant("a2"), user("u2"), assistant("a3"), user("u3"), user("u4")]
 const parts: Record<string, Part[]> = {
   u1: [text("u1-text", "u1", "first prompt"), text("u1-synthetic", "u1", "injected", true)],
   a1: [
@@ -69,10 +70,15 @@ const parts: Record<string, Part[]> = {
   u2: [text("u2-text", "u2", "second prompt")],
   a3: [reasoning("a3-reasoning", "a3", "**Plan** weigh it"), tool("a3-question", "a3", "question")],
   u3: [text("u3-synthetic", "u3", "only synthetic", true)],
+  u4: [text("u4-ignored", "u4", "only ignored", false, true)],
 }
 const lookup = (messageID: string) => parts[messageID] ?? []
 
 describe("session navigation targets", () => {
+  test("prompts are user messages with visible, non-ignored text", () => {
+    expect([...navigationTargets(messages, lookup, "prompt")]).toEqual(["u1", "u2"])
+  })
+
   test("blocks are prompts, text, reasoning with content and every tool call", () => {
     expect([...navigationTargets(messages, lookup, "block")]).toEqual([
       "u1",
