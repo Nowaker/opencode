@@ -23,6 +23,31 @@ afterEach(async () => {
 
 describe("sync HttpApi", () => {
   it.instance(
+    "filters history with more aggregate cursors than SQLite's expression depth limit",
+    () =>
+      Effect.gen(function* () {
+        Flag.OPENCODE_EXPERIMENTAL_WORKSPACES = true
+        const tmp = yield* TestInstance
+        const excluded = yield* Session.use.create({ title: "excluded" })
+        const retained = yield* Session.use.create({ title: "retained" })
+        yield* Session.use.setTitle({ sessionID: retained.id, title: "updated" })
+        const cursors = Object.fromEntries(Array.from({ length: 1100 }, (_, index) => [`absent-${index}`, 1]))
+
+        const history = yield* requestInDirectory(SyncPaths.history, tmp.directory, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...cursors, [excluded.id]: Number.MAX_SAFE_INTEGER, [retained.id]: 0 }),
+        })
+
+        expect(history.status).toBe(200)
+        const rows = yield* history.json
+        expect(rows).toEqual(expect.arrayContaining([expect.objectContaining({ aggregate_id: retained.id })]))
+        expect(rows).not.toEqual(expect.arrayContaining([expect.objectContaining({ aggregate_id: excluded.id })]))
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "serves sync routes",
     () =>
       Effect.gen(function* () {
