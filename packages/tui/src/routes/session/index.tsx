@@ -24,7 +24,14 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
+import {
+  BoxRenderable,
+  ScrollBoxRenderable,
+  addDefaultParsers,
+  TextAttributes,
+  RGBA,
+  type Renderable,
+} from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   AssistantMessage,
@@ -74,7 +81,14 @@ import { useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration, keepScrollAnchor } from "../../util/scroll"
-import { navigationTargets, pickNavigationTarget, type NavigationScope } from "./navigation"
+import {
+  navigationTargets,
+  pickNavigationTarget,
+  recallScroll,
+  rememberScroll,
+  type NavigationScope,
+  type ScrollReturn,
+} from "./navigation"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { SIDEBAR_ORDER_KEY } from "../../plugin/slots"
@@ -396,11 +410,21 @@ export function Session() {
     })
   })
 
+  // Where messages_last left a scrolled-up reader, for messages_first to
+  // return to. Any other navigation command or wheel scroll drops it.
+  let scrollReturn: ScrollReturn<Renderable> | undefined
+  const viewAtBottom = () => scroll.scrollTop >= scroll.scrollHeight - scroll.viewport.height - 1
+  const viewTop = () => {
+    const child = scroll.getChildren().find((child) => child.y + child.height > scroll.viewport.y)
+    return child && { anchor: child, offset: child.y - scroll.viewport.y }
+  }
+
   // Brings the next or previous block to the top of the viewport, one row
   // below its edge. Past the last block the view returns to the bottom and
   // follows new output again; before the first it goes to the top.
   const scrollToBlock = (scope: NavigationScope, direction: "next" | "prev") => {
     dialog.clear()
+    scrollReturn = undefined
     const targets = navigationTargets(messages(), (messageID) => sync.data.part[messageID] ?? [], scope)
     const anchor = scroll.y + 1
     const target = pickNavigationTarget(
@@ -809,6 +833,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(-scroll.height / 2)
         dialog.clear()
       },
@@ -819,6 +844,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(scroll.height / 2)
         dialog.clear()
       },
@@ -829,6 +855,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(-1)
         dialog.clear()
       },
@@ -839,6 +866,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(1)
         dialog.clear()
       },
@@ -849,6 +877,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(-scroll.height / 4)
         dialog.clear()
       },
@@ -859,6 +888,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         scroll.scrollBy(scroll.height / 4)
         dialog.clear()
       },
@@ -869,8 +899,12 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
-        scroll.scrollTo(0)
         dialog.clear()
+        const mark = recallScroll(scrollReturn, { sessionID: route.sessionID, atBottom: viewAtBottom() })
+        scrollReturn = undefined
+        if (mark && !mark.anchor.isDestroyed && mark.anchor.parent === scroll.content)
+          return scroll.scrollBy(mark.anchor.y - scroll.viewport.y - mark.offset)
+        scroll.scrollTo(0)
       },
     },
     {
@@ -879,6 +913,11 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = rememberScroll(scrollReturn, {
+          sessionID: route.sessionID,
+          atBottom: viewAtBottom(),
+          top: viewTop(),
+        })
         scroll.scrollTo(scroll.scrollHeight)
         dialog.clear()
       },
@@ -889,6 +928,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        scrollReturn = undefined
         const messages = sync.data.message[route.sessionID]
         if (!messages || !messages.length) return
 
@@ -1278,6 +1318,7 @@ export function Session() {
                     foregroundColor: theme.border,
                   },
                 }}
+                onMouseScroll={() => (scrollReturn = undefined)}
                 stickyScroll={true}
                 stickyStart="bottom"
                 flexGrow={1}
