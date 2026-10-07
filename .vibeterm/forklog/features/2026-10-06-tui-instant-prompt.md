@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `provisional-prompt` (also the upstream PR head: `0dae58048c` stage 1, `620cd1e333` stage 2); landing branch `provisional-prompt-land`
-- First local commit: `b12845f999` (cherry-pick of `0dae58048c`)
-- Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`)
+- Development branch(es): `provisional-prompt` (also the upstream PR head: `8b7f258af6` stage 1, `f829a6a3f7` stage 2, each including its part of the startup fix); landing branch `provisional-prompt-land`
+- First local commit: `b12845f999` (cherry-pick of `0dae58048c`, the first version of stage 1)
+- Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`), `12a11e65f1` (startup fix: the diff from `620cd1e333` to `f829a6a3f7`)
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `provisional-prompt`); `dev-nowaker` stays on `907b3bc518`
 - Last checked against upstream: `ecc4916b5a` (upstream `dev`)
 - Upstream: issue [#53696](https://github.com/anomalyco/opencode/issues/53696), PR [#53698](https://github.com/anomalyco/opencode/pull/53698)
@@ -83,6 +83,7 @@ white "still loading" / red "changed" notices for Enter during loading.
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `12a11e65f1` | 2026-10-06 | A damaged startup cache or a small pane no longer breaks startup: `read()` keeps only fields of the expected type, `boot.ts` starts without the instant prompt if starting it throws, and a spinner off the pane's grid is not animated | `read()` and its field readers in `packages/tui/src/instant/cache.ts` (`THEME_KEYS`, `Data.theme: Partial<Theme>`); the `InstantPrompt.start()` guard in `packages/opencode/src/boot.ts`; canvas `spin()` in `instant/frame.ts`; `test/instant/cache.test.ts` and the pane-size sweep in `test/instant/session.test.ts` |
 | `5621b2c706` | 2026-10-06 | Session screen for `-s`/`-c`; per-session cache entries; sidebar rule and session/sidebar padding in `layout.ts` | `classify()` `session` mode and `readKv()` in `packages/tui/src/instant/index.ts`; `sessionLayout`/`paintSession` in `instant/frame.ts`; `TuiLayout.Session`, `Sidebar`, `sessionSidebarVisible`, `sessionContentWidth`, `sidebarShowsSessionId` in `layout.ts`, read by `routes/session/index.tsx`, `routes/session/sidebar.tsx` and `feature-plugins/sidebar/footer.tsx`; `sessions` in `instant/cache.ts`; session branch of the startup-notice effect in `component/prompt/index.tsx`; `test/instant/classify.test.ts` |
 | `b12845f999` | 2026-10-06 | Instant home prompt, early input, startup cache, `startup.*` settings | `packages/opencode/src/boot.ts` and `script/build.ts` entrypoints (`OPENCODE_INSTANT_WORKER_PATH`); `packages/tui/src/instant/*`; `InstantPrompt.handover()` before `createCliRenderer` in `packages/tui/src/app.tsx` and `src/cli/cmd/run/runtime.lifecycle.ts`; `InstantPrompt.claim()` in `Prompt` `onMount` and `footer.prompt.tsx` `bind`; `component/instant-screen.ts`; `packages/tui/src/layout.ts`; `config/keybind-definitions.ts`; `core/src/global-path.ts`; `core/src/database/location.ts`; `Startup` in `config/index.tsx`; `test/instant/*` |
 
@@ -141,6 +142,25 @@ white "still loading" / red "changed" notices for Enter during loading.
 
   Time until the session's text is visible is unchanged (2.4-3.9 s on the
   Macs, both builds).
+- Startup fix (`12a11e65f1`): the same tests with only one behavior disabled,
+  on tree `12a11e65f1`, from `packages/tui`:
+  - `bun test test/instant/cache.test.ts` with the pre-fix `read()` body:
+    exit 1, 2 of 3 fail (wrong-typed fields come back unfiltered); restored:
+    3 pass.
+  - `bun test test/instant/session.test.ts -t "every terminal size"` (home and
+    session screens, idle and with a queued Enter, widths 1-160 by heights
+    1-45) without the `spin()` guard: exit 1, `TypeError: undefined is not an
+    object (evaluating 'frame.grid[at.y][at.x]')`; restored: pass.
+  - Landing branch: `bun typecheck` clean in `packages/core`, `packages/tui`
+    and `packages/opencode`; `bun test` in `packages/tui` 326 pass, 0 fail.
+- Startup repro (`tmp/repro-startup.sh` in the `provisional-prompt` worktree:
+  isolated data dir, provider pointed at a closed port, text and Enter typed
+  during load, checked 15 s later): `1.18.34-vt-146` exits on a cached agent
+  without `label` (`TypeError: undefined is not an object (evaluating 's of
+  d')`) and on a numeric theme color (`t.cache.theme.text.slice is not a
+  function`); `1.18.34-vt-148` keeps running in all 12 cases (ten damaged
+  caches, an 80x10 home and a 44x20 session pane) on desktop and in the 5
+  cases run on m4max.
 
 ## Timeline
 
@@ -150,6 +170,9 @@ white "still loading" / red "changed" notices for Enter during loading.
     install on desktop and m4max (`1.18.34-vt-144-907b3bc518`).
   - `5621b2c706`: session screen for `-s`/`-c` (PR #53698 second commit);
     build and install on desktop and m4max (`1.18.34-vt-146-907b3bc518`).
+  - `12a11e65f1`: keep a damaged startup cache or a small pane from breaking
+    startup (PR #53698 commits rebuilt as `8b7f258af6` and `f829a6a3f7`);
+    build and install on desktop and m4max (`1.18.34-vt-148-907b3bc518`).
 
 ## Current maintenance notes
 
@@ -165,9 +188,17 @@ white "still loading" / red "changed" notices for Enter during loading.
     structure and the home footer/tips plugins still read `layout.ts`.
   - The fork's `sidebar.session_id`/`pin_title` sidebar keeps reading
     `TuiLayout.sidebarShowsSessionId` (the landing merged both).
-- Vibeterm skips its own new-session loader when the binary carries this
-  screen (opencode-tools `0b281fa`, item 19b, `ses_eeadda349ffep0Jwwis5g1DJXi`);
-  skipping its existing-session loader for stage 2 is in progress there.
+- Vibeterm skips its own new-session loader (opencode-tools `0b281fa`) and
+  existing-session loader (`9d3bd0e`) when the binary carries these screens
+  (item 19b, `ses_eeadda349ffep0Jwwis5g1DJXi`). It finds them by scanning the
+  binary for "OpenCode still loading, will submit shortly" and "Loading
+  session…" (stored in the bundle as `Loading session\u2026`): rewording the
+  first brings both loaders back, rewording the second the existing-session
+  one.
+- Known limitation: in session mode with the white notice showing, a pane
+  narrower than about 50 columns wraps the cwd one character per row and
+  pushes the prompt off screen. The loaded TUI's status row breaks the same
+  way at that width.
 
 ### Upstream integration checklist
 
