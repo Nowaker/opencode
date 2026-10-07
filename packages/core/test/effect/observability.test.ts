@@ -80,6 +80,34 @@ test("file logger appends concurrent runs with a run on every line", async () =>
   expect(lines.every((line) => !line.startsWith("{"))).toBe(true)
 })
 
+test("file logger writes lines within the batch window while the scope stays open", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-log-test-"))
+  await using _ = {
+    async [Symbol.asyncDispose]() {
+      await fs.rm(dir, { recursive: true, force: true })
+    },
+  }
+  const file = path.join(dir, "opencode.log")
+  const written = (count: number) =>
+    Effect.promise(() => Bun.file(file).text()).pipe(
+      Effect.map((text) => text.trim().split("\n").filter(Boolean)),
+      Effect.tap((lines) => Effect.sync(() => expect(lines).toHaveLength(count))),
+    )
+
+  await Effect.gen(function* () {
+    yield* Effect.logInfo("first")
+    yield* Effect.sleep("1500 millis")
+    yield* written(1)
+    yield* Effect.logInfo("second")
+    yield* Effect.sleep("1500 millis")
+    yield* written(2)
+  }).pipe(
+    Effect.provide(Logger.layer([fileLogger(file, "run-a")]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
+    Effect.scoped,
+    Effect.runPromise,
+  )
+})
+
 test("file logger flattens nested objects", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-log-test-"))
   await using _ = {

@@ -1,4 +1,4 @@
-import { Effect, Exit, FileSystem, Formatter, Logger, Option, Scope, type LogLevel } from "effect"
+import { Effect, Exit, FileSystem, Formatter, Latch, Logger, Option, Scope, type LogLevel } from "effect"
 import path from "path"
 import { Global } from "../global"
 import { runID } from "./shared"
@@ -50,17 +50,22 @@ function format(input: unknown) {
 // rotator that renames the file aside would keep receiving every later line.
 // Before each batch, reopen the path when it no longer names the open file:
 // one stat per flush, nothing per line, and no signal for the rotator to send.
+//
+// Logger.batched flushes on a timer that ticks every window forever, so an
+// idle process would wake both its threads once a second to write nothing.
+// This batcher sleeps until a line arrives and only then waits one window.
 export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id: string = runID) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const encoder = new TextEncoder()
+    const log = formatter(id)
     const open = Effect.gen(function* () {
       const scope = yield* Scope.make()
       const handle = yield* fs.open(file, { flag: "a" }).pipe(Scope.provide(scope))
       return { scope, handle }
     })
     let current = yield* open
-    // Finalizers run in reverse, so this closes after the batcher's final flush.
+    // Finalizers run in reverse, so this closes after the final flush.
     yield* Effect.addFinalizer(() => Scope.close(current.scope, Exit.void))
     // Open the new file before closing the old one: if the reopen fails, the
     // batch still lands in the old file instead of being dropped.
@@ -69,14 +74,28 @@ export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id
       yield* Scope.close(current.scope, Exit.void)
       current = next
     })
-    return yield* Logger.batched(formatter(id), {
-      // Do not set window to 0; it causes high idle CPU usage.
-      window: 1000,
-      flush: (output) =>
-        Effect.gen(function* () {
-          if (!(yield* sameFile(fs, file, current.handle))) yield* Effect.ignore(reopen)
-          yield* current.handle.write(encoder.encode(output.join("\n") + "\n"))
-        }).pipe(Effect.ignore),
+    const pending = yield* Latch.make()
+    let lines: string[] = []
+    const flush = Effect.suspend(() => {
+      if (lines.length === 0) return Effect.void
+      const batch = lines
+      lines = []
+      return Effect.gen(function* () {
+        if (!(yield* sameFile(fs, file, current.handle))) yield* Effect.ignore(reopen)
+        yield* current.handle.write(encoder.encode(batch.join("\n") + "\n"))
+      }).pipe(Effect.ignore)
+    })
+    yield* pending.await.pipe(
+      Effect.andThen(Effect.sleep("1 second")),
+      Effect.andThen(pending.close),
+      Effect.andThen(flush),
+      Effect.forever,
+      Effect.forkScoped,
+    )
+    yield* Effect.addFinalizer(() => flush)
+    return Logger.make((options) => {
+      lines.push(log.log(options))
+      pending.openUnsafe()
     })
   })
 }
