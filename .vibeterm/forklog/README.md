@@ -70,8 +70,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Single-press session abort, /abort and immediate "aborting…" feedback](./features/2026-10-06-tui-session-abort.md)
 - [Show and load the messages a long session hides](./features/2026-10-06-tui-history-crop.md)
 - [Read and place the composer caret from a TUI plugin](./features/2026-10-06-tui-composer-caret.md)
+- [Stop the file logger waking every second while idle](./features/2026-10-06-idle-log-flush.md)
+- [Load the full provider catalog after the prompt is shown](./features/2026-10-06-tui-lazy-provider-list.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec5b2a34ffe9sjf6Wf21vNSMg`](./sessions/2026-10-06-idle-cpu-startup.md)
+  - Idle CPU, memory and time to prompt: a hermetic harness, a file logger
+    that no longer wakes every second (-15% idle CPU; issue #53673, PR
+    #53674), and the provider catalog off the blocking bootstrap (-250 ms to
+    prompt; issue #53679, PR #53680); build and install on both hosts.
 
 - [2026-10-06 `ses_eec44ad14ffeownfvFKtEeqk4N`](./sessions/2026-10-06-tui-composer-caret.md)
   - Let TUI plugins read and place the composer caret, so vibeterm's restored

@@ -55,6 +55,7 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `d1442208f5` | 2026-10-03 | `fileLogger` builds `Logger.batched` with a dev/ino check and reopen before each write | `fileLogger` and `sameFile` in `packages/core/src/observability/logging.ts`; describe "file logger after the log file is moved" in `packages/core/test/effect/observability.test.ts` |
+| `bb01eb1db2` | 2026-10-06 | The batcher becomes a latch-armed flush loop (see [idle log flush](./2026-10-06-idle-log-flush.md)); the dev/ino check and reopen now run inside that flush | same seams |
 
 ## Verification
 
@@ -80,6 +81,10 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 - 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
   rebased unchanged onto upstream `dev`
   `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
+- 2026-10-06
+  [`ses_eec5b2a34ffe9sjf6Wf21vNSMg`](../sessions/2026-10-06-idle-cpu-startup.md)
+  - composed with the idle log flush in `bb01eb1db2`; rename and delete tests
+    still pass (9 pass in `observability.test.ts`).
 
 ## Current maintenance notes
 
@@ -89,8 +94,10 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
 
 ### Upstream integration checklist
 
-- Locate `fileLogger` in the new upstream tree; check it still builds the
-  batched logger rather than `Logger.toFile`.
+- Locate `fileLogger` in the new upstream tree; check it still owns its flush
+  loop (latch-armed, see the idle log flush record) rather than
+  `Logger.toFile` or `Logger.batched`, and that `sameFile` runs before each
+  write.
 - Run `test/effect/observability.test.ts` and `bun typecheck` in
   `packages/core`.
 - Build through `.vibeterm/build.sh`; repeat the isolated `mv` check.
