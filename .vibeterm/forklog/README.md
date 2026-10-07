@@ -69,8 +69,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Show the session ID in the sidebar](./features/2026-10-06-sidebar-session-id.md)
 - [Single-press session abort, /abort and immediate "aborting…" feedback](./features/2026-10-06-tui-session-abort.md)
 - [Show and load the messages a long session hides](./features/2026-10-06-tui-history-crop.md)
+- [Read and place the composer caret from a TUI plugin](./features/2026-10-06-tui-composer-caret.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec44ad14ffeownfvFKtEeqk4N`](./sessions/2026-10-06-tui-composer-caret.md)
+  - Let TUI plugins read and place the composer caret, so vibeterm's restored
+    drafts keep it; build and install on both hosts.
 
 - [2026-10-06 `ses_eebf95604ffekfFQU7LOgARLnt`](./sessions/2026-10-06-sidebar-session-id.md)
   - Add `sidebar.session_id` and `/session-id` to show the session ID below

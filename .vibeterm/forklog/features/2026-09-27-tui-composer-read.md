@@ -67,6 +67,10 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
 
 ## Timeline
 
+- 2026-10-06 [`ses_eec44ad14ffeownfvFKtEeqk4N`](../sessions/2026-10-06-tui-composer-caret.md) -
+  extended by [the composer caret](./2026-10-06-tui-composer-caret.md):
+  `read().caret` and `replace({ caret })`; re-verified by the native-drafts e2e.
+
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   verify read/parts/stale-write and host projection coverage, reconcile original
   sessions, and flag the separate tools socket-path repair in the inventory.
