@@ -1623,6 +1623,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
+              <Show when={ctx.tui.footer_variant && props.message.variant}>
+                {(variant) => <span style={{ fg: theme.textMuted }}> · {variant()}</span>}
+              </Show>
               <Show when={ctx.showTurnTime() && completed()}>
                 {(time) => <span style={{ fg: theme.textMuted }}> · {Locale.todayTimeOrDateFirst(time())}</span>}
               </Show>
