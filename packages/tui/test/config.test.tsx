@@ -77,6 +77,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ sidebar: { mcp_list: "terse" } })).toThrow()
   expect(() => decodeInfo({ usage: { context_color: "rainbow" } })).toThrow()
   expect(() => decodeInfo({ usage: { cost_thresholds: [-1] } })).toThrow()
+  expect(decodeInfo({ model_label: "id" })).toEqual({ model_label: "id" })
+  expect(() => decodeInfo({ model_label: "provider" })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
