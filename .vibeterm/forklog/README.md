@@ -64,8 +64,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
 - [Navigate the transcript by prompt, landmark and block](./features/2026-10-05-tui-block-nav.md)
 - [Return to the scrolled-up position on messages_first](./features/2026-10-06-tui-home-return.md)
+- [Show the provider and model id in message footers](./features/2026-10-06-tui-model-label.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec44cf7effeFCqQefM0NkWLaW`](./sessions/2026-10-06-tui-model-label.md)
+  - Add `model_label` (`name`/`id`) so message footers and the prompt show
+    `providerID/modelID`; upstream issue #53638 and PR #53639; build and
+    install on both hosts, `id` set in their `tui.json`.
 
 - [2026-10-06 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-06-tui-nav-layout.md)
   - Move prompt navigation to `ctrl+up`/`ctrl+down` and blocks to
