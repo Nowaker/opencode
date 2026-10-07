@@ -432,9 +432,13 @@ Theme install behavior:
   hashes nothing. An `unmounted` reason means there is no composer to read,
   not an empty one. A plugin that keeps drafts compares `generation` and `revision` to
   learn that something changed without serializing the prompt on every poll.
-- `api.prompt.replace({ generation, sha256, partsSha256, correlationId, text, promptParts? })`
+  It also returns `caret`: the caret, and any selection, as UTF-16 offsets into
+  `input`, or `null` from a composer that cannot report one. Moving the caret
+  does not advance `revision`, so a plugin keeping the caret compares it too.
+- `api.prompt.replace({ generation, sha256, partsSha256, correlationId, text, promptParts?, caret? })`
   synchronously compares that guard against what the composer currently holds,
-  sets the text with the given parts (none when omitted), and acknowledges only
+  sets the text with the given parts (none when omitted), places the caret and
+  selection given in `read()`'s offsets (the end of the text when omitted), and acknowledges only
   an exact readback of both in normal mode. A guard describing anything else returns `conflict`; blocked
   composers return `not-ready`; a differing readback returns `mismatch`.
   Repeating a correlation returns its original receipt while the composer still
