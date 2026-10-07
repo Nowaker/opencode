@@ -125,6 +125,10 @@ export const Info = Schema.Struct({
   turn_timing: Schema.optional(TurnTiming),
   model_label: Schema.optional(ModelLabel),
   timestamps: Schema.optional(Timestamps),
+  footer_variant: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show the model variant a turn ran with, such as its reasoning effort ('high'), after the model in assistant message footers; turns without a variant are unchanged (default: false)",
+  }),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
