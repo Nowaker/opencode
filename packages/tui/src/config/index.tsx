@@ -187,6 +187,17 @@ export const Prompt = Schema.Struct({
   }),
 }).annotate({ description: "Prompt size settings" })
 
+export const Startup = Schema.Struct({
+  instant_prompt: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Paint the home screen with an editable prompt the moment opencode starts, before the TUI has loaded (default: true)",
+  }),
+  early_input: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Capture keys typed while opencode starts and put them in the prompt once it appears; Enter is dropped (default: true)",
+  }),
+}).annotate({ description: "Startup settings" })
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String),
   theme: Schema.optional(Schema.String),
@@ -196,6 +207,7 @@ export const Info = Schema.Struct({
   leader_timeout: Schema.optional(LeaderTimeout),
   attention: Schema.optional(Attention),
   prompt: Schema.optional(Prompt),
+  startup: Schema.optional(Startup),
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),

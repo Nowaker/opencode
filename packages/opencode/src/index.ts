@@ -29,10 +29,12 @@ import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
+import { InstantPrompt } from "@opencode-ai/tui/instant"
 
 const args = hideBin(process.argv)
 
 function show(out: string) {
+  InstantPrompt.dismiss()
   const text = out.trimStart()
   if (!text.startsWith("opencode ")) {
     process.stderr.write(UI.logo() + EOL + EOL)
@@ -64,6 +66,8 @@ const cli = yargs(args)
     type: "boolean",
   })
   .middleware(async (opts) => {
+    // Only the default TUI command takes over the instant startup prompt.
+    if (opts._.length > 0) InstantPrompt.dismiss()
     if (opts.printLogs) process.env.OPENCODE_PRINT_LOGS = "1"
     if (opts.logLevel) process.env.OPENCODE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {

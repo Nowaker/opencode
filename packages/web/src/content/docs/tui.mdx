@@ -427,6 +427,8 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 
 You can also drag a sidebar section by its header to a new place with the mouse. That order is saved and takes precedence over `sidebar.order` until you run **Reset sidebar order** from the command palette.
 
+- `startup` - Controls what happens while OpenCode starts. See [Startup](#startup).
+
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 
 ### Timestamps
@@ -453,6 +455,27 @@ It accepts:
 Unset (the default), the transcript looks as it always has: only prompts and assistant footers can show times, through `/timestamps`, `/turn-times` and `turn_timing.time`, and those toggles persist.
 
 Set, it decides every type each time the TUI starts, and it overrides `turn_timing.time`. `/timestamps` and `/turn-times` still flip prompt and turn times, until the TUI exits. `turn_timing.duration` and `/turn-durations` are not affected.
+
+### Startup
+
+OpenCode paints its home screen, with a working prompt, as soon as you run `opencode`, before plugins, agents and providers have loaded. You can type, edit, paste, and click to move the caret right away. The prompt's input keybinds (`input_*`) and the global `tui.json` settings for the prompt's size, cursor and mouse apply from the start. Project-level `tui.json` files apply once the TUI has loaded.
+
+The agent, model, variant and colors come from the previous run in the same directory. If you press Enter before OpenCode has loaded, the line below the prompt reads "OpenCode still loading, will submit shortly" and the prompt is sent once loading finishes. If the agent, model or variant that loads differs from the one shown, the prompt is not sent and the line reads "Not submitted: agent/model/variant changed". Press Enter again to send it.
+
+- `instant_prompt` - Show the home screen and prompt while OpenCode starts. Defaults to `true`.
+- `early_input` - When `instant_prompt` is off, or with `--mini`, keep the keys you type while OpenCode starts and place them in the prompt when it appears. Enter pressed during startup is dropped. Defaults to `true`.
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "startup": {
+    "instant_prompt": true,
+    "early_input": true
+  }
+}
+```
+
+The last agent, model and colors are kept in a small file next to the database (`opencode.tui-startup.json` beside `opencode.db`), so instances with a different `OPENCODE_DB` or data directory keep separate copies.
 
 ### Attention
 
