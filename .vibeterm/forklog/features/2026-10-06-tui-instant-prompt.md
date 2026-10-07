@@ -1,12 +1,12 @@
-# Instant home prompt and early input at startup
+# Instant home and session prompt and early input at startup
 
 ## Identity
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `provisional-prompt` (also the upstream PR head, `0dae58048c`); landing branch `provisional-prompt-land`
+- Development branch(es): `provisional-prompt` (also the upstream PR head: `0dae58048c` stage 1, `620cd1e333` stage 2); landing branch `provisional-prompt-land`
 - First local commit: `b12845f999` (cherry-pick of `0dae58048c`)
-- Current local commit(s): `b12845f999`
+- Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`)
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `provisional-prompt`); `dev-nowaker` stays on `907b3bc518`
 - Last checked against upstream: `ecc4916b5a` (upstream `dev`)
 - Upstream: issue [#53696](https://github.com/anomalyco/opencode/issues/53696), PR [#53698](https://github.com/anomalyco/opencode/pull/53698)
@@ -49,11 +49,16 @@ white "still loading" / red "changed" notices for Enter during loading.
   red notice asks for Enter again.
 - `--mini`, and the TUI with `startup.instant_prompt: false`, capture keys
   invisibly (`startup.early_input`), dropping an Enter typed before raw mode.
+- `--session ID` and `--continue` paint the session screen the same way: the
+  prompt at the bottom with the session's cached selection, a "Loading
+  session…" spinner in the transcript, and the sidebar at its real width
+  (cached title or the ID, the ID line, a spinner, footer path and version).
 
 ## Non-goals
 
-- Existing sessions (`-c`, `-s`) and `--prompt` still start as before; stage 2
-  of item 19 covers the session loading screen.
+- `--prompt` and `--fork` still start as before.
+- With `--continue` the session is unknown until load, so the sidebar title
+  appears then.
 - Project-level `tui.json` files are not read by the loading screen; they apply
   once the TUI loads.
 
@@ -78,6 +83,7 @@ white "still loading" / red "changed" notices for Enter during loading.
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `5621b2c706` | 2026-10-06 | Session screen for `-s`/`-c`; per-session cache entries; sidebar rule and session/sidebar padding in `layout.ts` | `classify()` `session` mode and `readKv()` in `packages/tui/src/instant/index.ts`; `sessionLayout`/`paintSession` in `instant/frame.ts`; `TuiLayout.Session`, `Sidebar`, `sessionSidebarVisible`, `sessionContentWidth`, `sidebarShowsSessionId` in `layout.ts`, read by `routes/session/index.tsx`, `routes/session/sidebar.tsx` and `feature-plugins/sidebar/footer.tsx`; `sessions` in `instant/cache.ts`; session branch of the startup-notice effect in `component/prompt/index.tsx`; `test/instant/classify.test.ts` |
 | `b12845f999` | 2026-10-06 | Instant home prompt, early input, startup cache, `startup.*` settings | `packages/opencode/src/boot.ts` and `script/build.ts` entrypoints (`OPENCODE_INSTANT_WORKER_PATH`); `packages/tui/src/instant/*`; `InstantPrompt.handover()` before `createCliRenderer` in `packages/tui/src/app.tsx` and `src/cli/cmd/run/runtime.lifecycle.ts`; `InstantPrompt.claim()` in `Prompt` `onMount` and `footer.prompt.tsx` `bind`; `component/instant-screen.ts`; `packages/tui/src/layout.ts`; `config/keybind-definitions.ts`; `core/src/global-path.ts`; `core/src/database/location.ts`; `Startup` in `config/index.tsx`; `test/instant/*` |
 
 ## Verification
@@ -111,6 +117,30 @@ white "still loading" / red "changed" notices for Enter during loading.
 
   Keystroke-to-screen (`capture-pane` polling) is about 10 ms median, worst
   83-138 ms, at the handover.
+- Session screen (`5621b2c706`), isolated socket `iso19b`, session from the
+  scratch DB:
+  - 160x45 (sidebar): rows of the instant frame and the loaded screen agree
+    on the prompt, status row, sidebar title, ID line and footer; only the
+    transcript and sidebar contents differ (spinners vs loaded). Cursor
+    `5,38` in both. With `sidebar.session_id: false` the ID line is absent
+    on both sides.
+  - 120x40 (no sidebar): only the transcript row differs; cursor `5,33` in
+    both.
+  - Enter during load with `-s`: the white notice on the right of the status
+    row, then the prompt is sent into that session. With the session's cached
+    model edited: the red notice in the same place.
+  - `bun test` in `packages/tui` on the landing branch: 322 pass, 0 fail.
+- Time to typable for an existing session (typing starts once the pane is on
+  the alternate screen; `tmp/session-ttp.py`, `--pure`, scratch DB):
+
+  | host | `-s` before | `-s` after | `-c` before | `-c` after |
+  |---|---|---|---|---|
+  | desktop (idle-bench `ttp`, load ~30) | 5998 ms median | 115 ms median | 5545 ms median | 160 ms median |
+  | m2pro | 2665-3466 ms | 68-138 ms | 2163-2542 ms | 71-75 ms |
+  | m4max | 2162-3062 ms | 46-52 ms | 1762-2538 ms | 49-53 ms |
+
+  Time until the session's text is visible is unchanged (2.4-3.9 s on the
+  Macs, both builds).
 
 ## Timeline
 
@@ -118,6 +148,8 @@ white "still loading" / red "changed" notices for Enter during loading.
   [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-06-tui-instant-prompt.md)
   - `b12845f999`: introduce; upstream issue #53696 and PR #53698; build and
     install on desktop and m4max (`1.18.34-vt-144-907b3bc518`).
+  - `5621b2c706`: session screen for `-s`/`-c` (PR #53698 second commit);
+    build and install on desktop and m4max (`1.18.34-vt-146-907b3bc518`).
 
 ## Current maintenance notes
 
@@ -128,10 +160,14 @@ white "still loading" / red "changed" notices for Enter during loading.
     editor.
   - opentui's `TextareaRenderable` actions still match: the
     `test/instant/editor.test.ts` parity test fails if they drift.
-  - The home layout in `routes/home.tsx`, the `Prompt` box structure and the
-    home footer/tips plugins still read `layout.ts`.
-- Vibeterm's own provisional loader for new-session tabs is being made aware of
-  this screen in item 19b (`ses_eeadda349ffep0Jwwis5g1DJXi`, opencode-tools).
+  - The home layout in `routes/home.tsx`, the session layout in
+    `routes/session`, the sidebar and its footer plugin, the `Prompt` box
+    structure and the home footer/tips plugins still read `layout.ts`.
+  - The fork's `sidebar.session_id`/`pin_title` sidebar keeps reading
+    `TuiLayout.sidebarShowsSessionId` (the landing merged both).
+- Vibeterm skips its own new-session loader when the binary carries this
+  screen (opencode-tools `0b281fa`, item 19b, `ses_eeadda349ffep0Jwwis5g1DJXi`);
+  skipping its existing-session loader for stage 2 is in progress there.
 
 ### Upstream integration checklist
 
