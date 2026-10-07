@@ -756,7 +756,7 @@ export function Prompt(props: PromptProps) {
   }
 
   onMount(() => {
-    const instant = props.sessionID ? undefined : InstantPrompt.claim()
+    const instant = InstantPrompt.claim()
     if (instant) {
       setStore("placeholder", instant.placeholder)
       if (instant.queued) setStartupNotice({ type: "queued", selection: instant.queued.selection })
@@ -1463,6 +1463,14 @@ export function Prompt(props: PromptProps) {
   const [startupNotice, setStartupNotice] = createSignal<
     { type: "queued"; selection?: InstantCache.Selection } | { type: "changed" }
   >()
+  const startupNoticeView = () => (
+    <Show
+      when={startupNotice()?.type === "queued"}
+      fallback={<text fg={theme.error}>{TuiLayout.StartupNotice.changed}</text>}
+    >
+      <Spinner color={theme.text}>{TuiLayout.StartupNotice.queued}</Spinner>
+    </Show>
+  )
   const startupSelection = createMemo(() => {
     const agent = local.agent.current()
     const model = local.model.current()
@@ -1478,6 +1486,9 @@ export function Prompt(props: PromptProps) {
     const notice = startupNotice()
     if (notice?.type !== "queued") return
     if (!sync.ready || !local.model.ready) return
+    // A session's prompt takes its agent and model from the session's last
+    // message, so wait for the messages before comparing.
+    if (props.sessionID && !sync.data.message[props.sessionID]) return
     const current = startupSelection()
     if (!current) return
     const same =
@@ -1495,6 +1506,23 @@ export function Prompt(props: PromptProps) {
     const selection = startupSelection()
     const agent = local.agent.current()
     if (!selection || !agent || store.mode !== "normal") return
+    const selected = {
+      agent: {
+        name: agent.name,
+        label: Locale.titlecase(agent.name),
+        color: InstantRecord.hex(local.agent.color(agent.name)),
+      },
+      model: {
+        providerID: selection.providerID,
+        modelID: selection.modelID,
+        label: local.model.parsed().model,
+        provider: currentProviderLabel(),
+      },
+      variant: selection.variant,
+      auto: local.permission.mode === "auto",
+    }
+    const session = props.sessionID ? sync.session.get(props.sessionID) : undefined
+    const used = usage()
     InstantRecord.record({
       theme: {
         background: InstantRecord.hex(theme.background),
@@ -1505,25 +1533,23 @@ export function Prompt(props: PromptProps) {
         border: InstantRecord.hex(theme.border),
         warning: InstantRecord.hex(theme.warning),
         error: InstantRecord.hex(theme.error),
+        success: InstantRecord.hex(theme.success),
       },
       shortcuts: { agents: agentShortcut(), commands: paletteShortcut() },
       directory: paths.cwd,
-      entry: {
-        agent: {
-          name: agent.name,
-          label: Locale.titlecase(agent.name),
-          color: InstantRecord.hex(local.agent.color(agent.name)),
-        },
-        model: {
-          providerID: selection.providerID,
-          modelID: selection.modelID,
-          label: local.model.parsed().model,
-          provider: currentProviderLabel(),
-        },
-        variant: selection.variant,
-        auto: local.permission.mode === "auto",
-        branch: sync.data.vcs?.branch,
-      },
+      entry: props.sessionID ? { branch: sync.data.vcs?.branch } : { ...selected, branch: sync.data.vcs?.branch },
+      session:
+        props.sessionID && session
+          ? {
+              id: props.sessionID,
+              entry: {
+                ...selected,
+                title: session.title,
+                child: !!session.parentID,
+                usage: used ? [used.context, used.cost].filter(Boolean).join(" · ") : undefined,
+              },
+            }
+          : undefined,
     })
   })
 
@@ -1829,17 +1855,8 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Match>
-            <Match when={startupNotice()}>
-              {(notice) => (
-                <box marginLeft={TuiLayout.StartupNotice.marginLeft}>
-                  <Show
-                    when={notice().type === "queued"}
-                    fallback={<text fg={theme.error}>{TuiLayout.StartupNotice.changed}</text>}
-                  >
-                    <Spinner color={theme.text}>{TuiLayout.StartupNotice.queued}</Spinner>
-                  </Show>
-                </box>
-              )}
+            <Match when={!props.sessionID && startupNotice()}>
+              <box marginLeft={TuiLayout.Prompt.statusInset}>{startupNoticeView()}</box>
             </Match>
             <Match when={workspace.notice()}>
               {(notice) => (
@@ -1894,7 +1911,7 @@ export function Prompt(props: PromptProps) {
             <Match when={true}>
               {props.hint ?? (
                 <Show when={props.sessionID} fallback={<text />}>
-                  <box marginLeft={1}>
+                  <box marginLeft={TuiLayout.Prompt.statusInset}>
                     <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
                   </box>
                 </Show>
@@ -1902,13 +1919,22 @@ export function Prompt(props: PromptProps) {
             </Match>
           </Switch>
           <Show when={status().type !== "retry"}>
-            <box gap={TuiLayout.Prompt.statusGap} flexDirection="row">
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+            {/* Only the left side wraps when the row is too narrow, so its layout stays predictable. */}
+            <box gap={TuiLayout.Prompt.statusGap} flexDirection="row" flexShrink={0}>
+              <Show when={props.sessionID && startupNotice()}>{startupNoticeView()}</Show>
+              <Show
+                when={
+                  !(props.sessionID && startupNotice()) && editorContextLabelState() !== "none"
+                    ? editorFileLabelDisplay()
+                    : undefined
+                }
+              >
                 {(file) => (
                   <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
                 )}
               </Show>
               <Switch>
+                <Match when={props.sessionID && startupNotice()}>{null}</Match>
                 <Match when={store.mode === "normal"}>
                   <Switch>
                     <Match when={usage()}>

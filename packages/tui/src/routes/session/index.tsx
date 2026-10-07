@@ -98,6 +98,7 @@ import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
+import { TuiLayout } from "../../layout"
 
 addDefaultParsers(parsers.parsers)
 
@@ -300,13 +301,15 @@ export function Session() {
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
 
-  const wide = createMemo(() => dimensions().width > 120)
-  const sidebarVisible = createMemo(() => {
-    if (session()?.parentID) return false
-    if (sidebarOpen()) return true
-    if (sidebar() === "auto" && wide()) return true
-    return false
-  })
+  const wide = createMemo(() => dimensions().width > TuiLayout.Session.wideWidth)
+  const sidebarVisible = createMemo(() =>
+    TuiLayout.sessionSidebarVisible({
+      width: dimensions().width,
+      sidebar: sidebar(),
+      open: sidebarOpen(),
+      child: !!session()?.parentID,
+    }),
+  )
   // Read without kv.signal: its in-memory default would be persisted by the next
   // unrelated kv.set and then shadow later tui.json edits.
   const keepScrollOnSubmit = createMemo<boolean>(() =>
@@ -325,7 +328,7 @@ export function Session() {
   const showTurnDuration = createMemo(
     () => kv.get("turn_timing_duration", tuiConfig.turn_timing?.duration ?? false) === true,
   )
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() => TuiLayout.sessionContentWidth(dimensions().width, sidebarVisible()))
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1379,7 +1382,14 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box
+            flexGrow={1}
+            minHeight={0}
+            paddingBottom={TuiLayout.Session.paddingBottom}
+            paddingLeft={TuiLayout.Session.paddingX}
+            paddingRight={TuiLayout.Session.paddingX}
+            gap={TuiLayout.Session.gap}
+          >
             <Show when={session()}>
               <scrollbox
                 ref={(r) => {
@@ -1403,7 +1413,7 @@ export function Session() {
                 flexGrow={1}
                 scrollAcceleration={scrollAcceleration()}
               >
-                <box height={1} />
+                <box height={TuiLayout.Session.logPaddingTop} />
                 <For each={messages()}>
                   {(message, index) => (
                     <>

@@ -16,6 +16,7 @@ export type Init = {
   config: InstantConfig.Settings
   cache?: InstantCache.Data
   entry?: InstantCache.Directory
+  session?: InstantFrame.SessionView
   cwd: string
   home: string
   version: string
@@ -66,6 +67,9 @@ export function create(init: Init, state?: State) {
   let press: number | undefined
   let frame: InstantFrame.Output | undefined
 
+  // The session's own prompt when it is cached, else the directory's.
+  const selected = () => (init.session?.entry?.agent ? init.session.entry : init.entry)
+
   const shortcuts = () => {
     if (init.cache?.shortcuts) return init.cache.shortcuts
     const first = (name: string, fallback: string) => {
@@ -75,19 +79,31 @@ export function create(init: Init, state?: State) {
     return { agents: first("agent_cycle", "tab"), commands: first("command_list", "ctrl+p") }
   }
 
+  // The renderer asks for a frame on every spinner tick; the grid is rebuilt
+  // only after an edit or a resize, otherwise just the spinner cells change.
+  let dirty = true
   function compute(width: number, height: number): InstantFrame.Output {
+    if (frame && !dirty && frame.grid.length === height && frame.grid[0]?.length === width) {
+      const glyph = TuiLayout.Spinner.frames[spinner % TuiLayout.Spinner.frames.length]
+      for (const at of frame.spinner) frame.grid[at.y][at.x].ch = glyph
+      return frame
+    }
+    dirty = false
     const next = InstantFrame.render({
       width,
       height,
       config: init.config,
       theme: init.cache?.theme,
       entry: init.entry,
+      session: init.session,
       shortcuts: shortcuts(),
       cwd: init.cwd,
       home: init.home,
       version: init.version,
       editor,
-      placeholder: TuiLayout.promptPlaceholder("normal", TuiLayout.HomePlaceholders.normal[init.placeholder]),
+      placeholder: init.session
+        ? ""
+        : TuiLayout.promptPlaceholder("normal", TuiLayout.HomePlaceholders.normal[init.placeholder]),
       scroll,
       queued: !!queued,
       spinner,
@@ -95,6 +111,7 @@ export function create(init: Init, state?: State) {
     const caretRow = next.cursor.y - next.text.y
     if (caretRow >= 0 && caretRow < next.text.rows) return (frame = next)
     scroll = Math.max(0, next.text.scroll + caretRow - (caretRow < 0 ? 0 : next.text.rows - 1))
+    dirty = true
     return compute(width, height)
   }
 
@@ -102,6 +119,7 @@ export function create(init: Init, state?: State) {
 
   // Returns "quit" when the key asks to leave opencode.
   function handle(event: InstantKeys.Event, backlog: boolean): "quit" | undefined {
+    dirty = true
     const width = frame?.text.width ?? 80
     if (event.type === "text") return void editor.insert(event.text)
     if (event.type === "paste") return void editor.insert(event.text.replace(/\r\n?/g, "\n"))
@@ -120,7 +138,7 @@ export function create(init: Init, state?: State) {
     const action = InstantEditor.match(bindings, key)
     if (!action) return
     if (action === "submit") {
-      if (init.screen && editor.text.trim()) queued = { selection: InstantCache.selection(init.entry) }
+      if (init.screen && editor.text.trim()) queued = { selection: InstantCache.selection(selected()) }
       return
     }
     if (action === "clear") return void editor.clear()
@@ -128,6 +146,7 @@ export function create(init: Init, state?: State) {
   }
 
   function pointer(event: Mouse) {
+    dirty = true
     const text = frame?.text
     if (!text || event.button !== 0) return
     if (event.action === "release") {

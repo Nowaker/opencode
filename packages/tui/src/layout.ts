@@ -1,9 +1,10 @@
 export * as TuiLayout from "./layout"
 
-// Geometry of the home screen and the prompt. The JSX in routes/home.tsx,
-// component/prompt and the home feature plugins reads these, and so does the
-// instant startup prompt, which paints the same screen before the TUI
-// framework loads. Keep this module free of imports for that reason.
+// Geometry of the home screen, the session screen and the prompt. The JSX in
+// routes/home.tsx, routes/session, component/prompt and the home and sidebar
+// feature plugins reads these, and so does the instant startup prompt, which
+// paints the same screens before the TUI framework loads. Keep this module
+// free of imports for that reason.
 
 export const Home = {
   paddingX: 2,
@@ -32,7 +33,53 @@ export const Prompt = {
   autoWidthRatio: 0.7,
   minMaxHeight: 6,
   maxHeightRatio: 1 / 3,
+  statusInset: 1,
 } as const
+
+export const Session = {
+  paddingX: 2,
+  paddingBottom: 1,
+  gap: 1,
+  logPaddingTop: 1,
+  wideWidth: 120,
+} as const
+
+export const Sidebar = {
+  width: 42,
+  paddingY: 1,
+  paddingX: 2,
+  contentPaddingRight: 1,
+  titlePaddingRight: 1,
+  gap: 1,
+  footerPaddingTop: 1,
+  footerGap: 1,
+} as const
+
+// The sidebar sits beside the transcript on a terminal wider than
+// Session.wideWidth unless the user hid it ("sidebar" in kv.json), and as an
+// overlay when opened on a narrower one. A subagent session never shows it.
+export function sessionSidebarVisible(input: {
+  width: number
+  sidebar: "auto" | "hide"
+  open: boolean
+  child: boolean
+}) {
+  if (input.child) return false
+  if (input.open) return true
+  return input.sidebar === "auto" && input.width > Session.wideWidth
+}
+
+export function sessionContentWidth(width: number, sidebarVisible: boolean) {
+  return width - (sidebarVisible ? Sidebar.width : 0) - 2 * Session.paddingX
+}
+
+// The session ID line under the sidebar title: kv.json's "sidebar_session_id"
+// (the /session-id toggle) wins over tui.json's sidebar.session_id; with
+// neither, development builds show it and release builds do not.
+export function sidebarShowsSessionId(input: { kv?: unknown; configured?: boolean; channel: string }) {
+  if (typeof input.kv === "boolean") return input.kv
+  return input.configured ?? input.channel !== "latest"
+}
 
 export const StartupLoading = {
   bottom: 1,
@@ -43,7 +90,7 @@ export const StartupNotice = {
   loading: "Loading…",
   queued: "OpenCode still loading, will submit shortly",
   changed: "Not submitted: agent/model/variant changed",
-  marginLeft: 1,
+  sessionLoading: "Loading session…",
   gap: 1,
 } as const
 

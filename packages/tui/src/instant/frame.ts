@@ -7,11 +7,23 @@ import { InstantEditor } from "./editor"
 import type { InstantCache } from "./cache"
 import type { InstantConfig } from "./config"
 
-// Paints the home screen exactly where routes/home.tsx and the prompt put it,
-// using the geometry from layout.ts, as one string of ANSI output. Flexbox is
-// resolved by hand: the home column centers its content between two growing
-// spacers, the logo gaps and the home_bottom block shrink first when space
-// runs out, and positions round half up the way Yoga rounds them.
+// Paints the home screen or the session screen exactly where routes/home.tsx,
+// routes/session and the prompt put them, using the geometry from layout.ts,
+// as a grid of cells. Flexbox is resolved by hand: the home column centers its
+// content between two growing spacers, the logo gaps and the home_bottom block
+// shrink first when space runs out, and positions round half up the way Yoga
+// rounds them. The session screen anchors the prompt to the bottom of the
+// transcript column and puts the sidebar at the right edge.
+
+// The session being opened: its ID (unknown for --continue), its cached
+// title and prompt, the "sidebar" kv setting and whether the sidebar shows the
+// session ID under the title.
+export type SessionView = {
+  id?: string
+  entry?: InstantCache.Session
+  sidebar: "auto" | "hide"
+  idLine: boolean
+}
 
 export type Input = {
   width: number
@@ -19,6 +31,7 @@ export type Input = {
   config: InstantConfig.Settings
   theme?: InstantCache.Theme
   entry?: InstantCache.Directory
+  session?: SessionView
   shortcuts: { agents: string; commands: string }
   cwd: string
   home: string
@@ -53,10 +66,49 @@ function tint(base: Rgb, overlay: Rgb, alpha: number): Rgb {
 }
 
 const width = (text: string) => (/^[\x20-\x7e]*$/.test(text) ? text.length : Bun.stringWidth(text))
+const spinnerGlyph = (frame: number) => TuiLayout.Spinner.frames[frame % TuiLayout.Spinner.frames.length]
+const lineText = (text: string, line: InstantEditor.Line) =>
+  text.slice(line.start, line.cells.at(-1)?.end ?? line.start)
 
-export function layout(
-  input: Pick<Input, "width" | "height" | "config" | "entry" | "cwd" | "home" | "version" | "editor">,
-) {
+// The status row under the prompt: what the right side holds and how many rows
+// the left side wraps to. Only the left side shrinks (component/prompt).
+function statusRow(input: Input, promptWidth: number) {
+  const P = TuiLayout.Prompt
+  const notice = TuiLayout.StartupNotice
+  const noticeWidth = 1 + notice.gap + width(notice.queued)
+  const usage = input.session?.entry?.usage
+  const right: [string, string][] = usage
+    ? [
+        ["", usage],
+        [input.shortcuts.commands, "commands"],
+      ]
+    : [
+        [input.shortcuts.agents, "agents"],
+        [input.shortcuts.commands, "commands"],
+      ]
+  const itemWidth = ([key, label]: [string, string]) => (key ? width(key) + 1 : 0) + width(label)
+  const shortcutsWidth = right.reduce((sum, item) => sum + itemWidth(item), 0) + P.statusGap * (right.length - 1)
+  const sessionNotice = !!input.session && input.queued
+  const rightWidth = sessionNotice ? noticeWidth : shortcutsWidth
+  const left = input.session ? input.cwd : ""
+  const leftLines = left ? InstantEditor.layout(left, Math.max(1, promptWidth - rightWidth - P.statusInset)) : []
+  return { right, usage, rightWidth, sessionNotice, noticeWidth, left, leftLines, rows: Math.max(1, leftLines.length) }
+}
+
+function promptGeometry(input: Input, promptWidth: number) {
+  const P = TuiLayout.Prompt
+  const textWidth = promptWidth - P.borderWidth - 2 * P.paddingX
+  const lines = InstantEditor.layout(input.editor.text, textWidth)
+  const textRows = Math.min(
+    Math.max(1, lines.length),
+    TuiLayout.promptMaxHeight(input.config.promptMaxHeight, input.height),
+  )
+  const status = statusRow(input, promptWidth)
+  const height = P.paddingTop + textRows + P.metaPaddingTop + 2 + status.rows
+  return { textWidth, lines, textRows, status, height }
+}
+
+export function layout(input: Input) {
   const H = TuiLayout.Home
   const P = TuiLayout.Prompt
   const footerLabel = abbreviateHome(input.cwd, input.home) + (input.entry?.branch ? ":" + input.entry.branch : "")
@@ -69,13 +121,8 @@ export function layout(
   const inner = input.width - 2 * H.paddingX
   const promptWidth = Math.min(inner, TuiLayout.homePromptMaxWidth(input.config.promptMaxWidth, input.width))
   const promptX = Math.round(H.paddingX + (inner - promptWidth) / 2)
-  const textWidth = promptWidth - P.borderWidth - 2 * P.paddingX
-  const lines = InstantEditor.layout(input.editor.text, textWidth)
-  const textRows = Math.min(
-    Math.max(1, lines.length),
-    TuiLayout.promptMaxHeight(input.config.promptMaxHeight, input.height),
-  )
-  const promptHeight = H.promptPaddingTop + P.paddingTop + textRows + P.metaPaddingTop + 3
+  const geometry = promptGeometry(input, promptWidth)
+  const promptHeight = H.promptPaddingTop + geometry.height
   const logoHeight = logo.left.length
   const logoWidth = logo.left[0].length + 1 + logo.right[0].length
   const bottomRows = input.entry?.homeBottomRows ?? TuiLayout.defaultHomeBottomRows
@@ -97,56 +144,171 @@ export function layout(
       y: Math.round(spacer + gapAbove + logoHeight + gapBelow + H.promptPaddingTop),
       width: promptWidth,
       textX: promptX + P.borderWidth + P.paddingX,
-      textWidth,
-      textRows,
-      lines,
+      ...geometry,
     },
   }
 }
 
-export function render(input: Input): Output {
+export function sessionLayout(input: Input & { session: SessionView }) {
+  const S = TuiLayout.Session
+  const P = TuiLayout.Prompt
+  const sidebar = TuiLayout.sessionSidebarVisible({
+    width: input.width,
+    sidebar: input.session.sidebar,
+    open: false,
+    child: !!input.session.entry?.child,
+  })
+  const promptWidth = TuiLayout.sessionContentWidth(input.width, sidebar)
+  const geometry = promptGeometry(input, promptWidth)
+  return {
+    sidebar,
+    prompt: {
+      x: S.paddingX,
+      y: input.height - S.paddingBottom - geometry.height,
+      width: promptWidth,
+      textX: S.paddingX + P.borderWidth + P.paddingX,
+      ...geometry,
+    },
+  }
+}
+
+type Canvas = ReturnType<typeof canvas>
+
+function canvas(input: Input) {
   const grid: Cell[][] = Array.from({ length: input.height }, () =>
     Array.from({ length: input.width }, () => ({ ch: " " })),
   )
   const theme = input.theme
-  const background = rgb(theme?.background)
-  const element = rgb(theme?.backgroundElement)
-  const text = rgb(theme?.text)
-  const muted = rgb(theme?.textMuted)
-  const border = rgb(input.entry?.agent?.color) ?? rgb(theme?.border)
-  for (const row of grid) for (const cell of row) cell.bg = background
-
-  const put = (x: number, y: number, value: string, style: Omit<Cell, "ch"> = {}) => {
-    if (y < 0 || y >= input.height) return x
-    for (const char of value) {
-      const w = width(char)
-      if (x >= 0 && x + w <= input.width) {
-        grid[y][x] = { ...style, bg: style.bg ?? grid[y][x].bg, ch: char, wide: w > 1 }
-        if (w > 1) grid[y][x + 1] = { ch: "", bg: grid[y][x].bg }
+  const colors = {
+    background: rgb(theme?.background),
+    panel: rgb(theme?.backgroundPanel),
+    element: rgb(theme?.backgroundElement),
+    text: rgb(theme?.text),
+    muted: rgb(theme?.textMuted),
+    warning: rgb(theme?.warning),
+    success: rgb(theme?.success),
+  }
+  for (const row of grid) for (const cell of row) cell.bg = colors.background
+  const spinner: Output["spinner"] = []
+  return {
+    grid,
+    colors,
+    spinner,
+    put(x: number, y: number, value: string, style: Omit<Cell, "ch"> = {}) {
+      if (y < 0 || y >= input.height) return x
+      for (const char of value) {
+        const w = width(char)
+        if (x >= 0 && x + w <= input.width) {
+          grid[y][x] = { ...style, bg: style.bg ?? grid[y][x].bg, ch: char, wide: w > 1 }
+          if (w > 1) grid[y][x + 1] = { ch: "", bg: grid[y][x].bg }
+        }
+        x += w
       }
-      x += w
-    }
-    return x
+      return x
+    },
+    fill(x: number, y: number, count: number, bg: Rgb | undefined) {
+      if (y < 0 || y >= input.height) return
+      for (let i = Math.max(0, x); i < Math.min(input.width, x + count); i++)
+        grid[y][i] = { ch: " ", bg: bg ?? colors.background }
+    },
+    // A Spinner component: the glyph, a gap, then the label.
+    spin(x: number, y: number, label: string, fg: Rgb | undefined, bg?: Rgb) {
+      spinner.push({ x, y, style: sgr({ ch: "", fg, bg: bg ?? grid[y]?.[x]?.bg }) })
+      this.put(x, y, spinnerGlyph(input.spinner), { fg, bg })
+      return this.put(x + 1 + TuiLayout.StartupNotice.gap, y, label, { fg, bg })
+    },
   }
-  const fill = (x: number, y: number, count: number, bg: Rgb | undefined) => {
-    if (y < 0 || y >= input.height) return
-    for (let i = Math.max(0, x); i < Math.min(input.width, x + count); i++)
-      grid[y][i] = { ch: " ", bg: bg ?? background }
-  }
+}
 
-  const box = layout(input)
+type PromptBox = ReturnType<typeof layout>["prompt"]
+
+function paintPrompt(c: Canvas, input: Input, prompt: PromptBox, selected: InstantCache.Selected | undefined) {
   const P = TuiLayout.Prompt
+  const { element, text, muted, warning, background } = c.colors
+  const border = rgb(selected?.agent?.color) ?? rgb(input.theme?.border)
+  const contentX = prompt.x + P.borderWidth
+  const contentWidth = prompt.width - P.borderWidth
+  const metaY = prompt.y + P.paddingTop + prompt.textRows + P.metaPaddingTop
+  for (let y = prompt.y; y <= metaY; y++) {
+    c.put(prompt.x, y, "┃", { fg: border })
+    c.fill(contentX, y, contentWidth, element)
+  }
+  const textY = prompt.y + P.paddingTop
+  const scroll = Math.max(0, Math.min(input.scroll, prompt.lines.length - prompt.textRows))
+  const range = input.editor.selection()
+  if (!input.editor.text && input.placeholder) c.put(prompt.textX, textY, input.placeholder, { fg: muted, bg: element })
+  for (let row = 0; row < prompt.textRows; row++) {
+    const line = prompt.lines[row + scroll]
+    if (!line) break
+    for (const cell of line.cells) {
+      const inverse = !!range && cell.offset >= range.start && cell.offset < range.end
+      c.put(prompt.textX + cell.col, textY + row, cell.text === "\t" ? "  " : cell.text, {
+        fg: text,
+        bg: element,
+        inverse,
+      })
+    }
+  }
 
+  if (selected?.agent) {
+    let x = c.put(prompt.textX, metaY, selected.agent.label, { fg: border, bg: element })
+    if (selected.auto) x = c.put(x + 1, metaY, "auto", { fg: muted, bg: element })
+    if (selected.model) {
+      x = c.put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
+      x = c.put(x + P.metaGap, metaY, selected.model.label, { fg: text, bg: element })
+      x = c.put(x + P.metaGap, metaY, selected.model.provider, { fg: muted, bg: element })
+      if (selected.variant) {
+        x = c.put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
+        c.put(x + P.metaGap, metaY, selected.variant, { fg: warning, bg: element, bold: true })
+      }
+    }
+  }
+
+  const bottomY = metaY + 1
+  c.put(prompt.x, bottomY, element ? "╹" : " ", { fg: border })
+  for (let x = contentX; x < contentX + contentWidth; x++) c.put(x, bottomY, element ? "▀" : " ", { fg: element })
+
+  const statusY = bottomY + 1
+  const status = prompt.status
+  status.leftLines.forEach((line, index) =>
+    c.put(prompt.x + P.statusInset, statusY + index, lineText(status.left, line), { fg: muted }),
+  )
+  const right = prompt.x + prompt.width - status.rightWidth
+  if (status.sessionNotice) {
+    c.spin(right, statusY, TuiLayout.StartupNotice.queued, text, background)
+  }
+  if (input.queued && !input.session) {
+    c.spin(prompt.x + P.statusInset, statusY, TuiLayout.StartupNotice.queued, text, background)
+  }
+  const homeNoticeFits = P.statusInset + status.noticeWidth + P.statusGap + status.rightWidth <= prompt.width
+  if (!status.sessionNotice && (!input.queued || input.session || homeNoticeFits)) {
+    let x = right
+    for (const [key, label] of status.right) {
+      if (key) x = c.put(x, statusY, key, { fg: text }) + 1
+      x = c.put(x, statusY, label, { fg: muted }) + P.statusGap
+    }
+  }
+
+  const caret = InstantEditor.caretPosition(prompt.lines, input.editor.caret)
+  return {
+    cursor: { x: prompt.textX + caret.col, y: textY + caret.row - scroll },
+    text: { x: prompt.textX, y: textY, width: prompt.textWidth, rows: prompt.textRows, scroll, lines: prompt.lines },
+  }
+}
+
+function paintHome(c: Canvas, input: Input) {
+  const { background, text, muted, panel } = c.colors
+  const box = layout(input)
   const logoMuted = muted ?? [128, 128, 128]
   const logoText = text ?? [255, 255, 255]
   const paintLogo = (line: string, x: number, y: number, fg: Rgb, bold: boolean) => {
     const shadow = tint(background ?? [0, 0, 0], fg, 0.25)
     for (const char of line) {
-      if (char === "_") put(x, y, " ", { fg, bg: shadow, bold })
-      else if (char === "^") put(x, y, "▀", { fg, bg: shadow, bold })
-      else if (char === "~") put(x, y, "▀", { fg: shadow, bold })
-      else if (char === ",") put(x, y, "▄", { fg: shadow, bold })
-      else put(x, y, char, { fg, bold })
+      if (char === "_") c.put(x, y, " ", { fg, bg: shadow, bold })
+      else if (char === "^") c.put(x, y, "▀", { fg, bg: shadow, bold })
+      else if (char === "~") c.put(x, y, "▀", { fg: shadow, bold })
+      else if (char === ",") c.put(x, y, "▄", { fg: shadow, bold })
+      else c.put(x, y, char, { fg, bold })
       x++
     }
   }
@@ -155,109 +317,78 @@ export function render(input: Input): Output {
     paintLogo(logo.right[index], box.logo.x + line.length + 1, box.logo.y + index, logoText, true)
   })
 
-  const prompt = box.prompt
-  const contentX = prompt.x + P.borderWidth
-  const contentWidth = prompt.width - P.borderWidth
-  const metaY = prompt.y + P.paddingTop + prompt.textRows + P.metaPaddingTop
-  for (let y = prompt.y; y <= metaY; y++) {
-    put(prompt.x, y, "┃", { fg: border })
-    fill(contentX, y, contentWidth, element)
-  }
-  const textY = prompt.y + P.paddingTop
-  const scroll = Math.max(0, Math.min(input.scroll, prompt.lines.length - prompt.textRows))
-  const selected = input.editor.selection()
-  if (!input.editor.text) put(prompt.textX, textY, input.placeholder, { fg: muted, bg: element })
-  for (let row = 0; row < prompt.textRows; row++) {
-    const line = prompt.lines[row + scroll]
-    if (!line) break
-    for (const cell of line.cells) {
-      const inverse = !!selected && cell.offset >= selected.start && cell.offset < selected.end
-      put(prompt.textX + cell.col, textY + row, cell.text === "\t" ? "  " : cell.text, {
-        fg: text,
-        bg: element,
-        inverse,
-      })
-    }
-  }
-
-  const entry = input.entry
-  if (entry?.agent) {
-    let x = put(prompt.textX, metaY, entry.agent.label, { fg: border, bg: element })
-    if (entry.auto) x = put(x + 1, metaY, "auto", { fg: muted, bg: element })
-    if (entry.model) {
-      x = put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
-      x = put(x + P.metaGap, metaY, entry.model.label, { fg: text, bg: element })
-      x = put(x + P.metaGap, metaY, entry.model.provider, { fg: muted, bg: element })
-      if (entry.variant) {
-        x = put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
-        put(x + P.metaGap, metaY, entry.variant, { fg: rgb(theme?.warning), bg: element, bold: true })
-      }
-    }
-  }
-
-  const bottomY = metaY + 1
-  put(prompt.x, bottomY, element ? "╹" : " ", { fg: border })
-  for (let x = contentX; x < contentX + contentWidth; x++) put(x, bottomY, element ? "▀" : " ", { fg: element })
-
-  const statusY = bottomY + 1
-  const notice = TuiLayout.StartupNotice
-  const spinner: Output["spinner"] = []
-  const right = [
-    [input.shortcuts.agents, "agents"],
-    [input.shortcuts.commands, "commands"],
-  ]
-  const rightWidth =
-    right.reduce((sum, [key, label]) => sum + width(key) + 1 + width(label), 0) + P.statusGap * (right.length - 1)
-  const noticeWidth = notice.marginLeft + 1 + notice.gap + width(notice.queued)
-  if (input.queued) {
-    const x = prompt.x + notice.marginLeft
-    spinner.push({ x, y: statusY, style: sgr({ ch: "", fg: text, bg: background }) })
-    put(x, statusY, TuiLayout.Spinner.frames[input.spinner % TuiLayout.Spinner.frames.length], { fg: text })
-    put(x + 1 + notice.gap, statusY, notice.queued, { fg: text })
-  }
-  if (!input.queued || noticeWidth + P.statusGap + rightWidth <= prompt.width) {
-    let x = prompt.x + prompt.width - rightWidth
-    for (const [key, label] of right) {
-      x = put(x, statusY, key, { fg: text })
-      x = put(x + 1, statusY, label, { fg: muted }) + P.statusGap
-    }
-  }
+  const result = paintPrompt(c, input, box.prompt, input.entry)
 
   const H = TuiLayout.Home
   box.footer.lines.forEach((line, index) =>
-    put(
-      H.footerPaddingX,
-      box.footer.y + index,
-      box.footer.label.slice(line.start, line.cells.at(-1)?.end ?? line.start),
-      {
-        fg: muted,
-      },
-    ),
+    c.put(H.footerPaddingX, box.footer.y + index, lineText(box.footer.label, line), { fg: muted }),
   )
-  put(box.version.x, box.footer.y, input.version, { fg: muted })
+  c.put(box.version.x, box.footer.y, input.version, { fg: muted })
 
   const loading = TuiLayout.StartupLoading
+  const notice = TuiLayout.StartupNotice
   const loadingWidth = 2 * loading.paddingX + 1 + notice.gap + width(notice.loading)
   const loadingX = Math.round((input.width - loadingWidth) / 2)
   const loadingY = input.height - 1 - loading.bottom
-  const panel = rgb(theme?.backgroundPanel)
-  fill(loadingX, loadingY, loadingWidth, panel)
-  const frame = TuiLayout.Spinner.frames[input.spinner % TuiLayout.Spinner.frames.length]
-  spinner.push({
-    x: loadingX + loading.paddingX,
-    y: loadingY,
-    style: sgr({ ch: "", fg: muted, bg: panel ?? background }),
-  })
-  put(loadingX + loading.paddingX, loadingY, frame, { fg: muted, bg: panel })
-  put(loadingX + loading.paddingX + 1 + notice.gap, loadingY, notice.loading, { fg: muted, bg: panel })
+  c.fill(loadingX, loadingY, loadingWidth, panel)
+  c.spin(loadingX + loading.paddingX, loadingY, notice.loading, muted, panel ?? background)
+  return result
+}
 
-  const caret = InstantEditor.caretPosition(prompt.lines, input.editor.caret)
-  return {
-    grid,
-    cursor: { x: prompt.textX + caret.col, y: textY + caret.row - scroll },
-    text: { x: prompt.textX, y: textY, width: prompt.textWidth, rows: prompt.textRows, scroll, lines: prompt.lines },
-    spinner,
+function paintSession(c: Canvas, input: Input & { session: SessionView }) {
+  const S = TuiLayout.Session
+  const B = TuiLayout.Sidebar
+  const { text, muted, panel, success } = c.colors
+  const box = sessionLayout(input)
+  const selected = input.session.entry?.agent ? input.session.entry : input.entry
+
+  c.spin(S.paddingX, S.logPaddingTop, TuiLayout.StartupNotice.sessionLoading, muted)
+  const result = paintPrompt(c, input, box.prompt, selected)
+  if (!box.sidebar) return result
+
+  const left = input.width - B.width
+  for (let y = 0; y < input.height; y++) c.fill(left, y, B.width, panel)
+  const x = left + B.paddingX
+  const inner = B.width - 2 * B.paddingX
+  let y = B.paddingY
+  const title = input.session.entry?.title ?? input.session.id
+  if (title) {
+    for (const line of InstantEditor.layout(title, inner - B.contentPaddingRight - B.titlePaddingRight))
+      c.put(x, y++, lineText(title, line), { fg: text, bg: panel, bold: true })
+    if (input.session.idLine && input.session.id) c.put(x, y++, input.session.id, { fg: muted, bg: panel })
+    y += B.gap
   }
+  c.spin(x, y, TuiLayout.StartupNotice.loading, muted, panel)
+
+  // The sidebar footer: the directory, a gap, then "• OpenCode <version>".
+  const path = abbreviateHome(input.cwd, input.home) + (input.entry?.branch ? ":" + input.entry.branch : "")
+  const nameAt = path.lastIndexOf("/") + 1
+  const pathLines = InstantEditor.layout(path, inner)
+  const version = "• OpenCode " + input.version
+  const versionLines = InstantEditor.layout(version, inner)
+  const versionY = input.height - B.paddingY - versionLines.length
+  const pathY = versionY - B.footerGap - pathLines.length
+  pathLines.forEach((line, index) =>
+    line.cells.forEach((cell) =>
+      c.put(x + cell.col, pathY + index, cell.text, { fg: cell.offset < nameAt ? muted : text, bg: panel }),
+    ),
+  )
+  const versionStyle = (offset: number): Omit<Cell, "ch"> => {
+    if (offset === 0) return { fg: success, bg: panel }
+    if (offset >= 2 && offset < 6) return { fg: muted, bg: panel, bold: true }
+    if (offset >= 6 && offset < 10) return { fg: text, bg: panel, bold: true }
+    return { fg: muted, bg: panel }
+  }
+  versionLines.forEach((line, index) =>
+    line.cells.forEach((cell) => c.put(x + cell.col, versionY + index, cell.text, versionStyle(cell.offset))),
+  )
+  return result
+}
+
+export function render(input: Input): Output {
+  const c = canvas(input)
+  const result = input.session ? paintSession(c, { ...input, session: input.session }) : paintHome(c, input)
+  return { grid: c.grid, spinner: c.spinner, ...result }
 }
 
 function sgr(cell: Cell) {
@@ -288,6 +419,7 @@ export function serialize(grid: Cell[][]) {
 
 // Repaints only the spinner glyphs, so animation costs a few bytes per frame.
 export function spinnerFrame(output: Output, frame: number) {
-  const glyph = TuiLayout.Spinner.frames[frame % TuiLayout.Spinner.frames.length]
-  return output.spinner.map((at) => `\x1b[${at.y + 1};${at.x + 1}H${at.style}${glyph}`).join("") + "\x1b[0m"
+  return (
+    output.spinner.map((at) => `\x1b[${at.y + 1};${at.x + 1}H${at.style}${spinnerGlyph(frame)}`).join("") + "\x1b[0m"
+  )
 }
