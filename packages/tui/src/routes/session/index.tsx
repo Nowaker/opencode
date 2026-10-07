@@ -78,6 +78,7 @@ import { formatTranscript } from "../../util/transcript"
 import { sessionEpilogue } from "../../util/presentation"
 import { setPreLayoutSiblingMargin } from "../../util/layout"
 import { TuiConfig, useTuiConfig } from "../../config"
+import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration, keepScrollAnchor } from "../../util/scroll"
@@ -139,6 +140,7 @@ const sessionBindingCommands = [
   "session.redo",
   "session.sidebar.toggle",
   "session.sidebar.pin_title",
+  "session.sidebar.session_id",
   "session.toggle.conceal",
   "session.toggle.timestamps",
   "session.toggle.turn_time",
@@ -285,6 +287,8 @@ export function Session() {
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const sidebarTitlePinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
+  const sidebarSessionID = () =>
+    kv.get("sidebar_session_id", tuiConfig.sidebar?.session_id ?? InstallationChannel !== "latest")
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -748,6 +752,18 @@ export function Session() {
       },
       run: () => {
         kv.set("sidebar_pin_title", !sidebarTitlePinned())
+        dialog.clear()
+      },
+    },
+    {
+      title: sidebarSessionID() ? "Hide session ID in sidebar" : "Show session ID in sidebar",
+      value: "session.sidebar.session_id",
+      category: "Session",
+      slash: {
+        name: "session-id",
+      },
+      run: () => {
+        kv.set("sidebar_session_id", !sidebarSessionID())
         dialog.clear()
       },
     },

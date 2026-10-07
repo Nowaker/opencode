@@ -25,6 +25,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const pinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
+  // Development builds have always shown the session ID; keep that as the default.
+  const showSessionID = () =>
+    kv.get("sidebar_session_id", tuiConfig.sidebar?.session_id ?? InstallationChannel !== "latest")
   const title = () => (
     <pluginRuntime.Slot
       name="sidebar_title"
@@ -37,7 +40,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         <text fg={theme.text}>
           <b>{session()!.title}</b>
         </text>
-        <Show when={InstallationChannel !== "latest"}>
+        <Show when={showSessionID()}>
           <text fg={theme.textMuted}>{props.sessionID}</text>
         </Show>
         <Show when={session()!.workspaceID}>
