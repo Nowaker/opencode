@@ -66,7 +66,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Return to the scrolled-up position on messages_first](./features/2026-10-06-tui-home-return.md)
 - [Choose which transcript entries show timestamps](./features/2026-10-06-tui-part-timestamps.md)
 - [Show the provider and model id in message footers](./features/2026-10-06-tui-model-label.md)
-- [Instant home prompt and early input at startup](./features/2026-10-06-tui-instant-prompt.md)
+- [Instant home and session prompt and early input at startup](./features/2026-10-06-tui-instant-prompt.md)
 - [Show the session ID in the sidebar](./features/2026-10-06-sidebar-session-id.md)
 - [Single-press session abort, /abort and immediate "aborting…" feedback](./features/2026-10-06-tui-session-abort.md)
 - [Show and load the messages a long session hides](./features/2026-10-06-tui-history-crop.md)
@@ -78,8 +78,9 @@ carries every feature forward unchanged. That commit includes the full
 
 - [2026-10-06 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-06-tui-instant-prompt.md)
   - Paint an editable home prompt within ~50 ms of `opencode` and capture
-    early input (`startup.instant_prompt`, `startup.early_input`); upstream
-    issue #53696 and PR #53698; build and install on both hosts.
+    early input (`startup.instant_prompt`, `startup.early_input`), then the
+    session screen for `-s`/`-c`; upstream issue #53696 and PR #53698; build
+    and install on both hosts.
 
 - [2026-10-06 `ses_eec5b2a34ffe9sjf6Wf21vNSMg`](./sessions/2026-10-06-idle-cpu-startup.md)
   - Idle CPU, memory and time to prompt: a hermetic harness, a file logger
