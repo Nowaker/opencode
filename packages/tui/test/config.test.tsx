@@ -82,6 +82,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ usage: { cost_thresholds: [-1] } })).toThrow()
   expect(decodeInfo({ model_label: "id" })).toEqual({ model_label: "id" })
   expect(() => decodeInfo({ model_label: "provider" })).toThrow()
+  expect(decodeInfo({ footer_variant: true })).toEqual({ footer_variant: true })
+  expect(() => decodeInfo({ footer_variant: "high" })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
