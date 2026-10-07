@@ -102,6 +102,7 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
+const ABORT_TIMEOUT_MS = 15_000
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -286,6 +287,7 @@ export function Prompt(props: PromptProps) {
     mode: "normal" | "shell"
     extmarkToPartIndex: Map<number, number>
     interrupt: number
+    aborting?: string
     placeholder: number
   }>({
     placeholder: randomIndex(list().length),
@@ -307,6 +309,38 @@ export function Prompt(props: PromptProps) {
       { defer: true },
     ),
   )
+
+  const aborting = createMemo(() => !!props.sessionID && store.aborting === props.sessionID)
+  let abortTimeout: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    if (status().type !== "idle" || store.aborting !== props.sessionID) return
+    clearTimeout(abortTimeout)
+    setStore("aborting", undefined)
+  })
+  onCleanup(() => clearTimeout(abortTimeout))
+
+  // Show "aborting" before the request leaves, so the key press is acknowledged on the next frame rather than
+  // whenever the server confirms. The session status going idle clears it; a failure or a stuck turn reports itself.
+  function abort() {
+    const sessionID = props.sessionID
+    if (!sessionID) return
+    setStore({ interrupt: 0, aborting: sessionID })
+    clearTimeout(abortTimeout)
+    abortTimeout = setTimeout(() => {
+      if (store.aborting !== sessionID) return
+      setStore("aborting", undefined)
+      toast.show({
+        message: `Session still running ${ABORT_TIMEOUT_MS / 1000}s after abort; press again to retry`,
+        variant: "warning",
+      })
+    }, ABORT_TIMEOUT_MS)
+    void sdk.client.session.abort({ sessionID }, { throwOnError: true }).catch((error) => {
+      if (store.aborting !== sessionID) return
+      clearTimeout(abortTimeout)
+      setStore("aborting", undefined)
+      toast.show({ title: "Failed to abort session", message: errorMessage(error), variant: "error" })
+    })
+  }
 
   // Initialize agent/model/variant from last user message when session changes
   let syncedSessionID: string | undefined
@@ -411,12 +445,7 @@ export function Prompt(props: PromptProps) {
             setStore("interrupt", 0)
           }, 5000)
 
-          if (store.interrupt >= 2) {
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
-            setStore("interrupt", 0)
-          }
+          if (store.interrupt >= 2) abort()
           dialog.clear()
         },
       },
@@ -1584,12 +1613,14 @@ export function Prompt(props: PromptProps) {
                     })()}
                   </box>
                 </box>
-                <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
-                  esc{" "}
-                  <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                    {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                  </span>
-                </text>
+                <Show when={!aborting()} fallback={<text fg={theme.warning}>aborting…</text>}>
+                  <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
+                    esc{" "}
+                    <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
+                      {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
+                    </span>
+                  </text>
+                </Show>
               </box>
             </Match>
             <Match when={workspace.notice()}>
