@@ -85,6 +85,12 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06
+  [`ses_eec3e5569ffe2otGPxp4LBssZb`](../sessions/2026-10-06-tui-part-timestamps.md) -
+  a set `timestamps` key in `tui.json` now overrides `turn_timing.time` and
+  makes `/turn-times` last until exit; unset keeps this feature unchanged.
+  See [per-entry timestamps](./2026-10-06-tui-part-timestamps.md).
+
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   verify date-first locale regression and real intermediate/final footers;
   elapsed-time meaning and full-route test gaps are in the linked inventory.
