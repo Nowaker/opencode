@@ -133,6 +133,16 @@ function registerKeyAliases(keymap: OpenTuiKeymap) {
   })
 }
 
+// A terminal sends Escape as a bare ESC byte, so presses that reach the TUI in one read (a busy event loop, or one
+// tmux send-keys call) parse as a single key: two as alt+escape, three or more as an unnamed key. Match the longer
+// runs as alt+escape too, so every burst of Escape presses resolves to the same binding.
+function registerEscapeBursts(keymap: OpenTuiKeymap) {
+  return keymap.appendEventMatchResolver((event, ctx) => {
+    if (!/^\x1b{3,}$/.test(event.raw)) return
+    return [ctx.resolveKey({ name: "escape", ctrl: false, shift: false, meta: true, super: false })]
+  })
+}
+
 const inputCommands = [
   "input.move.left",
   "input.move.right",
@@ -216,6 +226,7 @@ export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRende
   const offCommaBindings = registerCommaBindings(keymap)
   const offAliasExpander = registerKeyAliases(keymap)
   const offBaseLayout = registerBaseLayoutFallback(keymap)
+  const offEscapeBursts = registerEscapeBursts(keymap)
   const leader = leaderKey(config)
   const offLeader = leader
     ? registerTimedLeader(keymap, {
@@ -237,6 +248,7 @@ export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRende
     offEscape()
     offLeader()
     offAliasExpander()
+    offEscapeBursts()
     offBaseLayout()
     offCommaBindings()
     modeStack.dispose()

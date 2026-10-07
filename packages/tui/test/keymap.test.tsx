@@ -139,3 +139,44 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
     app.renderer.destroy()
   }
 })
+
+test("escape presses delivered in one read reach the single-press abort", async () => {
+  const aborts: string[] = []
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createResolvedKeymapConfig({ session_abort: "alt+escape,ctrl+k" })
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offLayer = keymap.registerLayer({
+      mode: OPENCODE_BASE_MODE,
+      commands: [{ name: "session.abort", run: (ctx) => void aborts.push(JSON.stringify(ctx.event.raw)) }],
+      bindings: config.keybinds.get("session.abort"),
+    })
+    onCleanup(() => {
+      offLayer()
+      offKeymap()
+    })
+
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <box />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  const read = async (bytes: string) => {
+    app.renderer.stdin.emit("data", Buffer.from(bytes))
+    await Bun.sleep(50)
+  }
+  try {
+    await read("\x1b")
+    await read("\x1b\x1b")
+    await read("\x1b\x1b\x1b\x1b")
+    await read("\x0b")
+    expect(aborts).toEqual([JSON.stringify("\x1b\x1b"), JSON.stringify("\x1b\x1b\x1b\x1b"), JSON.stringify("\x0b")])
+  } finally {
+    app.renderer.destroy()
+  }
+})
