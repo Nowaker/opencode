@@ -15,12 +15,9 @@ import { HomeSessionDestinationProvider } from "./home/session-destination"
 import { useUpdateNotification } from "../context/update-notification"
 import { useTheme } from "../context/theme"
 import { useExit } from "../context/exit"
+import { TuiLayout } from "../layout"
 
 let once = false
-const placeholder = {
-  normal: ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"],
-  shell: ["ls -la", "git status", "pwd"],
-}
 
 export function Home() {
   const pluginRuntime = usePluginRuntime()
@@ -34,11 +31,7 @@ export function Home() {
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
   const [logoWidth, setLogoWidth] = createSignal(0)
-  const promptMaxWidth = createMemo(() => {
-    const configured = tuiConfig.prompt?.max_width
-    if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
-    return configured ?? 75
-  })
+  const promptMaxWidth = createMemo(() => TuiLayout.homePromptMaxWidth(tuiConfig.prompt?.max_width, dimensions().width))
   let sent = false
 
   onMount(() => {
@@ -73,9 +66,14 @@ export function Home() {
 
   return (
     <HomeSessionDestinationProvider>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+      <box
+        flexGrow={1}
+        alignItems="center"
+        paddingLeft={TuiLayout.Home.paddingX}
+        paddingRight={TuiLayout.Home.paddingX}
+      >
         <box flexGrow={1} minHeight={0} />
-        <box height={4} minHeight={0} flexShrink={1} />
+        <box height={TuiLayout.Home.logoGapAbove} minHeight={0} flexShrink={1} />
         <box
           flexShrink={0}
           onSizeChange={function () {
@@ -86,11 +84,17 @@ export function Home() {
             <Logo />
           </pluginRuntime.Slot>
         </box>
-        <box height={1} minHeight={0} flexShrink={1} />
+        <box height={TuiLayout.Home.logoGapBelow} minHeight={0} flexShrink={1} />
         <UpdateNotification width={logoWidth()} />
-        <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
+        <box
+          width="100%"
+          maxWidth={promptMaxWidth()}
+          zIndex={1000}
+          paddingTop={TuiLayout.Home.promptPaddingTop}
+          flexShrink={0}
+        >
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
-            <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
+            <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={TuiLayout.HomePlaceholders} />
           </pluginRuntime.Slot>
         </box>
         <pluginRuntime.Slot name="home_bottom" />

@@ -4,6 +4,7 @@ import { createMemo, Match, Show, Switch } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { useHomeSessionDestination } from "../../routes/home/session-destination"
+import { TuiLayout } from "../../layout"
 
 const id = "internal:home-footer"
 
@@ -65,13 +66,13 @@ function View(props: { api: TuiPluginApi }) {
   return (
     <box
       width="100%"
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
-      paddingRight={2}
+      paddingTop={TuiLayout.Home.footerPaddingY}
+      paddingBottom={TuiLayout.Home.footerPaddingY}
+      paddingLeft={TuiLayout.Home.footerPaddingX}
+      paddingRight={TuiLayout.Home.footerPaddingX}
       flexDirection="row"
       flexShrink={0}
-      gap={2}
+      gap={TuiLayout.Home.footerGap}
     >
       <Directory api={props.api} />
       <Mcp api={props.api} />

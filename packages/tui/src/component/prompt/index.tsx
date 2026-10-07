@@ -59,6 +59,11 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
+import { TuiLayout } from "../../layout"
+import { InstantPrompt } from "../../instant"
+import { InstantCaret } from "../../instant/caret"
+import { InstantCache } from "../../instant/cache"
+import { InstantRecord } from "../../instant/record"
 
 registerOpencodeSpinner()
 
@@ -751,6 +756,17 @@ export function Prompt(props: PromptProps) {
   }
 
   onMount(() => {
+    const instant = props.sessionID ? undefined : InstantPrompt.claim()
+    if (instant) {
+      setStore("placeholder", instant.placeholder)
+      if (instant.queued) setStartupNotice({ type: "queued", selection: instant.queued.selection })
+    }
+    if (instant?.text) {
+      input.setText(instant.text)
+      setStore("prompt", { input: instant.text, parts: [] })
+      InstantCaret.place(input, instant.caret, instant.selection)
+      return
+    }
     const saved = stashed
     stashed = undefined
     if (store.prompt.input) return
@@ -1084,6 +1100,7 @@ export function Prompt(props: PromptProps) {
 
   async function submitInner(expected?: { input: string; parts: number }) {
     workspace.clearNotice()
+    if (startupNotice()?.type === "changed") setStartupNotice(undefined)
 
     // IME: double-defer may fire before onContentChange flushes the last
     // composed character (e.g. Korean hangul) to the store, so read
@@ -1440,6 +1457,76 @@ export function Prompt(props: PromptProps) {
     return !!current
   })
 
+  // Enter pressed on the instant startup prompt submits once the TUI has
+  // resolved the agent, model and variant, and only if they are the ones the
+  // instant prompt showed; otherwise the user is asked to press Enter again.
+  const [startupNotice, setStartupNotice] = createSignal<
+    { type: "queued"; selection?: InstantCache.Selection } | { type: "changed" }
+  >()
+  const startupSelection = createMemo(() => {
+    const agent = local.agent.current()
+    const model = local.model.current()
+    if (!agent || !model) return
+    return {
+      agent: agent.name,
+      providerID: model.providerID,
+      modelID: model.modelID,
+      variant: showVariant() ? local.model.variant.current() : undefined,
+    }
+  })
+  createEffect(() => {
+    const notice = startupNotice()
+    if (notice?.type !== "queued") return
+    if (!sync.ready || !local.model.ready) return
+    const current = startupSelection()
+    if (!current) return
+    const same =
+      notice.selection !== undefined &&
+      current.agent === notice.selection.agent &&
+      current.providerID === notice.selection.providerID &&
+      current.modelID === notice.selection.modelID &&
+      current.variant === notice.selection.variant
+    if (!same) return setStartupNotice({ type: "changed" })
+    setStartupNotice(undefined)
+    void submit()
+  })
+
+  createEffect(() => {
+    const selection = startupSelection()
+    const agent = local.agent.current()
+    if (!selection || !agent || store.mode !== "normal") return
+    InstantRecord.record({
+      theme: {
+        background: InstantRecord.hex(theme.background),
+        backgroundPanel: InstantRecord.hex(theme.backgroundPanel),
+        backgroundElement: InstantRecord.hex(theme.backgroundElement),
+        text: InstantRecord.hex(theme.text),
+        textMuted: InstantRecord.hex(theme.textMuted),
+        border: InstantRecord.hex(theme.border),
+        warning: InstantRecord.hex(theme.warning),
+        error: InstantRecord.hex(theme.error),
+      },
+      shortcuts: { agents: agentShortcut(), commands: paletteShortcut() },
+      directory: paths.cwd,
+      entry: {
+        agent: {
+          name: agent.name,
+          label: Locale.titlecase(agent.name),
+          color: InstantRecord.hex(local.agent.color(agent.name)),
+        },
+        model: {
+          providerID: selection.providerID,
+          modelID: selection.modelID,
+          label: local.model.parsed().model,
+          provider: currentProviderLabel(),
+        },
+        variant: selection.variant,
+        auto: local.permission.mode === "auto",
+        branch: sync.data.vcs?.branch,
+      },
+    })
+  })
+
   const agentMetaAlpha = createFadeIn(() => !!local.agent.current(), animationsEnabled)
   const modelMetaAlpha = createFadeIn(() => !!local.agent.current() && store.mode === "normal", animationsEnabled)
   const variantMetaAlpha = createFadeIn(
@@ -1452,11 +1539,10 @@ export function Prompt(props: PromptProps) {
     if (props.showPlaceholder === false) return undefined
     if (store.mode === "shell") {
       if (!shell().length) return undefined
-      const example = shell()[store.placeholder % shell().length]
-      return `Run a command… "${example}"`
+      return TuiLayout.promptPlaceholder("shell", shell()[store.placeholder % shell().length])
     }
     if (!list().length) return undefined
-    return `Ask anything… "${list()[store.placeholder % list().length]}"`
+    return TuiLayout.promptPlaceholder("normal", list()[store.placeholder % list().length])
   })
 
   const spinnerDef = createMemo(() => {
@@ -1482,7 +1568,7 @@ export function Prompt(props: PromptProps) {
       }),
     }
   })
-  const maxHeight = createMemo(() => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)))
+  const maxHeight = createMemo(() => TuiLayout.promptMaxHeight(tuiConfig.prompt?.max_height, dimensions().height))
   const moveLabelWidth = createMemo(() => Math.max(12, Math.min(44, dimensions().width - 48)))
 
   return (
@@ -1498,9 +1584,9 @@ export function Prompt(props: PromptProps) {
           }}
         >
           <box
-            paddingLeft={2}
-            paddingRight={2}
-            paddingTop={1}
+            paddingLeft={TuiLayout.Prompt.paddingX}
+            paddingRight={TuiLayout.Prompt.paddingX}
+            paddingTop={TuiLayout.Prompt.paddingTop}
             flexShrink={0}
             backgroundColor={theme.backgroundElement}
             flexGrow={1}
@@ -1517,6 +1603,7 @@ export function Prompt(props: PromptProps) {
               onContentChange={() => {
                 const value = input.plainText
                 setStore("prompt", "input", value)
+                if (startupNotice()?.type === "changed") setStartupNotice(undefined)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
                 setCursorVersion((value) => value + 1)
@@ -1581,7 +1668,13 @@ export function Prompt(props: PromptProps) {
               cursorStyle={tuiConfig.cursor}
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+            <box
+              flexDirection="row"
+              flexShrink={0}
+              paddingTop={TuiLayout.Prompt.metaPaddingTop}
+              gap={TuiLayout.Prompt.metaGap}
+              justifyContent="space-between"
+            >
               <box flexDirection="row" gap={1}>
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
@@ -1736,6 +1829,18 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Match>
+            <Match when={startupNotice()}>
+              {(notice) => (
+                <box marginLeft={TuiLayout.StartupNotice.marginLeft}>
+                  <Show
+                    when={notice().type === "queued"}
+                    fallback={<text fg={theme.error}>{TuiLayout.StartupNotice.changed}</text>}
+                  >
+                    <Spinner color={theme.text}>{TuiLayout.StartupNotice.queued}</Spinner>
+                  </Show>
+                </box>
+              )}
+            </Match>
             <Match when={workspace.notice()}>
               {(notice) => (
                 <box paddingLeft={3}>
@@ -1797,7 +1902,7 @@ export function Prompt(props: PromptProps) {
             </Match>
           </Switch>
           <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
+            <box gap={TuiLayout.Prompt.statusGap} flexDirection="row">
               <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
                 {(file) => (
                   <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
