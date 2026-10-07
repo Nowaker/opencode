@@ -66,8 +66,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Return to the scrolled-up position on messages_first](./features/2026-10-06-tui-home-return.md)
 - [Choose which transcript entries show timestamps](./features/2026-10-06-tui-part-timestamps.md)
 - [Show the provider and model id in message footers](./features/2026-10-06-tui-model-label.md)
+- [Single-press session abort, /abort and immediate "aborting…" feedback](./features/2026-10-06-tui-session-abort.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec446a24ffebz6buEl7LB2m3O`](./sessions/2026-10-06-tui-session-abort.md)
+  - Add `session_abort` (`/abort`, single press, default `alt+escape`, ESC
+    bursts resolve to it) and show `aborting…` as soon as any abort is
+    requested; issues #53652/#53653, PRs #53655/#53656; build and install on
+    both hosts, `alt+escape,ctrl+k` set in their `tui.json`.
 
 - [2026-10-06 `ses_eec3e5569ffe2otGPxp4LBssZb`](./sessions/2026-10-06-tui-part-timestamps.md)
   - Add `timestamps` (`all`, `none`, a list of `user`, `assistant`, `text`,
