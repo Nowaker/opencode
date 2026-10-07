@@ -79,8 +79,9 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-06 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-06-tui-instant-prompt.md)
   - Paint an editable home prompt within ~50 ms of `opencode` and capture
     early input (`startup.instant_prompt`, `startup.early_input`), then the
-    session screen for `-s`/`-c`; upstream issue #53696 and PR #53698; build
-    and install on both hosts.
+    session screen for `-s`/`-c`, and keep a damaged startup cache or a small
+    pane from breaking startup; upstream issue #53696 and PR #53698; build and
+    install on both hosts.
 
 - [2026-10-06 `ses_eec5b2a34ffe9sjf6Wf21vNSMg`](./sessions/2026-10-06-idle-cpu-startup.md)
   - Idle CPU, memory and time to prompt: a hermetic harness, a file logger
