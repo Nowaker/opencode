@@ -3,6 +3,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
+import { TuiLayout } from "../../layout"
 
 const id = "internal:sidebar-footer"
 
@@ -30,7 +31,7 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   })
 
   return (
-    <box gap={1}>
+    <box gap={TuiLayout.Sidebar.footerGap}>
       <Show when={show()}>
         <box
           backgroundColor={theme().backgroundElement}

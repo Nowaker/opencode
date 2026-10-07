@@ -15,6 +15,7 @@ export type Settings = {
   earlyInput: boolean
   promptMaxWidth?: number | "auto"
   promptMaxHeight?: number
+  sidebarSessionId?: boolean
   keybinds: Record<string, unknown>
   mouse: boolean
   cursor?: { style: "block" | "underline" | "line" | "default"; blinking: boolean }
@@ -72,6 +73,8 @@ export function read(env: NodeJS.ProcessEnv = process.env): Settings {
     earlyInput: startup.early_input !== false,
     promptMaxWidth: prompt.max_width === "auto" ? "auto" : positive(prompt.max_width),
     promptMaxHeight: positive(prompt.max_height),
+    sidebarSessionId:
+      isRecord(raw.sidebar) && typeof raw.sidebar.session_id === "boolean" ? raw.sidebar.session_id : undefined,
     keybinds: isRecord(raw.keybinds) ? raw.keybinds : {},
     mouse: raw.mouse !== false && disableMouse !== "1" && disableMouse !== "true",
     cursor: cursor

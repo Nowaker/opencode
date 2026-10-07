@@ -9,6 +9,7 @@ import { usePluginRuntime } from "../../plugin/runtime"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
+import { TuiLayout } from "../../layout"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -25,9 +26,12 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const pinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
-  // Development builds have always shown the session ID; keep that as the default.
   const showSessionID = () =>
-    kv.get("sidebar_session_id", tuiConfig.sidebar?.session_id ?? InstallationChannel !== "latest")
+    TuiLayout.sidebarShowsSessionId({
+      kv: kv.get("sidebar_session_id"),
+      configured: tuiConfig.sidebar?.session_id,
+      channel: InstallationChannel,
+    })
   const title = () => (
     <pluginRuntime.Slot
       name="sidebar_title"
@@ -36,7 +40,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
       title={session()!.title}
       share_url={session()!.share?.url}
     >
-      <box paddingRight={1}>
+      <box paddingRight={TuiLayout.Sidebar.titlePaddingRight}>
         <text fg={theme.text}>
           <b>{session()!.title}</b>
         </text>
@@ -71,12 +75,12 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     <Show when={session()}>
       <box
         backgroundColor={theme.backgroundPanel}
-        width={42}
+        width={TuiLayout.Sidebar.width}
         height="100%"
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={2}
+        paddingTop={TuiLayout.Sidebar.paddingY}
+        paddingBottom={TuiLayout.Sidebar.paddingY}
+        paddingLeft={TuiLayout.Sidebar.paddingX}
+        paddingRight={TuiLayout.Sidebar.paddingX}
         position={props.overlay ? "absolute" : "relative"}
       >
         <Show when={pinned()}>
@@ -94,13 +98,13 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             },
           }}
         >
-          <box flexShrink={0} gap={1} paddingRight={1}>
+          <box flexShrink={0} gap={TuiLayout.Sidebar.gap} paddingRight={TuiLayout.Sidebar.contentPaddingRight}>
             <Show when={!pinned()}>{title()}</Show>
             <pluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />
           </box>
         </scrollbox>
 
-        <box flexShrink={0} gap={1} paddingTop={1}>
+        <box flexShrink={0} gap={TuiLayout.Sidebar.gap} paddingTop={TuiLayout.Sidebar.footerPaddingTop}>
           <pluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
               <span style={{ fg: theme.success }}>•</span> <b>Open</b>

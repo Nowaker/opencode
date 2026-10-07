@@ -460,7 +460,9 @@ Set, it decides every type each time the TUI starts, and it overrides `turn_timi
 
 OpenCode paints its home screen, with a working prompt, as soon as you run `opencode`, before plugins, agents and providers have loaded. You can type, edit, paste, and click to move the caret right away. The prompt's input keybinds (`input_*`) and the global `tui.json` settings for the prompt's size, cursor and mouse apply from the start. Project-level `tui.json` files apply once the TUI has loaded.
 
-The agent, model, variant and colors come from the previous run in the same directory. If you press Enter before OpenCode has loaded, the line below the prompt reads "OpenCode still loading, will submit shortly" and the prompt is sent once loading finishes. If the agent, model or variant that loads differs from the one shown, the prompt is not sent and the line reads "Not submitted: agent/model/variant changed". Press Enter again to send it.
+Opening an existing session with `--session` or `--continue` shows the session screen the same way: the prompt at the bottom, a loading line in the transcript, and the sidebar (when the terminal is wide enough) with the session's last known title, or its ID until it has one. With `--continue` the session is not known until OpenCode loads, so the title appears then.
+
+The agent, model, variant and colors come from the previous run in the same directory, or in the same session. If you press Enter before OpenCode has loaded, the line below the prompt reads "OpenCode still loading, will submit shortly" and the prompt is sent once loading finishes. If the agent, model or variant that loads differs from the one shown, the prompt is not sent and the line reads "Not submitted: agent/model/variant changed". Press Enter again to send it.
 
 - `instant_prompt` - Show the home screen and prompt while OpenCode starts. Defaults to `true`.
 - `early_input` - When `instant_prompt` is off, or with `--mini`, keep the keys you type while OpenCode starts and place them in the prompt when it appears. Enter pressed during startup is dropped. Defaults to `true`.

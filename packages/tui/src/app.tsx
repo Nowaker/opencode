@@ -454,12 +454,12 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
       setReady(true)
     })
 
-  // The home prompt claims the instant startup prompt as it mounts. When the
-  // first screen has no home prompt (another route, a plugin replacing it),
-  // the instant prompt is dropped shortly after startup instead.
+  // The first prompt to mount, home or session, claims the instant startup
+  // prompt. When none does (a plugin route, a plugin replacing the prompt),
+  // the instant prompt is dropped after a grace period instead.
   createEffect(() => {
     if (!ready()) return
-    const timer = setTimeout(() => InstantPrompt.claim(), 1000)
+    const timer = setTimeout(() => InstantPrompt.claim(), InstantPrompt.claimGrace())
     onCleanup(() => clearTimeout(timer))
   })
 
