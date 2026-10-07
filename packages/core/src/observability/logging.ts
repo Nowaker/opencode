@@ -1,4 +1,4 @@
-import { Formatter, Logger, type LogLevel } from "effect"
+import { Effect, FileSystem, Formatter, Latch, Logger, type LogLevel } from "effect"
 import path from "path"
 import { Global } from "../global"
 import { runID } from "./shared"
@@ -46,9 +46,36 @@ function format(input: unknown) {
   return /^[^\s="\\]+$/.test(value) ? value : JSON.stringify(value)
 }
 
+// Logger.toFile flushes on a timer that ticks every batch window forever, so an
+// idle process wakes both its threads once a second to write nothing. This one
+// sleeps until a line arrives and only then waits one window to batch writes.
 export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id: string = runID) {
-  // Do not set batchWindow to 0; it causes high idle CPU usage.
-  return Logger.toFile(formatter(id), file, { flag: "a" })
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const handle = yield* fs.open(file, { flag: "a" })
+    const encoder = new TextEncoder()
+    const log = formatter(id)
+    const pending = yield* Latch.make()
+    let lines: string[] = []
+    const flush = Effect.suspend(() => {
+      if (lines.length === 0) return Effect.void
+      const batch = lines
+      lines = []
+      return Effect.ignore(handle.write(encoder.encode(batch.join("\n") + "\n")))
+    })
+    yield* pending.await.pipe(
+      Effect.andThen(Effect.sleep("1 second")),
+      Effect.andThen(pending.close),
+      Effect.andThen(flush),
+      Effect.forever,
+      Effect.forkScoped,
+    )
+    yield* Effect.addFinalizer(() => flush)
+    return Logger.make((options) => {
+      lines.push(log.log(options))
+      pending.openUnsafe()
+    })
+  })
 }
 
 const stderrLogger = Logger.make((options) => process.stderr.write(formatter().log(options) + "\n"))
