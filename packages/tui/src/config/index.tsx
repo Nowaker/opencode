@@ -51,6 +51,42 @@ export const TurnTiming = Schema.Struct({
   description: "Default per-turn timing in assistant message footers; toggle at runtime from the command palette",
 })
 
+export const TimestampType = Schema.Literals(["user", "assistant", "text", "reasoning", "tool", "error", "compaction"])
+export type TimestampType = Schema.Schema.Type<typeof TimestampType>
+const timestampTypeNames = TimestampType.literals.join("|")
+export const Timestamps = Schema.Union([
+  Schema.String.check(
+    Schema.isPattern(new RegExp(`^\\s*(all|none|(${timestampTypeNames})(\\s*,\\s*(${timestampTypeNames}))*)\\s*$`)),
+  ),
+  Schema.Array(TimestampType),
+]).annotate({
+  description: [
+    "Which session transcript entries show a timestamp: 'all', 'none', a comma-separated list such as 'user,tool',",
+    'or an array such as ["user", "tool"].',
+    "Types: 'user' - when a prompt was sent;",
+    "'assistant' - when an assistant turn finished, in its footer;",
+    "'text' - when an assistant text block finished, below it;",
+    "'reasoning' - when a thinking block finished, before its duration;",
+    "'tool' - when a tool call finished and how long it ran;",
+    "'error' - when an assistant turn failed, in its error box;",
+    "'compaction' - when compaction started, in its divider.",
+    "Times from today show the time of day; older ones show the date, then the time.",
+    "Unset (the default): only 'user' and 'assistant' can show times, through /timestamps, /turn-times and",
+    "turn_timing.time, and those toggles persist.",
+    "Set: this list decides every type on each start, overriding turn_timing.time,",
+    "and /timestamps and /turn-times last until the TUI exits.",
+  ].join(" "),
+})
+
+// Undefined when tui.json does not set `timestamps`, so callers can keep their unset behavior.
+export function timestampTypes(value: Info["timestamps"]): ReadonlySet<TimestampType> | undefined {
+  if (value === undefined) return
+  if (typeof value !== "string") return new Set(value)
+  const names = value.split(",").map((name) => name.trim())
+  if (names.includes("all")) return new Set(TimestampType.literals)
+  return new Set(TimestampType.literals.filter((type) => names.includes(type)))
+}
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -83,6 +119,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   turn_timing: Schema.optional(TurnTiming),
+  timestamps: Schema.optional(Timestamps),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
