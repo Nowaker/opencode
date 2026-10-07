@@ -1,36 +1,13 @@
-import path from "path"
 import fs from "fs/promises"
-import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
-import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
+import { GlobalPath } from "./global-path"
 
-const app = "opencode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
-const tmp = path.join(os.tmpdir(), app)
+export const Path = GlobalPath.paths
 
-const paths = {
-  get home() {
-    return process.env.OPENCODE_TEST_HOME ?? os.homedir()
-  },
-  data,
-  bin: path.join(cache, "bin"),
-  log: path.join(data, "log"),
-  repos: path.join(data, "repos"),
-  cache,
-  config,
-  state,
-  tmp,
-}
-
-export const Path = paths
-
-Flock.setGlobal({ state })
+Flock.setGlobal({ state: Path.state })
 
 await Promise.all([
   fs.mkdir(Path.data, { recursive: true }),

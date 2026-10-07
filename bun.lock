@@ -950,6 +950,7 @@
         "diff": "catalog:",
         "effect": "catalog:",
         "fuzzysort": "catalog:",
+        "jsonc-parser": "3.3.1",
         "opentui-spinner": "catalog:",
         "remeda": "catalog:",
         "solid-js": "catalog:",

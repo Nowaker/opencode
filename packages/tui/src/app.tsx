@@ -23,6 +23,7 @@ import {
   batch,
   Show,
   on,
+  type Accessor,
 } from "solid-js"
 import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
@@ -34,6 +35,8 @@ import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { SDKProvider, useSDK } from "./context/sdk"
 import { StartupLoading } from "./component/startup-loading"
+import { mountInstantScreen } from "./component/instant-screen"
+import { InstantPrompt } from "./instant"
 import { SyncProvider, useSync } from "./context/sync"
 import { DataProvider } from "./context/data"
 import { LocationProvider } from "./context/location"
@@ -188,6 +191,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
+      yield* Effect.promise(() => InstantPrompt.handover())
       const renderer = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
@@ -212,6 +216,33 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
           }),
       )
       win32DisableProcessedInput()
+      const [instant, setInstant] = createSignal(InstantPrompt.screen())
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          if (!InstantPrompt.active()) return () => {}
+          const paste = (event: { bytes: Uint8Array; preventDefault(): void }) => {
+            if (InstantPrompt.paste(new TextDecoder().decode(event.bytes))) event.preventDefault()
+          }
+          const unmount = InstantPrompt.screen() ? mountInstantScreen(renderer, input.config.cursor) : undefined
+          InstantPrompt.attach({
+            render: () => renderer.requestRender(),
+            exit: () => destroyRenderer(renderer),
+            ended: () => {
+              setInstant(false)
+              // Ended from inside a render pass (the prompt's mount) or a key handler.
+              queueMicrotask(() => unmount?.())
+            },
+          })
+          renderer.prependInputHandler(InstantPrompt.feed)
+          renderer.keyInput.on("paste", paste)
+          return () => {
+            renderer.removeInputHandler(InstantPrompt.feed)
+            renderer.keyInput.off("paste", paste)
+            InstantPrompt.claim()
+          }
+        }),
+        (release) => Effect.sync(release),
+      )
       const keymap = createDefaultOpenTuiKeymap(renderer)
       yield* Effect.acquireRelease(
         Effect.sync(() => registerOpencodeKeymap(keymap, renderer, input.config)),
@@ -316,6 +347,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                 <EditorContextProvider>
                                                                   <LocationProvider>
                                                                     <App
+                                                                      instant={instant}
                                                                       onSnapshot={input.onSnapshot}
                                                                       pluginHost={input.pluginHost}
                                                                     />
@@ -364,7 +396,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   })
 })
 
-function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPluginHost }) {
+function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<string[]>; pluginHost: TuiPluginHost }) {
   const startup = useTuiStartup()
   const tuiConfig = useTuiConfig()
   const route = useRoute()
@@ -420,6 +452,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     .finally(() => {
       setReady(true)
     })
+
+  // The home prompt claims the instant startup prompt as it mounts. When the
+  // first screen has no home prompt (another route, a plugin replacing it),
+  // the instant prompt is dropped shortly after startup instead.
+  createEffect(() => {
+    if (!ready()) return
+    const timer = setTimeout(() => InstantPrompt.claim(), 1000)
+    onCleanup(() => clearTimeout(timer))
+  })
 
   // Let selection copy/dismiss win ahead of normal bindings when explicit copy is required.
   const offSelectionKeys = keymap.intercept(
@@ -1128,7 +1169,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         </box>
         <pluginRuntime.Slot name="app" />
       </Show>
-      <Show when={!startup.skipInitialLoading}>
+      <Show when={!startup.skipInitialLoading && !props.instant()}>
         <StartupLoading ready={ready} />
       </Show>
     </box>

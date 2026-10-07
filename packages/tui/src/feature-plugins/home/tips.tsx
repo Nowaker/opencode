@@ -3,10 +3,14 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { Tips } from "./tips-view"
 import { useBindings } from "../../keymap"
+import { TuiLayout } from "../../layout"
+import { InstantRecord } from "../../instant/record"
+import { useTuiPaths } from "../../context/runtime"
 
 const id = "internal:home-tips"
 
 function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean }) {
+  const paths = useTuiPaths()
   useBindings(() => ({
     commands: [
       {
@@ -24,7 +28,16 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
   }))
 
   return (
-    <box width="100%" maxWidth={75} alignItems="center" paddingTop={3} flexShrink={1}>
+    <box
+      width="100%"
+      maxWidth={TuiLayout.Home.tipsMaxWidth}
+      alignItems="center"
+      paddingTop={TuiLayout.Home.tipsPaddingTop}
+      flexShrink={1}
+      onSizeChange={function () {
+        InstantRecord.record({ directory: paths.cwd, entry: { homeBottomRows: this.height } })
+      }}
+    >
       <Show when={props.show}>
         <Tips api={props.api} connected={props.connected} />
       </Show>

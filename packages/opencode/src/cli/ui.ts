@@ -1,6 +1,7 @@
 import { EOL } from "os"
 import { Schema } from "effect"
 import { logo as glyphs } from "./logo"
+import { InstantPrompt } from "@opencode-ai/tui/instant"
 
 const wordmark = [
   `⠀                                ▄     `,
@@ -34,6 +35,7 @@ export function println(...message: string[]) {
 }
 
 export function print(...message: string[]) {
+  InstantPrompt.dismiss()
   blank = false
   process.stderr.write(message.join(" "))
 }
