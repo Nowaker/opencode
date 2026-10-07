@@ -7,6 +7,7 @@ import {
   formatSubagentRetry,
   formatSubagentTitle,
   formatSubagentToolcalls,
+  formatToolTimestamp,
   InlineToolRow,
   parseApplyPatchFiles,
   parseDiagnostics,
@@ -16,6 +17,7 @@ import {
   alwaysSeparate,
   toolDisplay,
 } from "../../../src/routes/session"
+import { Locale } from "../../../src/util/locale"
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined
 
@@ -238,6 +240,41 @@ describe("TUI inline tool wrapping", () => {
     const frame = await renderFrame(() => <FailedCompleteToolFixture />, { width: 72, height: 3 })
     expect(frame).toContain("Read src/index.ts")
     expect(frame).not.toContain("Read failed")
+  })
+
+  test("appends the tool timestamp after the row text", async () => {
+    const frame = await renderFrame(
+      () => (
+        <InlineToolRow icon="→" complete={true} pending="" timestamp="1:07 PM · 1.2s">
+          Read src/index.ts
+        </InlineToolRow>
+      ),
+      { width: 72, height: 3 },
+    )
+    expect(frame).toContain("→ Read src/index.ts · 1:07 PM · 1.2s")
+  })
+
+  test("formats a finished tool call's end time and duration", () => {
+    const end = new Date()
+    end.setHours(13, 7, 0, 0)
+    const start = end.getTime() - 1234
+    const input = {}
+    const time = Locale.todayTimeOrDateFirst(end.getTime())
+    expect(formatToolTimestamp({ status: "pending", input, raw: "" })).toBeUndefined()
+    expect(formatToolTimestamp({ status: "running", input, time: { start } })).toBeUndefined()
+    expect(
+      formatToolTimestamp({
+        status: "completed",
+        input,
+        output: "",
+        title: "",
+        metadata: {},
+        time: { start, end: end.getTime() },
+      }),
+    ).toBe(`${time} · 1.2s`)
+    expect(formatToolTimestamp({ status: "error", input, error: "boom", time: { start, end: end.getTime() } })).toBe(
+      `${time} · 1.2s`,
+    )
   })
 
   test("filters malformed nested tool wire data", () => {

@@ -77,7 +77,7 @@ import * as Model from "../../util/model"
 import { formatTranscript } from "../../util/transcript"
 import { sessionEpilogue } from "../../util/presentation"
 import { setPreLayoutSiblingMargin } from "../../util/layout"
-import { useTuiConfig } from "../../config"
+import { TuiConfig, useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration, keepScrollAnchor } from "../../util/scroll"
@@ -185,6 +185,7 @@ const context = createContext<{
   showTimestamps: () => boolean
   showTurnTime: () => boolean
   showTurnDuration: () => boolean
+  showPartTimestamp: (type: "text" | "reasoning" | "tool" | "error" | "compaction") => boolean
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
@@ -285,7 +286,6 @@ export function Session() {
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
   const showThinking = createMemo(() => true)
-  const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
   const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
@@ -300,14 +300,21 @@ export function Session() {
     if (sidebar() === "auto" && wide()) return true
     return false
   })
-  const showTimestamps = createMemo(() => timestamps() === "show")
   // Read without kv.signal: its in-memory default would be persisted by the next
   // unrelated kv.set and then shadow later tui.json edits.
   const keepScrollOnSubmit = createMemo<boolean>(() =>
     kv.get("keep_scroll_on_submit", tuiConfig.keep_scroll_on_submit ?? false),
   )
-  // tui.json supplies the default; a palette toggle persists its own choice in kv.
-  const showTurnTime = createMemo(() => kv.get("turn_timing_time", tuiConfig.turn_timing?.time ?? false) === true)
+  // A tui.json `timestamps` list decides on every start and a toggle lasts until exit: kv.json usually
+  // already holds a "timestamps" value, persisted alongside any other kv write, which would mask the config.
+  // Without the list, the toggles persist in kv and turn_timing.time supplies the turn-time default.
+  const timestampTypes = TuiConfig.timestampTypes(tuiConfig.timestamps)
+  const [userTimestamps, setUserTimestamps] = createSignal(timestampTypes?.has("user"))
+  const [turnTimes, setTurnTimes] = createSignal(timestampTypes?.has("assistant"))
+  const showTimestamps = createMemo(() => userTimestamps() ?? kv.get("timestamps", "hide") === "show")
+  const showTurnTime = createMemo(
+    () => turnTimes() ?? kv.get("turn_timing_time", tuiConfig.turn_timing?.time ?? false) === true,
+  )
   const showTurnDuration = createMemo(
     () => kv.get("turn_timing_duration", tuiConfig.turn_timing?.duration ?? false) === true,
   )
@@ -743,7 +750,8 @@ export function Session() {
         aliases: ["toggle-timestamps"],
       },
       run: () => {
-        setTimestamps((prev) => (prev === "show" ? "hide" : "show"))
+        if (timestampTypes) setUserTimestamps(!showTimestamps())
+        else kv.set("timestamps", showTimestamps() ? "hide" : "show")
         dialog.clear()
       },
     },
@@ -767,7 +775,8 @@ export function Session() {
         name: "turn-times",
       },
       run: () => {
-        kv.set("turn_timing_time", !showTurnTime())
+        if (timestampTypes) setTurnTimes(!showTurnTime())
+        else kv.set("turn_timing_time", !showTurnTime())
         dialog.clear()
       },
     },
@@ -1291,6 +1300,7 @@ export function Session() {
           showTimestamps,
           showTurnTime,
           showTurnDuration,
+          showPartTimestamp: (type) => timestampTypes?.has(type) ?? false,
           showDetails,
           showGenericToolOutput,
           diffWrapMode,
@@ -1584,7 +1594,11 @@ function UserMessage(props: {
         <box
           marginTop={1}
           border={["top"]}
-          title=" Compaction "
+          title={
+            ctx.showPartTimestamp("compaction")
+              ? ` Compaction · ${Locale.todayTimeOrDateFirst(props.message.time.created)} `
+              : " Compaction "
+          }
           titleAlignment="center"
           borderColor={theme.borderActive}
         />
@@ -1678,6 +1692,11 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           borderColor={theme.error}
         >
           <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
+          <Show when={ctx.showPartTimestamp("error")}>
+            <text fg={theme.textMuted}>
+              {Locale.todayTimeOrDateFirst(props.message.time.completed ?? props.message.time.created)}
+            </text>
+          </Show>
         </box>
       </Show>
       <Switch>
@@ -1777,6 +1796,11 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             open={!inMinimal() || expanded()}
             done={isDone()}
             title={summary().title}
+            time={
+              ctx.showPartTimestamp("reasoning") && props.part.time.end !== undefined
+                ? Locale.todayTimeOrDateFirst(props.part.time.end)
+                : undefined
+            }
             duration={isDone() ? Locale.duration(duration()) : undefined}
             encrypted={opaque()}
           />
@@ -1804,6 +1828,7 @@ function ReasoningHeader(props: {
   open: boolean
   done: boolean
   title: string | null
+  time?: string
   duration?: string
   encrypted?: boolean
 }) {
@@ -1813,8 +1838,9 @@ function ReasoningHeader(props: {
       ? RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
       : theme.warning
   const completed = () => {
-    if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
-    const detail = [props.title, props.duration].filter(Boolean).join(" · ")
+    const timing = [props.time, props.duration].filter(Boolean).join(" · ")
+    if (props.encrypted) return `Thought${timing ? ` · ${timing}` : ""}`
+    const detail = [props.title, timing].filter(Boolean).join(" · ")
     return `${props.toggleable ? (props.open ? "- " : "+ ") : ""}Thought${detail ? `: ${detail}` : ""}`
   }
 
@@ -1856,6 +1882,9 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
           fg={theme.markdownText}
           bg={theme.background}
         />
+        <Show when={ctx.showPartTimestamp("text") && props.part.time?.end}>
+          {(end) => <text fg={theme.textMuted}>{Locale.todayTimeOrDateFirst(end())}</text>}
+        </Show>
       </box>
     </Show>
   )
@@ -2027,6 +2056,9 @@ function InlineTool(props: {
   )
 
   const failed = createMemo(() => Boolean(error() && !denied()))
+  const timestamp = createMemo(() =>
+    ctx.showPartTimestamp("tool") ? formatToolTimestamp(props.part.state) : undefined,
+  )
   const clickable = createMemo(() => Boolean(props.onClick || failed()))
   const fg = createMemo(() => {
     if (props.color) return props.color
@@ -2053,6 +2085,8 @@ function InlineTool(props: {
       failure={props.failure}
       spinner={props.spinner}
       separate={props.separate}
+      timestamp={timestamp()}
+      timestampColor={theme.textMuted}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
@@ -2084,6 +2118,8 @@ export function InlineToolRow(props: {
   failure?: string
   spinner?: boolean
   separate?: boolean
+  timestamp?: string
+  timestampColor?: RGBA
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
@@ -2137,6 +2173,9 @@ export function InlineToolRow(props: {
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
                 {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
+                <Show when={props.timestamp}>
+                  <span style={{ fg: props.timestampColor }}> · {props.timestamp}</span>
+                </Show>
               </text>
             </box>
           </Show>
@@ -2159,9 +2198,13 @@ function BlockTool(props: {
   spinner?: boolean
 }) {
   const { theme } = useTheme()
+  const ctx = use()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
+  const timestamp = createMemo(() =>
+    props.part && ctx.showPartTimestamp("tool") ? formatToolTimestamp(props.part.state) : undefined,
+  )
   return (
     <box
       id={props.part?.id}
@@ -2189,6 +2232,7 @@ function BlockTool(props: {
             fallback={
               <text paddingLeft={3} fg={theme.textMuted}>
                 {title()}
+                {timestamp() ? ` · ${timestamp()}` : ""}
               </text>
             }
           >
@@ -2199,6 +2243,9 @@ function BlockTool(props: {
       {props.children}
       <Show when={error()}>
         <text fg={theme.error}>{error()}</text>
+      </Show>
+      <Show when={!props.title && timestamp()}>
+        <text fg={theme.textMuted}>{timestamp()}</text>
       </Show>
     </box>
   )
@@ -2469,6 +2516,11 @@ function Task(props: ToolProps) {
       {content()}
     </InlineTool>
   )
+}
+
+export function formatToolTimestamp(state: ToolPart["state"]) {
+  if (state.status !== "completed" && state.status !== "error") return
+  return `${Locale.todayTimeOrDateFirst(state.time.end)} · ${Locale.duration(Math.max(0, state.time.end - state.time.start))}`
 }
 
 export function formatSubagentToolcalls(count: number) {
