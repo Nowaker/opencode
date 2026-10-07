@@ -85,6 +85,12 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-05-tui-block-nav.md)
   - re-verified beside block and landmark navigation (`79251bcdf3`); the
   import conflict kept `keepScrollAnchor`.
+- 2026-10-06
+  [`ses_eec5b71ddffe4A47jCysfkQh6l`](../sessions/2026-10-06-tui-history-crop.md)
+  - re-verified with the hidden-message gap store (`fcf142f4c4`): live pruning
+  now hides the oldest message after the pinned first prompt;
+  `sync-scroll-anchor.test.tsx` mounts `TuiConfigProvider` and passes, and a
+  load into the gap leaves the viewport unchanged.
 
 ## Current maintenance notes
 

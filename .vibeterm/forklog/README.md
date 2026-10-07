@@ -67,8 +67,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Choose which transcript entries show timestamps](./features/2026-10-06-tui-part-timestamps.md)
 - [Show the provider and model id in message footers](./features/2026-10-06-tui-model-label.md)
 - [Single-press session abort, /abort and immediate "aborting…" feedback](./features/2026-10-06-tui-session-abort.md)
+- [Show and load the messages a long session hides](./features/2026-10-06-tui-history-crop.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec5b71ddffe4A47jCysfkQh6l`](./sessions/2026-10-06-tui-history-crop.md)
+  - Add `transcript.max_messages` and `transcript.keep_first_prompt`, a
+    hidden-messages divider with load above/below/all, and `after`/`order`/
+    `X-Total-Count` on the paged messages route; RSS/CPU at 50/100/200;
+    issue #53642, PR #53660; build and install on both hosts.
 
 - [2026-10-06 `ses_eec446a24ffebz6buEl7LB2m3O`](./sessions/2026-10-06-tui-session-abort.md)
   - Add `session_abort` (`/abort`, single press, default `alt+escape`, ESC
