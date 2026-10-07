@@ -8,6 +8,7 @@ import { usePluginRuntime } from "../../plugin/runtime"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
+import { TuiLayout } from "../../layout"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -27,12 +28,12 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     <Show when={session()}>
       <box
         backgroundColor={theme.backgroundPanel}
-        width={42}
+        width={TuiLayout.Sidebar.width}
         height="100%"
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={2}
+        paddingTop={TuiLayout.Sidebar.paddingY}
+        paddingBottom={TuiLayout.Sidebar.paddingY}
+        paddingLeft={TuiLayout.Sidebar.paddingX}
+        paddingRight={TuiLayout.Sidebar.paddingX}
         position={props.overlay ? "absolute" : "relative"}
       >
         <scrollbox
@@ -45,7 +46,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             },
           }}
         >
-          <box flexShrink={0} gap={1} paddingRight={1}>
+          <box flexShrink={0} gap={TuiLayout.Sidebar.gap} paddingRight={TuiLayout.Sidebar.contentPaddingRight}>
             <pluginRuntime.Slot
               name="sidebar_title"
               mode="single_winner"
@@ -53,11 +54,11 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               title={session()!.title}
               share_url={session()!.share?.url}
             >
-              <box paddingRight={1}>
+              <box paddingRight={TuiLayout.Sidebar.titlePaddingRight}>
                 <text fg={theme.text}>
                   <b>{session()!.title}</b>
                 </text>
-                <Show when={InstallationChannel !== "latest"}>
+                <Show when={TuiLayout.sidebarShowsSessionId(InstallationChannel)}>
                   <text fg={theme.textMuted}>{props.sessionID}</text>
                 </Show>
                 <Show when={session()!.workspaceID}>
@@ -86,7 +87,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           </box>
         </scrollbox>
 
-        <box flexShrink={0} gap={1} paddingTop={1}>
+        <box flexShrink={0} gap={TuiLayout.Sidebar.gap} paddingTop={TuiLayout.Sidebar.footerPaddingTop}>
           <pluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
               <span style={{ fg: theme.success }}>•</span> <b>Open</b>
