@@ -3,6 +3,7 @@ import { useSync } from "../../context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../config"
+import { useKV } from "../../context/kv"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { usePluginRuntime } from "../../plugin/runtime"
 
@@ -15,6 +16,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
+  const kv = useKV()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const workspace = () => {
     const workspaceID = session()?.workspaceID
@@ -22,6 +24,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     return project.workspace.get(workspaceID)
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
+  // Development builds have always shown the session ID; keep that as the default.
+  const showSessionID = () =>
+    kv.get("sidebar_session_id", tuiConfig.sidebar?.session_id ?? InstallationChannel !== "latest")
 
   return (
     <Show when={session()}>
@@ -57,7 +62,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 <text fg={theme.text}>
                   <b>{session()!.title}</b>
                 </text>
-                <Show when={InstallationChannel !== "latest"}>
+                <Show when={showSessionID()}>
                   <text fg={theme.textMuted}>{props.sessionID}</text>
                 </Show>
                 <Show when={session()!.workspaceID}>
