@@ -418,6 +418,8 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
 - `keep_scroll_on_submit` - Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: `false`). Toggle it at runtime with `/keep-scroll`; the toggle is remembered and takes precedence over this option.
 - `sidebar.pin_title` - Keep the session title at the top of the sidebar while the rest of the sidebar scrolls (default: `false`). The `/pin-title` command toggles it for the current machine.
+- `transcript.max_messages` - How many of a session's most recent messages the TUI keeps loaded (default: `100`). Older messages are hidden behind a divider showing how many there are, with actions to load 50 more from either edge of the gap or all of them. The same actions are in the command palette and `/load-hidden` loads all of them.
+- `transcript.keep_first_prompt` - Keep the session's first prompt at the top, above the divider, when older messages are hidden (default: `true`).
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
 - `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
 - `sidebar.hidden` - Session sidebar sections to hide, using the same names as `sidebar.order`.

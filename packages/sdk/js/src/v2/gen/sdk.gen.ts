@@ -3724,6 +3724,8 @@ export class Session2 extends HeyApiClient {
       workspace?: string
       limit?: number
       before?: string
+      after?: string
+      order?: "asc" | "desc"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3737,6 +3739,8 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "query", key: "limit" },
             { in: "query", key: "before" },
+            { in: "query", key: "after" },
+            { in: "query", key: "order" },
           ],
         },
       ],

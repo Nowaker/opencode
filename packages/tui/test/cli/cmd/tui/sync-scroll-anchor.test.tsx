@@ -14,6 +14,8 @@ import { SyncProvider, useSync } from "../../../../src/context/sync"
 import { keepScrollAnchor } from "../../../../src/util/scroll"
 import { tmpdir } from "../../../fixture/fixture"
 import { TestTuiContexts } from "../../../fixture/tui-environment"
+import { createTuiResolvedConfig } from "../../../fixture/tui-runtime"
+import { TuiConfigProvider } from "../../../../src/config"
 import { createEventSource, createFetch, directory, wait } from "./sync-fixture"
 
 const sessionID = "ses_scroll_anchor"
@@ -85,9 +87,11 @@ async function mount(state: string) {
               <PermissionProvider>
                 <ProjectProvider>
                   <ExitProvider exit={() => {}}>
-                    <SyncProvider>
-                      <Transcript />
-                    </SyncProvider>
+                    <TuiConfigProvider config={createTuiResolvedConfig()}>
+                      <SyncProvider>
+                        <Transcript />
+                      </SyncProvider>
+                    </TuiConfigProvider>
                   </ExitProvider>
                 </ProjectProvider>
               </PermissionProvider>
