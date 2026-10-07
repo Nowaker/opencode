@@ -4,7 +4,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { GlobalPath } from "@opencode-ai/core/global-path"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { TuiLayout } from "../layout"
 import { InstantCache } from "./cache"
 import { InstantConfig } from "./config"
@@ -83,41 +83,49 @@ const VALUE_FLAGS = new Set([
   "--cors",
   "--replay-limit",
 ])
-const SKIP_FLAGS = new Set([
-  "-h",
-  "--help",
-  "-v",
-  "--version",
-  "--print-logs",
-  "-c",
-  "--continue",
-  "-s",
-  "--session",
-  "--fork",
-  "--prompt",
-])
+const SKIP_FLAGS = new Set(["-h", "--help", "-v", "--version", "--print-logs", "--fork", "--prompt"])
 
-// Which kind of startup this command line is, without yargs: the plain TUI
-// (optionally with a project directory), the minimal TUI, or anything else.
+// Which kind of startup this command line is, without yargs: the home screen
+// (optionally with a project directory), an existing session (-s ID or -c),
+// the minimal TUI, or anything else.
 export function classify(argv: string[], cwd = process.env.PWD ?? process.cwd()) {
   const positionals: string[] = []
   let mini = false
+  let resume = false
+  let sessionID: string | undefined
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
     if (arg === "--") return
-    const flag = arg.split("=")[0]
+    const [flag, inline] = arg.split("=", 2)
     if (SKIP_FLAGS.has(flag)) return
     if (flag === "--mini") mini = true
-    if (VALUE_FLAGS.has(flag) && !arg.includes("=")) index++
+    if (flag === "-c" || flag === "--continue") resume = true
+    if (flag === "-s" || flag === "--session") {
+      resume = true
+      sessionID = inline ?? argv[index + 1]
+    }
+    if (VALUE_FLAGS.has(flag) && inline === undefined) index++
     if (!arg.startsWith("-")) positionals.push(arg)
   }
   if (positionals.length > 1) return
   const project = positionals[0] ? path.resolve(cwd, positionals[0]) : process.cwd()
   try {
     if (!fs.statSync(project).isDirectory()) return
-    return { mode: mini ? ("mini" as const) : ("tui" as const), directory: fs.realpathSync(project) }
+    const mode = mini ? ("mini" as const) : resume ? ("session" as const) : ("tui" as const)
+    return { mode, sessionID, directory: fs.realpathSync(project) }
   } catch {
     return
+  }
+}
+
+// The TUI's "sidebar" setting from kv.json in the state directory; kv.json is
+// a plain JSON file the TUI writes on every change.
+function sidebarSetting(): "auto" | "hide" {
+  try {
+    const kv = JSON.parse(fs.readFileSync(path.join(GlobalPath.paths.state, "kv.json"), "utf8"))
+    return kv?.sidebar === "hide" ? "hide" : "auto"
+  } catch {
+    return "auto"
   }
 }
 
@@ -140,7 +148,7 @@ export function start(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = pro
   const kind = classify(argv)
   if (!kind) return
   const config = InstantConfig.read(env)
-  const screen = kind.mode === "tui" && config.instantPrompt
+  const screen = kind.mode !== "mini" && config.instantPrompt
   if (!screen && !config.earlyInput) return
 
   const cache = screen ? InstantCache.read() : undefined
@@ -149,6 +157,15 @@ export function start(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = pro
     config,
     cache,
     entry: cache?.directories[kind.directory],
+    session:
+      kind.mode === "session"
+        ? {
+            id: kind.sessionID,
+            entry: kind.sessionID ? cache?.sessions?.[kind.sessionID] : undefined,
+            sidebar: sidebarSetting(),
+            idLine: TuiLayout.sidebarShowsSessionId(InstallationChannel),
+          }
+        : undefined,
     cwd: kind.directory,
     home: GlobalPath.paths.home,
     version: InstallationVersion,
@@ -285,6 +302,13 @@ function quit(self: Session) {
 
 export function active() {
   return !!session
+}
+
+// How long the TUI waits, once loaded, for a prompt to claim the instant
+// prompt before dropping it: a session's prompt mounts only after the
+// session has loaded.
+export function claimGrace() {
+  return session?.init.session ? 10_000 : 1_000
 }
 
 export function textColor() {

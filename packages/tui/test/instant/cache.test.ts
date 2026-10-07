@@ -15,7 +15,7 @@ describe("instant startup cache", () => {
       file,
       JSON.stringify({
         version: 1,
-        theme: { text: "#eeeeee", textMuted: 128, border: "red" },
+        theme: { text: "#eeeeee", success: "#4fd6be", textMuted: 128, border: "red" },
         shortcuts: { agents: "tab" },
         directories: {
           "/good": { agent, model, variant: "high", auto: false, branch: "main", homeBottomRows: 4, at: 2 },
@@ -23,14 +23,23 @@ describe("instant startup cache", () => {
           "/undated": { agent, model },
           "/scalar": "x",
         },
+        sessions: {
+          ses_good: { agent, model, title: "Fix the build", child: false, usage: "1,234 (5%)", at: 3 },
+          ses_damaged: { agent: { name: "build" }, title: 5, child: "no", usage: null, at: 4 },
+          ses_undated: { title: "Fix the build" },
+        },
       }),
     )
     expect(InstantCache.read(file)).toEqual({
       version: 1,
-      theme: { text: "#eeeeee" },
+      theme: { text: "#eeeeee", success: "#4fd6be" },
       directories: {
         "/good": { agent, model, variant: "high", auto: false, branch: "main", homeBottomRows: 4, at: 2 },
         "/damaged": { at: 1 },
+      },
+      sessions: {
+        ses_good: { agent, model, title: "Fix the build", child: false, usage: "1,234 (5%)", at: 3 },
+        ses_damaged: { at: 4 },
       },
     })
   })
@@ -51,6 +60,6 @@ describe("instant startup cache", () => {
     const file = path.join(dir.path, "opencode.tui-startup.json")
     fs.writeFileSync(file, JSON.stringify({ version: 1, theme: { text: 1 }, directories: { "/x": { at: "now" } } }))
     InstantCache.write((data) => data, file)
-    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({ version: 1, theme: {}, directories: {} })
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({ version: 1, theme: {}, directories: {}, sessions: {} })
   })
 })

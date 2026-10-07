@@ -7,10 +7,11 @@ import { DatabaseLocation } from "@opencode-ai/core/database/location"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 
 // What the full TUI last showed, so the instant startup prompt can paint the
-// same agent, model, variant and colors before anything is resolved. The file
-// sits beside the database the process would open (opencode.db ->
-// opencode.tui-startup.json), so a different OPENCODE_DB, data directory or
-// release channel gets its own cache, and nothing here touches SQLite.
+// same agent, model, variant, colors and session titles before anything is
+// resolved. The file sits beside the database the process would open
+// (opencode.db -> opencode.tui-startup.json), so a different OPENCODE_DB, data
+// directory or release channel gets its own cache, and nothing here touches
+// SQLite.
 
 const THEME_KEYS = [
   "background",
@@ -21,18 +22,31 @@ const THEME_KEYS = [
   "border",
   "warning",
   "error",
+  "success",
 ] as const
 export type Theme = Record<(typeof THEME_KEYS)[number], string>
 
 // Labels are stored as the prompt displayed them, so the instant prompt never
 // formats anything itself.
-export type Directory = {
+export type Selected = {
   agent?: { name: string; label: string; color: string }
   model?: { providerID: string; modelID: string; label: string; provider: string }
   variant?: string
   auto?: boolean
+}
+
+export type Directory = Selected & {
   branch?: string
   homeBottomRows?: number
+  at: number
+}
+
+// A session's prompt as last shown: its selection, the usage line, its title,
+// and whether it is a subagent session (no sidebar).
+export type Session = Selected & {
+  title?: string
+  child?: boolean
+  usage?: string
   at: number
 }
 
@@ -41,11 +55,12 @@ export type Data = {
   theme?: Partial<Theme>
   shortcuts?: { agents: string; commands: string }
   directories: Record<string, Directory>
+  sessions?: Record<string, Session>
 }
 
 // The agent, model and variant a queued submit was made with, compared with
 // what the full TUI resolves before the submit goes through.
-export function selection(entry: Directory | undefined) {
+export function selection(entry: Selected | undefined) {
   if (!entry?.agent || !entry.model) return
   return {
     agent: entry.agent.name,
@@ -57,6 +72,7 @@ export function selection(entry: Directory | undefined) {
 export type Selection = NonNullable<ReturnType<typeof selection>>
 
 const MAX_DIRECTORIES = 100
+const MAX_SESSIONS = 300
 
 export function file(env: NodeJS.ProcessEnv = process.env) {
   const db = DatabaseLocation.resolve({
@@ -81,18 +97,29 @@ export function read(target = file()): Data | undefined {
     theme: theme(data.theme),
     shortcuts: pick<NonNullable<Data["shortcuts"]>>(data.shortcuts, { agents: text, commands: text }),
     directories: entries(data.directories, directory),
+    sessions: entries(data.sessions, session),
   }
 }
 
 export function write(update: (data: Data) => Data, target = file()) {
   if (!target) return
   const next = update(read(target) ?? { version: 1, directories: {} })
-  const kept = Object.entries(next.directories)
-    .sort((a, b) => b[1].at - a[1].at)
-    .slice(0, MAX_DIRECTORIES)
+  const newest = <T extends { at: number }>(entries: Record<string, T>, max: number) =>
+    Object.fromEntries(
+      Object.entries(entries)
+        .sort((a, b) => b[1].at - a[1].at)
+        .slice(0, max),
+    )
   const temporary = `${target}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.writeFileSync(temporary, JSON.stringify({ ...next, directories: Object.fromEntries(kept) }))
+  fs.writeFileSync(
+    temporary,
+    JSON.stringify({
+      ...next,
+      directories: newest(next.directories, MAX_DIRECTORIES),
+      sessions: newest(next.sessions ?? {}, MAX_SESSIONS),
+    }),
+  )
   fs.renameSync(temporary, target)
 }
 
@@ -146,13 +173,10 @@ function theme(value: unknown) {
   ) as Partial<Theme>
 }
 
-function directory(value: unknown): Directory | undefined {
-  const input = record(value)
-  if (!input || typeof input.at !== "number") return
-  const rows = input.homeBottomRows
+function selected(input: Record<string, unknown>): Selected {
   return {
-    agent: pick<NonNullable<Directory["agent"]>>(input.agent, { name: text, label: text, color }),
-    model: pick<NonNullable<Directory["model"]>>(input.model, {
+    agent: pick<NonNullable<Selected["agent"]>>(input.agent, { name: text, label: text, color }),
+    model: pick<NonNullable<Selected["model"]>>(input.model, {
       providerID: text,
       modelID: text,
       label: text,
@@ -160,8 +184,29 @@ function directory(value: unknown): Directory | undefined {
     }),
     variant: text(input.variant),
     auto: typeof input.auto === "boolean" ? input.auto : undefined,
+  }
+}
+
+function directory(value: unknown): Directory | undefined {
+  const input = record(value)
+  if (!input || typeof input.at !== "number") return
+  const rows = input.homeBottomRows
+  return {
+    ...selected(input),
     branch: text(input.branch),
     homeBottomRows: typeof rows === "number" && Number.isInteger(rows) && rows >= 0 ? rows : undefined,
+    at: input.at,
+  }
+}
+
+function session(value: unknown): Session | undefined {
+  const input = record(value)
+  if (!input || typeof input.at !== "number") return
+  return {
+    ...selected(input),
+    title: text(input.title),
+    child: typeof input.child === "boolean" ? input.child : undefined,
+    usage: text(input.usage),
     at: input.at,
   }
 }
