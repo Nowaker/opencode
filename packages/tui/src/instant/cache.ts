@@ -8,22 +8,23 @@ import { InstallationChannel } from "@opencode-ai/core/installation/version"
 
 // What the full TUI last showed, so the instant startup prompt can paint the
 // same agent, model, variant, colors and session titles before anything is
-// resolved. The file
-// sits beside the database the process would open (opencode.db ->
-// opencode.tui-startup.json), so a different OPENCODE_DB, data directory or
-// release channel gets its own cache, and nothing here touches SQLite.
+// resolved. The file sits beside the database the process would open
+// (opencode.db -> opencode.tui-startup.json), so a different OPENCODE_DB, data
+// directory or release channel gets its own cache, and nothing here touches
+// SQLite.
 
-export type Theme = {
-  background: string
-  backgroundPanel: string
-  backgroundElement: string
-  text: string
-  textMuted: string
-  border: string
-  warning: string
-  error: string
-  success: string
-}
+const THEME_KEYS = [
+  "background",
+  "backgroundPanel",
+  "backgroundElement",
+  "text",
+  "textMuted",
+  "border",
+  "warning",
+  "error",
+  "success",
+] as const
+export type Theme = Record<(typeof THEME_KEYS)[number], string>
 
 // Labels are stored as the prompt displayed them, so the instant prompt never
 // formats anything itself.
@@ -51,7 +52,7 @@ export type Session = Selected & {
 
 export type Data = {
   version: 1
-  theme?: Theme
+  theme?: Partial<Theme>
   shortcuts?: { agents: string; commands: string }
   directories: Record<string, Directory>
   sessions?: Record<string, Session>
@@ -84,14 +85,19 @@ export function file(env: NodeJS.ProcessEnv = process.env) {
   return path.join(path.dirname(db), path.parse(db).name + ".tui-startup.json")
 }
 
+// This and other opencode versions write the file, and it can be edited by
+// hand, so read() keeps only fields of the expected type: a damaged file paints
+// less, it never stops opencode from starting.
 export function read(target = file()): Data | undefined {
   if (!target) return
-  try {
-    const data = JSON.parse(fs.readFileSync(target, "utf8"))
-    if (data?.version !== 1 || typeof data.directories !== "object") return
-    return data as Data
-  } catch {
-    return
+  const data = record(load(target))
+  if (data?.version !== 1) return
+  return {
+    version: 1,
+    theme: theme(data.theme),
+    shortcuts: pick<NonNullable<Data["shortcuts"]>>(data.shortcuts, { agents: text, commands: text }),
+    directories: entries(data.directories, directory),
+    sessions: entries(data.sessions, session),
   }
 }
 
@@ -115,4 +121,92 @@ export function write(update: (data: Data) => Data, target = file()) {
     }),
   )
   fs.renameSync(temporary, target)
+}
+
+function load(target: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(target, "utf8"))
+  } catch {
+    return
+  }
+}
+
+function record(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return
+  return value as Record<string, unknown>
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : undefined)
+const color = (value: unknown) =>
+  typeof value === "string" && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value) ? value : undefined
+
+// The listed fields when every one of them passes its check, else nothing.
+function pick<T>(value: unknown, checks: { [K in keyof T]: (value: unknown) => T[K] | undefined }) {
+  const input = record(value)
+  if (!input) return
+  const out: Partial<T> = {}
+  for (const key in checks) {
+    const item = checks[key](input[key])
+    if (item === undefined) return
+    out[key] = item
+  }
+  return out as T
+}
+
+function entries<T>(value: unknown, check: (value: unknown) => T | undefined) {
+  return Object.fromEntries(
+    Object.entries(record(value) ?? {}).flatMap(([key, item]) => {
+      const entry = check(item)
+      return entry === undefined ? [] : [[key, entry] as const]
+    }),
+  )
+}
+
+function theme(value: unknown) {
+  const input = record(value)
+  if (!input) return
+  return Object.fromEntries(
+    THEME_KEYS.flatMap((key) => {
+      const hex = color(input[key])
+      return hex ? [[key, hex] as const] : []
+    }),
+  ) as Partial<Theme>
+}
+
+function selected(input: Record<string, unknown>): Selected {
+  return {
+    agent: pick<NonNullable<Selected["agent"]>>(input.agent, { name: text, label: text, color }),
+    model: pick<NonNullable<Selected["model"]>>(input.model, {
+      providerID: text,
+      modelID: text,
+      label: text,
+      provider: text,
+    }),
+    variant: text(input.variant),
+    auto: typeof input.auto === "boolean" ? input.auto : undefined,
+  }
+}
+
+function directory(value: unknown): Directory | undefined {
+  const input = record(value)
+  if (!input || typeof input.at !== "number") return
+  const rows = input.homeBottomRows
+  return {
+    ...selected(input),
+    branch: text(input.branch),
+    homeBottomRows: typeof rows === "number" && Number.isInteger(rows) && rows >= 0 ? rows : undefined,
+    at: input.at,
+  }
+}
+
+function session(value: unknown): Session | undefined {
+  const input = record(value)
+  if (!input || typeof input.at !== "number") return
+  return {
+    ...selected(input),
+    title: text(input.title),
+    child: typeof input.child === "boolean" ? input.child : undefined,
+    usage: text(input.usage),
+    at: input.at,
+  }
 }

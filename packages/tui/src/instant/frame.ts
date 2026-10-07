@@ -29,7 +29,7 @@ export type Input = {
   width: number
   height: number
   config: InstantConfig.Settings
-  theme?: InstantCache.Theme
+  theme?: Partial<InstantCache.Theme>
   entry?: InstantCache.Directory
   session?: SessionView
   shortcuts: { agents: string; commands: string }
@@ -213,7 +213,9 @@ function canvas(input: Input) {
     },
     // A Spinner component: the glyph, a gap, then the label.
     spin(x: number, y: number, label: string, fg: Rgb | undefined, bg?: Rgb) {
-      spinner.push({ x, y, style: sgr({ ch: "", fg, bg: bg ?? grid[y]?.[x]?.bg }) })
+      // A spinner pushed off a small terminal has no cell to animate.
+      const cell = grid[y]?.[x]
+      if (cell) spinner.push({ x, y, style: sgr({ ch: "", fg, bg: bg ?? cell.bg }) })
       this.put(x, y, spinnerGlyph(input.spinner), { fg, bg })
       return this.put(x + 1 + TuiLayout.StartupNotice.gap, y, label, { fg, bg })
     },
