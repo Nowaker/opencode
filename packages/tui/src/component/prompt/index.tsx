@@ -9,6 +9,7 @@ import {
   type Renderable,
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
+import type { TuiComposerCaret } from "@opencode-ai/plugin/tui"
 import { createComputed, createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
 import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
@@ -94,6 +95,8 @@ export type PromptRef = {
     readonly disabled: boolean
     readonly ready: boolean
     submit?(expected: { input: string; parts: number }): void
+    caret?(): TuiComposerCaret
+    place?(caret: TuiComposerCaret): void
   }
   focused: boolean
   current: PromptInfo
@@ -666,6 +669,41 @@ export function Prompt(props: PromptProps) {
     store.mode
     handoffRevision++
   })
+  // The edit buffer counts its caret in terminal cells, so a wide glyph or a tab
+  // is several offsets. Plugins hold `input` as a string, so the caret crosses
+  // this boundary as the UTF-16 length of the text before it, and comes back as
+  // the last cell whose preceding text is no longer than that.
+  let caretRead: { revision: number; cells: string; caret: TuiComposerCaret } | undefined
+  function readCaret(): TuiComposerCaret {
+    if (!input || input.isDestroyed) return { offset: 0 }
+    const selection = input.getSelection()
+    const cells = JSON.stringify([input.cursorOffset, selection])
+    if (caretRead?.revision === handoffRevision && caretRead.cells === cells) return caretRead.caret
+    const offset = (cell: number) => input.getTextRange(0, cell).length
+    const caret = {
+      offset: offset(input.cursorOffset),
+      ...(selection ? { selection: { start: offset(selection.start), end: offset(selection.end) } } : {}),
+    }
+    caretRead = { revision: handoffRevision, cells, caret }
+    return caret
+  }
+  function placeCaret(caret: TuiComposerCaret) {
+    if (!input || input.isDestroyed) return
+    input.gotoBufferEnd()
+    const end = input.cursorOffset
+    const cell = (offset: number) => {
+      let low = 0
+      let high = end
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2)
+        if (input.getTextRange(0, middle).length <= offset) low = middle
+        else high = middle - 1
+      }
+      return low
+    }
+    input.cursorOffset = cell(caret.offset)
+    if (caret.selection) input.setSelection(cell(caret.selection.start), cell(caret.selection.end))
+  }
   const ref: PromptRef = {
     get handoff() {
       return {
@@ -675,6 +713,8 @@ export function Prompt(props: PromptProps) {
         ready: !!input && !input.isDestroyed && sync.ready && local.model.ready
           && !workspace.creating() && !move.creating() && !auto()?.visible,
         submit(expected: { input: string; parts: number }) { void submit(expected) },
+        caret: readCaret,
+        place: placeCaret,
       }
     },
     get focused() {

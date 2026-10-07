@@ -27,9 +27,10 @@ import {
 } from "@opentui/keymap/extras"
 import type { JSX, SolidPlugin } from "@opentui/solid"
 import type { Config as PluginConfig, PluginOptions } from "./index.js"
-import type { TuiComposerApi } from "./tui-prompt.js"
+import type { TuiComposerApi, TuiComposerCaret } from "./tui-prompt.js"
 export type {
   TuiComposerApi,
+  TuiComposerCaret,
   TuiComposerDraft,
   TuiComposerGuard,
   TuiComposerResult,
@@ -214,6 +215,8 @@ export type TuiPromptRef = {
     readonly disabled: boolean
     readonly ready: boolean
     submit?(expected: { input: string; parts: number }): void
+    caret?(): TuiComposerCaret
+    place?(caret: TuiComposerCaret): void
   }
   focused: boolean
   current: TuiPromptInfo

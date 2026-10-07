@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
+import type { TuiComposerCaret, TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
 import { createPromptControl } from "../src/plugin/prompt-control"
 
 function fixture() {
@@ -140,7 +140,7 @@ const paste = { type: "text" as const, text: "line one\nline two", source: { tex
 f.ref.set({ input: "see [Pasted ~2 lines]\nand", parts: [paste] })
 expect(f.control.read()).toEqual({
 generation: f.control.snapshot().generation, revision: 1, ready: true, reason: "ready", sessionID: null,
-mode: "normal", input: "see [Pasted ~2 lines]\nand", parts: [paste],
+mode: "normal", input: "see [Pasted ~2 lines]\nand", parts: [paste], caret: null,
 })
 f.edit("")
 expect(f.control.read().revision).toBe(2)
@@ -171,4 +171,49 @@ expect(lossy.ref.current.input).toBe("[Pasted 1]")
     f.control.replace({ ...f.control.snapshot(), correlationId: "one", text: "first" })
     expect(f.control.replace({ ...f.control.snapshot(), correlationId: "one", text: "second" }).status).toBe("conflict")
   })
+
+  test("reads the caret without counting a caret move as a revision", () => {
+    const f = caretFixture()
+    f.ref.set({ input: "first\nsecond", parts: [] })
+    const revision = f.control.read().revision
+    f.move({ offset: 3, selection: { start: 3, end: 8 } })
+    expect(f.control.read()).toMatchObject({ revision, caret: { offset: 3, selection: { start: 3, end: 8 } } })
+  })
+
+  test("places a requested caret after the text is written, and leaves the default end alone", () => {
+    const f = caretFixture()
+    expect(f.control.replace({ ...f.control.snapshot(), correlationId: "one", text: "above\nbelow", caret: { offset: 6 } }).status).toBe("accepted")
+    expect(f.placed()).toEqual([{ text: "above\nbelow", caret: { offset: 6 } }])
+    expect(f.control.replace({ ...f.control.snapshot(), correlationId: "two", text: "plain" }).status).toBe("accepted")
+    expect(f.placed()).toHaveLength(1)
+  })
+
+  test("refuses a reused correlation that asks for a different caret", () => {
+    const f = caretFixture()
+    const request = { ...f.control.snapshot(), correlationId: "one", text: "above\nbelow", caret: { offset: 6 } }
+    const receipt = f.control.replace(request)
+    expect(f.control.replace(request)).toEqual(receipt)
+    expect(f.control.replace({ ...request, caret: { offset: 2 } }).status).toBe("conflict")
+    expect(f.placed()).toHaveLength(1)
+  })
 })
+
+function caretFixture() {
+  const f = fixture()
+  let caret: TuiComposerCaret = { offset: 0 }
+  const placed: { text: string; caret: TuiComposerCaret }[] = []
+  const handoff = () => f.ref.handoff!
+  f.bind({
+    ...f.ref,
+    get current() { return f.ref.current },
+    set: (prompt) => f.ref.set(prompt),
+    get handoff() {
+      return {
+        ...handoff(),
+        caret: () => caret,
+        place: (next: TuiComposerCaret) => { placed.push({ text: f.ref.current.input, caret: next }); caret = next },
+      }
+    },
+  })
+  return { ...f, move: (next: TuiComposerCaret) => { caret = next }, placed: () => placed }
+}

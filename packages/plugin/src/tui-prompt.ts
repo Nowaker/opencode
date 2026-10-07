@@ -29,18 +29,29 @@ export type TuiComposerResult = {
   snapshot: TuiComposerSnapshot
 }
 
+/** Where the caret sits, as UTF-16 offsets into the composer's `input`. */
+export type TuiComposerCaret = {
+  offset: number
+  selection?: { start: number; end: number }
+}
+
 /** What the composer holds, for a plugin that keeps or restores drafts. */
 export type TuiComposerDraft = Pick<TuiComposerSnapshot, "generation" | "revision" | "ready" | "reason" | "sessionID" | "mode"> & {
   input: string
   parts: TuiPromptInfo["parts"]
+  /** Null when the composer cannot report its caret. Moving the caret does not advance `revision`. */
+  caret: TuiComposerCaret | null
 }
 
 export type TuiComposerApi = {
   snapshot(): TuiComposerSnapshot
   /** The composer's text and parts. Nothing is hashed, so it is cheap to poll by revision. */
   read(): TuiComposerDraft
-  /** `promptParts` defaults to none; given, they must describe ranges of `text`. */
-  replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"] }): TuiComposerResult
+  /**
+   * `promptParts` defaults to none; given, they must describe ranges of `text`.
+   * `caret` defaults to the end of `text`; offsets past it are clamped.
+   */
+  replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"]; caret?: TuiComposerCaret }): TuiComposerResult
   /** A submitted receipt acknowledges invocation, not server admission. */
   submit(request: TuiComposerGuard): TuiComposerResult
 }

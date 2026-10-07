@@ -40,6 +40,7 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
     return {
       generation, revision: handoff?.revision ?? 0, ready: reason === "ready", reason, sessionID: flags.sessionID,
       mode: current?.mode ?? "normal", input: current?.input ?? "", parts: current?.parts ?? [],
+      caret: handoff?.caret?.() ?? null,
     }
   }
 
@@ -77,6 +78,7 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
         key(request),
         createHash("sha256").update(request.text).digest("hex"),
         createHash("sha256").update(JSON.stringify(parts)).digest("hex"),
+        request.caret ?? null,
       ])
       const replacement = replacements.get(request.correlationId)
       if (replacement) {
@@ -86,6 +88,7 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
       if (!matches(request, current)) return { status: "conflict", snapshot: current }
       if (!current.ready || !active) return { status: "not-ready", snapshot: current }
       active.set({ input: request.text, parts: structuredClone(parts) })
+      if (request.caret) active.handoff?.place?.(request.caret)
       const accepted = snapshot()
       const exact = active?.current.input === request.text
         && JSON.stringify(active.current.parts) === JSON.stringify(parts)
