@@ -66,6 +66,11 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-06
+  [`ses_eebf95604ffekfFQU7LOgARLnt`](../sessions/2026-10-06-sidebar-session-id.md)
+  - re-verify: with `sidebar.session_id`, the session ID line renders inside
+  the pinned title block in a release-channel isolated TUI.
+
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   compare pinned/default title and scrollbar placement in a real isolated TUI;
   missing committed full-route coverage is explicit in the linked inventory.
