@@ -8,6 +8,7 @@ import {
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
+  timestampTypes,
   TuiConfigProvider,
   type Info as TuiConfigInfo,
   useTuiConfig,
@@ -46,6 +47,23 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ scroll_speed: 0 })).toThrow()
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
+})
+
+test("decodes timestamps as all, none, a comma-separated list, or an array", () => {
+  const types = (value: unknown) => {
+    const set = timestampTypes(decodeInfo({ timestamps: value }).timestamps)
+    return set && [...set]
+  }
+
+  expect(timestampTypes(decodeInfo({}).timestamps)).toBeUndefined()
+  expect(types("all")).toEqual(["user", "assistant", "text", "reasoning", "tool", "error", "compaction"])
+  expect(types("none")).toEqual([])
+  expect(types(" user , tool")).toEqual(["user", "tool"])
+  expect(types(["reasoning", "compaction"])).toEqual(["reasoning", "compaction"])
+  expect(() => decodeInfo({ timestamps: "tools" })).toThrow()
+  expect(() => decodeInfo({ timestamps: "all,user" })).toThrow()
+  expect(() => decodeInfo({ timestamps: "user," })).toThrow()
+  expect(() => decodeInfo({ timestamps: ["all"] })).toThrow()
 })
 
 test("resolves host-neutral defaults", () => {
