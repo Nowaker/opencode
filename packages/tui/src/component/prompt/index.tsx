@@ -324,6 +324,10 @@ export function Prompt(props: PromptProps) {
   function abort() {
     const sessionID = props.sessionID
     if (!sessionID) return
+    if (status().type === "idle") {
+      toast.show({ message: "Session is not running", variant: "info", duration: 2000 })
+      return
+    }
     setStore({ interrupt: 0, aborting: sessionID })
     clearTimeout(abortTimeout)
     abortTimeout = setTimeout(() => {
@@ -446,6 +450,17 @@ export function Prompt(props: PromptProps) {
           }, 5000)
 
           if (store.interrupt >= 2) abort()
+          dialog.clear()
+        },
+      },
+      {
+        title: "Abort session",
+        name: "session.abort",
+        category: "Session",
+        slashName: "abort",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          abort()
           dialog.clear()
         },
       },
@@ -606,6 +621,14 @@ export function Prompt(props: PromptProps) {
       "workspace.set",
       "session.move",
     ]),
+  }))
+
+  // Only while the session runs, so a key shared with the input (ctrl+k deletes to line end) keeps working when idle.
+  useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
+    enabled: status().type !== "idle",
+    priority: 1,
+    bindings: tuiConfig.keybinds.get("session.abort"),
   }))
 
   const ref: PromptRef = {
