@@ -14,6 +14,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Global } from "@opencode-ai/core/global"
 import { openEditor } from "@opencode-ai/tui/editor"
 import { registerOpencodeKeymap } from "@opencode-ai/tui/keymap"
+import { InstantPrompt } from "@opencode-ai/tui/instant"
 import { Session as SessionApi } from "@/session/session"
 import * as Locale from "@/util/locale"
 import { resolveInteractiveStdin } from "./runtime.stdin"
@@ -178,6 +179,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
   let unregisterKeymap: (() => void) | undefined
 
   try {
+    await InstantPrompt.handover()
     const renderer = await createCliRenderer({
       stdin: source.stdin,
       targetFps: 30,
@@ -193,6 +195,19 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       consoleMode: "disabled",
       clearOnShutdown: false,
     })
+    // Keys typed while the footer prompt loads keep going to the early input
+    // capture until the prompt claims them.
+    if (InstantPrompt.active()) {
+      InstantPrompt.attach({
+        render() {},
+        exit() {
+          renderer.destroy()
+          process.exit(0)
+        },
+        ended: () => renderer.removeInputHandler(InstantPrompt.feed),
+      })
+      renderer.prependInputHandler(InstantPrompt.feed)
+    }
     const theme = await resolveRunTheme(renderer)
     renderer.setBackgroundColor(theme.background)
     const keymap = createDefaultOpenTuiKeymap(renderer)

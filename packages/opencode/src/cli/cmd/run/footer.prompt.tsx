@@ -24,6 +24,8 @@ import {
   pushPromptHistory,
 } from "./prompt.shared"
 import { OPENCODE_BASE_MODE, useBindings } from "@opencode-ai/tui/keymap"
+import { InstantPrompt } from "@opencode-ai/tui/instant"
+import { InstantCaret } from "@opencode-ai/tui/instant/caret"
 import { realignEditorPromptParts, resolveEditorSlashValue } from "./prompt.editor"
 import { FOOTER_MENU_ROWS, createFooterMenuState, type RunFooterMenuItem } from "./footer.menu"
 import type { RunFooterTheme } from "./theme"
@@ -706,12 +708,15 @@ export function createPromptState(input: PromptInput): PromptState {
       type = area.extmarks.registerType("run-direct-prompt-part")
     }
     area.on("line-info-change", scheduleRows)
+    const early = InstantPrompt.claim()
+    if (early?.text) draft = { text: early.text, parts: [] }
     queueMicrotask(() => {
       if (!area || area.isDestroyed || !input.prompt()) {
         return
       }
 
       restore(draft)
+      if (early?.text) InstantCaret.place(area, early.caret, early.selection)
       refresh()
     })
   }
