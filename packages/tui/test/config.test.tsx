@@ -71,6 +71,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
   expect(decodeInfo({ sidebar: { pin_title: true } })).toEqual({ sidebar: { pin_title: true } })
   expect(() => decodeInfo({ sidebar: { pin_title: "yes" } })).toThrow()
+  expect(decodeInfo({ sidebar: { session_id: true } })).toEqual({ sidebar: { session_id: true } })
+  expect(() => decodeInfo({ sidebar: { session_id: "yes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { context: "tiny" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { mcp_summary: "sometimes" } })).toThrow()
   expect(() => decodeInfo({ sidebar: { todo_summary: "sometimes" } })).toThrow()
