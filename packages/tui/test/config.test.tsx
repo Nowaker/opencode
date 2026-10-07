@@ -46,6 +46,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ prompt: { max_width: 0 } })).toThrow()
   expect(() => decodeInfo({ scroll_speed: 0 })).toThrow()
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
+  expect(decodeInfo({ model_label: "id" })).toEqual({ model_label: "id" })
+  expect(() => decodeInfo({ model_label: "provider" })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
