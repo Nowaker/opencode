@@ -64,9 +64,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Compact sidebar MCP rows without status text](./features/2026-10-04-sidebar-mcp-list.md)
 - [Navigate the transcript by prompt, landmark and block](./features/2026-10-05-tui-block-nav.md)
 - [Return to the scrolled-up position on messages_first](./features/2026-10-06-tui-home-return.md)
+- [Choose which transcript entries show timestamps](./features/2026-10-06-tui-part-timestamps.md)
 - [Show the provider and model id in message footers](./features/2026-10-06-tui-model-label.md)
 
 ## Session records
+
+- [2026-10-06 `ses_eec3e5569ffe2otGPxp4LBssZb`](./sessions/2026-10-06-tui-part-timestamps.md)
+  - Add `timestamps` (`all`, `none`, a list of `user`, `assistant`, `text`,
+    `reasoning`, `tool`, `error`, `compaction`) so tool calls and other
+    entries show when they finished; PR #53654 on #42498; build and install
+    on both hosts, `all` set in their `tui.json`.
 
 - [2026-10-06 `ses_eec44cf7effeFCqQefM0NkWLaW`](./sessions/2026-10-06-tui-model-label.md)
   - Add `model_label` (`name`/`id`) so message footers and the prompt show
