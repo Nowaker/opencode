@@ -10,6 +10,8 @@ import { usePluginRuntime } from "../../plugin/runtime"
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
 import { TuiLayout } from "../../layout"
+import { useOpencodeKeymap } from "../../keymap"
+import { onClick } from "../../ui/click"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -18,6 +20,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
   const kv = useKV()
+  const keymap = useOpencodeKeymap()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const workspace = () => {
     const workspaceID = session()?.workspaceID
@@ -41,7 +44,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
       share_url={session()!.share?.url}
     >
       <box paddingRight={TuiLayout.Sidebar.titlePaddingRight}>
-        <text fg={theme.text}>
+        <text fg={theme.text} {...onClick(() => keymap.dispatchCommand("session.rename"))}>
           <b>{session()!.title}</b>
         </text>
         <Show when={showSessionID()}>

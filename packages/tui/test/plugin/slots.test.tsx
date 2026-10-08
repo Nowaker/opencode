@@ -265,13 +265,13 @@ const mcpMeta = {
 test("a section header toggles on click but not after a drag or a drop", () => {
   let toggles = 0
   const header = onHeaderClick(() => toggles++)
-  header.onMouseDown({ x: 3, y: 10 })
-  header.onMouseUp({ x: 3, y: 10 })
+  header.onMouseDown({ x: 3, y: 10, button: 0 })
+  header.onMouseUp({ x: 3, y: 10, button: 0 })
   expect(toggles).toBe(1)
-  header.onMouseDown({ x: 3, y: 10 })
-  header.onMouseUp({ x: 3, y: 5 })
+  header.onMouseDown({ x: 3, y: 10, button: 0 })
+  header.onMouseUp({ x: 3, y: 5, button: 0 })
   expect(toggles).toBe(1)
-  header.onMouseUp({ x: 3, y: 10 })
+  header.onMouseUp({ x: 3, y: 10, button: 0 })
   expect(toggles).toBe(1)
 })
 

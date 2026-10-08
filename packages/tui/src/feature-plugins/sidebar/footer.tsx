@@ -4,6 +4,7 @@ import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { TuiLayout } from "../../layout"
+import { onClick } from "../../ui/click"
 
 const id = "internal:sidebar-footer"
 
@@ -58,7 +59,12 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
             <text fg={theme().textMuted}>
               Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
             </text>
-            <box flexDirection="row" gap={1} justifyContent="space-between">
+            <box
+              flexDirection="row"
+              gap={1}
+              justifyContent="space-between"
+              {...onClick(() => props.api.keymap.dispatchCommand("provider.connect"))}
+            >
               <text fg={theme().text}>Connect provider</text>
               <text fg={theme().textMuted}>/connect</text>
             </box>

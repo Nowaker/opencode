@@ -40,6 +40,8 @@ export type Input = {
   placeholder: string
   scroll: number
   queued: boolean
+  // The command a click queued, shown pressed until the TUI runs it.
+  action?: string
   spinner: number
 }
 
@@ -48,7 +50,11 @@ export type Output = {
   cursor: { x: number; y: number }
   text: { x: number; y: number; width: number; rows: number; scroll: number; lines: InstantEditor.Line[] }
   spinner: { x: number; y: number; style: string }[]
+  // The cells that run a TUI command when clicked, as the TUI's own elements do.
+  targets: Target[]
 }
+
+export type Target = { x: number; y: number; width: number; command: string }
 
 export type Rgb = [number, number, number]
 export type Cell = { ch: string; fg?: Rgb; bg?: Rgb; bold?: boolean; inverse?: boolean; wide?: boolean }
@@ -64,6 +70,9 @@ function rgb(hex: string | undefined): Rgb | undefined {
 function tint(base: Rgb, overlay: Rgb, alpha: number): Rgb {
   return base.map((value, index) => Math.round(value + (overlay[index] - value) * alpha)) as Rgb
 }
+
+// The prompt's status-row hints and the commands their keybinds run.
+const SHORTCUT_COMMANDS: Record<string, string> = { agents: "agent.cycle", commands: "command.palette.show" }
 
 const width = (text: string) => (/^[\x20-\x7e]*$/.test(text) ? text.length : Bun.stringWidth(text))
 const spinnerGlyph = (frame: number) => TuiLayout.Spinner.frames[frame % TuiLayout.Spinner.frames.length]
@@ -190,10 +199,16 @@ function canvas(input: Input) {
   }
   for (const row of grid) for (const cell of row) cell.bg = colors.background
   const spinner: Output["spinner"] = []
+  const targets: Target[] = []
   return {
     grid,
     colors,
     spinner,
+    targets,
+    // Marks the cells from x up to end on row y as running a command on click.
+    target(x: number, y: number, end: number, command: string) {
+      if (end > x) targets.push({ x, y, width: end - x, command })
+    },
     put(x: number, y: number, value: string, style: Omit<Cell, "ch"> = {}) {
       if (y < 0 || y >= input.height) return x
       for (const char of value) {
@@ -254,14 +269,23 @@ function paintPrompt(c: Canvas, input: Input, prompt: PromptBox, selected: Insta
 
   if (selected?.agent) {
     let x = c.put(prompt.textX, metaY, selected.agent.label, { fg: border, bg: element })
+    c.target(prompt.textX, metaY, x, "agent.list")
     if (selected.auto) x = c.put(x + 1, metaY, "auto", { fg: muted, bg: element })
     if (selected.model) {
       x = c.put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
-      x = c.put(x + P.metaGap, metaY, selected.model.label, { fg: text, bg: element })
+      const modelX = x + P.metaGap
+      x = c.put(modelX, metaY, selected.model.label, { fg: text, bg: element })
       x = c.put(x + P.metaGap, metaY, selected.model.provider, { fg: muted, bg: element })
+      c.target(modelX, metaY, x, "model.list")
       if (selected.variant) {
         x = c.put(x + P.metaGap, metaY, "·", { fg: muted, bg: element })
-        c.put(x + P.metaGap, metaY, selected.variant, { fg: warning, bg: element, bold: true })
+        const variantX = x + P.metaGap
+        c.target(
+          variantX,
+          metaY,
+          c.put(variantX, metaY, selected.variant, { fg: warning, bg: element, bold: true }),
+          "variant.list",
+        )
       }
     }
   }
@@ -286,8 +310,12 @@ function paintPrompt(c: Canvas, input: Input, prompt: PromptBox, selected: Insta
   if (!status.sessionNotice && (!input.queued || input.session || homeNoticeFits)) {
     let x = right
     for (const [key, label] of status.right) {
+      const start = x
       if (key) x = c.put(x, statusY, key, { fg: text }) + 1
-      x = c.put(x, statusY, label, { fg: muted }) + P.statusGap
+      x = c.put(x, statusY, label, { fg: muted })
+      const command = SHORTCUT_COMMANDS[label]
+      if (command) c.target(start, statusY, x, command)
+      x += P.statusGap
     }
   }
 
@@ -355,8 +383,10 @@ function paintSession(c: Canvas, input: Input & { session: SessionView }) {
   let y = B.paddingY
   const title = input.session.entry?.title ?? input.session.id
   if (title) {
-    for (const line of InstantEditor.layout(title, inner - B.contentPaddingRight - B.titlePaddingRight))
-      c.put(x, y++, lineText(title, line), { fg: text, bg: panel, bold: true })
+    for (const line of InstantEditor.layout(title, inner - B.contentPaddingRight - B.titlePaddingRight)) {
+      c.target(x, y, c.put(x, y, lineText(title, line), { fg: text, bg: panel, bold: true }), "session.rename")
+      y++
+    }
     if (input.session.idLine && input.session.id) c.put(x, y++, input.session.id, { fg: muted, bg: panel })
     y += B.gap
   }
@@ -390,7 +420,17 @@ function paintSession(c: Canvas, input: Input & { session: SessionView }) {
 export function render(input: Input): Output {
   const c = canvas(input)
   const result = input.session ? paintSession(c, { ...input, session: input.session }) : paintHome(c, input)
-  return { grid: c.grid, spinner: c.spinner, ...result }
+  for (const at of c.targets.filter((target) => target.command === input.action))
+    for (let x = at.x; x < at.x + at.width; x++) {
+      const cell = c.grid[at.y]?.[x]
+      if (cell) cell.inverse = true
+    }
+  return { grid: c.grid, spinner: c.spinner, targets: c.targets, ...result }
+}
+
+// The command at a cell, if a click there runs one.
+export function targetAt(output: Output, x: number, y: number) {
+  return output.targets.find((at) => at.y === y && x >= at.x && x < at.x + at.width)?.command
 }
 
 function sgr(cell: Cell) {

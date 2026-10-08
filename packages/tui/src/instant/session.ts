@@ -34,6 +34,8 @@ export type State = {
   scroll: number
   spinner: number
   queued?: Queued
+  // The TUI command a click on the screen asked for, run once the TUI loads.
+  action?: string
 }
 
 export type Mouse = Extract<InstantKeys.Event, { type: "mouse" }>
@@ -64,7 +66,9 @@ export function create(init: Init, state?: State) {
   let scroll = state?.scroll ?? 0
   let spinner = state?.spinner ?? 0
   let queued = state?.queued
+  let clicked = state?.action
   let press: number | undefined
+  let down: { x: number; y: number } | undefined
   let frame: InstantFrame.Output | undefined
 
   // The session's own prompt when it is cached, else the directory's.
@@ -106,6 +110,7 @@ export function create(init: Init, state?: State) {
         : TuiLayout.promptPlaceholder("normal", TuiLayout.HomePlaceholders.normal[init.placeholder]),
       scroll,
       queued: !!queued,
+      action: clicked,
       spinner,
     })
     const caretRow = next.cursor.y - next.text.y
@@ -132,6 +137,7 @@ export function create(init: Init, state?: State) {
     if (backlog && key.name === "j" && key.ctrl) return
     if (key.name === "escape") {
       queued = undefined
+      clicked = undefined
       return
     }
     if ((key.name === "c" || key.name === "d") && key.ctrl && !editor.text) return "quit"
@@ -148,11 +154,19 @@ export function create(init: Init, state?: State) {
   function pointer(event: Mouse) {
     dirty = true
     const text = frame?.text
-    if (!text || event.button !== 0) return
+    if (!frame || !text || event.button !== 0) return
     if (event.action === "release") {
+      // A press and release on the same cell of an agent, model, variant, hint
+      // or session title queues the command the TUI runs for that click, the
+      // way an early Enter queues the submit; the latest click wins.
+      const command =
+        down?.x === event.x && down.y === event.y ? InstantFrame.targetAt(frame, event.x, event.y) : undefined
+      if (command) clicked = command
       press = undefined
+      down = undefined
       return
     }
+    if (event.action === "press") down = { x: event.x, y: event.y }
     // Keys earlier in the same read may have changed the text since the last
     // frame, so the click is mapped onto the text as it is now.
     const lines = InstantEditor.layout(editor.text, text.width)
@@ -172,6 +186,9 @@ export function create(init: Init, state?: State) {
     editor,
     get queued() {
       return queued
+    },
+    get action() {
+      return clicked
     },
     // Feeds raw input; a lone Escape stays pending until flushEscape().
     input(bytes: Uint8Array, backlog = false) {
@@ -204,7 +221,7 @@ export function create(init: Init, state?: State) {
       return "\x1b[?2026h" + InstantFrame.spinnerFrame(frame, spinner) + cursorTo(frame) + "\x1b[?2026l"
     },
     state(): State {
-      return { text: editor.text, caret: editor.caret, anchor: editor.anchor, scroll, spinner, queued }
+      return { text: editor.text, caret: editor.caret, anchor: editor.anchor, scroll, spinner, queued, action: clicked }
     },
   }
 }
