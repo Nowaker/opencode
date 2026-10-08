@@ -90,6 +90,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-08
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
+  - `42ce3944c3`: entry timestamps follow `datetime_format` when set. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-07
   [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
   - `1ca196f2b2`: `timestamps` maps onto `footer.time` (its `tool` also onto `footer.duration`) while `footer.time` is unset; `4c6be131b4` gives every tool call the time. See [footer elements](./2026-10-07-tui-footer-elements.md).

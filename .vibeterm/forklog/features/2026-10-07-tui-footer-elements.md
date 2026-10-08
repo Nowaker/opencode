@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `footer-elements` (worktree off `dev-nowaker`); upstream branch `tui-footer-elements` (`cc947a75a7`, stacked on the #53195, #53654, #53639, #53848 and #53333 commits over upstream `dev` `663fbd7573`)
+- Development branch(es): `footer-elements` (worktree off `dev-nowaker`); upstream branch `tui-footer-elements` (`2b2a43d6db`, stacked on the #53195, #53654, #53639, #53848 and #53333 commits over upstream `dev` `663fbd7573`)
 - First local commit: `1ca196f2b2`
-- Current local commit(s): `1ca196f2b2`, `efc7b3db27`, `4c6be131b4`
+- Current local commit(s): `1ca196f2b2`, `efc7b3db27`, `4c6be131b4`, `42ce3944c3`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `663fbd7573` (upstream `dev`)
 - Upstream: PR [#53877](https://github.com/anomalyco/opencode/pull/53877), closed by opencode-agent[bot] within a minute (v1 takes critical fixes only); kept current for others. Comment on [#50891](https://github.com/anomalyco/opencode/issues/50891#issuecomment-6053344669). **Needs a v2 port later.**
@@ -32,6 +32,16 @@ Added the same evening:
 > of course false but i want to see it on all tool calls. its valuable for me
 > to know how long vtps takes.
 
+Follow-ups on 2026-10-08, after using it with every key `"all"`:
+
+> we should only keep this info once.
+
+> allow me to define my datetime format. and set it for me to:
+> YYYY-MM-DD HH:MM:SS, defaults to be what opencode does. (continue to skip
+> date if date is today)
+
+> let's do instead: `Click to expand · 2:18 PM · 4.8s · msg_...`
+
 ## Goals
 
 - One `footer` object in `tui.json`, one key per detail: `agent`, `model`,
@@ -47,6 +57,12 @@ Added the same evening:
 - Unset, the transcript renders exactly as before; the older keys and the
   `/timestamps`, `/turn-times` and `/turn-durations` toggles keep working.
 - Every footer detail is muted except the agent name.
+- Each message ID appears once: a tool call shows its message's ID only when
+  the message's own footer does not.
+- `datetime_format` with `date` and `time` patterns (Day.js tokens) for
+  every time the TUI writes; today's entries still show only the time;
+  unset keeps the locale output.
+- A block tool's expand/collapse hint and its footer share one line.
 
 ## Non-goals
 
@@ -77,6 +93,7 @@ Added the same evening:
 | `1ca196f2b2` | 2026-10-07 | `footer` setting, value shape, legacy mapping, `message_id`, `"important"`; assistant footer drawn from one `details()` list; tui.mdx `Footer` and `Older footer settings` sections plus the missing `model_label` entry | `Footer`, `FooterValue`, `footerSelections`, `footerShows`, `footerConfigured` in `packages/tui/src/config/index.tsx`; `footer`/`toggleFooter` in `Session()` and `details()` in `AssistantMessage` in `packages/tui/src/routes/session/index.tsx`; `isLandmark` in `routes/session/navigation.ts`; `test/config.test.tsx`, `test/routes/session/navigation.test.ts` |
 | `efc7b3db27` | 2026-10-07 | Variant drawn in `theme.textMuted` | `variant` entry of `details()` |
 | `4c6be131b4` | 2026-10-07 | Every tool call takes `time`, `duration`, `message_id`; block tools footer on their last line; `footerBelow` for multi-line inline rows | `toolFooter`, `formatToolTimestamp`, `InlineToolRow.footerBelow`, `BlockTool` in `routes/session/index.tsx`; `test/cli/tui/inline-tool-wrap-snapshot.test.tsx` |
+| `42ce3944c3` | 2026-10-08 | `datetime_format`; message ID once per message; hint and footer on one line | `DateTimeFormat`, `toolFooterShowsMessageID` in `config/index.tsx`; `Locale.time`/`date`/`todayTimeOrDateFirst` format argument and `pattern` in `util/locale.ts`; `toolFooter`, `expandHint`, `BlockTool.hint` in `routes/session/index.tsx`; `test/util/locale.test.ts`, `test/config.test.tsx` |
 
 ## Verification
 
@@ -85,6 +102,15 @@ Added the same evening:
   1 skip, 0 fail; focused config/navigation/inline-tool tests after
   `4c6be131b4` - 51 pass, 0 fail. Upstream stack `cc947a75a7` - 45 pass.
 - Pre-push hook (`bun turbo typecheck`) 30/30 on every push.
+- `42ce3944c3`: full `packages/tui` suite 368 pass, 1 skip, 0 fail. Isolated
+  captures: `datetime_format` `YYYY-MM-DD`/`HH:mm:ss` gives
+  `▣  Build · QA Model · 15:43:04 · 1.2s · 4.6s total · msg_...`; with every
+  key `"all"` a vtps block ends `Click to expand · 15:43:03 · 1.5s` (no
+  repeated ID); `message_id: "tool"` gives `Click to expand · 3:46 PM · 1.5s
+  · msg_...`; footer off leaves `Click to expand` alone. Raw SGR mouse
+  events through tmux: a click on the hint expanded the block
+  (`Click to collapse · ...`), a click on its `msg_` copied it (toast
+  `Copied msg_...`) and left the block expanded. `{}` still matches vanilla.
 - Manual surface: isolated `XDG_*`, `OPENCODE_DB`, tool/plugin data dirs,
   tmux socket `oc-footer-qa`, fake OpenAI-compatible provider with a
   `high` variant and a `tool/vtps.ts` plugin tool taking a multi-line prompt:
@@ -109,6 +135,12 @@ Added the same evening:
   installed on desktop and m4max; `footer` set to `"all"` for every key in
   both hosts' `tui.json`.
 
+- 2026-10-08
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
+  - `42ce3944c3`: `datetime_format`, message ID once, hint line; PR #53877
+  branch `2b2a43d6db` and body updated; installed on desktop and m4max;
+  `datetime_format` set in both hosts' `tui.json`.
+
 ## Current maintenance notes
 
 - Port to v2 once Vibeterm core runs on v2. Keep PR #53877's branch and body
@@ -116,7 +148,10 @@ Added the same evening:
 - Host setting: `"footer"` with all seven keys `"all"` in
   `~/.config/opencode/tui.json` on desktop and m4max; the legacy
   `footer_variant`, `timestamps` and `turn_timing` keys are still present
-  there and are overridden.
+  there and are overridden. `"datetime_format": {"date": "YYYY-MM-DD",
+  "time": "HH:mm:ss"}` on both hosts.
+- A closed PR does not follow pushes to its branch: GitHub still shows
+  #53877's head as `cc947a75a7`; the branch itself is current.
 
 ### Upstream integration checklist
 
