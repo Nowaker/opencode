@@ -74,8 +74,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Stop the file logger waking every second while idle](./features/2026-10-06-idle-log-flush.md)
 - [Load the full provider catalog after the prompt is shown](./features/2026-10-06-tui-lazy-provider-list.md)
 - [Keep a failed prompt instead of losing it, without sending it twice](./features/2026-10-07-tui-prompt-admission.md)
+- [Show the turn's variant in assistant message footers](./features/2026-10-06-tui-footer-variant.md)
 
 ## Session records
+
+- [2026-10-07 `ses_eec44cf7effeFCqQefM0NkWLaW`](./sessions/2026-10-07-tui-footer-variant.md)
+  - Add `footer_variant` so assistant message footers show the turn's
+    variant (`high`, `max`); no upstream PR, needs a v2 port later; build and
+    install on both hosts, `true` set in their `tui.json`.
 
 - [2026-10-07 `ses_ee74c94dfffe71uYsYScadAio7`](./sessions/2026-10-07-tui-prompt-admission.md)
   - Keep a failed prompt's draft until the server stores it, restore it (above
