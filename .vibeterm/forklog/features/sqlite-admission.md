@@ -12,7 +12,7 @@
   `ses_eecf11b3affevOqpKUU3vncF7S`, `ses_eebf2e45cfferJAfg1d5eBsDB6`,
   `ses_ee6f529f0ffezc6ATEiYn7JAip`
 - Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
-- Upstream PR: submission blocked by token permission; reviewed branch pushed, no PR yet
+- Upstream PR: [#53886](https://github.com/anomalyco/opencode/pull/53886), closed unmerged under stated critical-v1-only policy
 
 ## Request and rationale
 
@@ -133,3 +133,12 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   no PR number/open state claimed. Prepared body partially addresses #47566,
   not broader startup/growth problems; full evidence and actual future PR state
   remain in Vibeterm's canonical inventory.
+- 2026-10-08 same audit coordinator - regular PR #53886 submitted as Nowaker
+  at 07:13:11Z via the authorized unfocused browser fallback after API denial;
+  head `f3b6954437f6`, base `dev`, body/footer independently API-verified.
+  Upstream bot closed it unmerged at 07:13:55Z, classifying temporary contention
+  with resend workaround as outside critical-v1 acceptance. A separate issue
+  standards warning requires Fixes/Closes linkage; the partial #47566 reference
+  was not sufficient. No false broad-issue closure, automatic reopening or
+  v2 rewrite. Local fix and qualified evidence remain; next direction is gated
+  by `qst_11a67d235001lXLmtYXc8PoQdF`. Canonical inventory retains actual state.

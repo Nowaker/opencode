@@ -188,12 +188,21 @@
   `f3b6954437f6e0920b6910b90b8a9cef8176518b`. Review worktree unlocked/retired
   through Vibeterm; branch and private evidence retained. No primary source
   history changed, build installed, or live service/tab restarted here.
-- PR creation was denied: `Resource not accessible by personal access token`.
-  Token authenticates as Nowaker and can push the fork; no PR exists for the
-  head. Unblock question `qst_11a0e0b80001VXwrHUzNCUA8p2` requests browser,
-  safely supplied PR-capable token, or manual submission. Body partially
-  addresses #47566, follows the template and retains the exact required footer.
-  Actual PR URL/state remains pending rather than fabricated.
+- CLI PR creation was initially denied by token permissions. The preferred
+  unused-laptop browser disconnected, then was signed out after reconnect.
+  Authorized main-laptop fallback used an unfocused dedicated tab as Nowaker,
+  verified exact form/body and submitted once; no credential or user-page change.
+- Actual regular [PR #53886](https://github.com/anomalyco/opencode/pull/53886)
+  created 2026-10-08T07:13:11Z, base `dev`, head `f3b6954437f6`; independent
+  read API verifies author/title/head/non-draft and exact footer after trim.
+  Upstream bot closed it unmerged at 07:13:55Z under its stated critical-v1-only
+  policy, citing temporary contention's resend workaround. This is not a
+  source-regression finding or proof of startup-herd causation.
+- Separate standards bot requires a linked Fixes/Closes issue; partial #47566
+  reference was not recognized. No broad issue falsely declared fixed, no
+  closed PR reopened/duplicated. Submission question withdrawn; new direction
+  question `qst_11a67d235001lXLmtYXc8PoQdF` gates v2 planning, reviewed reply,
+  or v1 local-only retention. All local delivery/failed cohorts remain intact.
 
 ## Related ownership
 
