@@ -73,8 +73,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Read and place the composer caret from a TUI plugin](./features/2026-10-06-tui-composer-caret.md)
 - [Stop the file logger waking every second while idle](./features/2026-10-06-idle-log-flush.md)
 - [Load the full provider catalog after the prompt is shown](./features/2026-10-06-tui-lazy-provider-list.md)
+- [Keep a failed prompt instead of losing it, without sending it twice](./features/2026-10-07-tui-prompt-admission.md)
 
 ## Session records
+
+- [2026-10-07 `ses_ee74c94dfffe71uYsYScadAio7`](./sessions/2026-10-07-tui-prompt-admission.md)
+  - Keep a failed prompt's draft until the server stores it, restore it or
+    stash it beside newer text, reconcile an ambiguous send by its client
+    message ID before resending; build and install on both hosts.
 
 - [2026-10-06 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-06-tui-instant-prompt.md)
   - Paint an editable home prompt within ~50 ms of `opencode` and capture
