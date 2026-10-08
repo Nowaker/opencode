@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { Config } from "@/config/config"
 import { Shell } from "@opencode-ai/core/shell"
 import { ShellTool } from "../../src/tool/shell"
@@ -217,6 +218,25 @@ describe("tool.shell", () => {
       )
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.live("passes the call's session, message and call ids to shell.env", () =>
+      Effect.gen(function* () {
+        const plugin = pathToFileURL(path.join(import.meta.dir, "..", "fixture", "shell-env-plugin.ts")).href
+        const tmp = yield* tmpdirScoped({ config: { plugin: [plugin] } })
+        yield* runIn(
+          tmp,
+          Effect.gen(function* () {
+            const result = yield* run(
+              { command: 'printf "%s" "$HOOK_IDS"' },
+              { ...ctx, messageID: MessageID.make("msg_hook"), callID: "call_hook" },
+            )
+            expect(result.output).toBe("ses_test|msg_hook|call_hook")
+          }),
+        )
+      }),
+    )
+  }
 })
 
 describe("tool.shell permissions", () => {
