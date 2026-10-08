@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `footer-elements` (worktree); upstream `tui-footer-elements`
 - Upstream base: `907b3bc518` (contains `v1.18.34`); upstream stack on `663fbd7573`
-- Source result commit(s): `42ce3944c3`
+- Source result commit(s): `42ce3944c3`, `ea714f8a10`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -25,6 +25,14 @@ vt-177 with every footer key `"all"`:
 
 > let's do instead: `Click to expand · 2:18 PM · 4.8s · msg_...`
 
+> make it so active tool calls show an active timer of their run. and since
+> active tool run has a start time, start datetime can already be presented
+> here too, with a stopwatch ticking as it keeps running. 1s increments, no
+> decimal while stopwatch running, only show first decimal after it's done
+> (but not above 11m).
+
+> should add an extra \n (unless prompt already ends with excess \n)
+
 ## Goals
 
 - A message ID shows once per message: on the assistant footer, and on a
@@ -33,6 +41,10 @@ vt-177 with every footer key `"all"`:
   `HH:mm:ss` on both hosts.
 - A block tool's expand/collapse hint carries the footer on the same line;
   clicking the hint still toggles, clicking a `msg_` still copies.
+- A running tool call's footer shows its start time and a whole-second
+  stopwatch from one shared clock that stops when nothing runs; finished
+  durations keep tenths up to 11 minutes.
+- One blank line between a prompt's text and its footer.
 
 ## Constraints and non-goals
 
@@ -44,6 +56,8 @@ vt-177 with every footer key `"all"`:
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `e23cc19484` | `42ce3944c3` | fast-forward from `footer-elements`; pushed both remotes |
+| `opencode` | `dev-nowaker` | `c69bc5b43c` | `ea714f8a10` | fast-forward (stopwatch, prompt footer gap); pushed both remotes |
+| `opencode` (GitHub fork + GitLab) | `tui-footer-elements` | `2b2a43d6db` | `09ff703f7a` | stopwatch folded into the feature commit; force-with-lease both remotes; PR #53877 body updated |
 | `opencode` (GitHub fork + GitLab) | `tui-footer-elements` | `cc947a75a7` | `2b2a43d6db` | change folded into the feature commit, no AI trailers; force-with-lease both remotes; PR #53877 body updated |
 
 ## Features touched
@@ -79,11 +93,21 @@ vt-177 with every footer key `"all"`:
   2451599) kept their PIDs and start times.
 - m4max: checkout fast-forwarded to `42ce3944c3`; `1.18.34-vt-180-907b3bc518`,
   inode `22236352`, same markers and matching retry patch.
+- `ea714f8a10`: desktop `1.18.34-vt-187-907b3bc518` (inode `49946749`),
+  built from local `dev-nowaker` `892b6c4dbb`, which also holds session
+  `ses_ee26f677effe6fzY9wzepyBf13`'s then-unpushed shell.env commit; m4max
+  `1.18.34-vt-186-907b3bc518` (inode `22242302`) at `ea714f8a10`. Both passed
+  the new v1 database guard gate (`VIBETERM_V2_GUARD` set to
+  opencode-tools' `vibeterm-opencode-client/bin/vibeterm-v2-guard`, which is
+  not on PATH on either host), carry the retry-cap and stopwatch markers,
+  and the retry patch sha1 matches the canonical patch. Serve PIDs 2451613
+  and 2451599 unchanged.
 - Running TUIs pick it up on their next restart.
 
 ## Commit provenance
 
 - `42ce3944c3` - `datetime_format`, message ID once, hint line footer.
+- `ea714f8a10` - running tool call stopwatch, prompt footer gap.
 - Required trailer: `AI-Session-ID: ses_ee68aab01ffei41gwUGJ5ESj6W`
 
 ## Unknowns and blocked verification

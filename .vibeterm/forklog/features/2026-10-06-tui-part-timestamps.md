@@ -92,6 +92,10 @@ quoting the user:
 
 - 2026-10-08
   [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
+  - `ea714f8a10`: a running tool call shows its start time and a whole-second stopwatch; finished durations keep tenths up to 11 minutes. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
+- 2026-10-08
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
   - `42ce3944c3`: entry timestamps follow `datetime_format` when set. See [footer elements](./2026-10-07-tui-footer-elements.md).
 
 - 2026-10-07

@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `footer-elements` (worktree off `dev-nowaker`); upstream branch `tui-footer-elements` (`2b2a43d6db`, stacked on the #53195, #53654, #53639, #53848 and #53333 commits over upstream `dev` `663fbd7573`)
+- Development branch(es): `footer-elements` (worktree off `dev-nowaker`); upstream branch `tui-footer-elements` (`09ff703f7a`, stacked on the #53195, #53654, #53639, #53848 and #53333 commits over upstream `dev` `663fbd7573`)
 - First local commit: `1ca196f2b2`
-- Current local commit(s): `1ca196f2b2`, `efc7b3db27`, `4c6be131b4`, `42ce3944c3`
+- Current local commit(s): `1ca196f2b2`, `efc7b3db27`, `4c6be131b4`, `42ce3944c3`, `ea714f8a10`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `663fbd7573` (upstream `dev`)
 - Upstream: PR [#53877](https://github.com/anomalyco/opencode/pull/53877), closed by opencode-agent[bot] within a minute (v1 takes critical fixes only); kept current for others. Comment on [#50891](https://github.com/anomalyco/opencode/issues/50891#issuecomment-6053344669). **Needs a v2 port later.**
@@ -42,6 +42,14 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
 
 > let's do instead: `Click to expand · 2:18 PM · 4.8s · msg_...`
 
+> make it so active tool calls show an active timer of their run. and since
+> active tool run has a start time, start datetime can already be presented
+> here too, with a stopwatch ticking as it keeps running. 1s increments, no
+> decimal while stopwatch running, only show first decimal after it's done
+> (but not above 11m).
+
+> should add an extra \n (unless prompt already ends with excess \n)
+
 ## Goals
 
 - One `footer` object in `tui.json`, one key per detail: `agent`, `model`,
@@ -63,6 +71,10 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
   every time the TUI writes; today's entries still show only the time;
   unset keeps the locale output.
 - A block tool's expand/collapse hint and its footer share one line.
+- A running tool call shows its start time and a whole-second stopwatch from
+  one shared 1s clock that runs only while a call is running; a finished one
+  shows tenths of a second up to 11 minutes.
+- A prompt's footer sits one blank line below its text.
 
 ## Non-goals
 
@@ -94,6 +106,7 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
 | `efc7b3db27` | 2026-10-07 | Variant drawn in `theme.textMuted` | `variant` entry of `details()` |
 | `4c6be131b4` | 2026-10-07 | Every tool call takes `time`, `duration`, `message_id`; block tools footer on their last line; `footerBelow` for multi-line inline rows | `toolFooter`, `formatToolTimestamp`, `InlineToolRow.footerBelow`, `BlockTool` in `routes/session/index.tsx`; `test/cli/tui/inline-tool-wrap-snapshot.test.tsx` |
 | `42ce3944c3` | 2026-10-08 | `datetime_format`; message ID once per message; hint and footer on one line | `DateTimeFormat`, `toolFooterShowsMessageID` in `config/index.tsx`; `Locale.time`/`date`/`todayTimeOrDateFirst` format argument and `pattern` in `util/locale.ts`; `toolFooter`, `expandHint`, `BlockTool.hint` in `routes/session/index.tsx`; `test/util/locale.test.ts`, `test/config.test.tsx` |
+| `ea714f8a10` | 2026-10-08 | Running tool call start time and stopwatch; tenths up to 11m on finished calls; Task spinner footer; blank line before a prompt's footer | `createTicker`/`secondTicker` in `util/ticker.ts`; `Locale.stopwatch`, `Locale.duration(_, tenths)`; `toolFooter`, `formatToolTimestamp`, `InlineToolRow` spinner branch, `userFooterGap` in `routes/session/index.tsx`; `test/util/ticker.test.ts`, `test/util/locale.test.ts`, `test/cli/tui/inline-tool-wrap-snapshot.test.tsx` |
 
 ## Verification
 
@@ -111,6 +124,11 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
   events through tmux: a click on the hint expanded the block
   (`Click to collapse · ...`), a click on its `msg_` copied it (toast
   `Copied msg_...`) and left the block expanded. `{}` still matches vanilla.
+- `ea714f8a10`: full `packages/tui` suite 377 pass, 1 skip, 0 fail. Isolated
+  capture with a 68 s plugin tool `slow`: `⚙ slow [what=wait] · 17:25:45 · 0s`,
+  `· 14s` at +20 s, `· 1m 0s` at +66 s, then `· 17:26:53 · 1m 8.0s` once
+  finished. A prompt shows a blank row before `17:25:41 · msg_...`; a pasted
+  prompt ending in two newlines gets no extra row.
 - Manual surface: isolated `XDG_*`, `OPENCODE_DB`, tool/plugin data dirs,
   tmux socket `oc-footer-qa`, fake OpenAI-compatible provider with a
   `high` variant and a `tool/vtps.ts` plugin tool taking a multi-line prompt:
@@ -140,6 +158,9 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
   - `42ce3944c3`: `datetime_format`, message ID once, hint line; PR #53877
   branch `2b2a43d6db` and body updated; installed on desktop and m4max;
   `datetime_format` set in both hosts' `tui.json`.
+  - `ea714f8a10`: running tool call stopwatch, finished tenths up to 11m,
+  blank line before a prompt's footer; PR #53877 branch `09ff703f7a` and
+  body updated; installed on desktop and m4max.
 
 ## Current maintenance notes
 

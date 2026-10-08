@@ -88,7 +88,8 @@ carries every feature forward unchanged. That commit includes the full
 
 - [2026-10-08 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-08-tui-footer-datetime-format.md)
   - `datetime_format` for every time the TUI writes, each message ID once,
-    and the footer on a block tool's expand hint line; PR #53877 branch and
+    the footer on a block tool's expand hint line, a stopwatch on running
+    tool calls and a blank line before a prompt's footer; PR #53877 branch and
     body updated; build and install on both hosts, `YYYY-MM-DD` /
     `HH:mm:ss` in their `tui.json`.
 
