@@ -1147,12 +1147,20 @@ const layer = Layer.effect(
           }
 
           if (task?.type === "compaction") {
+            // Past the first step this loop was already running a turn, which the compaction cut into between
+            // two of its steps; that turn resumes afterwards unless its last step had ended it.
+            const inflight = step > 1
+            const resume =
+              inflight &&
+              !(lastAssistant?.finish && !["tool-calls", "unknown"].includes(lastAssistant.finish) && !hasToolCalls)
             const result = yield* compaction.process({
               messages: msgs,
-              parentID: lastUser.id,
+              parentID: task.messageID,
               sessionID,
               auto: task.auto,
               overflow: task.overflow,
+              deferQueued: inflight,
+              resume,
             })
             if (result === "stop") break
             continue
