@@ -11,7 +11,8 @@
   `0f9bbfb297`, rebased onto `691eb77ded`; vanilla comparison worktree
   `vanilla-submit-repro` at upstream `dev` `a697115b20`
 - Upstream base: `907b3bc518` (upstream `dev`) for `dev-nowaker`; unchanged
-- Source result commit(s): `777a8045b8`; reopened: `9612d23d3e`, `c55ad9c400`
+- Source result commit(s): `777a8045b8`; reopened: `9612d23d3e`, `c55ad9c400`;
+  footer spacing (2026-10-08 follow-up): `38a64a3d4a`
 - Forklog commit(s): this file's introducing commit (`be9f80684f`) and the
   reopening update
 
@@ -94,12 +95,19 @@ add\n\n--\n\n[current prompt], and leave the caret where the user was.
   fast-forwarding to `c55ad9c400`, built in the background with `nice`. Retry patch checked on both hosts; no
   other `build.sh` running; serve PIDs `2994070`/`2994178` unchanged.
 
+- Footer spacing build (2026-10-08): desktop `1.18.34-vt-181-907b3bc518`
+  (inode `49946747`) and m4max `1.18.34-vt-181-907b3bc518` (inode
+  `22238896`) at `38a64a3d4a`, replacing vt-180 on both; no other
+  `build.sh` running, retry patch checked on both; serve PIDs `2451613`/
+  `2451599` (started 11:47:27 CDT) unchanged.
+
 ## Commit provenance
 
 - `777a8045b8` - client IDs, admission tracking, restore/stash, resend,
   sync dedupe, docs.
 - `9612d23d3e` - never run a prompt twice when its message ID is sent again.
 - `c55ad9c400` - rejected draft above newer text instead of the stash.
+- `38a64a3d4a` - send notice after `esc interrupt`, two spaces apart.
 - Required trailer: `AI-Session-ID: ses_ee74c94dfffe71uYsYScadAio7`
 
 ## Unknowns and blocked verification
