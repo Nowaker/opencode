@@ -94,6 +94,16 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   diagnostics `46d697e6ff` / `691eb77ded`; this entry does not claim their
   deployment or diagnose historical TUI failures from the new source. Full
   report, coverage and constraints remain in the canonical Vibeterm inventory.
+- 2026-10-07 same coordinator - parent-requested split retains the failed
+  initial cohort: 01Z..03Z has 28 deaths/1,275 assistant rows (21.961/1,000);
+  steady 03Z..01:11Z on October 8 has zero recorded/additional silent deaths
+  over 3,665 rows. Actual processor failures occur 01:33:15.571Z..02:28:01.397Z,
+  after the primary vt-126 restart wave, so no long writer or causal startup
+  herd is established. The full steady 03Z..03Z interval remains incomplete.
+  Diagnostic-only changes need not reset unchanged A+B observation; readiness
+  still requires final clean counts, qualified coverage, preserved failed
+  cohorts and a narrow reviewed upstream diff. Canonical inventory carries
+  the chronology, INFO-line classification and Oracle's acceptance limits.
 - 2026-10-07 [`ses_eebf2e45cfferJAfg1d5eBsDB6`](../sessions/fork-audit.md#prompt-failure-follow-up-2026-10-07) -
   a desktop failure in vt-126 already had acquisition recovery. Its retained
   log lacked code, phase and attempts, so attribution remained unknown.

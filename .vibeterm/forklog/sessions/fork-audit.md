@@ -6,7 +6,8 @@
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
-- Development branches: `forklog-audit`, `fork-audit-ready`, `sqlite-gate-record`, and the named
+- Development branches: `forklog-audit`, `fork-audit-ready`, `sqlite-gate-record`,
+  `sqlite-steady-gate`, and the named
   isolated regression/reliability worktrees in the linked inventory
 - Source baseline: `e6abfddbcc228ad755a699a6a359d20af1011013`
 - Upstream baseline: `907b3bc518`; fetched `github/dev`: `4ac0d9c3d1`
@@ -140,6 +141,19 @@
   deployment of those diagnostics is claimed by this gate documentation.
 - Gate measurement and sanitized cause inspection executed successfully;
   canonical inventory retains detailed evidence and the blocked submission.
+- Parent's later split-window request was measured separately: rollout
+  01Z..03Z has 28/1,275 (21.961/1,000), steady 03Z..01:11Z has 0/3,665,
+  with zero additional silent deaths in either. The original failed day is
+  unchanged. Full steady window ends October 8 03Z and has not passed yet.
+- Correlated all 28 actual process-error times (01:33:15.571Z..02:28:01.397Z)
+  with retained startup/restart history: serve active at October 6 23:43Z,
+  lead restart October 7 00:17:46Z; later vt-128/vt-130 builds report no
+  tab/serve restarts. No >60s lock holder or causal herd is established.
+- Located the reported October 8 00:55:42.032Z BUSY-containing line: INFO,
+  no processor-death message identity. It is not a new recorded/silent death.
+- Oracle accepted a scoped steady-state A+B decision after complete, clean,
+  coverage-qualified measurement; diagnostic-only rollout does not reset
+  unchanged A+B behavior. Do not describe this as universal lock elimination.
 
 ## Related ownership
 
