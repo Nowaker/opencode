@@ -2179,7 +2179,13 @@ function GenericTool(props: ToolProps) {
     <Show
       when={props.output && ctx.showGenericToolOutput()}
       fallback={
-        <InlineTool icon="⚙" pending="Writing command…" complete={true} part={props.part}>
+        <InlineTool
+          icon="⚙"
+          pending="Writing command…"
+          complete={true}
+          part={props.part}
+          footerBelow={input(props.input).includes("\n")}
+        >
           {props.tool} {input(props.input)}
         </InlineTool>
       }
@@ -2209,6 +2215,7 @@ function InlineTool(props: {
   failure?: string
   spinner?: boolean
   separate?: boolean
+  footerBelow?: boolean
   children: JSX.Element
   part: ToolPart
   onClick?: () => void
@@ -2238,10 +2245,7 @@ function InlineTool(props: {
 
   const failed = createMemo(() => Boolean(error() && !denied()))
   const timestamp = createMemo(() =>
-    formatToolTimestamp(props.part.state, {
-      time: ctx.footer("time", "tool", props.part.messageID, props.part.id),
-      duration: ctx.footer("duration", "tool", props.part.messageID, props.part.id),
-    }),
+    formatToolTimestamp(props.part.state, toolFooter(ctx, props.part)),
   )
   const clickable = createMemo(() => Boolean(props.onClick || failed()))
   const fg = createMemo(() => {
@@ -2269,6 +2273,7 @@ function InlineTool(props: {
       failure={props.failure}
       spinner={props.spinner}
       separate={props.separate}
+      footerBelow={props.footerBelow}
       timestamp={timestamp()}
       timestampColor={theme.textMuted}
       onMouseOver={() => clickable() && setHover(true)}
@@ -2302,6 +2307,7 @@ export function InlineToolRow(props: {
   failure?: string
   spinner?: boolean
   separate?: boolean
+  footerBelow?: boolean
   timestamp?: string
   timestampColor?: RGBA
   children: JSX.Element
@@ -2357,11 +2363,16 @@ export function InlineToolRow(props: {
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
                 {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
-                <Show when={props.timestamp}>
+                <Show when={!props.footerBelow && props.timestamp}>
                   <span style={{ fg: props.timestampColor }}> · {props.timestamp}</span>
                 </Show>
               </text>
             </box>
+            <Show when={props.footerBelow && props.timestamp}>
+              <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+                <text fg={props.timestampColor}>{props.timestamp}</text>
+              </box>
+            </Show>
           </Show>
         </Match>
       </Switch>
@@ -2387,12 +2398,7 @@ function BlockTool(props: {
   const [hover, setHover] = createSignal(false)
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
   const timestamp = createMemo(() =>
-    props.part
-      ? formatToolTimestamp(props.part.state, {
-          time: ctx.footer("time", "tool", props.part.messageID, props.part.id),
-          duration: ctx.footer("duration", "tool", props.part.messageID, props.part.id),
-        })
-      : undefined,
+    props.part ? formatToolTimestamp(props.part.state, toolFooter(ctx, props.part)) : undefined,
   )
   return (
     <box
@@ -2421,7 +2427,6 @@ function BlockTool(props: {
             fallback={
               <text paddingLeft={3} fg={theme.textMuted}>
                 {title()}
-                {timestamp() ? ` · ${timestamp()}` : ""}
               </text>
             }
           >
@@ -2433,8 +2438,10 @@ function BlockTool(props: {
       <Show when={error()}>
         <text fg={theme.error}>{error()}</text>
       </Show>
-      <Show when={!props.title && timestamp()}>
-        <text fg={theme.textMuted}>{timestamp()}</text>
+      <Show when={timestamp()}>
+        <text paddingLeft={props.title ? 3 : 0} fg={theme.textMuted}>
+          {timestamp()}
+        </text>
       </Show>
     </box>
   )
@@ -2707,11 +2714,25 @@ function Task(props: ToolProps) {
   )
 }
 
-export function formatToolTimestamp(state: ToolPart["state"], show = { time: true, duration: true }) {
+// The footer elements every tool call takes, whichever renderer draws it.
+function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
+  const shows = (element: TuiConfig.FooterElement) => ctx.footer(element, "tool", part.messageID, part.id)
+  return {
+    time: shows("time"),
+    duration: shows("duration"),
+    messageID: shows("message_id") ? part.messageID : undefined,
+  }
+}
+
+export function formatToolTimestamp(
+  state: ToolPart["state"],
+  show: { time: boolean; duration: boolean; messageID?: string } = { time: true, duration: true },
+) {
   if (state.status !== "completed" && state.status !== "error") return
   const details = [
     show.time && Locale.todayTimeOrDateFirst(state.time.end),
     show.duration && Locale.duration(Math.max(0, state.time.end - state.time.start)),
+    show.messageID,
   ].flatMap((detail) => (detail ? [detail] : []))
   return details.length ? details.join(" · ") : undefined
 }

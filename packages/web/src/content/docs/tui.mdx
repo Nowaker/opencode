@@ -478,7 +478,7 @@ Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 | `time`       | When the entry happened                                                                  | `user`, `assistant`, `text`, `reasoning`, `tool`, `error`, `compaction`     | see below          |
 | `duration`   | How long the entry took                                                                  | `assistant`, `reasoning`, `tool`                                            | `"reasoning"`      |
 | `total`      | Time from your prompt to the end of the turn                                             | `assistant`, final message of a turn only                                   | `"all"`            |
-| `message_id` | The message ID (`msg_...`), which you can select with the mouse to copy                  | `user`, `assistant`                                                         | `"none"`           |
+| `message_id` | The message ID (`msg_...`), which you can select with the mouse to copy                  | `user`, `assistant`, `tool`                                                 | `"none"`           |
 
 | Type         | Where                                                         |
 | ------------ | ------------------------------------------------------------- |
@@ -486,11 +486,11 @@ Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 | `assistant`  | In the turn footer                                            |
 | `text`       | Below an assistant text block, when it finished               |
 | `reasoning`  | In the thinking block header                                  |
-| `tool`       | After a tool call, when it finished and how long it ran       |
+| `tool`       | Every tool call, plugin and MCP tools included                |
 | `error`      | In the error box of a failed turn                             |
 | `compaction` | In the compaction divider, when compaction started            |
 
-A type a key does not apply to has no effect, so `"all"` and `"important"` select only the entries listed under _Applies to_. A turn's last message always has a footer; `time`, `duration` and `message_id` also give its earlier messages, such as tool-call steps, a footer once they finish. A time from today shows the time of day; an older one shows the date, then the time.
+A type a key does not apply to has no effect, so `"all"` and `"important"` select only the entries listed under _Applies to_. A turn's last message always has a footer; `time`, `duration` and `message_id` also give its earlier messages, such as tool-call steps, a footer once they finish. A time from today shows the time of day; an older one shows the date, then the time. On a tool call, `time`, `duration` and `message_id` follow the call on one line, `· 9:16 PM · 1.5s · msg_...`; a call drawn as a block, or one whose arguments span lines, puts them on its own last line so a long command or prompt cannot push them out of sight. `message_id` there is the ID of the message the call belongs to.
 
 ```json title="tui.json"
 {

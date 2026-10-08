@@ -195,7 +195,8 @@ export const Footer = Schema.Struct({
     [
       "When an entry happened: the time of day if today, the date and time otherwise.",
       "Applies to: user (prompt sent), assistant (turn finished, in its footer), text (text block finished, below it),",
-      "reasoning (thinking block finished), tool (tool call finished), error (turn failed, in its error box),",
+      "reasoning (thinking block finished), tool (every tool call, plugin and MCP tools included, when it finished),",
+      "error (turn failed, in its error box),",
       "compaction (compaction started, in its divider).",
       "Default: the legacy timestamps list when set; otherwise prompts and turns follow /timestamps and /turn-times",
       "(turn_timing.time for turns) and the other types are hidden.",
@@ -204,7 +205,7 @@ export const Footer = Schema.Struct({
   duration: footerElement(
     [
       "How long an entry took. Applies to: assistant (the turn's own message), reasoning (the thinking block),",
-      "tool (the tool call).",
+      "tool (every tool call).",
       "Default: reasoning; turns follow /turn-durations (turn_timing.duration); tool calls when the legacy",
       "timestamps list includes 'tool'.",
     ].join(" "),
@@ -213,7 +214,7 @@ export const Footer = Schema.Struct({
     "Time from the prompt to the end of the turn. Applies to: assistant, and only on a turn's final message, so 'important' and 'assistant' select the same footers as 'all'. Default: all.",
   ),
   message_id: footerElement(
-    "The message ID (msg_...), selectable for drag-to-copy, at the end of the footer. Applies to: user, assistant. Default: none.",
+    "The message ID (msg_...), selectable for drag-to-copy, at the end of the footer. Applies to: user, assistant, tool (the message the call belongs to). Default: none.",
   ),
 }).annotate({
   description: [
