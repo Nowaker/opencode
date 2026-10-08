@@ -47,6 +47,7 @@ carries every feature forward unchanged. That commit includes the full
 - [OpenAI Meridian provider clone](./features/2026-09-27-openai-meridian-provider.md)
 - [TUI composer read and part-preserving replace](./features/2026-09-27-tui-composer-read.md)
 - [Tracked build script and vt version stamp](./features/2026-09-29-vt-version-stamp.md)
+- [v1 database guard gate before install](./features/2026-10-08-v1-db-guard-gate.md)
 - [Unmanaged install method for fork builds](./features/2026-10-02-unmanaged-install-method.md)
 - [Agent lookup by configured name](./features/2026-10-02-agent-name-lookup.md)
 - [Reopen opencode.log after an external rotation](./features/2026-10-03-log-reopen.md)
@@ -80,6 +81,10 @@ carries every feature forward unchanged. That commit includes the full
 - [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
 
 ## Session records
+
+- [2026-10-08 `ses_ee2d6b316ffeQ4Lr6J5QvW225u`](./sessions/2026-10-08-v1-db-guard-gate.md)
+  - `.vibeterm/build.sh` refuses to install a binary the v1 database guard
+    gate has not passed.
 
 - [2026-10-08 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-08-tui-footer-datetime-format.md)
   - `datetime_format` for every time the TUI writes, each message ID once,
@@ -368,6 +373,12 @@ records.
 5. Preserve `TBD`, confidence labels, and explicit failed searches verbatim.
 6. Commit all forklog edits together, unsquashed and above the source head.
 7. Include `AI-Session-ID: <full-session-id>` with the standard AI trailers.
+
+A bump installs only through `.vibeterm/build.sh`, whose v1 database guard
+gate (`vibeterm-v2-guard gate`) must pass. A red gate means a new v1 or v2
+release defeats the guard that keeps a stray opencode v2 from migrating the
+live v1 database: fix `_lib/v2-migration-guard` in opencode-tools first, and
+never set `OPENCODE_SKIP_V2_GUARD_GATE` to get past it.
 
 Work continuing after midnight belongs to the evening's workday. A feature
 starts on its first user workday; a session record uses that session's workday.
