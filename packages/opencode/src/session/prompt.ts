@@ -1076,9 +1076,55 @@ const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
+    /*
+     * A prompt that arrives again with a message ID the session already has is the same prompt, sent again by
+     * a client that lost track of the first send. It must not start another run: `loop` only skips the model
+     * when that message's last reply finished cleanly, so after a turn that failed or was aborted, a second
+     * admission would run the model and its tools again. While the first admission is still in progress the
+     * second one waits for it; afterwards a stored reply is returned as it is. A message stored without a
+     * reply - an admission that failed before its run started - is admitted again, which completes it.
+     */
+    const admitting = new Map<string, Latch.Latch>()
+
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      const messageID = input.messageID
+      if (!messageID) return yield* admit(input)
+      const key = `${input.sessionID}/${messageID}`
+      const pending = admitting.get(key)
+      if (pending) {
+        yield* pending.await
+        return yield* prompt(input)
+      }
+      const done = Latch.makeUnsafe(false)
+      admitting.set(key, done)
+      return yield* Effect.gen(function* () {
+        const replied = yield* reply(input.sessionID, messageID)
+        if (Option.isSome(replied)) return replied.value
+        return yield* admit(input)
+      }).pipe(
+        Effect.ensuring(
+          Effect.suspend(() => {
+            admitting.delete(key)
+            return done.open
+          }),
+        ),
+      )
+    })
+
+    const reply = Effect.fnUntraced(function* (sessionID: SessionID, messageID: MessageID) {
+      const stored = yield* MessageV2.get({ sessionID, messageID }).pipe(
+        Effect.provideService(Database.Service, database),
+        Effect.option,
+      )
+      if (Option.isNone(stored)) return Option.none<SessionV1.WithParts>()
+      return yield* sessions
+        .findMessage(sessionID, (msg) => msg.info.role === "assistant" && msg.info.parentID === messageID)
+        .pipe(Effect.orDie)
+    })
+
+    const admit = Effect.fnUntraced(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
