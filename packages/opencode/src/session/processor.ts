@@ -24,6 +24,7 @@ import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { TransactionDiagnostic } from "@opencode-ai/core/database/transaction-diagnostic"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 
 const DOOM_LOOP_THRESHOLD = 3
@@ -611,11 +612,13 @@ const layer = Layer.effect(
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
+        const sqlite = TransactionDiagnostic.get(e)
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
           error: errorMessage(e),
           stack: e instanceof Error ? e.stack : undefined,
+          ...(sqlite ? { sqlite } : {}),
         })
         const error = parse(e)
         if (SessionV1.ContextOverflowError.isInstance(error)) {
