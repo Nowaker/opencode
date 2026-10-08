@@ -3,6 +3,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { onHeaderClick } from "./click"
 import { createMemo, For, Show, createSignal } from "solid-js"
 import { Locale } from "../../util/locale"
+import { onClick } from "../../ui/click"
 
 const id = "internal:sidebar-files"
 
@@ -33,7 +34,20 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>
             {(item) => (
-              <box flexDirection="row" gap={1} justifyContent="space-between">
+              <box
+                flexDirection="row"
+                gap={1}
+                justifyContent="space-between"
+                {...onClick(() =>
+                  // /diff, opened at this file.
+                  props.api.route.navigate("diff", {
+                    mode: "git",
+                    sessionID: props.session_id,
+                    returnRoute: props.api.route.current,
+                    file: item.file,
+                  }),
+                )}
+              >
                 <text fg={theme().textMuted} wrapMode="none">
                   {Locale.truncateLeft(item.file, Math.max(2, 36 - changeCountWidth(item)))}
                 </text>

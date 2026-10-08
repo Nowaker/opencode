@@ -219,6 +219,9 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
         list: () => opts.attention?.soundboard?.list?.() ?? [],
       },
     },
+    click: {
+      on: () => () => {},
+    },
     keys: {
       formatSequence: () => "",
       formatBindings: () => undefined,

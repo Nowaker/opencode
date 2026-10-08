@@ -2,6 +2,8 @@ import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { onHeaderClick } from "./click"
+import { onClick } from "../../ui/click"
+import type { MouseEvent } from "@opentui/core"
 import { createMemo, createSignal, Show } from "solid-js"
 import { useTuiConfig } from "../../config"
 import { useBindings } from "../../keymap"
@@ -101,9 +103,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
                 <b>Context</b>
               </text>
             </box>
-            <text fg={colors().context}>{state().tokens.toLocaleString()} tokens</text>
-            <text fg={colors().context}>{state().percent ?? 0}% used</text>
-            <text fg={colors().cost}>{money.format(cost())} spent</text>
+            <box {...onClick(() => props.api.keymap.dispatchCommand("opencode.status"))}>
+              <text fg={colors().context}>{state().tokens.toLocaleString()} tokens</text>
+              <text fg={colors().context}>{state().percent ?? 0}% used</text>
+              <text fg={colors().cost}>{money.format(cost())} spent</text>
+            </box>
           </>
         }
       >
@@ -111,7 +115,14 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           <text fg={theme().text} selectable={false}>
             ▶
           </text>
-          <text fg={theme().textMuted}>
+          {/* The values open /status; the arrow and the rest of the heading fold it. */}
+          <text
+            fg={theme().textMuted}
+            {...onClick((event: MouseEvent) => {
+              event.stopPropagation()
+              props.api.keymap.dispatchCommand("opencode.status")
+            })}
+          >
             <span style={{ fg: colors().context }}>{line()[0]}</span>
             {" · "}
             <span style={{ fg: colors().context }}>{line()[1]}</span>

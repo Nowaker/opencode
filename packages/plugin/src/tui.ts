@@ -597,6 +597,33 @@ export type TuiWorkspace = {
   set: (workspaceID?: string) => void
 }
 
+/** A session (`ses_`) or message (`msg_`) ID the user clicked. */
+export type TuiClickEvent = {
+  target: {
+    kind: "session" | "message"
+    value: string
+  }
+  context: {
+    /** The session on screen; undefined outside a session. */
+    sessionID?: string
+  }
+}
+
+/** Return true to take the click; otherwise opencode copies the ID. */
+export type TuiClickHandler = (event: TuiClickEvent) => boolean | void
+
+export type TuiClick = {
+  /**
+   * Called for a plain click (press and release on one cell, nothing selected)
+   * on a session or message ID in message text, reasoning or tool calls, most
+   * recently added first, until a handler returns true. IDs opencode draws
+   * about the open session itself (message footers, the sidebar) are always
+   * copied and never reach handlers. A drag over an ID still selects and copies it. Handlers run
+   * synchronously: start any async work and return true.
+   */
+  on: (handler: TuiClickHandler) => () => void
+}
+
 export type TuiPluginApi = {
   /**
    * Active host-registered composer, independent of slot providers. Always
@@ -613,6 +640,7 @@ export type TuiPluginApi = {
    * `api.keymap.dispatchCommand("command.palette.show")` instead.
    */
   command?: TuiCommandApi
+  click: TuiClick
   keys: TuiKeys
   keymap: TuiKeymap
   mode: TuiModeApi

@@ -23,6 +23,13 @@ describe("ui.click", () => {
     expect(runs).toBe(0)
   })
 
+  test("the release goes to the action and its result comes back", () => {
+    const click = onClick((event: { x: number; y: number; button: number }) => event.x * 10)
+    click.onMouseDown({ x: 4, y: 2, button: 0 })
+    expect(click.onMouseUp({ x: 4, y: 2, button: 0 })).toBe(40)
+    expect(click.onMouseUp({ x: 4, y: 2, button: 0 })).toBeUndefined()
+  })
+
   test("a click that leaves text selected is a selection, not a click", () => {
     let runs = 0
     const click = onClick(() => runs++)

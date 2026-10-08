@@ -2,6 +2,7 @@
 import type { TuiSidebarLspItem, TuiSidebarMcpItem } from "@opencode-ai/plugin/tui"
 import { expect, test } from "bun:test"
 import SidebarContext from "../../src/feature-plugins/sidebar/context"
+import SidebarFiles from "../../src/feature-plugins/sidebar/files"
 import SidebarLsp from "../../src/feature-plugins/sidebar/lsp"
 import SidebarMcp from "../../src/feature-plugins/sidebar/mcp"
 import SidebarTodo from "../../src/feature-plugins/sidebar/todo"
@@ -70,7 +71,10 @@ test("clicking the Context header switches between expanded and compact and reme
     await view.click(2, 0)
     expect(view.text()).toEqual(["▶ 175,019 · 18% · $1,215.20"])
     expect(view.kv().get("sidebar_context")).toBe("compact")
+    // The values open /status instead; the arrow folds it back.
     await view.click(10, 0)
+    expect(view.text()).toEqual(["▶ 175,019 · 18% · $1,215.20"])
+    await view.click(0, 0)
     expect(view.text()).toHaveLength(4)
     expect(view.kv().get("sidebar_context")).toBe("expanded")
   } finally {
@@ -252,4 +256,46 @@ test("todo counts follow sidebar.todo_summary on the Todo heading and select as 
     collapsed: "▶ Todo ✓1 •1 ○1",
     selected: undefined,
   })
+})
+
+test("clicking a Modified Files row opens the diff viewer at that file, and a drag does not", async () => {
+  await using tmp = await tmpdir()
+  const opened: unknown[] = []
+  const view = await mountSidebar({
+    root: tmp.path,
+    plugins: [SidebarFiles],
+    state: {
+      session: {
+        diff: () => [
+          { file: "src/a.ts", additions: 2, deletions: 1, status: "modified" },
+          { file: "src/b.ts", additions: 4, deletions: 0, status: "modified" },
+        ],
+      },
+    },
+    route: {
+      register: () => () => {},
+      navigate: (name, params) => void opened.push({ name, params }),
+      current: { name: "session", params: { sessionID: "ses_test" } },
+    },
+  })
+  try {
+    const row = view.text().findIndex((line) => line.includes("src/b.ts"))
+    expect(await view.select(0, row, 6, row)).toBe("src/b.")
+    expect(opened).toEqual([])
+    view.app.renderer.clearSelection()
+    await view.click(2, row)
+    expect(opened).toEqual([
+      {
+        name: "diff",
+        params: {
+          mode: "git",
+          sessionID: "ses_test",
+          returnRoute: { name: "session", params: { sessionID: "ses_test" } },
+          file: "src/b.ts",
+        },
+      },
+    ])
+  } finally {
+    view.destroy()
+  }
 })

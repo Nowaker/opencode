@@ -67,7 +67,7 @@ import { InstantPrompt } from "../../instant"
 import { InstantCaret } from "../../instant/caret"
 import { InstantCache } from "../../instant/cache"
 import { InstantRecord } from "../../instant/record"
-import { onClick } from "../../ui/click"
+import { copyText, onClick } from "../../ui/click"
 
 registerOpencodeSpinner()
 
@@ -1954,7 +1954,10 @@ export function Prompt(props: PromptProps) {
                   </box>
                 </box>
                 <Show when={!aborting()} fallback={<text fg={theme.warning}>aborting…</text>}>
-                  <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
+                  <text
+                    fg={store.interrupt > 0 ? theme.primary : theme.text}
+                    {...onClick(() => keymap.dispatchCommand("session.interrupt"))}
+                  >
                     esc{" "}
                     <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
                       {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
@@ -2029,7 +2032,12 @@ export function Prompt(props: PromptProps) {
               {props.hint ?? (
                 <Show when={props.sessionID} fallback={<text />}>
                   <box marginLeft={TuiLayout.Prompt.statusInset}>
-                    <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
+                    <text
+                      fg={theme.textMuted}
+                      {...onClick(() => copyText(clipboard, toast.show, location()?.directory ?? paths.cwd))}
+                    >
+                      {location()?.directory ?? paths.cwd}
+                    </text>
                   </box>
                 </Show>
               )}
@@ -2056,7 +2064,11 @@ export function Prompt(props: PromptProps) {
                   <Switch>
                     <Match when={usage()}>
                       {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
+                        <text
+                          fg={theme.textMuted}
+                          wrapMode="none"
+                          {...onClick(() => keymap.dispatchCommand("opencode.status"))}
+                        >
                           <span style={{ fg: item().colors.context }}>{item().context}</span>
                           {item().cost ? " · " : ""}
                           <span style={{ fg: item().colors.cost }}>{item().cost ?? ""}</span>

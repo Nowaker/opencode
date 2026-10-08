@@ -34,6 +34,7 @@ export async function mountSidebar(input: {
   plugins: BuiltinTuiPlugin[]
   config?: Info
   state?: SidebarState
+  route?: TuiPluginApi["route"]
   width?: number
   height?: number
 }) {
@@ -48,6 +49,8 @@ export async function mountSidebar(input: {
     mounted = contexts
     const api: TuiPluginApi = {
       ...createTuiPluginApi(),
+      keymap: contexts.keymap,
+      ...(input.route ? { route: input.route } : {}),
       renderer: useRenderer(),
       tuiConfig: config,
       kv: pluginKV(contexts.kv),
