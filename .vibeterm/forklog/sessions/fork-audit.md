@@ -2,11 +2,11 @@
 
 ## Identity
 
-- Workday: 2026-10-06
+- Workdays: 2026-10-06 and 2026-10-07 (America/Chicago)
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
-- Development branches: `forklog-audit`, `fork-audit-ready`, and the named
+- Development branches: `forklog-audit`, `fork-audit-ready`, `sqlite-gate-record`, and the named
   isolated regression/reliability worktrees in the linked inventory
 - Source baseline: `e6abfddbcc228ad755a699a6a359d20af1011013`
 - Upstream baseline: `907b3bc518`; fetched `github/dev`: `4ac0d9c3d1`
@@ -84,12 +84,12 @@
 | [Session maintenance](../features/session-maintenance.md) | Retain cross-process safety; optimize startup | Fences/REPLACE/index/collation/race proofs and atomic emergency activation |
 | [SQLite admission/diagnosis](../features/sqlite-admission.md) | Recover safe BEGIN contention and preserve private diagnostic facts | Separate-child, callback/commit safety, bounded privacy and compiled before/after tests |
 
-## Other delivered-source work awaiting rollout
+## Delivered-source scope
 
-- SQLite A/B are assembled as separate logical commits on `fork-audit-ready`;
+- SQLite A/B were assembled as separate logical commits on `fork-audit-ready`;
   shared classification is included once. No callback/COMMIT/notification
   replay, SQL-data disclosure, or provider retry is introduced.
-- C remains a separate follow-on after A/B delivery. Source-level tests and
+- C was delivered as a separate follow-on after A/B. Source-level tests and
   child-process races passed, including emergency and quoted-identifier repairs.
 - Exact source SHAs, workers, gate results and remaining limitations live in
   the linked canonical inventory. Local commits are not deployment evidence.
@@ -112,11 +112,34 @@
   suite 276 pass/one existing skip/0 fail, focused 36 pass, typecheck exit 0.
 - Both tracked host builders installed `1.18.34-vt-126-907b3bc518` from that
   source tip. Composer source repair is separately landed in tools; its Mac
-  default-TMPDIR alias follow-on remains assigned to the original owner.
-- Latest C/TUI running-process pickup and the 24-hour live gate remain pending;
-  do not start the gate clock from source integration alone.
+  default-TMPDIR alias follow-on passed on m4max at tools `a042c6b` (39/39).
+- C/TUI running-process pickup was verified on both hosts. The lead changed
+  PID 3633181 to 2105459 on vt-126 before declaring the gate start at
+  2026-10-07T00:24:02Z; canonical serve PID 1507297 returned health 200/vt-126.
 - Both primary checkouts' deliberate retry divergence and pre-existing
   `.gitignore` edit were left untouched.
+
+## Completed live gate
+
+- Window: 2026-10-07T00:24:02Z..2026-10-08T00:24:02Z, measured
+  2026-10-08T00:28:05Z. Verdict **failed**; no upstream A+B PR opened.
+- 5,055 assistant messages, 28 recorded execute `LockTimeoutError` /
+  `SQLITE_BUSY` deaths (5.539 per 1,000), zero additional silent SQL deaths
+  observed; all 28 appear in local logs across 16 sessions. Four bursts contain
+  23 deaths; all recorded deaths fall in the 01Z/02Z row-creation hours.
+- Logs reach end; 1,436/1,441 minute buckets covered, five one-minute gaps.
+  Pre-fix process-sample share 16.88%, zero pre-fix active-main samples;
+  collector has no per-PID failure attribution. Creation version is not the
+  executing version. No causal before/after rate claim is made.
+- Matching failure logs lack phase fields. Whole-assistant-row elapsed times
+  do not establish admission-wait duration; competing writer and precise
+  failure phase remain unresolved. No callback/COMMIT retry was added.
+- Shared aggregates with parent, TUI coordinator and incident owner
+  `ses_eebf2e45cfferJAfg1d5eBsDB6`, whose separate diagnostics source
+  `46d697e6ff` / `691eb77ded` was preserved. No duplicate engine fix or
+  deployment of those diagnostics is claimed by this gate documentation.
+- Gate measurement and sanitized cause inspection executed successfully;
+  canonical inventory retains detailed evidence and the blocked submission.
 
 ## Related ownership
 

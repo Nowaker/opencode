@@ -11,7 +11,7 @@
 - Source workers: `ses_eecf4b409ffeFKx2qAXipWliKo`,
   `ses_eecf11b3affevOqpKUU3vncF7S`
 - Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
-- Upstream PR: not yet submitted; requires a clean 24-hour live gate
+- Upstream PR: blocked; first completed 24-hour live gate failed
 
 ## Request and rationale
 
@@ -71,3 +71,15 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   plan, prove, integrate and deliver A/B first; retain safe acquisition-only
   boundary, bounded diagnostics, both-remotes/hosts provenance and live gate.
+- 2026-10-07 same coordinator - measured the full window
+  2026-10-07T00:24:02Z..2026-10-08T00:24:02Z at 00:28:05Z after its end:
+  **failed**, 28 recorded `LockTimeoutError` / `SQLITE_BUSY` execute deaths
+  over 5,055 assistant messages (5.539 per 1,000), zero additional silent SQL
+  deaths observed; all 28 also in desktop logs. Logs reach end with five
+  uncovered minute buckets; pre-fix process-sample share 16.88%, no per-PID
+  attribution. The records lack transaction-phase evidence, so neither retry
+  exhaustion nor a competing writer is established. No upstream PR opened.
+  Separate incident owner `ses_eebf2e45cfferJAfg1d5eBsDB6` carries phase
+  diagnostics `46d697e6ff` / `691eb77ded`; this entry does not claim their
+  deployment or diagnose historical TUI failures from the new source. Full
+  report, coverage and constraints remain in the canonical Vibeterm inventory.
