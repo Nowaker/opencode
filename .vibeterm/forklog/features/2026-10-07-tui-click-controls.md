@@ -1,14 +1,14 @@
-# Run the shown agent, model, variant, hints, title and MCPs on click
+# Act on clicks on the shown agent, model, IDs, usage, files and todos
 
 ## Identity
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `tui-click-controls` (fork); `tui-click-controls-pr` (`9f00816eeb` on upstream `dev` `663fbd7573`, the upstream PR head, without the instant-screen part)
+- Development branch(es): `tui-click-controls` (fork); `tui-id-click` (fork); `tui-click-controls-pr` (`99d94f2f6c` on upstream `dev` `5d9cd9b259`, the upstream PR head, without the instant-screen part and the `api.click` plugin hook)
 - First local commit: `feaf2e5468`
-- Current local commit(s): `feaf2e5468`
+- Current local commit(s): `feaf2e5468`, `b503ecd0e9`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `663fbd7573` (upstream `dev`)
+- Last checked against upstream: `5d9cd9b259` (upstream `dev`)
 - Upstream: PR [#53871](https://github.com/anomalyco/opencode/pull/53871) against v1 `dev`, closing issue #48563. opencode-agent[bot] closed it within a minute (v1 takes critical fixes only); it stays open for linking. Comments with the PR link on #48563, #40521 and #13242. **Needs a v2 port later.**
 
 ## Original request
@@ -42,6 +42,23 @@ user:
   "Getting started" "Connect provider" row opens `provider.connect`.
 - The home and session prompts get the clicks wherever they render,
   including the instant startup screens (`opencode`, `-s`, `-c`).
+- Session (`ses_`) and message (`msg_`) IDs act on click (requested
+  2026-10-08, relayed by the coordinator: "clicking on own msgid, sesid -
+  copies it to clipboard. clicking on msgid, sesid in chat log - open them in
+  tab (ses) or ^i (msgid). of course, we need sane defaults for opencode
+  itself. for oc, both would be copy it."):
+  - own IDs (footer `msg_` IDs, the sidebar session ID) are copied;
+  - IDs in what the agent or a tool wrote go to TUI plugins first through
+    `api.click.on(handler)` and are otherwise copied; Vibeterm's route plugin
+    (click library session `ses_ee6a1ab65ffeoR9UKM5RnpfCzC`) switches tabs or
+    opens the ctrl+i reader.
+- The user's picks from the candidate list (2026-10-08): `esc interrupt`
+  runs `session.interrupt` per click (two clicks interrupt, like two esc
+  presses); usage below the prompt and the sidebar Context open `/status`;
+  the directory (status row, sidebar and home footers) is copied; the
+  footer model opens the model picker on that turn's model; a Modified Files
+  row opens `/diff` at that file; a todo is copied and appended to the
+  prompt.
 
 ## Non-goals
 
@@ -84,7 +101,31 @@ user:
 |---|---|---|---|
 | `feaf2e5468` | 2026-10-07 | Click actions, MCP row toggle, instant-screen click queue, docs | `onClick` in `packages/tui/src/ui/click.ts`; `onClick(...)` spreads in the prompt meta row and status hints of `packages/tui/src/component/prompt/index.tsx`; `startupAction` effect there; `local.mcp.toggle`/`pending` in `packages/tui/src/context/local.tsx`; MCP row in `packages/tui/src/feature-plugins/sidebar/mcp.tsx`; title in `packages/tui/src/routes/session/sidebar.tsx`; `targets`/`targetAt`/`SHORTCUT_COMMANDS` in `packages/tui/src/instant/frame.ts`; `action` in `InstantSession.State` and `Handoff`; "Clickable elements" in `packages/web/src/content/docs/tui.mdx`; `test/ui/click.test.ts`, `test/instant/session.test.ts` |
 
+| `b503ecd0e9` | 2026-10-07 | ID clicks with the `api.click.on` hook; esc interrupt, usage, directory, footer model, Modified Files, todo clicks | `idAt`/`idUnder`/`markOwnIds`/`createIdClick` in `packages/tui/src/ui/id-click.ts`; `idClick` in `packages/tui/src/app.tsx`; `TuiClick`/`TuiClickEvent`/`TuiClickHandler` in `packages/plugin/src/tui.ts`; scoped `click.on` in `packages/opencode/src/plugin/tui/runtime.ts`; `idUnder` stand-downs and `openModel` in `packages/tui/src/routes/session/index.tsx`; `DialogModel` `current`; diff route `file` param in `packages/tui/src/feature-plugins/system/diff-viewer.tsx`; `pick` in `packages/tui/src/feature-plugins/sidebar/todo.tsx`; `test/ui/id-click.test.ts`, `test/cli/tui/diff-viewer.test.tsx`, `test/feature-plugins/sidebar-sections.test.tsx` |
+
 ## Verification
+
+- `b503ecd0e9`: `bun typecheck` in `packages/tui`, `packages/opencode` and
+  `packages/plugin` clean; `bun test --timeout 60000` in `packages/tui` 364
+  pass, 1 skip, 0 fail; `packages/opencode` `test/cli/tui` 68 pass. The new
+  diff-viewer "file param" test fails when the file is not in the diff.
+- `b503ecd0e9` manual surface (isolated rig as below, fake provider answering
+  with `ses_`/`msg_` IDs, todo and write calls, a slow stream; `DISPLAY`
+  unset so xclip cannot block the copy):
+  - vanilla `663fbd7573`: clicks on transcript and sidebar IDs, the usage
+    and the footer model did nothing;
+  - fork: transcript and sidebar IDs, footer message IDs and the directory
+    toasted "Copied ..."; usage opened Status; the footer model opened Select
+    model with the cursor on the turn's model while the prompt used another;
+    a todo copied and appended (`fix Ship it Write the QA notes`); the first
+    `esc interrupt` click showed "esc again to interrupt", the second
+    "interrupted"; a QA plugin's `api.click.on` took a transcript `ses_` ID
+    (with `context.sessionID`) and left `msg_` to the copy; a drag over an ID
+    copied the selection and ran nothing.
+  - The click library's end-to-end rig (installed binary, real attached
+    tmux client) passed once its `capture-pane` kept the blank first row
+    (`"raw"`); its trimmed capture had clicked one row high.
+
 
 - `bun typecheck` and `bun test --timeout 60000` in `packages/tui` after the
   rebase onto `1ca196f2b2`: 354 pass, 1 skip, 0 fail. PR branch: 197 pass,
@@ -120,6 +161,11 @@ user:
   - `feaf2e5468`: land; build and install on desktop and m4max.
   - `9f00816eeb` on `tui-click-controls-pr` (upstream `dev` `663fbd7573`,
     no AI trailers, no instant-screen part); PR #53871.
+  - `b503ecd0e9`: ID clicks and the `api.click.on` hook, plus the user's seven
+    picks; build and install on desktop and m4max (`1.18.34-vt-177`).
+  - `99d94f2f6c` on `tui-click-controls-pr`, rebased onto upstream `dev`
+    `5d9cd9b259`: the same without the plugin hook (IDs copy only) and
+    without the instant-screen part; PR #53871 body updated.
 
 ## Current maintenance notes
 

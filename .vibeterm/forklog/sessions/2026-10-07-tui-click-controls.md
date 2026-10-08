@@ -116,3 +116,45 @@ the user:
 - v2 port pending.
 - Not yet seen in a restarted real tab; running TUIs keep the old binary
   until restarted.
+
+## Updates (2026-10-07, after midnight)
+
+Two follow-ups relayed by the coordinator in the same workday, landed as
+`b503ecd0e9` and recorded here because this session's first forklog commit
+(`7bd6de4d44`) was already pushed and forklog commits are never squashed.
+
+- User request (IDs): "clicking on own msgid, sesid - copies it to
+  clipboard. clicking on msgid, sesid in chat log - open them in tab (ses) or
+  ^i (msgid). of course, we need sane defaults for opencode itself. for oc,
+  both would be copy it."
+- User request (candidates): all seven picks from the list above; for the
+  interrupt hint: "interrupt click needs to be a click, and then a click,
+  like escape escape."
+- Seam agreed with click library session `ses_ee6a1ab65ffeoR9UKM5RnpfCzC`:
+  `api.click.on((event) => boolean | void): () => void`, synchronous, newest
+  first, `event = { target: { kind, value }, context: { sessionID? } }`.
+  Own IDs never reach handlers. That session's end-to-end rig failure was its
+  trimmed `capture-pane` (row 0 dropped, click one row high); with `"raw"` it
+  passed against the installed build.
+- Todo choice: copy AND append to the prompt, as the click-actions plan's
+  default table lists.
+- Plan: opencode-tools `a2c8881` updates the click-actions plan's ID rows.
+
+| Repository | Branch | Before | After | Action |
+|---|---|---|---|---|
+| `opencode` | `tui-id-click` | `c8888db76a` | `b503ecd0e9` | commit, rebase onto `888460c079` |
+| `opencode` | `dev-nowaker` | `888460c079` | `b503ecd0e9` + this forklog commit | fast-forward; pushed to `origin` and `nowaker-github` |
+| `opencode` | `tui-click-controls-pr` | `9f00816eeb` | `99d94f2f6c` | rebase onto upstream `dev` `5d9cd9b259`, amend by hand (no plugin hook, no instant screen, todo through the prompt ref), no AI trailers; force-with-lease to both remotes; PR #53871 title and body updated |
+| `opencode-tools` | `master` | `d999080` | `a2c8881` | plan ID rows, via worktree `click-plan-ids` |
+
+- Verification: see the feature record (`b503ecd0e9` bullets). PR branch:
+  `bun typecheck` clean, `bun test` 204 pass, 1 skip, 0 fail, and the same
+  isolated clicks.
+- Build and install: desktop `1.18.34-vt-177-907b3bc518` (inode `49946744`),
+  m4max `1.18.34-vt-177-907b3bc518` (inode `22209694`), both at
+  `b503ecd0e9` with the retry-header marker; the retry diff matched the
+  canonical patch on both hosts; no other build running; serve PIDs
+  `2994070`/`2994178` unchanged; no tab restarted.
+- Issue links: no new matching issue (#47746 asks for a v2 context menu, not a
+  click); #48563, #40521 and #13242 already have this session's comment.
+

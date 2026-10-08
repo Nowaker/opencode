@@ -76,7 +76,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Keep a failed prompt instead of losing it, without sending it twice](./features/2026-10-07-tui-prompt-admission.md)
 - [Show the turn's variant in assistant message footers](./features/2026-10-06-tui-footer-variant.md)
 - [Answer prompts queued around /compact and resume the turn it cut](./features/2026-10-07-compaction-queued-resume.md)
-- [Run the shown agent, model, variant, hints, title and MCPs on click](./features/2026-10-07-tui-click-controls.md)
+- [Act on clicks on the shown agent, model, IDs, usage, files and todos](./features/2026-10-07-tui-click-controls.md)
 - [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
 
 ## Session records
@@ -90,8 +90,10 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-07 `ses_ee68a7aceffeiGmNH03eS7PU61`](./sessions/2026-10-07-tui-click-controls.md)
   - Click the prompt's agent, model, variant and hints, the sidebar title and
     an MCP row to run their command or toggle the server, also queued from
-    the instant startup screens; PR #53871 (bot-closed, v1); build and
-    install on both hosts.
+    the instant startup screens; then ID clicks (copy, or a plugin through
+    `api.click.on`), esc interrupt, usage, directory, footer model, Modified
+    Files and todo clicks; PR #53871 (bot-closed, v1); build and install on
+    both hosts.
 
 - [2026-10-07 `ses_ee69f1639ffeFBENk91r80bAJB`](./sessions/2026-10-07-compaction-queued-resume.md)
   - A `/compact` during a running turn no longer swallows a prompt queued
