@@ -193,6 +193,58 @@ function createCompactionMarker(sessionID: SessionID) {
   )
 }
 
+function createMessageAt(
+  sessionID: SessionID,
+  created: number,
+  input: { text?: string; synthetic?: boolean; compaction?: boolean; variant?: string },
+) {
+  return SessionNs.Service.use((ssn) =>
+    Effect.gen(function* () {
+      const msg = yield* ssn.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID,
+        agent: "build",
+        model: { ...ref, variant: input.variant },
+        time: { created },
+      })
+      yield* ssn.updatePart(
+        input.compaction
+          ? { id: PartID.ascending(), messageID: msg.id, sessionID, type: "compaction", auto: false }
+          : {
+              id: PartID.ascending(),
+              messageID: msg.id,
+              sessionID,
+              type: "text",
+              text: input.text ?? "",
+              synthetic: input.synthetic,
+            },
+      )
+      return msg
+    }),
+  )
+}
+
+function createInterruptedStep(sessionID: SessionID, parentID: MessageID, root: string, created: number) {
+  return SessionNs.Service.use((ssn) =>
+    ssn.updateMessage({
+      id: MessageID.ascending(),
+      role: "assistant",
+      sessionID,
+      mode: "build",
+      agent: "build",
+      path: { cwd: root, root },
+      cost: 0,
+      tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      parentID,
+      time: { created, completed: created + 1 },
+      finish: "tool-calls",
+    }),
+  )
+}
+
 function fake(
   input: Parameters<SessionProcessorModule.SessionProcessor.Interface["create"]>[0],
   result: "continue" | "compact",
@@ -1132,6 +1184,106 @@ describe("session.compaction.process", () => {
         ),
       ).toBe(false)
     }).pipe(withCompaction({ plugin: autocontinue(false) })),
+  )
+
+  itCompaction.instance(
+    "moves prompts queued around an in-flight compaction behind the summary",
+    () => {
+      const stub = llm()
+      let captured = ""
+      stub.push(reply("summary", (input) => (captured = JSON.stringify(input.messages))))
+      return Effect.gen(function* () {
+        const test = yield* TestInstance
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const turn = yield* createMessageAt(session.id, 1_000, { text: "working turn" })
+        yield* createInterruptedStep(session.id, turn.id, test.directory, 2_000)
+        const before = yield* createMessageAt(session.id, 3_000, { text: "queued before compact" })
+        const note = yield* createMessageAt(session.id, 3_500, { text: "plugin note", synthetic: true })
+        const compact = yield* createMessageAt(session.id, 4_000, { compaction: true })
+        const after = yield* createMessageAt(session.id, 5_000, { text: "queued after compact" })
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: compact.id,
+          messages: yield* ssn.messages({ sessionID: session.id }),
+          sessionID: session.id,
+          auto: false,
+          deferQueued: true,
+          resume: true,
+        })
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const ids = all.map((msg) => msg.info.id)
+        const summary = all.find((msg) => msg.info.role === "assistant" && msg.info.summary)
+        const texts = (msg: SessionV1.WithParts | undefined) =>
+          msg?.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))
+
+        expect(result).toBe("continue")
+        expect(captured).toContain("working turn")
+        expect(captured).not.toContain("queued before compact")
+        expect(captured).not.toContain("queued after compact")
+        expect(summary?.info.role === "assistant" ? summary.info.parentID : undefined).toBe(compact.id)
+        expect(ids).not.toContain(before.id)
+        expect(ids).not.toContain(after.id)
+        expect(ids).toContain(note.id)
+        expect(all.slice(-2).map(texts)).toEqual([["queued before compact"], ["queued after compact"]])
+        expect(all.slice(-2).every((msg) => msg.info.id > summary!.info.id)).toBe(true)
+        expect(all.some((msg) => texts(msg)?.some((text) => text.includes("Continue if you have next steps")))).toBe(
+          false,
+        )
+        const filtered = MessageV2.filterCompacted(yield* MessageV2.stream(session.id))
+        expect(filtered.slice(-2).map(texts)).toEqual([["queued before compact"], ["queued after compact"]])
+      }).pipe(withCompaction({ llm: stub.llmLayer }))
+    },
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "resumes the interrupted turn after a manual compaction",
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const turn = yield* createMessageAt(session.id, 1_000, { text: "working turn", variant: "high" })
+      yield* createInterruptedStep(session.id, turn.id, test.directory, 2_000)
+      const compact = yield* createMessageAt(session.id, 3_000, { compaction: true })
+
+      const result = yield* SessionCompaction.use.process({
+        parentID: compact.id,
+        messages: yield* ssn.messages({ sessionID: session.id }),
+        sessionID: session.id,
+        auto: false,
+        deferQueued: true,
+        resume: true,
+      })
+
+      const last = (yield* ssn.messages({ sessionID: session.id })).at(-1)
+      expect(result).toBe("continue")
+      expect(last?.info.role === "user" ? last.info.model.variant : undefined).toBe("high")
+      expect(last?.parts[0]).toMatchObject({ type: "text", synthetic: true, metadata: { compaction_continue: true } })
+    }).pipe(withCompaction()),
+  )
+
+  itCompaction.instance(
+    "leaves a manual compaction of an idle session stopped",
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const turn = yield* createMessageAt(session.id, 1_000, { text: "finished turn" })
+      yield* createAssistantMessage(session.id, turn.id, test.directory)
+      const compact = yield* createMessageAt(session.id, Date.now(), { compaction: true })
+
+      yield* SessionCompaction.use.process({
+        parentID: compact.id,
+        messages: yield* ssn.messages({ sessionID: session.id }),
+        sessionID: session.id,
+        auto: false,
+      })
+
+      const last = (yield* ssn.messages({ sessionID: session.id })).at(-1)
+      expect(last?.info.role === "assistant" && last.info.summary).toBe(true)
+    }).pipe(withCompaction()),
   )
 
   it.instance(

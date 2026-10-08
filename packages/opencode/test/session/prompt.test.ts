@@ -1496,6 +1496,82 @@ it.instance("prompt submitted during an active run is included in the next LLM i
   }),
 )
 
+const compactDuringTurn = Effect.fn("test.compactDuringTurn")(function* (input: { queued?: string }) {
+  const { llm } = yield* useServerConfig(providerCfg)
+  const gate = yield* Deferred.make<void>()
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const compaction = yield* SessionCompaction.Service
+  const chat = yield* sessions.create({
+    title: "Pinned",
+    permission: [{ permission: "*", pattern: "*", action: "allow" }],
+  })
+
+  yield* llm.push(reply().tool("first", { value: "first" }).wait(deferredAsPromise(gate)))
+  yield* llm.text("summary of the work")
+  yield* llm.text("after compaction")
+
+  const turn = yield* prompt
+    .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "do the work" }] })
+    .pipe(Effect.forkChild)
+  yield* llm.wait(1)
+  yield* waitForBusy(chat.id)
+
+  const queued = input.queued
+    ? yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: input.queued }] })
+        .pipe(Effect.forkChild)
+    : undefined
+  if (input.queued) {
+    yield* pollWithTimeout(
+      sessions
+        .messages({ sessionID: chat.id })
+        .pipe(Effect.map((msgs) => (msgs.filter((msg) => msg.info.role === "user").length === 2 ? true : undefined))),
+      "timed out waiting for the queued prompt to save",
+    )
+  }
+  yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+  const compact = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+
+  yield* Deferred.succeed(gate, void 0)
+  const exits = yield* Effect.all([Fiber.await(turn), Fiber.await(compact), ...(queued ? [Fiber.await(queued)] : [])])
+  expect(exits.every(Exit.isSuccess)).toBe(true)
+
+  return { hits: yield* llm.hits, messages: yield* sessions.messages({ sessionID: chat.id }) }
+})
+
+it.instance("/compact during a turn answers a prompt queued before it after the summary", () =>
+  Effect.gen(function* () {
+    const { hits, messages } = yield* compactDuringTurn({ queued: "queued question" })
+
+    expect(hits).toHaveLength(3)
+    expect(JSON.stringify(hits[1]?.body)).toContain("do the work")
+    expect(JSON.stringify(hits[1]?.body)).not.toContain("queued question")
+    expect(JSON.stringify(hits[2]?.body)).toContain("queued question")
+    const summary = messages.find((msg) => msg.info.role === "assistant" && msg.info.summary)
+    const last = messages.at(-1)
+    expect(last?.info.role).toBe("assistant")
+    expect(last?.parts.some((part) => part.type === "text" && part.text === "after compaction")).toBe(true)
+    const answered = messages.find((msg) => msg.info.id === (last?.info.role === "assistant" && last.info.parentID))
+    expect(answered?.parts.some((part) => part.type === "text" && part.text === "queued question")).toBe(true)
+    expect(answered!.info.id > summary!.info.id).toBe(true)
+  }),
+  30_000,
+)
+
+it.instance("/compact during a turn continues that turn after the summary", () =>
+  Effect.gen(function* () {
+    const { hits, messages } = yield* compactDuringTurn({})
+
+    expect(hits).toHaveLength(3)
+    const last = messages.at(-1)
+    expect(last?.parts.some((part) => part.type === "text" && part.text === "after compaction")).toBe(true)
+    const resumed = messages.find((msg) => msg.info.id === (last?.info.role === "assistant" && last.info.parentID))
+    expect(resumed?.parts[0]).toMatchObject({ type: "text", synthetic: true, metadata: { compaction_continue: true } })
+  }),
+  30_000,
+)
+
 it.instance("assertNotBusy fails with BusyError when loop running", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
