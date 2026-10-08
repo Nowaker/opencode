@@ -112,6 +112,30 @@ function completedCompactions(messages: SessionV1.WithParts[]) {
   })
 }
 
+/*
+ * A /compact sent while a turn is running lands between two steps of that turn, and prompts the user typed
+ * meanwhile sit around it - before the compaction message when they were sent first, after it otherwise.
+ * Neither is history: each is the next thing the user wants answered. They are the user messages nobody has
+ * replied to yet that arrived after the newest assistant message, and carry something the user wrote (a
+ * synthetic-only message is a plugin's note, which no turn was ever meant to answer).
+ */
+function queuedPrompts(messages: SessionV1.WithParts[], parentID: MessageID) {
+  const replied = new Set(messages.flatMap((msg) => (msg.info.role === "assistant" ? [msg.info.parentID] : [])))
+  const newestAssistant = Math.max(
+    0,
+    ...messages.flatMap((msg) => (msg.info.role === "assistant" ? [msg.info.time.created] : [])),
+  )
+  return messages.filter(
+    (msg) =>
+      msg.info.role === "user" &&
+      msg.info.id !== parentID &&
+      msg.info.time.created > newestAssistant &&
+      !replied.has(msg.info.id) &&
+      !msg.parts.some((part) => part.type === "compaction") &&
+      msg.parts.some((part) => (part.type === "text" && !part.synthetic) || part.type === "file"),
+  )
+}
+
 function preserveRecentBudget(input: { cfg: ConfigV1.Info; model: Provider.Model }) {
   return (
     input.cfg.compaction?.preserve_recent_tokens ??
@@ -174,6 +198,10 @@ export interface Interface {
     sessionID: SessionID
     auto: boolean
     overflow?: boolean
+    /** The loop was already running a turn: prompts queued behind it are answered after the summary. */
+    deferQueued?: boolean
+    /** That turn still had work to do: continue it after the summary even though the compaction was manual. */
+    resume?: boolean
   }) => Effect.Effect<"continue" | "stop">
   readonly create: (input: {
     sessionID: SessionID
@@ -322,6 +350,8 @@ const layer = Layer.effect(
       sessionID: SessionID
       auto: boolean
       overflow?: boolean
+      deferQueued?: boolean
+      resume?: boolean
     }) {
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") {
@@ -360,7 +390,11 @@ const layer = Layer.effect(
         ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
-      const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      const queued = input.deferQueued ? queuedPrompts(messages, input.parentID) : []
+      const deferred = new Set(queued.map((msg) => msg.info.id))
+      const history = messages.filter(
+        (msg) => !deferred.has(msg.info.id) && !(compactionPart && msg.info.id === input.parentID),
+      )
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
@@ -465,7 +499,20 @@ const layer = Layer.effect(
         })
       }
 
-      if (result === "continue" && input.auto) {
+      // A manual compaction carries the TUI's model without its variant, so a turn it interrupted continues as
+      // that turn's own prompt did.
+      const continueAs = input.auto
+        ? userMessage
+        : (history
+            .flatMap((msg) =>
+              msg.info.role === "user" && !msg.parts.some((part) => part.type === "compaction") ? [msg.info] : [],
+            )
+            .reduce<SessionV1.User | undefined>(
+              (newest, info) => (!newest || info.time.created >= newest.time.created ? info : newest),
+              undefined,
+            ) ?? userMessage)
+
+      if (result === "continue" && (input.auto || input.resume)) {
         if (replay) {
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
@@ -494,23 +541,23 @@ const layer = Layer.effect(
           }
         }
 
-        if (!replay) {
-          const info = yield* provider.getProvider(userMessage.model.providerID)
+        if (!replay && queued.length === 0) {
+          const info = yield* provider.getProvider(continueAs.model.providerID)
           if (
             (yield* plugin.trigger(
               "experimental.compaction.autocontinue",
               {
                 sessionID: input.sessionID,
-                agent: userMessage.agent,
+                agent: continueAs.agent,
                 model: yield* provider
-                  .getModel(userMessage.model.providerID, userMessage.model.modelID)
+                  .getModel(continueAs.model.providerID, continueAs.model.modelID)
                   .pipe(Effect.orDie),
                 provider: {
                   source: info.source,
                   info,
                   options: info.options,
                 },
-                message: userMessage,
+                message: continueAs,
                 overflow: input.overflow === true,
               },
               { enabled: true },
@@ -521,8 +568,8 @@ const layer = Layer.effect(
               role: "user",
               sessionID: input.sessionID,
               time: { created: Date.now() },
-              agent: userMessage.agent,
-              model: userMessage.model,
+              agent: continueAs.agent,
+              model: continueAs.model,
             })
             const text =
               (input.overflow
@@ -546,6 +593,22 @@ const layer = Layer.effect(
               },
             })
           }
+        }
+      }
+
+      // Messages are ordered by ID, so a queued prompt moves behind the summary by being stored again under a
+      // new one; the loop then answers it as the next turn.
+      if (result === "continue" && !processor.message.error) {
+        for (const msg of queued) {
+          const moved = yield* session.updateMessage({
+            ...msg.info,
+            id: MessageID.ascending(),
+            time: { ...msg.info.time, created: Date.now() },
+          })
+          for (const part of msg.parts) {
+            yield* session.updatePart({ ...part, id: PartID.ascending(), messageID: moved.id })
+          }
+          yield* session.removeMessage({ sessionID: input.sessionID, messageID: msg.info.id })
         }
       }
 
