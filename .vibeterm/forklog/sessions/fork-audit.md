@@ -246,3 +246,9 @@
   were untouched. Installation does not retrofit diagnostics into old
   processes and does not establish a clean observation window. Parent
   independent review and reliability gate decisions remain outside this task.
+- Provenance correction: source `36445e0198` and evidence `c6a666c55d`
+  mistakenly stamped `AI-Harness: Vibeterm 5635825`. The supplied worker
+  session context identifies the actual harness as `Vibeterm e6fd83c`;
+  model `openai/gpt-6.1-sol`, tool `opencode 1.18.34-vt-153-907b3bc518`,
+  platform `linux` and session/parent IDs were accurate. This correction
+  preserves already-pushed protected history rather than force-rewriting it.
