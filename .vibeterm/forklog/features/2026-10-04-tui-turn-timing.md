@@ -85,6 +85,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-08
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
+  - `42ce3944c3`: turn times follow `datetime_format` when set; other days stay date-first. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-07
   [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
   - `1ca196f2b2`: `turn_timing.time`/`duration` and their persisted toggles map onto `footer.time`/`footer.duration` while those keys are unset; legacy capture unchanged. See [footer elements](./2026-10-07-tui-footer-elements.md).

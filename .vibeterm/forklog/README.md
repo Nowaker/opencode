@@ -81,6 +81,12 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-08 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-08-tui-footer-datetime-format.md)
+  - `datetime_format` for every time the TUI writes, each message ID once,
+    and the footer on a block tool's expand hint line; PR #53877 branch and
+    body updated; build and install on both hosts, `YYYY-MM-DD` /
+    `HH:mm:ss` in their `tui.json`.
+
 - [2026-10-07 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-07-tui-footer-elements.md)
   - One `footer` setting with the same value (all, none, important, type
     list) for agent, model, variant, time, duration, total and the new
