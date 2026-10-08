@@ -1,4 +1,5 @@
 import { NamedError } from "@opencode-ai/core/util/error"
+import { TransactionDiagnostic } from "@opencode-ai/core/database/transaction-diagnostic"
 import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
@@ -28,7 +29,8 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
 
       const ref = `err_${crypto.randomUUID().slice(0, 8)}`
 
-      return Effect.logError("failed", { ref, error, cause: Cause.pretty(cause) }).pipe(
+      const sqlite = TransactionDiagnostic.get(error)
+      return Effect.logError("failed", { ref, error, cause: Cause.pretty(cause), ...(sqlite ? { sqlite } : {}) }).pipe(
         Effect.as(
           HttpServerResponse.jsonUnsafe(
             new NamedError.Unknown({

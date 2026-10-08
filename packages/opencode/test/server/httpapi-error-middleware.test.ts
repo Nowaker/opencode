@@ -2,7 +2,10 @@ import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { describe, expect } from "bun:test"
 import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
-import { Effect, Layer } from "effect"
+import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
+import { Effect, Layer, Logger, Predicate, Schema } from "effect"
+import { LockTimeoutError, SqlError } from "effect/unstable/sql/SqlError"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { errorLayer } from "../../src/server/routes/instance/httpapi/middleware/error"
 import { NotFoundError } from "../../src/storage/storage"
@@ -19,6 +22,56 @@ function expectUnknownErrorBody(body: unknown) {
 }
 
 describe("HttpApi error middleware", () => {
+  it.live("logs one sanitized transaction diagnostic without changing the HTTP error body", () => {
+    const messages: unknown[] = []
+    const privateText = "private SQL, parameter, prompt and native message"
+    return Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const error = new SqlError({
+        reason: new LockTimeoutError({
+          operation: "execute",
+          message: privateText,
+          cause: Object.assign(new Error(privateText), { code: "SQLITE_BUSY", errno: 5 }),
+        }),
+      })
+      yield* HttpRouter.add(
+        "GET",
+        "/sql-failure",
+        DatabaseTransaction.immediate(db, () => Effect.fail(error)).pipe(Effect.orDie),
+      ).pipe(Layer.provide(errorLayer), HttpRouter.serve, Layer.build)
+
+      const response = yield* HttpClientRequest.get("/sql-failure").pipe(HttpClient.execute)
+      const body = yield* response.json
+      expect(response.status).toBe(500)
+      expectUnknownErrorBody(body)
+      expect(JSON.stringify(body)).not.toContain(privateText)
+      const logged = messages.filter((entry) => Array.isArray(entry) && entry[0] === "failed")
+      expect(logged).toHaveLength(1)
+      const entry = logged[0]
+      if (
+        !Array.isArray(entry) ||
+        !Predicate.hasProperty(entry[1], "ref") ||
+        !Predicate.hasProperty(entry[1], "sqlite")
+      ) {
+        throw new Error("missing structured failure log")
+      }
+      expect(entry[1].ref).toBe(Schema.decodeUnknownSync(NamedError.Unknown.Schema)(body).data.ref)
+      expect(entry[1].sqlite).toMatchObject({
+        phase: "body",
+        nested: false,
+        attempts: 1,
+        pid: process.pid,
+        reason: "LockTimeoutError",
+        operation: "execute",
+        nativeCode: "SQLITE_BUSY",
+      })
+      expect(JSON.stringify(entry[1].sqlite)).not.toContain(privateText)
+    }).pipe(
+      Effect.provide(Database.layerFromPath(":memory:")),
+      Effect.provide(Logger.layer([Logger.make<unknown, void>((options) => messages.push(options.message))])),
+    )
+  })
+
   it.live("returns a safe body for unknown 500 defects", () =>
     Effect.gen(function* () {
       yield* HttpRouter.add("GET", "/boom", Effect.die(new Error("secret stack marker"))).pipe(
