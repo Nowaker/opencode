@@ -1,6 +1,4 @@
 import { SqliteFailure } from "@opencode-ai/core/database/sqlite-error"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors"
-import { Cause, Option } from "effect"
 
 const operations = {
   execute: "Failed to execute statement",
@@ -13,11 +11,7 @@ const operations = {
 } as const
 
 export function message(error: unknown) {
-  const cause =
-    error instanceof EffectDrizzleQueryError && Cause.isCause(error.cause)
-      ? Cause.findErrorOption(error.cause)
-      : Option.none()
-  const failure = SqliteFailure.parse(Option.isSome(cause) ? cause.value : error)
+  const failure = SqliteFailure.parse(SqliteFailure.unwrap(error))
   if (!failure) return
   const operation = failure.operation ? operations[failure.operation] : "Database operation failed"
   const explanation = failure.nativeCode?.startsWith("SQLITE_BUSY")

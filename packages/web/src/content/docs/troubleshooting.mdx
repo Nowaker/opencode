@@ -18,6 +18,19 @@ Log files are named with timestamps (e.g., `2025-01-09T123456.log`) and the most
 
 You can set the log level with the `--log-level` command-line option to get more detailed debug information. For example, `opencode --log-level DEBUG`.
 
+### Database transaction failures
+
+An unexpected HTTP failure has an `err_*` reference that identifies its server log entry. When a SQLite error passes through immediate transaction recovery, that entry also includes a structured `sqlite` diagnostic:
+
+- `phase`: `acquire` (before the body starts), `body`, `finalize` (commit, release or rollback), or `after_commit` (the adapter returned successfully before its callback failed).
+- `bodyOutcome`: `success` or `failure`, for finalization errors.
+- `attempts` and `elapsedMs`: acquisition attempts and elapsed time through the terminal failure, including waits and cleanup.
+- `nested`: whether this was a nested transaction. A nested `after_commit` does not mean the enclosing transaction committed.
+- `pid`: the failing process, not the process holding a conflicting write lock.
+- `reason`, `operation` and `nativeCode`: recognized SQLite error identifiers, when available.
+
+These fields do not contain SQL, parameters, prompt contents or native error text. They do not change retry behavior: recovery retries only eligible acquisition failures, never entered work or whole prompts. An inner failure keeps its original transaction diagnostic when it propagates through an outer transaction.
+
 ---
 
 ## Storage
