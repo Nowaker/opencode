@@ -41,3 +41,19 @@ test("an unset datetime_format part keeps the locale output", () => {
   )
   expect(Locale.date(yesterday, { time: "HH" })).toBe(new Date(yesterday).toLocaleDateString())
 })
+
+test("a stopwatch shows whole seconds while running", () => {
+  expect(Locale.stopwatch(0)).toBe("0s")
+  expect(Locale.stopwatch(999)).toBe("0s")
+  expect(Locale.stopwatch(37_900)).toBe("37s")
+  expect(Locale.stopwatch(125_400)).toBe("2m 5s")
+  expect(Locale.stopwatch(-50)).toBe("0s")
+})
+
+test("a finished duration keeps one decimal up to 11 minutes", () => {
+  expect(Locale.duration(4_830, true)).toBe("4.8s")
+  expect(Locale.duration(125_370, true)).toBe("2m 5.3s")
+  expect(Locale.duration(659_990, true)).toBe("10m 59.9s")
+  expect(Locale.duration(660_000, true)).toBe("11m 0s")
+  expect(Locale.duration(125_370)).toBe("2m 5s")
+})

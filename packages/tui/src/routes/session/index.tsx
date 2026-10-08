@@ -102,6 +102,7 @@ import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
 import { TuiLayout } from "../../layout"
 import { cellText, idUnder, markOwnIds } from "../../ui/id-click"
+import { secondTicker } from "../../util/ticker"
 import { onClick } from "../../ui/click"
 import { DialogModel } from "../../component/dialog-model"
 
@@ -1740,7 +1741,11 @@ function UserMessage(props: {
               </box>
             </Show>
             <Show when={metadataVisible()}>
-              <text ref={markOwnIds} fg={theme.textMuted}>
+              <text
+                ref={markOwnIds}
+                marginTop={userFooterGap(text(), files().length, time() || messageID()) ? 1 : 0}
+                fg={theme.textMuted}
+              >
                 <Show
                   when={queued()}
                   fallback={
@@ -2356,6 +2361,13 @@ export function InlineToolRow(props: {
       <Switch>
         <Match when={props.spinner}>
           <Spinner color={props.color} children={props.children} />
+          <Show when={props.timestamp}>
+            <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+              <text ref={markOwnIds} fg={props.timestampColor}>
+                {props.timestamp}
+              </text>
+            </box>
+          </Show>
         </Match>
         <Match when={true}>
           <Show
@@ -2751,11 +2763,13 @@ function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
   const messageID = TuiConfig.toolFooterShowsMessageID((type) =>
     type === "tool" ? shows("message_id") : ctx.footer("message_id", "assistant", part.messageID),
   )
+  const duration = shows("duration")
   return {
     time: shows("time"),
-    duration: shows("duration"),
+    duration,
     messageID: messageID ? part.messageID : undefined,
     format: ctx.tui.datetime_format,
+    now: duration && part.state.status === "running" ? secondTicker.watch() : undefined,
   }
 }
 
@@ -2764,20 +2778,42 @@ function expandHint(overflow: boolean, expanded: boolean) {
   return expanded ? "Click to collapse" : "Click to expand"
 }
 
+// A running call shows when it started and a whole-second stopwatch up to `now`; a finished one
+// when it ended and how long it ran.
 export function formatToolTimestamp(
   state: ToolPart["state"],
-  show: { time: boolean; duration: boolean; messageID?: string; format?: Locale.DateTimeFormat } = {
+  show: {
+    time: boolean
+    duration: boolean
+    messageID?: string
+    format?: Locale.DateTimeFormat
+    now?: number
+  } = {
     time: true,
     duration: true,
   },
 ) {
-  if (state.status !== "completed" && state.status !== "error") return
-  const details = [
-    show.time && Locale.todayTimeOrDateFirst(state.time.end, show.format),
-    show.duration && Locale.duration(Math.max(0, state.time.end - state.time.start)),
-    show.messageID,
-  ].flatMap((detail) => (detail ? [detail] : []))
-  return details.length ? details.join(" · ") : undefined
+  if (state.status === "pending") return
+  const running = state.status === "running"
+  const details = running
+    ? [
+        show.time && Locale.todayTimeOrDateFirst(state.time.start, show.format),
+        show.duration && show.now !== undefined && Locale.stopwatch(show.now - state.time.start),
+        show.messageID,
+      ]
+    : [
+        show.time && Locale.todayTimeOrDateFirst(state.time.end, show.format),
+        show.duration && Locale.duration(Math.max(0, state.time.end - state.time.start), true),
+        show.messageID,
+      ]
+  const shown = details.flatMap((detail) => (detail ? [detail] : []))
+  return shown.length ? shown.join(" · ") : undefined
+}
+
+// A prompt's footer (time, message ID) sits one blank line below its text, unless the file chips
+// already pad it or the text itself ends in a blank line.
+export function userFooterGap(text: string, files: number, footer: boolean) {
+  return footer && files === 0 && !/\n[ \t]*$/.test(text)
 }
 
 export function formatSubagentToolcalls(count: number) {

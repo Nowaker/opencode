@@ -8,6 +8,7 @@ import {
   formatSubagentTitle,
   formatSubagentToolcalls,
   formatToolTimestamp,
+  userFooterGap,
   InlineToolRow,
   parseApplyPatchFiles,
   parseDiagnostics,
@@ -268,6 +269,29 @@ describe("TUI inline tool wrapping", () => {
     expect(lines).toContain("1:07 PM · 1.2s")
   })
 
+  test("formats a running tool call's start time and whole-second stopwatch", () => {
+    const start = new Date()
+    start.setHours(16, 25, 29, 0)
+    const state = { status: "running" as const, input: {}, time: { start: start.getTime() } }
+    const time = Locale.todayTimeOrDateFirst(start.getTime())
+    expect(formatToolTimestamp(state, { time: true, duration: true, now: start.getTime() + 37_600 })).toBe(
+      `${time} · 37s`,
+    )
+    expect(formatToolTimestamp(state, { time: true, duration: true, now: start.getTime() + 125_000 })).toBe(
+      `${time} · 2m 5s`,
+    )
+    expect(formatToolTimestamp(state, { time: false, duration: false })).toBeUndefined()
+    expect(formatToolTimestamp({ status: "pending", input: {}, raw: "" })).toBeUndefined()
+  })
+
+  test("a prompt's footer sits one blank line below its text", () => {
+    expect(userFooterGap("hello", 0, true)).toBe(true)
+    expect(userFooterGap("hello\n", 0, true)).toBe(false)
+    expect(userFooterGap("hello\n  ", 0, true)).toBe(false)
+    expect(userFooterGap("hello", 1, true)).toBe(false)
+    expect(userFooterGap("hello", 0, false)).toBe(false)
+  })
+
   test("formats a finished tool call's end time and duration", () => {
     const end = new Date()
     end.setHours(13, 7, 0, 0)
@@ -275,7 +299,7 @@ describe("TUI inline tool wrapping", () => {
     const input = {}
     const time = Locale.todayTimeOrDateFirst(end.getTime())
     expect(formatToolTimestamp({ status: "pending", input, raw: "" })).toBeUndefined()
-    expect(formatToolTimestamp({ status: "running", input, time: { start } })).toBeUndefined()
+    expect(formatToolTimestamp({ status: "running", input, time: { start } })).toBe(Locale.todayTimeOrDateFirst(start))
     expect(
       formatToolTimestamp({
         status: "completed",
