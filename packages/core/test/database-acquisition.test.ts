@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing"
 import { LockTimeoutError, SqlError } from "effect/unstable/sql/SqlError"
 import { Database } from "../src/database/database"
 import { DatabaseTransaction } from "../src/database/transaction"
+import { TransactionDiagnostic } from "../src/database/transaction-diagnostic"
 import { testEffect } from "./lib/effect"
 import { transactionClient } from "./fixture/transaction-client"
 
@@ -43,6 +44,14 @@ it.effect("caps retry delays and returns the last original error at the elapsed 
     expect(waits.reduce((sum, wait) => sum + wait, 0)).toBe(60_000)
     expect(started.every((time) => time < 60_000)).toBe(true)
     expect(started).toHaveLength(waits.length)
+    const terminal = errors.at(-1)
+    expect(TransactionDiagnostic.get(terminal)).toMatchObject({
+      phase: "acquire",
+      nested: false,
+      attempts: started.length,
+      elapsedMs: 60_000,
+      nativeCode: "SQLITE_BUSY",
+    })
   }),
 )
 

@@ -1,9 +1,10 @@
 export * as DatabaseTransaction from "./transaction"
 
-import { Clock, Effect, Option } from "effect"
+import { Cause, Clock, Effect, Exit, Option } from "effect"
 import { isSqlError, type SqlError } from "effect/unstable/sql/SqlError"
 import type { Database } from "./database"
 import { SqliteFailure } from "./sqlite-error"
+import { TransactionDiagnostic } from "./transaction-diagnostic"
 
 export function immediate<A, E, R, E2 = never, R2 = never>(
   db: Database.Interface["db"],
@@ -15,11 +16,32 @@ export function immediate<A, E, R, E2 = never, R2 = never>(
       Effect.gen(function* () {
         const nested = Option.isSome(yield* Effect.serviceOption(db.$client.transactionService))
         const started = yield* Clock.currentTimeMillis
+        let attempts = 0
+        let phase: TransactionDiagnostic.Details["phase"] = "acquire"
+        let bodyOutcome: TransactionDiagnostic.Details["bodyOutcome"]
+        const bodyErrors = new Set<SqlError>()
+        function errors(cause: Cause.Cause<unknown>) {
+          return cause.reasons.flatMap((reason) => {
+            switch (reason._tag) {
+              case "Fail": {
+                const failure = SqliteFailure.unwrap(reason.error)
+                return failure ? [failure] : []
+              }
+              case "Die": {
+                const failure = SqliteFailure.unwrap(reason.defect)
+                return failure ? [failure] : []
+              }
+              case "Interrupt":
+                return []
+            }
+          })
+        }
         function acquire(last?: SqlError, delay = 50): Effect.Effect<A, E | SqlError, R> {
           return Effect.gen(function* () {
             yield* restore(Effect.void)
             if (last && (yield* Clock.currentTimeMillis) - started >= 60_000) return yield* Effect.fail(last)
             let entered = false
+            attempts++
             return yield* db
               .transaction(
                 () =>
@@ -28,7 +50,17 @@ export function immediate<A, E, R, E2 = never, R2 = never>(
                     yield* Effect.sync(() => {
                       entered = true
                     })
-                    return yield* Effect.suspend(body)
+                    return yield* Effect.suspend(body).pipe(
+                      Effect.onExit((exit) =>
+                        Effect.sync(() => {
+                          bodyOutcome = Exit.isSuccess(exit) ? "success" : "failure"
+                          if (Exit.isFailure(exit)) {
+                            for (const error of errors(exit.cause)) bodyErrors.add(error)
+                          }
+                          phase = "finalize"
+                        }),
+                      ),
+                    )
                   }),
                 { behavior: "immediate" },
               )
@@ -46,9 +78,31 @@ export function immediate<A, E, R, E2 = never, R2 = never>(
               )
           })
         }
-        const value = yield* acquire()
-        if (afterCommit) yield* Effect.suspend(() => afterCommit(value))
-        return value
+        return yield* Effect.gen(function* () {
+          const value = yield* acquire()
+          if (afterCommit) {
+            phase = "after_commit"
+            yield* Effect.suspend(() => afterCommit(value))
+          }
+          return value
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              const elapsedMs = (yield* Clock.currentTimeMillis) - started
+              for (const error of errors(cause)) {
+                const origin = bodyErrors.has(error) ? "body" : phase
+                TransactionDiagnostic.record(error, {
+                  phase: origin,
+                  ...(origin === "finalize" && bodyOutcome ? { bodyOutcome } : {}),
+                  nested,
+                  attempts,
+                  elapsedMs,
+                })
+              }
+              return yield* Effect.failCause(cause)
+            }),
+          ),
+        )
       }),
     ),
   )
