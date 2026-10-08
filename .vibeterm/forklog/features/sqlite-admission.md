@@ -5,11 +5,11 @@
 - Status: active
 - Integration branch: `dev-nowaker`
 - Development branches: `sqlite-begin-retry`, `sqlite-error-diagnosis`,
-  `fork-audit-ready`
+  `fork-audit-ready`, `prompt-sql-contention`
 - First integrated commits: `651f31f376`, `c5764cbdbf`, `e49541777f`,
   `28aa286c86`, `115310f98c`
 - Source workers: `ses_eecf4b409ffeFKx2qAXipWliKo`,
-  `ses_eecf11b3affevOqpKUU3vncF7S`
+  `ses_eecf11b3affevOqpKUU3vncF7S`, `ses_eebf2e45cfferJAfg1d5eBsDB6`
 - Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
 - Upstream PR: blocked; first completed 24-hour live gate failed
 
@@ -33,6 +33,7 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
 | `core/event.ts`, durable commit/remove/claim | IMMEDIATE admission recovery; durable wake remains protected and post-commit |
 | `opencode/session/sql-error.ts`, `SqlErrorMessage.message` | Known SQL/Drizzle cause becomes fixed safe diagnosis, never query/params/native free text |
 | `MessageV2.fromError` | Preserve `UnknownError` wire shape and provider classification |
+| `core/database/transaction-diagnostic.ts`, HTTP error middleware | Preserve original SQL error identity; add fixed-vocabulary transaction phase, attempts, elapsed time and PID to the existing failure log |
 
 ## Verification
 
@@ -65,6 +66,14 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   across a crash after COMMIT. Maintenance startup is a separate fork feature.
 - Exact tests, rollout coverage and live-gate status are in Vibeterm's
   canonical `docs/opencode-patches/README.md` inventory.
+- Transaction diagnostics survive error-to-defect conversion via a private
+  weak map, not cause annotations. Metadata identifies the failing process,
+  not the competing writer; elapsed time includes cleanup, not only lock wait.
+- `finalize` distinguishes successful versus failed body completion, without
+  claiming that every finalization error is a failed COMMIT. Inner transaction
+  failures retain their first origin. Reusing the same SQL error object for
+  unrelated operations would retain that first diagnostic; production errors
+  are propagated by identity rather than repurposed.
 
 ## Timeline
 
@@ -83,3 +92,7 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   diagnostics `46d697e6ff` / `691eb77ded`; this entry does not claim their
   deployment or diagnose historical TUI failures from the new source. Full
   report, coverage and constraints remain in the canonical Vibeterm inventory.
+- 2026-10-07 [`ses_eebf2e45cfferJAfg1d5eBsDB6`](../sessions/fork-audit.md#prompt-failure-follow-up-2026-10-07) -
+  a desktop failure in vt-126 already had acquisition recovery. Its retained
+  log lacked code, phase and attempts, so attribution remained unknown.
+  Add diagnostic transport and HTTP logging without speculative retry changes.

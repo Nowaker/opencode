@@ -82,6 +82,10 @@ carries every feature forward unchanged. That commit includes the full
     stash it beside newer text, reconcile an ambiguous send by its client
     message ID before resending; build and install on both hosts.
 
+- [2026-10-07 `ses_eebf2e45cfferJAfg1d5eBsDB6`](./sessions/fork-audit.md#prompt-failure-follow-up-2026-10-07)
+  - Record transaction phase and bounded SQLite identifiers at the existing
+    HTTP failure log, without changing recovery or the original error.
+
 - [2026-10-06 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-06-tui-instant-prompt.md)
   - Paint an editable home prompt within ~50 ms of `opencode` and capture
     early input (`startup.instant_prompt`, `startup.early_input`), then the

@@ -148,3 +148,51 @@
   are landed and idle, while screenshots remain on its own user question.
 - Retry red-green worker: `ses_eed9a40efffeti1YcfRukbhErW`, isolated in
   `retry-regression-audit`; no integration or deployment delegated.
+
+## Prompt failure follow-up (2026-10-07)
+
+- Session: `ses_eebf2e45cfferJAfg1d5eBsDB6`, Hephaestus on m4max/macOS;
+  branch `prompt-sql-contention`, cut from freshly pulled `dev-nowaker`
+  `0f9bbfb297`. Existing retry and `.gitignore` edits remain untouched.
+- Feature: [SQLite admission recovery and safe diagnosis](../features/sqlite-admission.md).
+- Desktop incident: `err_436ddd0f`, `run=831f8a68`,
+  `2026-10-07T01:39:47.520Z`, SQL lock timeout while creating a user message;
+  retry candidate `msg_114047258001ysGXEiQ6ZqTZCo` persisted 10.648s later.
+  The actual vt-126 bundle already contained acquisition recovery. Retained
+  logs did not establish the failed phase or blocking writer.
+- Controlled failures reproduced missing diagnostics before implementation.
+  Phase/identity tests distinguish acquisition, body, finalization and callback
+  failure; actual durable event conversion preserves diagnostic lookup.
+  HTTP tests retain one failure log and the same safe 500/reference response.
+- No new retry, timeout change, writer attribution or historical root-cause
+  claim. Desktop TUI coordinator owns draft recovery; dotfiles owns independent
+  one-minute sysstat/disk-counter deployment.
+- Initial checks: core and opencode typechecks passed; existing child-writer
+  SQL serialization test passed. Final focused gate: 96 core and 31 opencode
+  tests passed. Manual loopback HTTP driver returned safe 500/ref for a real
+  UNIQUE failure and 200/committed afterward; one failure log contained
+  `sqlite.phase=body`, `attempts=1`, `SQLITE_CONSTRAINT_UNIQUE`, elapsed time
+  and the failing PID. No extra retry or duplicate response was introduced.
+- Actual adapter QA exposed the known Drizzle wrapper boundary; its controlled
+  unwrapping is shared with the existing SQL error serializer, whose privacy
+  regressions still pass. Temporary driver, logs and endpoint were removed.
+- Code commits `46d697e6ff` / `691eb77ded` fast-forwarded onto a refreshed
+  `dev-nowaker` and pushed to GitLab and GitHub. The pre-push hook passed all
+  30 workspace typechecks. Both hosts installed from their own pulled source
+  using the tracked builder: `1.18.34-vt-151-907b3bc518`.
+- Installed binary QA used isolated homes/databases and loopback Basic auth,
+  with no provider call (`noReply`). On both hosts: health 200, warm prompt
+  200, writer-held admission 500, then admission 200 after release. The
+  compiled log showed `phase=acquire`, `SQLITE_BUSY`, 11 attempts and elapsed
+  time 61,587ms (m4max) / 61,825ms (desktop), confirming the documented
+  elapsed budget is not a hard request timeout. The failing PIDs were 77473
+  and 1831071, not the writer PIDs.
+- QA collected the existing stderr log formatter (`OPENCODE_PRINT_LOGS=1`)
+  to avoid confusing buffered file logging with missing diagnostics.
+  Desktop's private QA server did not exit on TERM and required a CWD-guarded
+  KILL during cleanup. No live server, TUI, default tmux or Meridian restart.
+- TUI recovery remains delegated to desktop coordinator
+  `ses_ef8235798ffejGr4sa22eXmVNv`, owner `ses_ee74c94dfffe71uYsYScadAio7`.
+  Desktop sysstat deployed independently in dotfiles commit `cfcac55`;
+  natural minute samples and successful collection were independently
+  checked. Its next newly created daily DISK archive check is agent-scheduled.
