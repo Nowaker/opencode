@@ -10,7 +10,7 @@ import {
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
 import type { TuiComposerCaret } from "@opencode-ai/plugin/tui"
-import { createComputed, createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
+import { createComputed, createEffect, createMemo, onMount, createSignal, onCleanup, on, untrack, Show, Switch, Match } from "solid-js"
 import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -35,6 +35,8 @@ import { usePromptHistory, type PromptInfo } from "../../prompt/history"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
+import { usePromptAdmission } from "../../prompt/admission"
+import { Identifier } from "@opencode-ai/core/id/id"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
@@ -180,6 +182,7 @@ export function Prompt(props: PromptProps) {
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const history = usePromptHistory()
   const stash = usePromptStash()
+  const admission = usePromptAdmission()
   const keymap = useOpencodeKeymap()
   const agentShortcut = useCommandShortcut("agent.cycle")
   const paletteShortcut = useCommandShortcut("command.palette.show")
@@ -887,8 +890,68 @@ export function Prompt(props: PromptProps) {
     )
   }
 
+  const admissions = createMemo(() => (props.sessionID ? admission.entries(props.sessionID) : []))
+  const unconfirmed = createMemo(() => admissions().filter((entry) => entry.state === "unknown"))
+  const [unsent, setUnsent] = createSignal<string>()
+
+  // A draft the server turned down comes back to the composer, unless something was typed there since: then
+  // it goes to the stash, so neither draft overwrites the other.
+  function giveBack(draft: PromptInfo) {
+    if (input.plainText || store.prompt.parts.length > 0) {
+      stash.push({ input: draft.input, parts: draft.parts })
+      return "saved to stash"
+    }
+    input.setText(draft.input)
+    setStore("prompt", { input: draft.input, parts: draft.parts })
+    restoreExtmarksFromParts(draft.parts)
+    input.gotoBufferEnd()
+    return "restored to the prompt"
+  }
+
+  createEffect(() => {
+    const rejected = admissions().filter((entry) => entry.state === "rejected")
+    untrack(() =>
+      rejected.forEach((entry) => {
+        if (!input || input.isDestroyed) return
+        const error = entry.error ?? "unknown error"
+        const draft = admission.release(entry.messageID)
+        if (!draft) return
+        const notice = `Not sent (${error}) - ${giveBack(draft)}`
+        setUnsent(notice)
+        toast.show({ title: "Failed to send prompt", message: notice, variant: "error" })
+      }),
+    )
+  })
+
+  function resendUnconfirmed() {
+    unconfirmed().forEach((entry) => void admission.resend(entry.messageID))
+  }
+
   const stashCommands = createMemo(() =>
     [
+      {
+        title: "Resend unconfirmed prompt",
+        name: "prompt.unconfirmed.resend",
+        category: "Prompt",
+        enabled: unconfirmed().length > 0,
+        run: () => {
+          resendUnconfirmed()
+          dialog.clear()
+        },
+      },
+      {
+        title: "Restore unconfirmed prompt",
+        name: "prompt.unconfirmed.restore",
+        category: "Prompt",
+        enabled: unconfirmed().length > 0,
+        run: () => {
+          unconfirmed().forEach((entry) => {
+            const draft = admission.release(entry.messageID)
+            if (draft) setUnsent(`Prompt may already have been received - ${giveBack(draft)}`)
+          })
+          dialog.clear()
+        },
+      },
       {
         title: "Stash prompt",
         name: "prompt.stash",
@@ -1248,34 +1311,29 @@ export function Prompt(props: PromptProps) {
       })
     } else {
       move.startSubmit()
-      sdk.client.session
-        .prompt(
-          {
-            sessionID,
-            ...selectedModel,
-            agent: agent.name,
-            model: selectedModel,
-            variant,
-            parts: [
-              ...editorParts,
-              {
-                type: "text",
-                text: inputText,
-              },
-              ...nonTextParts,
-            ],
-          },
-          { throwOnError: true },
-        )
-        .catch((error) => {
-          toast.show({
-            title: "Failed to send prompt",
-            message: errorMessage(error),
-            variant: "error",
-          })
-        })
+      // IDs are generated here so a failed send can be looked up and resent without a duplicate. Only the leading
+      // parts get one: the server gives the rest IDs later, which keeps the parts in the order they were sent.
+      const messageID = Identifier.ascending("message")
+      const leading = editorParts.map((part) => ({ ...part, id: Identifier.ascending("part") }))
+      const textPartID = Identifier.ascending("part")
+      admission.submit({
+        messageID,
+        sessionID,
+        textPartID,
+        prompt: structuredClone(unwrap({ ...store.prompt, mode: currentMode })),
+        body: {
+          sessionID,
+          messageID,
+          ...selectedModel,
+          agent: agent.name,
+          model: selectedModel,
+          variant,
+          parts: [...leading, { id: textPartID, type: "text", text: inputText }, ...nonTextParts],
+        },
+      })
       if (editorParts.length > 0) editor.markSelectionSent()
     }
+    setUnsent(undefined)
     history.append({
       ...store.prompt,
       mode: currentMode,
@@ -1773,6 +1831,25 @@ export function Prompt(props: PromptProps) {
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
+            <Match when={unconfirmed()[0]}>
+              {(entry) => (
+                <box paddingLeft={3} paddingRight={2} flexGrow={1} flexShrink={1} onMouseUp={resendUnconfirmed}>
+                  <text fg={theme.warning} wrapMode="word">
+                    Prompt may not have been received: {entry().error ?? "no response"}
+                    <span style={{ fg: theme.textMuted }}> · click or {paletteShortcut()} "Resend unconfirmed prompt"</span>
+                  </text>
+                </box>
+              )}
+            </Match>
+            <Match when={admissions().find((entry) => entry.state === "checking" || entry.slow)}>
+              {(entry) => (
+                <box paddingLeft={3}>
+                  <Spinner color={theme.accent}>
+                    {entry().state === "checking" ? "Checking whether the prompt was received" : "Sending prompt"}
+                  </Spinner>
+                </box>
+              )}
+            </Match>
             <Match when={status().type !== "idle"}>
               <box
                 flexDirection="row"
@@ -1854,6 +1931,15 @@ export function Prompt(props: PromptProps) {
                   </text>
                 </Show>
               </box>
+            </Match>
+            <Match when={unsent()}>
+              {(notice) => (
+                <box paddingLeft={3} paddingRight={2} flexGrow={1} flexShrink={1}>
+                  <text fg={theme.error} wrapMode="word">
+                    {notice()}
+                  </text>
+                </box>
+              )}
             </Match>
             <Match when={!props.sessionID && startupNotice()}>
               <box marginLeft={TuiLayout.Prompt.statusInset}>{startupNoticeView()}</box>
