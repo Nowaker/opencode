@@ -211,3 +211,28 @@ test("loading all keeps every later message loaded too", async () => {
     app.renderer.destroy()
   }
 })
+
+test("a prompt sent again with the same ID replaces the first copy instead of showing twice", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const { app, emit, sync } = await mount(serve(3), tmp.path, { transcript: { max_messages: 10 } })
+  try {
+    await sync.session.sync(sessionID)
+    const prompt = message(4)
+    emit(global({ id: "evt_first", type: "message.updated", properties: { sessionID, info: prompt } }))
+    await wait(() => sync.data.message[sessionID].at(-1)?.id === id(4))
+    emit(global({ id: "evt_reply", type: "message.updated", properties: { sessionID, info: message(5) } }))
+    await wait(() => sync.data.message[sessionID].at(-1)?.id === id(5))
+    emit(
+      global({
+        id: "evt_again",
+        type: "message.updated",
+        properties: { sessionID, info: { ...prompt, time: { created: 2000 } } },
+      }),
+    )
+    await wait(() => sync.data.message[sessionID].at(-1)?.id === id(4))
+    expect(ids(sync.data.message[sessionID])).toEqual([0, 1, 2, 5, 4])
+  } finally {
+    app.renderer.destroy()
+  }
+})

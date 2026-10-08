@@ -348,12 +348,29 @@ export const {
             setStore("message", event.properties.info.sessionID, [event.properties.info])
             break
           }
-          const result = search(messages, messageKey(event.properties.info), messageKey)
-          if (result.found) {
-            setStore("message", event.properties.info.sessionID, result.index, reconcile(event.properties.info))
+          const found = search(messages, messageKey(event.properties.info), messageKey)
+          if (found.found) {
+            setStore("message", event.properties.info.sessionID, found.index, reconcile(event.properties.info))
             break
           }
           const sessionID = event.properties.info.sessionID
+          // A prompt sent again with the same message ID is stored again with a new creation time, so it moves
+          // instead of appearing twice.
+          const stale = messages.findIndex((message) => message.id === event.properties.info.id)
+          if (stale !== -1)
+            batch(() => {
+              setStore(
+                "message",
+                sessionID,
+                produce((draft) => {
+                  draft.splice(stale, 1)
+                }),
+              )
+              const gap = store.hidden[sessionID]
+              if (gap && stale < gap.head) setStore("hidden", sessionID, "head", gap.head - 1)
+            })
+          const result =
+            stale === -1 ? found : search(store.message[sessionID], messageKey(event.properties.info), messageKey)
           const hidden = hiddenOf(sessionID)
           // An update to a message inside the gap must not pull it back into view.
           if (hidden.count > 0 && result.index === hidden.head) break
