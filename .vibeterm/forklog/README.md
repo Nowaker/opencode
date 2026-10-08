@@ -79,8 +79,13 @@ carries every feature forward unchanged. That commit includes the full
 - [Answer prompts queued around /compact and resume the turn it cut](./features/2026-10-07-compaction-queued-resume.md)
 - [Act on clicks on the shown agent, model, IDs, usage, files and todos](./features/2026-10-07-tui-click-controls.md)
 - [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
+- [Pass messageID to the shell.env hook](./features/2026-10-08-shell-env-message-id.md)
 
 ## Session records
+
+- [2026-10-08 `ses_ee26f677effe6fzY9wzepyBf13`](./sessions/2026-10-08-shell-env-message-id.md)
+  - `messageID` in the `shell.env` hook input; upstream PR #54032; build
+    and install on both hosts.
 
 - [2026-10-08 `ses_ee2d6b316ffeQ4Lr6J5QvW225u`](./sessions/2026-10-08-v1-db-guard-gate.md)
   - `.vibeterm/build.sh` refuses to install a binary the v1 database guard
