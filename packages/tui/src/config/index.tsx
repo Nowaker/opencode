@@ -193,7 +193,7 @@ export const Footer = Schema.Struct({
   ),
   time: footerElement(
     [
-      "When an entry happened: the time of day if today, the date and time otherwise.",
+      "When an entry happened: the time of day if today, the date and time otherwise. A running tool call shows when it started.",
       "Applies to: user (prompt sent), assistant (turn finished, in its footer), text (text block finished, below it),",
       "reasoning (thinking block finished), tool (every tool call, plugin and MCP tools included, when it finished),",
       "error (turn failed, in its error box),",
@@ -205,7 +205,7 @@ export const Footer = Schema.Struct({
   duration: footerElement(
     [
       "How long an entry took. Applies to: assistant (the turn's own message), reasoning (the thinking block),",
-      "tool (every tool call).",
+      "tool (every tool call: while it runs, a stopwatch in whole seconds; once finished, tenths of a second up to 11 minutes).",
       "Default: reasoning; turns follow /turn-durations (turn_timing.duration); tool calls when the legacy",
       "timestamps list includes 'tool'.",
     ].join(" "),

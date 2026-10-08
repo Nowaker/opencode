@@ -79,12 +79,17 @@ export function number(num: number): string {
   return num.toString()
 }
 
-export function duration(input: number) {
+// `tenths` keeps the tenth of a second past the first minute, up to 11 minutes: `2m 5.3s`.
+export function duration(input: number, tenths = false) {
   if (input < 1000) {
     return `${input}ms`
   }
   if (input < 60000) {
     return `${(input / 1000).toFixed(1)}s`
+  }
+  if (tenths && input < 660000) {
+    const minutes = Math.floor(input / 60000)
+    return `${minutes}m ${(Math.floor((input % 60000) / 100) / 10).toFixed(1)}s`
   }
   if (input < 3600000) {
     const minutes = Math.floor(input / 60000)
@@ -99,6 +104,12 @@ export function duration(input: number) {
   const days = Math.floor(input / 86400000)
   const hours = Math.floor((input % 86400000) / 3600000)
   return `${days}d ${hours}h`
+}
+
+// Elapsed time of something still running, in whole seconds: `0s`, `37s`, `2m 5s`.
+export function stopwatch(input: number) {
+  if (input < 60000) return `${Math.floor(Math.max(0, input) / 1000)}s`
+  return duration(input)
 }
 
 export function truncate(str: string, len: number): string {

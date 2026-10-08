@@ -506,6 +506,10 @@ A type a key does not apply to has no effect, so `"all"` and `"important"` selec
 
 Each message ID appears once. A tool call belongs to its assistant message, so the tool call shows the message's ID only when the message's own footer does not: with `"message_id": "tool"`, or when `"important"` leaves that step's footer out. With `"all"`, the ID is in the assistant footer and the tool calls show only their time and duration.
 
+While a tool call runs, its footer shows when it started and a stopwatch that ticks every second in whole seconds: `16:25:29 · 37s`, `16:25:29 · 2m 5s`. Once it finishes, the footer shows when it finished and how long it ran, with tenths of a second up to 11 minutes: `4.8s`, `2m 5.3s`, then `11m 0s`. One clock drives every running call, and it stops when none is running.
+
+A prompt's footer sits one blank line below the prompt's text, unless the text already ends with a blank line or file chips sit between them.
+
 ```json title="tui.json"
 {
   "footer": {
