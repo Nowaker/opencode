@@ -35,6 +35,7 @@ import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { Effect, Schema } from "effect"
+import { SqlErrorMessage } from "./sql-error"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
@@ -620,6 +621,8 @@ export function fromError(
   e: unknown,
   ctx: { providerID: ProviderV2.ID; aborted?: boolean },
 ): NonNullable<Assistant["error"]> {
+  const sql = SqlErrorMessage.message(e)
+  if (sql !== undefined) return new NamedError.Unknown({ message: sql }, { cause: e }).toObject()
   switch (true) {
     case e instanceof DOMException && e.name === "AbortError":
       return new AbortedError(
