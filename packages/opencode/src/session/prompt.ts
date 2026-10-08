@@ -553,7 +553,7 @@ const layer = Layer.effect(
             Effect.gen(function* () {
               const shellEnv = yield* plugin.trigger(
                 "shell.env",
-                { cwd, sessionID: input.sessionID, callID: part.callID },
+                { cwd, sessionID: input.sessionID, messageID: part.messageID, callID: part.callID },
                 { env: {} },
               )
               const cmd = ChildProcess.make(sh, args, {

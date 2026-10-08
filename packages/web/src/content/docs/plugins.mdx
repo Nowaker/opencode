@@ -273,6 +273,8 @@ export const InjectEnvPlugin = async () => {
 }
 ```
 
+`input` always has `cwd`. A shell command run for a session also carries `sessionID`, the `messageID` of the assistant message holding the tool call, and that call's `callID`: the shell tool and the `!` command both pass them. A user terminal (PTY) has no session and passes `cwd` only.
+
 ---
 
 ### Custom tools
