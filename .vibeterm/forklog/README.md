@@ -77,8 +77,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Show the turn's variant in assistant message footers](./features/2026-10-06-tui-footer-variant.md)
 - [Answer prompts queued around /compact and resume the turn it cut](./features/2026-10-07-compaction-queued-resume.md)
 - [Run the shown agent, model, variant, hints, title and MCPs on click](./features/2026-10-07-tui-click-controls.md)
+- [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
 
 ## Session records
+
+- [2026-10-07 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-07-tui-footer-elements.md)
+  - One `footer` setting with the same value (all, none, important, type
+    list) for agent, model, variant, time, duration, total and the new
+    message ID, on every tool call too; PR #53877 (bot-closed, v1); build
+    and install on both hosts, every key `"all"` in their `tui.json`.
 
 - [2026-10-07 `ses_ee68a7aceffeiGmNH03eS7PU61`](./sessions/2026-10-07-tui-click-controls.md)
   - Click the prompt's agent, model, variant and hints, the sidebar title and

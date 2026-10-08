@@ -85,6 +85,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-07
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
+  - `1ca196f2b2`: `turn_timing.time`/`duration` and their persisted toggles map onto `footer.time`/`footer.duration` while those keys are unset; legacy capture unchanged. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-06
   [`ses_eec3e5569ffe2otGPxp4LBssZb`](../sessions/2026-10-06-tui-part-timestamps.md) -
   a set `timestamps` key in `tui.json` now overrides `turn_timing.time` and

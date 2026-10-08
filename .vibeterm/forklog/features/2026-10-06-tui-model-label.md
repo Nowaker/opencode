@@ -66,6 +66,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Timeline
 
+- 2026-10-07
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
+  - `1ca196f2b2`: tui.mdx gains the missing `model_label` entry; the model is the `model` entry of `details()`. Re-verified with `model_label: "id"` captures.
+
 - 2026-10-06
   [`ses_eec44cf7effeFCqQefM0NkWLaW`](../sessions/2026-10-06-tui-model-label.md)
   - `66ce641060`: introduce; upstream issue #53638 and PR #53639; build and
