@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `tui-footer-variant` (`021d0625ad` on upstream `dev` `a697115b20`, the upstream PR head); landing branch `footer-variant-land`
+- Development branch(es): `tui-footer-variant` (`b762567377` on upstream `dev` `a697115b20`, the upstream PR head); landing branch `footer-variant-land`
 - First local commit: `bd9676d499`
-- Current local commit(s): `bd9676d499`
+- Current local commit(s): `bd9676d499`; the render now lives in item 24's `1ca196f2b2` footer list, dimmed by its `efc7b3db27`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `a697115b20` (upstream `dev`)
 - Upstream: issue [#53846](https://github.com/anomalyco/opencode/issues/53846), PR [#53848](https://github.com/anomalyco/opencode/pull/53848) against v1 `dev`. Its body opens with the user's note that v1 is the maintenance branch and a v2 version follows once their plugin setup runs on v2. **Needs a v2 port later.**
@@ -55,6 +55,7 @@ Clarified by the user on 2026-10-07, relayed by the coordinator:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `bd9676d499` | 2026-10-07 | `footer_variant` setting; variant in the assistant footer; tui.mdx | `Info.footer_variant` in `packages/tui/src/config/index.tsx`; the `ctx.tui.footer_variant && props.message.variant` `Show` between `{model()}` and the turn-time `Show` in `AssistantMessage` in `packages/tui/src/routes/session/index.tsx`; `footer_variant` bullet in `packages/web/src/content/docs/tui.mdx`; `test/config.test.tsx` |
+| `efc7b3db27` | 2026-10-07 | variant in the muted color like the other footer details (item 24's commit, `ses_ee68aab01ffei41gwUGJ5ESj6W`) | the `variant` entry of `details()` in `AssistantMessage` in `packages/tui/src/routes/session/index.tsx`, `fg: theme.textMuted` |
 
 ## Verification
 
@@ -89,6 +90,17 @@ Clarified by the user on 2026-10-07, relayed by the coordinator:
   - `021d0625ad` on `tui-footer-variant` rebased onto upstream `dev`
     `a697115b20` with the tui.mdx bullet, no AI trailers; upstream issue
     #53846 and PR #53848, opened after the user asked for v1 PRs again.
+
+  - User feedback: "i don't like the yellow color we're using there. all
+    other footer [parts] except agent name are dimmed, let's preserve that."
+    `tui-footer-variant` amended to `b762567377` (variant in
+    `theme.textMuted`), force-pushed with lease to both remotes; PR #53848
+    is closed by the bot and GitHub does not move a closed PR's head, so it
+    still shows `021d0625ad`. `dev-nowaker` got the same change as item 24's
+    `efc7b3db27`; built and installed `1.18.34-vt-170-907b3bc518` on desktop
+    and m4max. Isolated `capture-pane -e`: before, `high` in
+    `38;2;245;167;66` (warning); after, the whole
+    ` · QA Model · high · 4.3s` run in `38;2;128;128;128`.
 
 ## Current maintenance notes
 
