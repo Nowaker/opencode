@@ -1542,6 +1542,90 @@ it.instance("prompt submitted during an active run is included in the next LLM i
   }),
 )
 
+const sameIDPrompt = (sessionID: SessionID, messageID: MessageID) => ({
+  sessionID,
+  messageID,
+  agent: "build",
+  model: ref,
+  parts: [{ type: "text" as const, text: "do it once" }],
+})
+
+const turnsFor = Effect.fn("test.turnsFor")(function* (sessionID: SessionID, messageID: MessageID) {
+  const sessions = yield* Session.Service
+  const msgs = yield* sessions.messages({ sessionID })
+  return {
+    users: msgs.filter((msg) => msg.info.role === "user" && msg.info.id === messageID).length,
+    replies: msgs.filter((msg) => msg.info.role === "assistant" && msg.info.parentID === messageID).length,
+  }
+})
+
+it.instance("a prompt sent again with the same message ID after its turn failed does not run again", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const id = MessageID.ascending()
+    yield* llm.error(400, { error: { message: "refused", type: "invalid_request_error" } })
+    yield* llm.text("ran a second time")
+
+    const first = yield* prompt.prompt(sameIDPrompt(chat.id, id))
+    const second = yield* prompt.prompt(sameIDPrompt(chat.id, id))
+
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+    expect(second.info.id).toBe(first.info.id)
+  }),
+)
+
+it.instance("a prompt sent again with the same message ID after its turn was aborted does not run again", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const id = MessageID.ascending()
+    yield* llm.hang
+    yield* llm.text("ran a second time")
+
+    const first = yield* prompt.prompt(sameIDPrompt(chat.id, id)).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    yield* waitForBusy(chat.id)
+    yield* prompt.cancel(chat.id)
+    expect(Exit.isSuccess(yield* Fiber.await(first))).toBe(true)
+
+    yield* prompt.prompt(sameIDPrompt(chat.id, id))
+
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+  }),
+)
+
+it.instance("a prompt sent again with the same message ID while its first send is still running joins it", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const id = MessageID.ascending()
+    yield* llm.hold("once", deferredAsPromise(gate))
+    yield* llm.text("ran a second time")
+
+    const a = yield* prompt.prompt(sameIDPrompt(chat.id, id)).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    yield* waitForBusy(chat.id)
+    const b = yield* prompt.prompt(sameIDPrompt(chat.id, id)).pipe(Effect.forkChild)
+    yield* Deferred.succeed(gate, void 0)
+
+    const [ea, eb] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+    expect(Exit.isSuccess(ea) && Exit.isSuccess(eb)).toBe(true)
+    if (Exit.isSuccess(ea) && Exit.isSuccess(eb)) expect(eb.value.info.id).toBe(ea.value.info.id)
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+  }),
+)
+
 it.instance("assertNotBusy fails with BusyError when loop running", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
