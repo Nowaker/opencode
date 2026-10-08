@@ -4,12 +4,14 @@ import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { TuiLayout } from "../../layout"
-import { onClick } from "../../ui/click"
+import { copyText, onClick } from "../../ui/click"
+import { useClipboard } from "../../context/clipboard"
 
 const id = "internal:sidebar-footer"
 
 function View(props: { api: TuiPluginApi; sessionID: string }) {
   const paths = useTuiPaths()
+  const clipboard = useClipboard()
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
@@ -26,6 +28,7 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
     const text = branch ? out + ":" + branch : out
     const list = text.split("/")
     return {
+      directory: dir,
       parent: list.slice(0, -1).join("/"),
       name: list.at(-1) ?? "",
     }
@@ -71,7 +74,7 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
           </box>
         </box>
       </Show>
-      <text>
+      <text {...onClick(() => copyText(clipboard, props.api.ui.toast, path().directory))}>
         <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>

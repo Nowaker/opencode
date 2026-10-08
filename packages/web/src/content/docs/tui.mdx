@@ -72,7 +72,7 @@ The output of the command is added to the conversation as a tool result.
 
 ## Clickable elements
 
-These parts of the screen run the same command as their keybind or slash command when you click them:
+These parts of the screen act when you click them. Where a keybind or slash command does the same, the click runs it:
 
 | Element | Where | Action |
 | --- | --- | --- |
@@ -81,12 +81,23 @@ These parts of the screen run the same command as their keybind or slash command
 | Variant | Below the prompt, when one is selected | Opens the variant picker (`/variants`) |
 | `tab agents` | Below the prompt | Switches to the next agent, like `tab` |
 | `ctrl+p commands` | Below the prompt | Opens the command palette |
+| `esc interrupt` | Below the prompt, while the agent works | Like pressing `esc`: the first click asks for a second, and a second click within 5 seconds interrupts the agent |
+| Token, context and cost usage | Below the prompt, and the Context section of the session sidebar | Opens the status dialog (`/status`) |
+| Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path |
+| Model in a message footer | After `▣` and the agent below an answer | Opens the model picker with the model that turn ran on highlighted |
 | Session title | Top of the session sidebar | Renames the session (`/rename`) |
+| Session ID | Below the session title in the sidebar | Copies the ID |
+| Message ID (`msg_...`) | Message footers, when [`footer.message_id`](#footer) shows them | Copies the ID |
+| Session or message ID in the transcript | Text the agent or a tool wrote | Copies the ID, unless a plugin handles it (see below) |
 | An MCP server | MCP section of the session sidebar | Connects or disconnects that server, as `/mcps` does, without opening the dialog. The dot shows `⋯` until the server answers. |
+| A modified file | Modified Files section of the session sidebar | Opens the diff viewer (`/diff`) at that file |
+| A todo | Todo section of the session sidebar | Copies the todo and adds it to the end of the prompt |
 | MCP count and `/status` | Home screen footer | Opens the status dialog (`/status`) |
 | Connect provider | "Getting started" box in the session sidebar | Opens the provider list (`/connect`) |
 
-A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere.
+A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere, and nothing happens on hover. A click on an ID inside a message, tool call or footer acts on the ID, not on the message or tool around it.
+
+A TUI plugin can take clicks on session and message IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message", value }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. IDs in message footers and the sidebar always copy.
 
 ---
 
@@ -478,7 +489,7 @@ Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 | `time`       | When the entry happened                                                                  | `user`, `assistant`, `text`, `reasoning`, `tool`, `error`, `compaction`     | see below          |
 | `duration`   | How long the entry took                                                                  | `assistant`, `reasoning`, `tool`                                            | `"reasoning"`      |
 | `total`      | Time from your prompt to the end of the turn                                             | `assistant`, final message of a turn only                                   | `"all"`            |
-| `message_id` | The message ID (`msg_...`), which you can select with the mouse to copy                  | `user`, `assistant`, `tool`                                                 | `"none"`           |
+| `message_id` | The message ID (`msg_...`), which you can click or select to copy                        | `user`, `assistant`, `tool`                                                 | `"none"`           |
 
 | Type         | Where                                                         |
 | ------------ | ------------------------------------------------------------- |

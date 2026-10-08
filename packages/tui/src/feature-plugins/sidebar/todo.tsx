@@ -2,8 +2,11 @@ import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { onHeaderClick } from "./click"
 import { createEffect, createMemo, For, on, Show, createSignal } from "solid-js"
+import { unwrap } from "solid-js/store"
 import { TodoItem } from "../../component/todo-item"
 import { useTuiConfig } from "../../config"
+import { useClipboard } from "../../context/clipboard"
+import { copyText, onClick } from "../../ui/click"
 
 const id = "internal:sidebar-todo"
 
@@ -11,6 +14,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
   const tuiConfig = useTuiConfig()
+  const clipboard = useClipboard()
   const completed = () => tuiConfig.sidebar?.todo_completed ?? "hide"
   const list = createMemo(() => props.api.state.session.todo(props.session_id))
   const done = createMemo(() => list().length > 0 && list().every((item) => item.status === "completed"))
@@ -47,11 +51,34 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </Show>
         </box>
         <Show when={list().length <= 2 || open()}>
-          <For each={list()}>{(item) => <TodoItem status={item.status} content={item.content} />}</For>
+          <For each={list()}>
+            {(item) => (
+              <box {...onClick(() => pick(props.api, clipboard, item.content))}>
+                <TodoItem status={item.status} content={item.content} />
+              </box>
+            )}
+          </For>
         </Show>
       </box>
     </Show>
   )
+}
+
+// A clicked todo is copied and added to the end of the prompt, so it can be
+// quoted to the agent or pasted elsewhere.
+function pick(api: TuiPluginApi, clipboard: ReturnType<typeof useClipboard>, content: string) {
+  copyText(clipboard, api.ui.toast, content, "the todo")
+  const snapshot = api.prompt.snapshot()
+  const draft = api.prompt.read()
+  api.prompt.replace({
+    generation: snapshot.generation,
+    sha256: snapshot.sha256,
+    partsSha256: snapshot.partsSha256,
+    correlationId: `todo-${Date.now()}`,
+    text: draft.input && !/\s$/.test(draft.input) ? `${draft.input} ${content}` : `${draft.input}${content}`,
+    // The composer's parts are store proxies, which the composer cannot clone.
+    promptParts: unwrap(draft.parts),
+  })
 }
 
 // "progress" is done+in_progress/total, dropping +in_progress while nothing is in

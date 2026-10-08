@@ -12,6 +12,7 @@ import { WorkspaceLabel } from "../../component/workspace-label"
 import { TuiLayout } from "../../layout"
 import { useOpencodeKeymap } from "../../keymap"
 import { onClick } from "../../ui/click"
+import { markOwnIds } from "../../ui/id-click"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -48,7 +49,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           <b>{session()!.title}</b>
         </text>
         <Show when={showSessionID()}>
-          <text fg={theme.textMuted}>{props.sessionID}</text>
+          <text ref={markOwnIds} fg={theme.textMuted}>
+            {props.sessionID}
+          </text>
         </Show>
         <Show when={session()!.workspaceID}>
           <text fg={theme.textMuted}>

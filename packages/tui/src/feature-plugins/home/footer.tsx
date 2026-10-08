@@ -5,7 +5,8 @@ import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { useHomeSessionDestination } from "../../routes/home/session-destination"
 import { TuiLayout } from "../../layout"
-import { onClick } from "../../ui/click"
+import { copyText, onClick } from "../../ui/click"
+import { useClipboard } from "../../context/clipboard"
 
 const id = "internal:home-footer"
 
@@ -13,17 +14,30 @@ function Directory(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const destination = useHomeSessionDestination()
   const paths = useTuiPaths()
-  const dir = createMemo(() => {
+  const clipboard = useClipboard()
+  const directory = createMemo(() => {
     const selected = destination?.destination()
     if (!selected || selected.type === "new") return
-    const out = abbreviateHome(selected.directory, paths.home)
-    const branch =
-      selected.directory === (props.api.state.path.directory || paths.cwd) ? props.api.state.vcs?.branch : undefined
+    return selected.directory
+  })
+  const dir = createMemo(() => {
+    const value = directory()
+    if (!value) return
+    const out = abbreviateHome(value, paths.home)
+    const branch = value === (props.api.state.path.directory || paths.cwd) ? props.api.state.vcs?.branch : undefined
     if (branch) return out + ":" + branch
     return out
   })
 
-  return <Show when={dir()}>{(value) => <text fg={theme().textMuted}>{value()}</text>}</Show>
+  return (
+    <Show when={dir()}>
+      {(value) => (
+        <text fg={theme().textMuted} {...onClick(() => copyText(clipboard, props.api.ui.toast, directory()!))}>
+          {value()}
+        </text>
+      )}
+    </Show>
+  )
 }
 
 function Mcp(props: { api: TuiPluginApi }) {

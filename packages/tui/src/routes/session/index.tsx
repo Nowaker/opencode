@@ -30,6 +30,7 @@ import {
   addDefaultParsers,
   TextAttributes,
   RGBA,
+  type MouseEvent,
   type Renderable,
 } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -100,6 +101,9 @@ import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap 
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
 import { TuiLayout } from "../../layout"
+import { cellText, idUnder, markOwnIds } from "../../ui/id-click"
+import { onClick } from "../../ui/click"
+import { DialogModel } from "../../component/dialog-model"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1509,8 +1513,9 @@ export function Session() {
                         <Match when={message.role === "user"}>
                           <UserMessage
                             index={index()}
-                            onMouseUp={() => {
+                            onMouseUp={(event) => {
                               if (renderer.getSelection()?.getSelectedText()) return
+                              if (idUnder(renderer.currentRenderBuffer, event)) return
                               dialog.replace(() => (
                                 <DialogMessage
                                   messageID={message.id}
@@ -1662,7 +1667,7 @@ function HiddenMessagesDivider(props: { hidden: HiddenMessages; first: boolean; 
 function UserMessage(props: {
   message: UserMessage
   parts: Part[]
-  onMouseUp: () => void
+  onMouseUp: (event: MouseEvent) => void
   index: number
   pending?: number
 }) {
@@ -1735,7 +1740,7 @@ function UserMessage(props: {
               </box>
             </Show>
             <Show when={metadataVisible()}>
-              <text fg={theme.textMuted}>
+              <text ref={markOwnIds} fg={theme.textMuted}>
                 <Show
                   when={queued()}
                   fallback={
@@ -1779,6 +1784,8 @@ function UserMessage(props: {
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
+  const renderer = useRenderer()
+  const dialog = useDialog()
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
@@ -1824,6 +1831,21 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       shows("message_id") && { text: props.message.id, fg: theme.textMuted },
     ].flatMap((detail) => (detail ? [detail] : []))
   })
+
+  // A click on the footer's model opens the model picker on the model this
+  // turn ran on. The footer is one text, so the model's cells are found in
+  // the row as drawn.
+  const openModel = (event: MouseEvent) => {
+    const target = event.target
+    if (!shows("model") || !target) return
+    const row = cellText(renderer.currentRenderBuffer, event.y, target.x, target.x + target.width)
+    const start = row.indexOf(model(), 1)
+    const column = event.x - target.x
+    if (start < 0 || column < start || column >= start + model().length) return
+    dialog.replace(() => (
+      <DialogModel current={{ providerID: props.message.providerID, modelID: props.message.modelID }} />
+    ))
+  }
 
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
@@ -1892,7 +1914,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError" || completed()}>
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
+            <text ref={markOwnIds} marginTop={1} {...onClick(openModel)}>
               <span
                 style={{
                   fg:
@@ -2278,8 +2300,9 @@ function InlineTool(props: {
       timestampColor={theme.textMuted}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
+      onMouseUp={(event) => {
         if (renderer.getSelection()?.getSelectedText()) return
+        if (idUnder(renderer.currentRenderBuffer, event)) return
         if (failed()) {
           setErrorExpanded((value) => !value)
           return
@@ -2313,7 +2336,7 @@ export function InlineToolRow(props: {
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
-  onMouseUp?: () => void
+  onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
     <box
@@ -2358,6 +2381,7 @@ export function InlineToolRow(props: {
                 {props.icon}
               </text>
               <text
+                ref={markOwnIds}
                 flexGrow={1}
                 fg={props.failed ? props.errorColor : props.color}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
@@ -2370,7 +2394,9 @@ export function InlineToolRow(props: {
             </box>
             <Show when={props.footerBelow && props.timestamp}>
               <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
-                <text fg={props.timestampColor}>{props.timestamp}</text>
+                <text ref={markOwnIds} fg={props.timestampColor}>
+                  {props.timestamp}
+                </text>
               </box>
             </Show>
           </Show>
@@ -2415,8 +2441,9 @@ function BlockTool(props: {
       borderColor={theme.background}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
+      onMouseUp={(event: MouseEvent) => {
         if (renderer.getSelection()?.getSelectedText()) return
+        if (idUnder(renderer.currentRenderBuffer, event)) return
         props.onClick?.()
       }}
     >
@@ -2439,7 +2466,7 @@ function BlockTool(props: {
         <text fg={theme.error}>{error()}</text>
       </Show>
       <Show when={timestamp()}>
-        <text paddingLeft={props.title ? 3 : 0} fg={theme.textMuted}>
+        <text ref={markOwnIds} paddingLeft={props.title ? 3 : 0} fg={theme.textMuted}>
           {timestamp()}
         </text>
       </Show>
