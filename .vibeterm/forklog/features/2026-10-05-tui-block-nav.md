@@ -108,6 +108,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Timeline
 
+- 2026-10-07
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
+  - `1ca196f2b2`: `isLandmark` in `navigation.ts` lets `footer` values of `"important"` reuse the landmark targets; tested in `navigation.test.ts`.
+
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   verify target helpers and real navigation keys; retained-history/exact-tool
   landmark limits are in the linked inventory.

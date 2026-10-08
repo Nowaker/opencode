@@ -80,6 +80,10 @@ Clarified by the user on 2026-10-07, relayed by the coordinator:
 
 ## Timeline
 
+- 2026-10-07
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
+  - `1ca196f2b2`: the variant `Show` is replaced by the `variant` entry of `details()`; `footer_variant: true` is the legacy alias of `footer.variant: "all"`; `efc7b3db27` mutes it. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-06 `ses_eec44cf7effeFCqQefM0NkWLaW` - built ahead of the user's
   answer as local `5e4b1d22f7` on `tui-footer-variant`; recorded as pending
   in [the item 15 session record](../sessions/2026-10-06-tui-model-label.md).

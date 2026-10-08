@@ -90,6 +90,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-07
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-07-tui-footer-elements.md)
+  - `1ca196f2b2`: `timestamps` maps onto `footer.time` (its `tool` also onto `footer.duration`) while `footer.time` is unset; `4c6be131b4` gives every tool call the time. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-06
   [`ses_eec3e5569ffe2otGPxp4LBssZb`](../sessions/2026-10-06-tui-part-timestamps.md)
   - `9163ac0f36`: introduce (cherry-pick of `da278a9c97`, conflicts with
