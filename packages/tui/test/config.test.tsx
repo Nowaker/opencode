@@ -9,6 +9,7 @@ import {
   footerSelects,
   footerShows,
   Info,
+  toolFooterShowsMessageID,
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
@@ -88,6 +89,16 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ model_label: "provider" })).toThrow()
   expect(decodeInfo({ footer_variant: true })).toEqual({ footer_variant: true })
   expect(() => decodeInfo({ footer_variant: "high" })).toThrow()
+  expect(decodeInfo({ datetime_format: { date: "YYYY-MM-DD", time: "HH:mm:ss" } })).toEqual({
+    datetime_format: { date: "YYYY-MM-DD", time: "HH:mm:ss" },
+  })
+  expect(decodeInfo({ datetime_format: { time: "h:mm [o'clock] A" } })).toEqual({
+    datetime_format: { time: "h:mm [o'clock] A" },
+  })
+  expect(() => decodeInfo({ datetime_format: { time: "HH:MM:SS" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { date: "YYYY-mm-dd" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { date: "DD Mon YYYY" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { time: "" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
@@ -181,6 +192,23 @@ describe("footer elements", () => {
         ),
       ),
     ).toMatchObject({ variant: [], time: ["important"], duration: [], message_id: all, total: [] })
+  })
+
+  test("a tool call shows its message ID only when the message footer does not", () => {
+    const toolShows = (value: unknown, landmark = { tool: false, assistant: false }) => {
+      const selection = footerSelections({ footer: decodeInfo({ footer: { message_id: value } }).footer }, {}).message_id
+      return toolFooterShowsMessageID((type) => footerShows(selection, type, () => landmark[type]))
+    }
+    expect(toolShows("all")).toBe(false)
+    expect(toolShows("assistant,tool")).toBe(false)
+    expect(toolShows("tool")).toBe(true)
+    expect(toolShows("user,tool")).toBe(true)
+    expect(toolShows("assistant")).toBe(false)
+    expect(toolShows("none")).toBe(false)
+    // A landmark tool call makes its message a landmark, so the message footer carries the ID.
+    expect(toolShows("important", { tool: true, assistant: true })).toBe(false)
+    // 'important' filters out a plain step's footer, so its tool calls keep the ID.
+    expect(toolShows("tool,important", { tool: false, assistant: false })).toBe(true)
   })
 
   test("toggles are session-only for elements tui.json decides", () => {
