@@ -53,6 +53,17 @@
 # machine, never checks for or offers upstream updates, and never upgrades
 # itself. Rebuilding with this script is its only update path.
 #
+# v1 database guard gate: before installing, the built binary is handed to
+# opencode-tools' `vibeterm-v2-guard gate --v1 <built>`. In scratch
+# directories it creates a blank v1 database with the built binary and with
+# npm's newest opencode-ai 1.x, adds the guard that keeps a vanilla opencode
+# v2 from migrating a v1 database, runs npm's newest @opencode/cli on it, and
+# requires v2 to fail naming the guard with the database's full logical
+# dump unchanged, and the v1 binary to still serve it. A failing gate
+# installs nothing. The guard command is VIBETERM_V2_GUARD, else
+# `vibeterm-v2-guard` on PATH. OPENCODE_SKIP_V2_GUARD_GATE=1 skips the gate,
+# loudly; it is for a host without opencode-tools, never for a failing gate.
+#
 # The running opencode-serve units keep the OLD binary via still-open
 # file descriptors after this script swaps the on-disk inode (mv+cp).
 # New binary activates on the NEXT service restart (do that yourself;
@@ -199,6 +210,26 @@ if [ "${#BUILT_CANDIDATES[@]}" -ne 1 ]; then
   exit 1
 fi
 BUILT="${BUILT_CANDIDATES[0]}"
+
+v2_guard_gate() {
+  if [ "${OPENCODE_SKIP_V2_GUARD_GATE-}" = 1 ]; then
+    echo "WARNING: OPENCODE_SKIP_V2_GUARD_GATE=1 - installing $VERSION without proving the v1 database guard" >&2
+    return 0
+  fi
+  local guard="${VIBETERM_V2_GUARD:-$(command -v vibeterm-v2-guard || true)}"
+  if [ -z "$guard" ] || [ ! -x "$guard" ]; then
+    echo "error: vibeterm-v2-guard not found; set VIBETERM_V2_GUARD to opencode-tools'" >&2
+    echo "       vibeterm-opencode-client/bin/vibeterm-v2-guard (or OPENCODE_SKIP_V2_GUARD_GATE=1)" >&2
+    return 1
+  fi
+  echo "Proving the v1 database guard against $BUILT ..."
+  if ! "$guard" gate --v1 "$BUILT"; then
+    echo "error: the v1 database guard does not hold for $VERSION or the newest opencode releases;" >&2
+    echo "       NOT installing. Fix the guard in opencode-tools (_lib/v2-migration-guard) first." >&2
+    return 1
+  fi
+}
+v2_guard_gate || exit 1
 
 mkdir -p "$(dirname "$INSTALL")"
 
