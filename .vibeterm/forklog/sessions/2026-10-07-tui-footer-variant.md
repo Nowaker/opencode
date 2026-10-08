@@ -40,6 +40,7 @@ meant):
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
 | `opencode` | `tui-footer-variant` | `5e4b1d22f7` (local) | `021d0625ad` | rebase onto upstream `dev` `a697115b20`, amend with tui.mdx and without AI trailers; pushed to `nowaker-github` and `origin` |
+| `opencode` | `tui-footer-variant` | `021d0625ad` | `b762567377` | amend: variant in `theme.textMuted` after user feedback; force-push with lease to `nowaker-github` and `origin` |
 | `opencode` | `dev-nowaker` | `753d5580d4` | `bd9676d499` + this forklog commit | cherry-pick of `5e4b1d22f7` on `footer-variant-land` (config schema, config test and footer conflicts with fork keys and turn timing, kept both, variant placed before the turn time), rebased twice over concurrent landings, fast-forward; pushed to `origin` and `nowaker-github` |
 
 ## Features touched
@@ -60,6 +61,15 @@ meant):
   desktop and m4max, written by an atomic read-modify-write; a key-by-key
   comparison showed no other key changed. Readback on both:
   `{"footer_variant":true,"model_label":"id","turn_timing":{"time":true,"duration":true}}`.
+
+- Dimmed variant: the `dev-nowaker` change is item 24's `efc7b3db27`
+  (that session owns the footer list); this session changed only the
+  upstream branch and built `efc7b3db27` on both hosts:
+  `1.18.34-vt-170-907b3bc518`, desktop inode `49946741`, m4max inode
+  `22203240`; retry patch matched on both; no other `build.sh` running;
+  serve PIDs `2994070` / `2994178` unchanged. Upstream branch checks:
+  `bun typecheck` exit 0, `bun test` 0 fail; ANSI captures in the feature
+  timeline.
 
 ## Verification
 
