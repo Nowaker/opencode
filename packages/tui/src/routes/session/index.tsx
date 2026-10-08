@@ -1811,7 +1811,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     return [
       shows("agent") && { text: Locale.titlecase(props.message.mode), fg: theme.text },
       shows("model") && { text: model(), fg: theme.textMuted },
-      shows("variant") && props.message.variant && { text: props.message.variant, fg: theme.warning },
+      shows("variant") && props.message.variant && { text: props.message.variant, fg: theme.textMuted },
       shows("time") && end && { text: Locale.todayTimeOrDateFirst(end), fg: theme.textMuted },
       shows("duration") &&
         end && { text: Locale.duration(Math.max(0, end - props.message.time.created)), fg: theme.textMuted },
