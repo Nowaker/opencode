@@ -1,7 +1,8 @@
 export * as SqliteFailure from "./sqlite-error"
 
 import { isSqlError } from "effect/unstable/sql/SqlError"
-import { Predicate } from "effect"
+import { Cause, Option, Predicate } from "effect"
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors"
 
 const reasons = [
   "ConnectionError",
@@ -53,6 +54,15 @@ const codes = [
 ] as const
 
 const operations = ["execute", "begin", "commit", "rollback", "connect", "export", "loadExtension"] as const
+
+export function unwrap(error: unknown) {
+  const cause =
+    error instanceof EffectDrizzleQueryError && Cause.isCause(error.cause)
+      ? Cause.findErrorOption(error.cause)
+      : Option.none()
+  const value = Option.isSome(cause) ? cause.value : error
+  if (isSqlError(value)) return value
+}
 
 /** Only fixed vocabulary leaves this boundary, never SQL, parameters or native messages. */
 export function parse(error: unknown) {

@@ -3,6 +3,7 @@ import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { classifySqliteError, LockTimeoutError, SqlError } from "effect/unstable/sql/SqlError"
 import { Database } from "../src/database/database"
 import { DatabaseTransaction } from "../src/database/transaction"
+import { TransactionDiagnostic } from "../src/database/transaction-diagnostic"
 import { testEffect } from "./lib/effect"
 import { transactionClient } from "./fixture/transaction-client"
 
@@ -43,6 +44,15 @@ for (const stage of ["construction", "body", "defect", "commit", "rollback", "po
           }).pipe(Effect.andThen(stage === "postcommit" ? Effect.fail(error) : Effect.void)),
       ).pipe(Effect.exit)
       expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBe(error)
+      expect(TransactionDiagnostic.get(error)).toMatchObject({
+        phase: stage === "commit" ? "finalize" : stage === "postcommit" ? "after_commit" : "body",
+        ...(stage === "commit" ? { bodyOutcome: "success" } : {}),
+        nested: false,
+        attempts: 1,
+        reason: "LockTimeoutError",
+        nativeCode: "SQLITE_BUSY",
+        pid: process.pid,
+      })
       expect(calls).toBe(1)
       expect(wakes).toBe(stage === "postcommit" ? 1 : 0)
       expect(statements.filter((statement) => statement === "begin immediate")).toHaveLength(1)
@@ -129,6 +139,7 @@ for (const code of [
       expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBe(error)
       expect(attempts).toBe(1)
       expect(calls).toBe(0)
+      expect(TransactionDiagnostic.get(error)).toMatchObject({ phase: "acquire", attempts: 1, nested: false })
     }),
   )
 }
