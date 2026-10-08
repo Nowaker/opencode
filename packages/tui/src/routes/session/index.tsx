@@ -1746,7 +1746,7 @@ function UserMessage(props: {
                   fallback={
                     <Show when={time()}>
                       <span style={{ fg: theme.textMuted }}>
-                        {Locale.todayTimeOrDateTime(props.message.time.created)}
+                        {Locale.todayTimeOrDateTime(props.message.time.created, ctx.tui.datetime_format)}
                       </span>
                     </Show>
                   }
@@ -1770,7 +1770,7 @@ function UserMessage(props: {
           border={["top"]}
           title={
             ctx.footer("time", "compaction", props.message.id)
-              ? ` Compaction · ${Locale.todayTimeOrDateFirst(props.message.time.created)} `
+              ? ` Compaction · ${Locale.todayTimeOrDateFirst(props.message.time.created, ctx.tui.datetime_format)} `
               : " Compaction "
           }
           titleAlignment="center"
@@ -1819,7 +1819,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       shows("agent") && { text: Locale.titlecase(props.message.mode), fg: theme.text },
       shows("model") && { text: model(), fg: theme.textMuted },
       shows("variant") && props.message.variant && { text: props.message.variant, fg: theme.textMuted },
-      shows("time") && end && { text: Locale.todayTimeOrDateFirst(end), fg: theme.textMuted },
+      shows("time") && end && { text: Locale.todayTimeOrDateFirst(end, ctx.tui.datetime_format), fg: theme.textMuted },
       shows("duration") &&
         end && { text: Locale.duration(Math.max(0, end - props.message.time.created)), fg: theme.textMuted },
       shows("total") &&
@@ -1906,7 +1906,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
           <Show when={ctx.footer("time", "error", props.message.id)}>
             <text fg={theme.textMuted}>
-              {Locale.todayTimeOrDateFirst(props.message.time.completed ?? props.message.time.created)}
+              {Locale.todayTimeOrDateFirst(props.message.time.completed ?? props.message.time.created, ctx.tui.datetime_format)}
             </text>
           </Show>
         </box>
@@ -1997,7 +1997,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             title={summary().title}
             time={
               ctx.footer("time", "reasoning", props.message.id, props.part.id) && props.part.time.end !== undefined
-                ? Locale.todayTimeOrDateFirst(props.part.time.end)
+                ? Locale.todayTimeOrDateFirst(props.part.time.end, ctx.tui.datetime_format)
                 : undefined
             }
             duration={
@@ -2086,7 +2086,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
           bg={theme.background}
         />
         <Show when={ctx.footer("time", "text", props.message.id, props.part.id) && props.part.time?.end}>
-          {(end) => <text fg={theme.textMuted}>{Locale.todayTimeOrDateFirst(end())}</text>}
+          {(end) => <text fg={theme.textMuted}>{Locale.todayTimeOrDateFirst(end(), ctx.tui.datetime_format)}</text>}
         </Show>
       </box>
     </Show>
@@ -2215,13 +2215,11 @@ function GenericTool(props: ToolProps) {
       <BlockTool
         title={`# ${props.tool} ${input(props.input)}`}
         part={props.part}
+        hint={expandHint(collapsed().overflow, expanded())}
         onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
       >
         <box gap={1}>
           <text fg={theme.text}>{limited()}</text>
-          <Show when={collapsed().overflow}>
-            <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-          </Show>
         </box>
       </BlockTool>
     </Show>
@@ -2414,6 +2412,7 @@ export function InlineToolRow(props: {
 function BlockTool(props: {
   title?: string
   children: JSX.Element
+  hint?: string
   onClick?: () => void
   part?: ToolPart
   spinner?: boolean
@@ -2462,10 +2461,17 @@ function BlockTool(props: {
         )}
       </Show>
       {props.children}
+      <Show when={props.hint}>
+        {(hint) => (
+          <text ref={markOwnIds} fg={theme.textMuted}>
+            {timestamp() ? `${hint()} · ${timestamp()}` : hint()}
+          </text>
+        )}
+      </Show>
       <Show when={error()}>
         <text fg={theme.error}>{error()}</text>
       </Show>
-      <Show when={timestamp()}>
+      <Show when={!props.hint && timestamp()}>
         <text ref={markOwnIds} paddingLeft={props.title ? 3 : 0} fg={theme.textMuted}>
           {timestamp()}
         </text>
@@ -2509,6 +2515,7 @@ function Shell(props: ToolProps) {
         <BlockTool
           title={title()}
           part={props.part}
+          hint={expandHint(collapsed().overflow, expanded())}
           onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
@@ -2517,9 +2524,6 @@ function Shell(props: ToolProps) {
             </Show>
             <Show when={output()}>
               <text fg={theme.text}>{limited()}</text>
-            </Show>
-            <Show when={collapsed().overflow}>
-              <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
             </Show>
           </box>
         </BlockTool>
@@ -2744,20 +2748,32 @@ function Task(props: ToolProps) {
 // The footer elements every tool call takes, whichever renderer draws it.
 function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
   const shows = (element: TuiConfig.FooterElement) => ctx.footer(element, "tool", part.messageID, part.id)
+  const messageID = TuiConfig.toolFooterShowsMessageID((type) =>
+    type === "tool" ? shows("message_id") : ctx.footer("message_id", "assistant", part.messageID),
+  )
   return {
     time: shows("time"),
     duration: shows("duration"),
-    messageID: shows("message_id") ? part.messageID : undefined,
+    messageID: messageID ? part.messageID : undefined,
+    format: ctx.tui.datetime_format,
   }
+}
+
+function expandHint(overflow: boolean, expanded: boolean) {
+  if (!overflow) return
+  return expanded ? "Click to collapse" : "Click to expand"
 }
 
 export function formatToolTimestamp(
   state: ToolPart["state"],
-  show: { time: boolean; duration: boolean; messageID?: string } = { time: true, duration: true },
+  show: { time: boolean; duration: boolean; messageID?: string; format?: Locale.DateTimeFormat } = {
+    time: true,
+    duration: true,
+  },
 ) {
   if (state.status !== "completed" && state.status !== "error") return
   const details = [
-    show.time && Locale.todayTimeOrDateFirst(state.time.end),
+    show.time && Locale.todayTimeOrDateFirst(state.time.end, show.format),
     show.duration && Locale.duration(Math.max(0, state.time.end - state.time.start)),
     show.messageID,
   ].flatMap((detail) => (detail ? [detail] : []))

@@ -214,7 +214,7 @@ export const Footer = Schema.Struct({
     "Time from the prompt to the end of the turn. Applies to: assistant, and only on a turn's final message, so 'important' and 'assistant' select the same footers as 'all'. Default: all.",
   ),
   message_id: footerElement(
-    "The message ID (msg_...), selectable for drag-to-copy, at the end of the footer. Applies to: user, assistant, tool (the message the call belongs to). Default: none.",
+    "The message ID (msg_...), selectable for drag-to-copy, at the end of the footer. Applies to: user, assistant, tool. A tool call shows the ID of the message it belongs to only when that message's own footer does not show it, so each ID appears once. Default: none.",
   ),
 }).annotate({
   description: [
@@ -254,6 +254,12 @@ export function footerSelects(selection: FooterSelection, type: TimestampType) {
 export function footerShows(selection: FooterSelection, type: TimestampType, landmark: () => boolean) {
   if (selection.types.has(type)) return true
   return selection.important && landmark()
+}
+
+// A tool call belongs to its assistant message, so its footer repeats the message ID only when the
+// message's own footer does not show it: each ID appears once.
+export function toolFooterShowsMessageID(shows: (type: "tool" | "assistant") => boolean) {
+  return shows("tool") && !shows("assistant")
 }
 
 // Whether the runtime toggles for an element are session-only because tui.json decides it.
@@ -303,6 +309,24 @@ export function footerSelections(
     message_id: element("message_id", footerSelection(false)),
   }
 }
+
+// Literal text is anything that is not a letter, or text in [brackets]. Letters outside the
+// part's own tokens are rejected, so "HH:MM:SS" (month, not minute) fails instead of misprinting.
+const formatLiteral = "\\[[^\\]]*\\]|[^A-Za-z\\[\\]]"
+const formatPattern = (tokens: string) => new RegExp(`^(?:${tokens}|${formatLiteral})+$`)
+export const DateTimeFormat = Schema.Struct({
+  date: Schema.optional(Schema.String.check(Schema.isPattern(formatPattern("YYYY|YY|MM|M|DD|D")))).annotate({
+    description:
+      "Date pattern, shown before the time on entries from another day: YYYY year, YY two-digit year, MM month (01-12), M month (1-12), DD day (01-31), D day (1-31); other letters must be in [brackets]. Example: 'YYYY-MM-DD'. Unset: the locale's date, e.g. 10/7/2026",
+  }),
+  time: Schema.optional(Schema.String.check(Schema.isPattern(formatPattern("HH|H|hh|h|mm|m|ss|s|A|a")))).annotate({
+    description:
+      "Time pattern: HH hour 00-23, H 0-23, hh hour 01-12, h 1-12, mm minute (lowercase; MM is the month and is rejected here), m minute, ss second, s second, A AM/PM, a am/pm; other letters must be in [brackets]. Example: 'HH:mm:ss'. Unset: the locale's short time, e.g. 2:20 PM",
+  }),
+}).annotate({
+  description:
+    "How times and dates are written in message footers, entry timestamps, the compaction divider and the timeline and stash dialogs. Entries from today show only the time",
+})
 
 export const TranscriptMaxMessagesDefault = 100
 export const Transcript = Schema.Struct({
@@ -370,6 +394,7 @@ export const Info = Schema.Struct({
       "Legacy alias of footer.variant: true shows the variant a turn ran with, such as its reasoning effort ('high'), after the model in assistant message footers (default: false). footer.variant wins when set",
   }),
   footer: Schema.optional(Footer),
+  datetime_format: Schema.optional(DateTimeFormat),
   cursor: Schema.optional(Cursor),
   sidebar: Schema.optional(Sidebar),
   usage: Schema.optional(Usage),

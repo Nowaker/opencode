@@ -2,29 +2,64 @@ export function titlecase(str: string) {
   return str.replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function time(input: number): string {
+// Patterns from tui.json `datetime_format`. Unset parts keep the runtime locale's output.
+export type DateTimeFormat = { date?: string; time?: string }
+
+export function time(input: number, format?: DateTimeFormat): string {
+  if (format?.time) return pattern(input, format.time)
   const date = new Date(input)
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
 }
 
-export function datetime(input: number): string {
-  const date = new Date(input)
-  const localTime = time(input)
-  const localDate = date.toLocaleDateString()
-  return `${localTime} · ${localDate}`
+export function date(input: number, format?: DateTimeFormat): string {
+  if (format?.date) return pattern(input, format.date)
+  return new Date(input).toLocaleDateString()
 }
 
-export function todayTimeOrDateTime(input: number): string {
+export function datetime(input: number, format?: DateTimeFormat): string {
+  return `${time(input, format)} · ${date(input, format)}`
+}
+
+export function todayTimeOrDateTime(input: number, format?: DateTimeFormat): string {
   if (isToday(input)) {
-    return time(input)
+    return time(input, format)
   } else {
-    return datetime(input)
+    return datetime(input, format)
   }
 }
 
-export function todayTimeOrDateFirst(input: number): string {
-  if (isToday(input)) return time(input)
-  return `${new Date(input).toLocaleDateString()} ${time(input)}`
+export function todayTimeOrDateFirst(input: number, format?: DateTimeFormat): string {
+  if (isToday(input)) return time(input, format)
+  return `${date(input, format)} ${time(input, format)}`
+}
+
+// Day.js tokens: MM is the month and mm the minute; text in [brackets] is printed as is.
+const PATTERN_TOKENS = /\[([^\]]*)\]|YYYY|YY|MM|M|DD|D|HH|H|hh|h|mm|m|ss|s|A|a/g
+
+function pattern(input: number, format: string) {
+  const date = new Date(input)
+  const pad = (value: number) => String(value).padStart(2, "0")
+  const hour12 = date.getHours() % 12 || 12
+  const meridiem = date.getHours() < 12 ? "AM" : "PM"
+  const values: Record<string, string> = {
+    YYYY: String(date.getFullYear()),
+    YY: pad(date.getFullYear() % 100),
+    MM: pad(date.getMonth() + 1),
+    M: String(date.getMonth() + 1),
+    DD: pad(date.getDate()),
+    D: String(date.getDate()),
+    HH: pad(date.getHours()),
+    H: String(date.getHours()),
+    hh: pad(hour12),
+    h: String(hour12),
+    mm: pad(date.getMinutes()),
+    m: String(date.getMinutes()),
+    ss: pad(date.getSeconds()),
+    s: String(date.getSeconds()),
+    A: meridiem,
+    a: meridiem.toLowerCase(),
+  }
+  return format.replace(PATTERN_TOKENS, (token, literal: string | undefined) => literal ?? values[token])
 }
 
 function isToday(input: number) {
