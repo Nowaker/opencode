@@ -78,9 +78,10 @@ carries every feature forward unchanged. That commit includes the full
 ## Session records
 
 - [2026-10-07 `ses_ee74c94dfffe71uYsYScadAio7`](./sessions/2026-10-07-tui-prompt-admission.md)
-  - Keep a failed prompt's draft until the server stores it, restore it or
-    stash it beside newer text, reconcile an ambiguous send by its client
-    message ID before resending; build and install on both hosts.
+  - Keep a failed prompt's draft until the server stores it, restore it (above
+    any newer text, caret kept), reconcile an ambiguous send by its client
+    message ID before resending, and never let the server run a known message
+    ID twice; build and install on both hosts.
 
 - [2026-10-07 `ses_eebf2e45cfferJAfg1d5eBsDB6`](./sessions/fork-audit.md#prompt-failure-follow-up-2026-10-07)
   - Record transaction phase and bounded SQLite identifiers at the existing
