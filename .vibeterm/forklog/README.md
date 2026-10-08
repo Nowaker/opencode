@@ -75,8 +75,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Load the full provider catalog after the prompt is shown](./features/2026-10-06-tui-lazy-provider-list.md)
 - [Keep a failed prompt instead of losing it, without sending it twice](./features/2026-10-07-tui-prompt-admission.md)
 - [Show the turn's variant in assistant message footers](./features/2026-10-06-tui-footer-variant.md)
+- [Answer prompts queued around /compact and resume the turn it cut](./features/2026-10-07-compaction-queued-resume.md)
 
 ## Session records
+
+- [2026-10-07 `ses_ee69f1639ffeFBENk91r80bAJB`](./sessions/2026-10-07-compaction-queued-resume.md)
+  - A `/compact` during a running turn no longer swallows a prompt queued
+    around it and no longer ends the turn: the prompt is answered after the
+    summary, or the turn continues; proved live in a TUI tab; upstream issue
+    #53862 and PR #53863; build and install on both hosts.
 
 - [2026-10-07 `ses_eec44cf7effeFCqQefM0NkWLaW`](./sessions/2026-10-07-tui-footer-variant.md)
   - Add `footer_variant` so assistant message footers show the turn's
