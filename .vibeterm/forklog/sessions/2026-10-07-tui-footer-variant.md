@@ -29,8 +29,9 @@ meant):
 
 ## Constraints and non-goals
 
-- No upstream issue or PR: v1 PRs close once their v2 replacements open, and
-  TUI ports to v2 wait until Vibeterm core runs on v2.
+- Upstream: first skipped (v1 maintenance-only), then requested again by
+  the user with a v1-maintenance note at the very top of the PR body; a v2
+  port is still owed.
 - Host `tui.json` edits touch only `footer_variant`.
 - No TUI tab, service or vibeterm tmux server restarted.
 
@@ -38,6 +39,7 @@ meant):
 
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
+| `opencode` | `tui-footer-variant` | `5e4b1d22f7` (local) | `021d0625ad` | rebase onto upstream `dev` `a697115b20`, amend with tui.mdx and without AI trailers; pushed to `nowaker-github` and `origin` |
 | `opencode` | `dev-nowaker` | `753d5580d4` | `bd9676d499` + this forklog commit | cherry-pick of `5e4b1d22f7` on `footer-variant-land` (config schema, config test and footer conflicts with fork keys and turn timing, kept both, variant placed before the turn time), rebased twice over concurrent landings, fast-forward; pushed to `origin` and `nowaker-github` |
 
 ## Features touched
@@ -48,6 +50,10 @@ meant):
 
 ## Other delivered work
 
+- Upstream: issue #53846 and PR #53848 (PR verification on the branch:
+  `bun typecheck` exit 0, `bun test` 194 pass; isolated captures
+  `▣  Build · QA Model · 250ms` by default and
+  `▣  Build · QA Model · high · 253ms` with `footer_variant`).
 - Diagnosis: desktop assistant messages in `opencode.db` store
   `variant: "high"`, so the variant was known and only not rendered.
 - Host config: `"footer_variant": true` in `~/.config/opencode/tui.json` on

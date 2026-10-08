@@ -4,12 +4,12 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `tui-footer-variant` (`5e4b1d22f7` on upstream `dev` `ecc4916b5a`, local only, never pushed); landing branch `footer-variant-land`
+- Development branch(es): `tui-footer-variant` (`021d0625ad` on upstream `dev` `a697115b20`, the upstream PR head); landing branch `footer-variant-land`
 - First local commit: `bd9676d499`
 - Current local commit(s): `bd9676d499`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
-- Upstream: none. No issue or PR, by the user's decision: v1 PRs close once their v2 replacements open, and TUI ports to v2 wait until Vibeterm core runs on v2. **Needs a v2 port later.**
+- Last checked against upstream: `a697115b20` (upstream `dev`)
+- Upstream: issue [#53846](https://github.com/anomalyco/opencode/issues/53846), PR [#53848](https://github.com/anomalyco/opencode/pull/53848) against v1 `dev`. Its body opens with the user's note that v1 is the maintenance branch and a v2 version follows once their plugin setup runs on v2. **Needs a v2 port later.**
 
 ## Original request
 
@@ -86,10 +86,16 @@ Clarified by the user on 2026-10-07, relayed by the coordinator:
   [`ses_eec44cf7effeFCqQefM0NkWLaW`](../sessions/2026-10-07-tui-footer-variant.md)
   - `bd9676d499`: land with docs; build and install on desktop and m4max,
     `footer_variant: true` set in their `tui.json`.
+  - `021d0625ad` on `tui-footer-variant` rebased onto upstream `dev`
+    `a697115b20` with the tui.mdx bullet, no AI trailers; upstream issue
+    #53846 and PR #53848, opened after the user asked for v1 PRs again.
 
 ## Current maintenance notes
 
-- Port to v2 once Vibeterm core runs on v2; no upstream PR for v1.
+- Port to v2 once Vibeterm core runs on v2. Drop the fork commit if PR
+  #53848 (or an equivalent) reaches upstream `dev`.
+- Item 24 (`ses_ee68aab01ffei41gwUGJ5ESj6W`) folds footer elements into one
+  `footer` setting and keeps `footer_variant: true` as a legacy alias.
 - Host setting: `"footer_variant": true` in `~/.config/opencode/tui.json` on
   desktop and m4max.
 
