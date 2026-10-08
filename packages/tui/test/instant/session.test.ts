@@ -83,6 +83,42 @@ describe("instant session", () => {
     expect(session.input(bytes("\x03"))).toBe("quit")
   })
 
+  test("a click on the agent, model, hints or session title queues the command the TUI runs for it", () => {
+    const click = (x: number, y: number) => `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`
+    const home = create()
+    const frame = home.compute(120, 40)
+    expect(frame.targets.map((target) => target.command)).toEqual([
+      "agent.list",
+      "model.list",
+      "agent.cycle",
+      "command.palette.show",
+    ])
+    for (const target of frame.targets) {
+      home.input(bytes(click(target.x + target.width - 1, target.y)))
+      expect(home.action).toBe(target.command)
+    }
+    const model = frame.targets.find((target) => target.command === "model.list")!
+    home.input(bytes(click(model.x, model.y)))
+    const pressed = home.compute(120, 40).grid[model.y].slice(model.x, model.x + model.width)
+    expect(pressed.every((cell) => cell.inverse)).toBe(true)
+    expect(create(home.state()).action).toBe("model.list")
+    home.input(bytes("\x1b"))
+    home.flushEscape()
+    expect(home.action).toBeUndefined()
+
+    const session = createSession()
+    const title = session.compute(160, 40).targets.find((target) => target.command === "session.rename")!
+    session.input(bytes(click(title.x, title.y)))
+    expect(session.action).toBe("session.rename")
+  })
+
+  test("a press dragged off its cell queues nothing", () => {
+    const session = create()
+    const model = session.compute(120, 40).targets.find((target) => target.command === "model.list")!
+    session.input(bytes(`\x1b[<0;${model.x + 1};${model.y + 1}M\x1b[<0;${model.x + 2};${model.y + 1}m`))
+    expect(session.action).toBeUndefined()
+  })
+
   test("state carries over to a new session", () => {
     const first = create()
     first.input(bytes("hello\x1b[1;2D\x1b[1;2D"))

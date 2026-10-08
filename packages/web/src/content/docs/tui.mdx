@@ -70,6 +70,26 @@ The output of the command is added to the conversation as a tool result.
 
 ---
 
+## Clickable elements
+
+These parts of the screen run the same command as their keybind or slash command when you click them:
+
+| Element | Where | Action |
+| --- | --- | --- |
+| Agent name | Below the prompt | Opens the agent picker (`/agents`) |
+| Model and provider | Below the prompt | Opens the model picker (`/models`) |
+| Variant | Below the prompt, when one is selected | Opens the variant picker (`/variants`) |
+| `tab agents` | Below the prompt | Switches to the next agent, like `tab` |
+| `ctrl+p commands` | Below the prompt | Opens the command palette |
+| Session title | Top of the session sidebar | Renames the session (`/rename`) |
+| An MCP server | MCP section of the session sidebar | Connects or disconnects that server, as `/mcps` does, without opening the dialog. The dot shows `⋯` until the server answers. |
+| MCP count and `/status` | Home screen footer | Opens the status dialog (`/status`) |
+| Connect provider | "Getting started" box in the session sidebar | Opens the provider list (`/connect`) |
+
+A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere.
+
+---
+
 ## Commands
 
 When using the OpenCode TUI, you can type `/` followed by a command name to quickly execute actions. For example:
@@ -500,6 +520,8 @@ OpenCode paints its home screen, with a working prompt, as soon as you run `open
 Opening an existing session with `--session` or `--continue` shows the session screen the same way: the prompt at the bottom, a loading line in the transcript, and the sidebar (when the terminal is wide enough) with the session's last known title, or its ID until it has one. With `--continue` the session is not known until OpenCode loads, so the title appears then.
 
 The agent, model, variant and colors come from the previous run in the same directory, or in the same session. If you press Enter before OpenCode has loaded, the line below the prompt reads "OpenCode still loading, will submit shortly" and the prompt is sent once loading finishes. If the agent, model or variant that loads differs from the one shown, the prompt is not sent and the line reads "Not submitted: agent/model/variant changed". Press Enter again to send it.
+
+Clicking the agent, model, variant, `tab agents` or `ctrl+p commands` below the prompt, or the session title in the sidebar, before OpenCode has loaded shows the clicked text highlighted, and runs its [action](#clickable-elements) once loading finishes. Only the latest click is kept; Escape cancels it.
 
 - `instant_prompt` - Show the home screen and prompt while OpenCode starts. Defaults to `true`.
 - `early_input` - When `instant_prompt` is off, or with `--mini`, keep the keys you type while OpenCode starts and place them in the prompt when it appears. Enter pressed during startup is dropped. Defaults to `true`.

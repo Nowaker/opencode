@@ -5,6 +5,7 @@ import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { useHomeSessionDestination } from "../../routes/home/session-destination"
 import { TuiLayout } from "../../layout"
+import { onClick } from "../../ui/click"
 
 const id = "internal:home-footer"
 
@@ -34,7 +35,12 @@ function Mcp(props: { api: TuiPluginApi }) {
 
   return (
     <Show when={has()}>
-      <box gap={1} flexDirection="row" flexShrink={0}>
+      <box
+        gap={1}
+        flexDirection="row"
+        flexShrink={0}
+        {...onClick(() => props.api.keymap.dispatchCommand("opencode.status"))}
+      >
         <text fg={theme().text}>
           <Switch>
             <Match when={err()}>

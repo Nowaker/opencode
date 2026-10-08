@@ -37,6 +37,8 @@ export type Handoff = {
   selection?: { start: number; end: number }
   placeholder: number
   queued?: InstantSession.Queued
+  // The command a click on the screen queued for the TUI to run.
+  action?: string
   entry?: InstantCache.Directory
   homeBottomRows: number
 }
@@ -431,6 +433,7 @@ export function claim(): Handoff | undefined {
     selection: self.core.editor.selection(),
     placeholder: self.init.placeholder,
     queued: state.queued,
+    action: state.action,
     entry: self.init.entry,
     homeBottomRows: self.init.entry?.homeBottomRows ?? TuiLayout.defaultHomeBottomRows,
   }
