@@ -896,6 +896,38 @@ export function Prompt(props: PromptProps) {
   const admissions = createMemo(() => (props.sessionID ? admission.entries(props.sessionID) : []))
   const unconfirmed = createMemo(() => admissions().filter((entry) => entry.state === "unknown"))
   const [unsent, setUnsent] = createSignal<string>()
+  const admissionBusy = createMemo(() => admissions().find((entry) => entry.state === "checking" || entry.slow))
+  const admissionShown = createMemo(() => Boolean(unconfirmed()[0] || admissionBusy() || unsent()))
+  // Shown on its own in the status row, or after the running turn's "esc interrupt", separated like the
+  // footer's other items.
+  const admissionNotice = () => (
+    <Switch>
+      <Match when={unconfirmed()[0]}>
+        {(entry) => (
+          <box onMouseUp={resendUnconfirmed}>
+            <text fg={theme.warning} wrapMode="word">
+              Prompt may not have been received: {entry().error ?? "no response"}
+              <span style={{ fg: theme.textMuted }}> · click or {paletteShortcut()} "Resend unconfirmed prompt"</span>
+            </text>
+          </box>
+        )}
+      </Match>
+      <Match when={admissionBusy()}>
+        {(entry) => (
+          <Spinner color={theme.accent}>
+            {entry().state === "checking" ? "Checking whether the prompt was received" : "Sending prompt"}
+          </Spinner>
+        )}
+      </Match>
+      <Match when={unsent()}>
+        {(notice) => (
+          <text fg={theme.error} wrapMode="word">
+            {notice()}
+          </text>
+        )}
+      </Match>
+    </Switch>
+  )
 
   // A draft the server turned down comes back to the composer. Text typed there since stays, below the draft,
   // with the caret on the same character it was on.
@@ -1862,25 +1894,6 @@ export function Prompt(props: PromptProps) {
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
-            <Match when={unconfirmed()[0]}>
-              {(entry) => (
-                <box paddingLeft={3} paddingRight={2} flexGrow={1} flexShrink={1} onMouseUp={resendUnconfirmed}>
-                  <text fg={theme.warning} wrapMode="word">
-                    Prompt may not have been received: {entry().error ?? "no response"}
-                    <span style={{ fg: theme.textMuted }}> · click or {paletteShortcut()} "Resend unconfirmed prompt"</span>
-                  </text>
-                </box>
-              )}
-            </Match>
-            <Match when={admissions().find((entry) => entry.state === "checking" || entry.slow)}>
-              {(entry) => (
-                <box paddingLeft={3}>
-                  <Spinner color={theme.accent}>
-                    {entry().state === "checking" ? "Checking whether the prompt was received" : "Sending prompt"}
-                  </Spinner>
-                </box>
-              )}
-            </Match>
             <Match when={status().type !== "idle"}>
               <box
                 flexDirection="row"
@@ -1953,27 +1966,32 @@ export function Prompt(props: PromptProps) {
                     })()}
                   </box>
                 </box>
-                <Show when={!aborting()} fallback={<text fg={theme.warning}>aborting…</text>}>
-                  <text
-                    fg={store.interrupt > 0 ? theme.primary : theme.text}
-                    {...onClick(() => keymap.dispatchCommand("session.interrupt"))}
-                  >
-                    esc{" "}
-                    <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                      {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                    </span>
-                  </text>
-                </Show>
+                <box flexDirection="row" gap={TuiLayout.Prompt.statusGap} flexShrink={1}>
+                  <box flexShrink={0}>
+                    <Show when={!aborting()} fallback={<text fg={theme.warning}>aborting…</text>}>
+                      <text
+                        fg={store.interrupt > 0 ? theme.primary : theme.text}
+                        {...onClick(() => keymap.dispatchCommand("session.interrupt"))}
+                      >
+                        esc{" "}
+                        <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
+                          {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
+                        </span>
+                      </text>
+                    </Show>
+                  </box>
+                  <Show when={admissionShown()}>
+                    <box flexShrink={1} paddingRight={TuiLayout.Prompt.statusGap}>
+                      {admissionNotice()}
+                    </box>
+                  </Show>
+                </box>
               </box>
             </Match>
-            <Match when={unsent()}>
-              {(notice) => (
-                <box paddingLeft={3} paddingRight={2} flexGrow={1} flexShrink={1}>
-                  <text fg={theme.error} wrapMode="word">
-                    {notice()}
-                  </text>
-                </box>
-              )}
+            <Match when={admissionShown()}>
+              <box paddingLeft={3} paddingRight={TuiLayout.Prompt.statusGap} flexGrow={1} flexShrink={1}>
+                {admissionNotice()}
+              </box>
             </Match>
             <Match when={!props.sessionID && startupNotice()}>
               <box marginLeft={TuiLayout.Prompt.statusInset}>{startupNoticeView()}</box>
