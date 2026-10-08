@@ -5,11 +5,12 @@
 - Status: active
 - Integration branch: `dev-nowaker`
 - Development branches: `sqlite-begin-retry`, `sqlite-error-diagnosis`,
-  `fork-audit-ready`, `prompt-sql-contention`
+  `fork-audit-ready`, `prompt-sql-contention`, `processor-diagnostic`
 - First integrated commits: `651f31f376`, `c5764cbdbf`, `e49541777f`,
   `28aa286c86`, `115310f98c`
 - Source workers: `ses_eecf4b409ffeFKx2qAXipWliKo`,
-  `ses_eecf11b3affevOqpKUU3vncF7S`, `ses_eebf2e45cfferJAfg1d5eBsDB6`
+  `ses_eecf11b3affevOqpKUU3vncF7S`, `ses_eebf2e45cfferJAfg1d5eBsDB6`,
+  `ses_ee6f529f0ffezc6ATEiYn7JAip`
 - Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
 - Upstream PR: blocked; first completed 24-hour live gate failed
 
@@ -34,6 +35,7 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
 | `opencode/session/sql-error.ts`, `SqlErrorMessage.message` | Known SQL/Drizzle cause becomes fixed safe diagnosis, never query/params/native free text |
 | `MessageV2.fromError` | Preserve `UnknownError` wire shape and provider classification |
 | `core/database/transaction-diagnostic.ts`, HTTP error middleware | Preserve original SQL error identity; add fixed-vocabulary transaction phase, attempts, elapsed time and PID to the existing failure log |
+| `SessionProcessor.halt` | Read the same original diagnostic before error conversion and conditionally include the identical bounded `sqlite` field in the existing processor failure log; no wire or execution change |
 
 ## Verification
 
@@ -96,3 +98,7 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   a desktop failure in vt-126 already had acquisition recovery. Its retained
   log lacked code, phase and attempts, so attribution remained unknown.
   Add diagnostic transport and HTTP logging without speculative retry changes.
+- 2026-10-07 [`ses_ee6f529f0ffezc6ATEiYn7JAip`](../sessions/fork-audit.md#processor-diagnostic-propagation-2026-10-07) -
+  parent-delegated processor propagation `36445e0198`; six real halt-path
+  regression cases and isolated installed native failure QA on both hosts.
+  Older running executable coverage remains; no clean-window declaration.

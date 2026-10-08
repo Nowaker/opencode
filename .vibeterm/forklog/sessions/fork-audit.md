@@ -196,3 +196,53 @@
   Desktop sysstat deployed independently in dotfiles commit `cfcac55`;
   natural minute samples and successful collection were independently
   checked. Its next newly created daily DISK archive check is agent-scheduled.
+
+## Processor diagnostic propagation (2026-10-07)
+
+- Worker: `ses_ee6f529f0ffezc6ATEiYn7JAip`, parent
+  `ses_eebf2e45cfferJAfg1d5eBsDB6`, reliability owner
+  `ses_eeda1d251ffel81U5Y42j4kb33`. Approved application scope independently
+  read from `msg_112fdb402001Eub58TQZr2mAWl`; no hardware scope executed here.
+- Feature: [SQLite admission recovery and safe diagnosis](../features/sqlite-admission.md).
+- Branch `processor-diagnostic` from refreshed `dev-nowaker` `7f2ec99120`.
+  Source `36445e0198` adds only the existing diagnostic lookup and conditional
+  `sqlite` field to `SessionProcessor.halt`, before its unchanged conversion.
+  Rebase was a no-op; fast-forward integrated and pushed to both remotes,
+  independently checked at `36445e0198eda3a82b0aaeed148d8acc31d6a058`.
+- Source regression invokes `SessionProcessor.process` through actual halt,
+  error publication, idle transition and message cleanup. The LLM failure
+  seam injects a wrapped SQL error recorded through `TransactionDiagnostic`
+  for each of acquire/body/finalize/after_commit; these are propagation
+  fixtures, not a claim that one native failure exercised every phase.
+  Without propagation, all four fail on absent `sqlite`; both untracked SQL
+  and ordinary-error controls pass. Restored propagation passes all six,
+  retains `UnknownError` and excludes private fixture content from new fields.
+- On both hosts, from `packages/opencode`:
+  `bun test --timeout 30000 test/session/processor-diagnostic.test.ts test/session/processor-effect.test.ts test/session/message-v2-sql-error.test.ts test/server/httpapi-error-middleware.test.ts`
+  passed 54 tests, 338 assertions. `bun typecheck` passed. From `packages/core`:
+  `bun test --timeout 30000 test/transaction-diagnostic.test.ts test/database-transaction.test.ts test/sqlite-error.test.ts`
+  passed 44 tests, 134 assertions. Changed TypeScript LSP diagnostics clean.
+  The first desktop combined run with concurrent typecheck hit two 5s test
+  timeouts; rerun with the explicit test-runner timeout above passed. No
+  production timeout changed. Both push hooks passed 30 workspace typechecks.
+- Both hosts built their own primary checkout with tracked
+  `.vibeterm/build.sh`, preserving unrelated retry-header cap and `.gitignore`
+  edits: `1.18.34-vt-156-907b3bc518`. Linux installed inode `49946730`, macOS
+  inode `22186648`. An earlier desktop worktree-build QA passed before the
+  primary build; the final primary build was separately exercised below.
+- Installed binary QA starts a scratch loopback Basic-auth server, isolated
+  HOME, XDG stores, plugin/tool stores and SQLite file. One local fixture
+  provider call reaches processor step-start; a scratch UNIQUE trigger causes
+  a real native Drizzle transaction-body failure. Existing stderr formatter
+  emits one processor failure diagnostic. On both hosts: health 200, warm
+  admission 200, assistant response 200 with unchanged `UnknownError`.
+  Safe projections: desktop PID `2645913`, body, attempts 1, elapsed 16ms,
+  `UniqueViolation`, `SQLITE_CONSTRAINT_UNIQUE`; m4max PID `48295`, same fields,
+  elapsed 1ms. No raw SQL, params, prompt, paths or native text in evidence.
+  Owned QA processes and scratch stores removed; no live process restarted.
+- Executable-inode coverage sample: desktop 8 current / 34 older, m4max
+  5 current / 3 older, zero unreadable among enumerated opencode processes.
+  This worker restarted zero live TUIs or services; parent/coordinator tabs
+  were untouched. Installation does not retrofit diagnostics into old
+  processes and does not establish a clean observation window. Parent
+  independent review and reliability gate decisions remain outside this task.
