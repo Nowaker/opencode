@@ -1,10 +1,15 @@
 /** @jsxImportSource @opentui/solid */
 import { testRender } from "@opentui/solid"
-import { expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import {
   AttentionSoundName,
+  footerConfigured,
+  footerSelections,
+  footerSelects,
+  footerShows,
   Info,
+  toolFooterShowsMessageID,
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
@@ -50,6 +55,16 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ model_label: "provider" })).toThrow()
   expect(decodeInfo({ footer_variant: true })).toEqual({ footer_variant: true })
   expect(() => decodeInfo({ footer_variant: "high" })).toThrow()
+  expect(decodeInfo({ datetime_format: { date: "YYYY-MM-DD", time: "HH:mm:ss" } })).toEqual({
+    datetime_format: { date: "YYYY-MM-DD", time: "HH:mm:ss" },
+  })
+  expect(decodeInfo({ datetime_format: { time: "h:mm [o'clock] A" } })).toEqual({
+    datetime_format: { time: "h:mm [o'clock] A" },
+  })
+  expect(() => decodeInfo({ datetime_format: { time: "HH:MM:SS" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { date: "YYYY-mm-dd" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { date: "DD Mon YYYY" } })).toThrow()
+  expect(() => decodeInfo({ datetime_format: { time: "" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 
@@ -68,6 +83,125 @@ test("decodes timestamps as all, none, a comma-separated list, or an array", () 
   expect(() => decodeInfo({ timestamps: "all,user" })).toThrow()
   expect(() => decodeInfo({ timestamps: "user," })).toThrow()
   expect(() => decodeInfo({ timestamps: ["all"] })).toThrow()
+})
+
+describe("footer elements", () => {
+  const selected = (value: unknown) => {
+    const footer = decodeInfo({ footer: { time: value } }).footer
+    const selection = footerSelections({ footer }, {}).time
+    return { important: selection.important, types: [...selection.types] as string[] }
+  }
+  const all = ["user", "assistant", "text", "reasoning", "tool", "error", "compaction"]
+  const types = (selections: ReturnType<typeof footerSelections>) =>
+    Object.fromEntries(
+      Object.entries(selections).map(([key, selection]) => [
+        key,
+        selection.important ? ["important", ...selection.types] : [...selection.types],
+      ]),
+    )
+
+  test("every element takes a boolean, all, none, important, or a type list", () => {
+    expect(selected(true)).toEqual({ important: false, types: all })
+    expect(selected("all")).toEqual({ important: false, types: all })
+    expect(selected(false)).toEqual({ important: false, types: [] })
+    expect(selected("none")).toEqual({ important: false, types: [] })
+    expect(selected("important")).toEqual({ important: true, types: [] })
+    expect(selected(" user , important")).toEqual({ important: true, types: ["user"] })
+    expect(selected(["tool", "assistant"])).toEqual({ important: false, types: ["assistant", "tool"] })
+    for (const key of ["agent", "model", "variant", "time", "duration", "total", "message_id"])
+      expect(decodeInfo({ footer: { [key]: "important,user" } })).toEqual({ footer: { [key]: "important,user" } })
+    expect(() => decodeInfo({ footer: { time: "tools" } })).toThrow()
+    expect(() => decodeInfo({ footer: { time: "all,user" } })).toThrow()
+    expect(() => decodeInfo({ footer: { time: ["all"] } })).toThrow()
+    expect(() => decodeInfo({ footer: { message_id: 1 } })).toThrow()
+  })
+
+  test("defaults keep the upstream footer", () => {
+    expect(types(footerSelections({}, {}))).toEqual({
+      agent: all,
+      model: all,
+      variant: [],
+      time: [],
+      duration: ["reasoning"],
+      total: all,
+      message_id: [],
+    })
+  })
+
+  test("legacy keys and persisted toggles map onto the elements while footer leaves them unset", () => {
+    expect(
+      types(
+        footerSelections(
+          { timestamps: "user,tool", turn_timing: { time: false, duration: true }, footer_variant: true },
+          { timestamps: false, turnTime: true },
+        ),
+      ),
+    ).toMatchObject({ variant: all, time: ["user", "tool"], duration: ["assistant", "reasoning", "tool"] })
+    expect(types(footerSelections({ turn_timing: { time: true } }, { timestamps: true }))).toMatchObject({
+      time: ["user", "assistant"],
+    })
+    expect(types(footerSelections({ turn_timing: { time: true, duration: true } }, { turnTime: false, turnDuration: false })))
+      .toMatchObject({ time: [], duration: ["reasoning"] })
+  })
+
+  test("footer wins over the legacy keys", () => {
+    expect(
+      types(
+        footerSelections(
+          {
+            timestamps: "all",
+            turn_timing: { duration: true },
+            footer_variant: true,
+            footer: { time: "important", duration: false, variant: "none", message_id: "all", total: false },
+          },
+          { timestamps: true, turnTime: true, turnDuration: true },
+        ),
+      ),
+    ).toMatchObject({ variant: [], time: ["important"], duration: [], message_id: all, total: [] })
+  })
+
+  test("a tool call shows its message ID only when the message footer does not", () => {
+    const toolShows = (value: unknown, landmark = { tool: false, assistant: false }) => {
+      const selection = footerSelections({ footer: decodeInfo({ footer: { message_id: value } }).footer }, {}).message_id
+      return toolFooterShowsMessageID((type) => footerShows(selection, type, () => landmark[type]))
+    }
+    expect(toolShows("all")).toBe(false)
+    expect(toolShows("assistant,tool")).toBe(false)
+    expect(toolShows("tool")).toBe(true)
+    expect(toolShows("user,tool")).toBe(true)
+    expect(toolShows("assistant")).toBe(false)
+    expect(toolShows("none")).toBe(false)
+    // A landmark tool call makes its message a landmark, so the message footer carries the ID.
+    expect(toolShows("important", { tool: true, assistant: true })).toBe(false)
+    // 'important' filters out a plain step's footer, so its tool calls keep the ID.
+    expect(toolShows("tool,important", { tool: false, assistant: false })).toBe(true)
+  })
+
+  test("toggles are session-only for elements tui.json decides", () => {
+    expect(footerConfigured({}, "time")).toBe(false)
+    expect(footerConfigured({ timestamps: "none" }, "time")).toBe(true)
+    expect(footerConfigured({ timestamps: "none" }, "duration")).toBe(false)
+    expect(footerConfigured({ footer: { duration: false } }, "duration")).toBe(true)
+  })
+
+  test("important shows only on landmarks, and asks only when the type list does not decide", () => {
+    const important = footerSelections({ footer: { time: "important,tool" } }, {}).time
+    let asked = 0
+    const landmark = (value: boolean) => () => {
+      asked++
+      return value
+    }
+    expect(footerShows(important, "tool", landmark(false))).toBe(true)
+    expect(asked).toBe(0)
+    expect(footerShows(important, "assistant", landmark(true))).toBe(true)
+    expect(footerShows(important, "assistant", landmark(false))).toBe(false)
+    expect(asked).toBe(2)
+    const none = footerSelections({ footer: { time: "user" } }, {}).time
+    expect(footerShows(none, "assistant", landmark(true))).toBe(false)
+    expect(asked).toBe(2)
+    expect(footerSelects(important, "reasoning")).toBe(true)
+    expect(footerSelects(none, "assistant")).toBe(false)
+  })
 })
 
 test("resolves host-neutral defaults", () => {
