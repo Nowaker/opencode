@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `submit-retain-draft`
 - First local commit: `777a8045b8`
-- Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`
+- Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`, `38a64a3d4a`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `a697115b20` (upstream `dev`, vanilla repro)
 
@@ -74,6 +74,7 @@ text vanished from the composer and was retyped.
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `38a64a3d4a` | 2026-10-08 | The send notice sits after `esc interrupt` (or `esc again to interrupt`, `aborting…`), two spaces apart, instead of replacing or hiding behind the running row | `admissionNotice`/`admissionShown` in the prompt component; `test/component/prompt-footer.test.tsx` |
 | `9612d23d3e` | 2026-10-07 | A known message ID joins the admission in flight or returns the stored reply; never a second run | `SessionPrompt.prompt` (`admitting`, `reply`, `admit`) in `packages/opencode/src/session/prompt.ts`; "same message ID" tests in `test/session/prompt.test.ts` |
 | `c55ad9c400` | 2026-10-07 | A rejected draft goes above text typed meanwhile (`--` separator, caret kept, unchanged if already contained) instead of the stash | `mergeFailedPrompt` in `packages/tui/src/prompt/merge.ts`; `giveBack` in the prompt component |
 | `777a8045b8` | 2026-10-07 | Client IDs, admission tracking, reconcile by lookup, restore/stash, resend/restore commands, status-line states, sync dedupe of a re-stored message, docs | `packages/tui/src/prompt/admission.tsx` (`createPromptAdmission`, `PromptAdmissionProvider`); `Prompt` `submitInner` else-branch and `giveBack` in `packages/tui/src/component/prompt/index.tsx`; `message.updated` stale-ID removal in `packages/tui/src/context/sync.tsx`; `tui.mdx` "When a prompt fails to send" |
@@ -146,6 +147,13 @@ text vanished from the composer and was retyped.
   reopened: server never runs a known message ID twice; rejected draft merged
   above newer text instead of the stash. Evidence: `9612d23d3e`,
   `c55ad9c400`, linked session.
+- 2026-10-08 [`ses_ee74c94dfffe71uYsYScadAio7`](../sessions/2026-10-07-tui-prompt-admission.md) -
+  footer spacing (user: "should show two spaces after interrupt"): before,
+  `⠴ Sending prompt` replaced `[spinner]  esc interrupt` and a rejection note
+  was hidden while a turn ran; after, `[spinner]  esc interrupt  ⠴ Sending
+  prompt`. Render test fails before (3/3) and passes after; tmux footer
+  matrix (sending, checking, rejected, unknown beside running, again to
+  interrupt, aborting, idle). Evidence: `38a64a3d4a`.
 
 ## Current maintenance notes
 
