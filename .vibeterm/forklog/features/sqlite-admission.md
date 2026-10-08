@@ -12,7 +12,7 @@
   `ses_eecf11b3affevOqpKUU3vncF7S`, `ses_eebf2e45cfferJAfg1d5eBsDB6`,
   `ses_ee6f529f0ffezc6ATEiYn7JAip`
 - Upstream base: `907b3bc518`; compared upstream: `4ac0d9c3d1`
-- Upstream PR: blocked; first completed 24-hour live gate failed
+- Upstream PR: submission blocked by token permission; reviewed branch pushed, no PR yet
 
 ## Request and rationale
 
@@ -112,3 +112,24 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   parent-delegated processor propagation `36445e0198`; six real halt-path
   regression cases and isolated installed native failure QA on both hosts.
   Older running executable coverage remains; no clean-window declaration.
+- 2026-10-07 same audit coordinator - parent-requested steady slice
+  2026-10-07T03:00:00Z..2026-10-08T03:00:00Z completed: 4,659 assistant rows,
+  zero recorded and additional silent SQL deaths, 1,436/1,440 log minutes,
+  logs beyond end. Qualified for narrow A+B upstream preparation, not universal
+  lock elimination. Pre-fix/unclassified sample share 16.33% includes one
+  unknown active-main sample; no per-PID coverage claim. Original failed and
+  rollout cohorts remain unchanged. Fresh `sqlite-admission-upstream` targets
+  refreshed upstream `dev` `a697115b2033`; C/cache/TUI/phase instrumentation
+  excluded. Actual upstream checks and PR state remain to be recorded.
+- 2026-10-08 same audit coordinator - upstream preparation and review complete:
+  base `663fbd757370`, five ordinary-hook/no-AI-trailer commits, head
+  `f3b6954437f6`, 13 blobs/five patch IDs equal original A+B. Core 89/opencode
+  126, package types, main isolated runtime QA and workspace/pre-push 30/30
+  pass; single gate review APPROVE. Branch `sqlite-admission-reviewed` pushed
+  and independently verified on both fork mirrors. Original local hook-bypass
+  history remains preserved and unpublished; review checkout retired safely.
+  GitHub denied `createPullRequest` with the current token and head search
+  found no PR. Unblock `qst_11a0e0b80001VXwrHUzNCUA8p2` in the audit session;
+  no PR number/open state claimed. Prepared body partially addresses #47566,
+  not broader startup/growth problems; full evidence and actual future PR state
+  remain in Vibeterm's canonical inventory.

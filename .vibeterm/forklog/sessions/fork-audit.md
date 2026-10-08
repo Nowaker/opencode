@@ -2,13 +2,15 @@
 
 ## Identity
 
-- Workdays: 2026-10-06 and 2026-10-07 (America/Chicago)
+- Workdays: 2026-10-06 through 2026-10-08 (America/Chicago)
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
 - Development branches: `forklog-audit`, `fork-audit-ready`, `sqlite-gate-record`,
   `sqlite-steady-gate`, and the named
   isolated regression/reliability worktrees in the linked inventory
+- Upstream contribution: `sqlite-admission-upstream` (local evidence only),
+  `sqlite-admission-reviewed` (published); final records: `sqlite-gate-submit`
 - Source baseline: `e6abfddbcc228ad755a699a6a359d20af1011013`
 - Upstream baseline: `907b3bc518`; fetched `github/dev`: `4ac0d9c3d1`
 - Forklog commit: this file's introducing commit
@@ -154,6 +156,44 @@
 - Oracle accepted a scoped steady-state A+B decision after complete, clean,
   coverage-qualified measurement; diagnostic-only rollout does not reset
   unchanged A+B behavior. Do not describe this as universal lock elimination.
+- Full steady interval completed at the scheduled decision: measured
+  2026-10-08T03:04:51Z, 4,659 assistant rows, zero recorded/all-SQL and
+  additional silent deaths, 1,436/1,440 log minutes, logs reach end.
+  Pre-fix/unclassified process share 16.33% and one unknown active-main sample
+  remain explicit. Qualified for narrow preparation; failed initial/rollout
+  cohorts retained. Fresh `sqlite-admission-upstream` from current upstream
+  `dev` `a697115b2033` is separate from integration history and contains no
+  C/cache/TUI/phase instrumentation. No PR claimed before actual branch checks.
+
+## Upstream preparation and submission (2026-10-08)
+
+- Current upstream advanced to `663fbd757370` with 18 web-documentation files
+  only. Preserved that base; five original A+B units retain matching patch IDs
+  and all 13 runtime/test blobs. No C/cache/TUI/later phase instrumentation.
+- The initial local branch used an unnecessary hook bypass on its first
+  commit. It remains preserved but unpublished. Fresh publishable history
+  uses normal hooks without overrides or AI trailers, with human identity:
+  `39f33dccd5`, `714210683a`, `36f363ec4f`, `69798dc947`, `f3b6954437`.
+- Focused checks: core 89/89, opencode 126/126 and both package types pass.
+  Main personally drove real migrated file DB/event/serializer modules:
+  5,250ms external writer against 5,000ms native timeout, one callback,
+  projection, event and notification; replay, ownership/removal, interruption,
+  SQL parameter privacy and adjacent provider classification pass.
+- Same-test upstream controls fail four contention cases and 24/25 privacy
+  cases, while baseline event/message/retry controls pass. Main verified
+  content equivalence and read all changed files; single gate review APPROVE.
+  Workspace and both normal pre-push gates pass 30/30. Empty pre-commit hook
+  payloads are not described as test evidence.
+- Both fork remotes independently report `sqlite-admission-reviewed` at
+  `f3b6954437f6e0920b6910b90b8a9cef8176518b`. Review worktree unlocked/retired
+  through Vibeterm; branch and private evidence retained. No primary source
+  history changed, build installed, or live service/tab restarted here.
+- PR creation was denied: `Resource not accessible by personal access token`.
+  Token authenticates as Nowaker and can push the fork; no PR exists for the
+  head. Unblock question `qst_11a0e0b80001VXwrHUzNCUA8p2` requests browser,
+  safely supplied PR-capable token, or manual submission. Body partially
+  addresses #47566, follows the template and retains the exact required footer.
+  Actual PR URL/state remains pending rather than fabricated.
 
 ## Related ownership
 
