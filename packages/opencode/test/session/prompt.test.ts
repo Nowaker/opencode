@@ -8,7 +8,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
-import { fileURLToPath } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -1789,6 +1789,30 @@ unixNoLLMServer(
       yield* run.assertNotBusy(chat.id)
     }),
   { config: cfg },
+)
+
+unixNoLLMServer(
+  "shell passes the tool call's session, message and call ids to shell.env",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, chat } = yield* boot()
+      const result = yield* prompt.shell({
+        sessionID: chat.id,
+        agent: "build",
+        command: 'printf "%s" "$HOOK_IDS"',
+      })
+
+      const tool = completedTool(result.parts)
+      if (!tool) return
+      expect(tool.state.output).toBe([chat.id, result.info.id, tool.callID].join("|"))
+      expect(tool.messageID).toBe(result.info.id)
+    }),
+  {
+    config: {
+      ...cfg,
+      plugin: [pathToFileURL(path.join(import.meta.dir, "..", "fixture", "shell-env-plugin.ts")).href],
+    },
+  },
 )
 
 unixNoLLMServer(
