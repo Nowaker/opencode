@@ -36,6 +36,7 @@ import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
 import { usePromptAdmission } from "../../prompt/admission"
+import { mergeFailedPrompt } from "../../prompt/merge"
 import { Identifier } from "@opencode-ai/core/id/id"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
@@ -894,18 +895,30 @@ export function Prompt(props: PromptProps) {
   const unconfirmed = createMemo(() => admissions().filter((entry) => entry.state === "unknown"))
   const [unsent, setUnsent] = createSignal<string>()
 
-  // A draft the server turned down comes back to the composer, unless something was typed there since: then
-  // it goes to the stash, so neither draft overwrites the other.
+  // A draft the server turned down comes back to the composer. Text typed there since stays, below the draft,
+  // with the caret on the same character it was on.
   function giveBack(draft: PromptInfo) {
-    if (input.plainText || store.prompt.parts.length > 0) {
-      stash.push({ input: draft.input, parts: draft.parts })
-      return "saved to stash"
+    if (!input.plainText && store.prompt.parts.length === 0) {
+      input.setText(draft.input)
+      setStore("prompt", { input: draft.input, parts: draft.parts })
+      restoreExtmarksFromParts(draft.parts)
+      input.gotoBufferEnd()
+      return "restored to the prompt"
     }
-    input.setText(draft.input)
-    setStore("prompt", { input: draft.input, parts: draft.parts })
-    restoreExtmarksFromParts(draft.parts)
-    input.gotoBufferEnd()
-    return "restored to the prompt"
+    syncExtmarksWithPromptParts()
+    const merged = mergeFailedPrompt(draft, structuredClone(unwrap({ ...store.prompt, input: input.plainText })))
+    if (!merged) return "already in the prompt"
+    const caret = readCaret()
+    input.setText(merged.prompt.input)
+    setStore("prompt", merged.prompt)
+    restoreExtmarksFromParts(merged.prompt.parts)
+    placeCaret({
+      offset: caret.offset + merged.shift,
+      ...(caret.selection
+        ? { selection: { start: caret.selection.start + merged.shift, end: caret.selection.end + merged.shift } }
+        : {}),
+    })
+    return "added above your new text"
   }
 
   createEffect(() => {
