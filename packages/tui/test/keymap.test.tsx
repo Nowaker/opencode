@@ -4,6 +4,7 @@ import { createBindingLookup } from "@opentui/keymap/extras"
 import { testRender, useRenderer } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { onCleanup } from "solid-js"
+import type { TextareaRenderable } from "@opentui/core"
 import { TuiKeybind } from "../src/config/keybind"
 import { getOpencodeModeStack, OPENCODE_BASE_MODE, OpencodeKeymapProvider, registerOpencodeKeymap } from "../src/keymap"
 
@@ -125,13 +126,13 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
   const app = await testRender(() => <Harness />)
   try {
     expect(counts).toEqual({
-      base: { "session.list": 1, "session.new": 1, "session.page.up": 2, "session.first": 3, "model.list": 1 },
-      question: { "session.list": 1, "session.new": 1, "session.page.up": 2, "session.first": 3, "model.list": 0 },
+      base: { "session.list": 1, "session.new": 1, "session.page.up": 2, "session.first": 2, "model.list": 1 },
+      question: { "session.list": 1, "session.new": 1, "session.page.up": 2, "session.first": 2, "model.list": 0 },
       autocomplete: {
         "session.list": 1,
         "session.new": 1,
         "session.page.up": 2,
-        "session.first": 3,
+        "session.first": 2,
         "model.list": 0,
       },
     })
@@ -176,6 +177,80 @@ test("escape presses delivered in one read reach the single-press abort", async 
     await read("\x1b\x1b\x1b\x1b")
     await read("\x0b")
     expect(aborts).toEqual([JSON.stringify("\x1b\x1b"), JSON.stringify("\x1b\x1b\x1b\x1b"), JSON.stringify("\x0b")])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+// Home and End follow the editor-standard scheme: the prompt owns home/end with
+// and without ctrl or shift, and conversation scrolling owns ctrl+alt+home/end.
+// No default stroke is bound to both, so a key means the same thing whether or
+// not the prompt has focus.
+test("default input and messages keybinds share no key", () => {
+  const keybinds = TuiKeybind.parse({})
+  const strokes = (prefix: string) =>
+    new Set(
+      Object.entries(keybinds)
+        .filter(([name]) => name.startsWith(prefix))
+        .flatMap(([, value]) => (typeof value === "string" ? value.split(",") : []))
+        .filter((key) => key !== "none"),
+    )
+  const input = strokes("input_")
+  expect([...strokes("messages_")].filter((key) => input.has(key))).toEqual([])
+})
+
+test("home and end keys reach the prompt or the conversation, never both", async () => {
+  const ran: string[] = []
+  let editor: TextareaRenderable | undefined
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createResolvedKeymapConfig()
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offSession = keymap.registerLayer({
+      mode: OPENCODE_BASE_MODE,
+      commands: [
+        { name: "session.first", run: () => void ran.push("session.first") },
+        { name: "session.last", run: () => void ran.push("session.last") },
+      ],
+      bindings: config.keybinds.gather("session", ["session.first", "session.last"]),
+    })
+    onCleanup(() => {
+      offSession()
+      offKeymap()
+    })
+
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <textarea ref={(el: TextareaRenderable) => (editor = el)} focused initialValue={"one\ntwo"} />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  const press = async (bytes: string) => {
+    app.renderer.stdin.emit("data", Buffer.from(bytes))
+    await Bun.sleep(50)
+  }
+  try {
+    if (!editor) throw new Error("textarea did not mount")
+    editor.cursorOffset = 5
+    await press("\x1b[1~") // home, as tmux sends it: start of the line "two"
+    expect(editor.cursorOffset).toBe(4)
+    await press("\x1b[4~") // end, as tmux sends it: end of that line
+    expect(editor.cursorOffset).toBe(7)
+    await press("\x1b[1;5H") // ctrl+home: start of the prompt
+    expect(editor.cursorOffset).toBe(0)
+    await press("\x1b[1;5F") // ctrl+end: end of the prompt
+    expect(editor.cursorOffset).toBe(7)
+    expect(ran).toEqual([])
+
+    await press("\x1b[1;7H") // ctrl+alt+home
+    await press("\x1b[1;7F") // ctrl+alt+end
+    expect(ran).toEqual(["session.first", "session.last"])
+    expect(editor.cursorOffset).toBe(7)
+    expect(editor.plainText).toBe("one\ntwo")
   } finally {
     app.renderer.destroy()
   }
