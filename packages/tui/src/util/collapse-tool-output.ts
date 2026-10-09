@@ -1,4 +1,5 @@
 export function collapseToolOutput(output: string, maxLines: number, maxChars: number) {
+  if (maxLines === 0) return { output: "", overflow: output.length > 0 }
   const lines = output.split("\n")
   if (lines.length <= maxLines && Array.from(output).length <= maxChars) {
     return { output, overflow: false }

@@ -100,9 +100,7 @@ export const FooterSelector = Schema.Literals([...TimestampType.literals, "impor
 export const FooterValue = Schema.Union([
   Schema.Boolean,
   Schema.String.check(
-    Schema.isPattern(
-      new RegExp(`^\\s*(all|none|(${footerSelectorNames})(\\s*,\\s*(${footerSelectorNames}))*)\\s*$`),
-    ),
+    Schema.isPattern(new RegExp(`^\\s*(all|none|(${footerSelectorNames})(\\s*,\\s*(${footerSelectorNames}))*)\\s*$`)),
   ),
   Schema.Array(FooterSelector),
 ])
@@ -262,6 +260,40 @@ export const DateTimeFormat = Schema.Struct({
     "How times and dates are written in message footers, entry timestamps, the compaction divider and the timeline and stash dialogs. Entries from today show only the time",
 })
 
+export const ToolOutputGroup = Schema.Literals(["bash", "generic", "write", "edit", "apply_patch"])
+export type ToolOutputGroup = Schema.Schema.Type<typeof ToolOutputGroup>
+export const ToolOutputCollapseDefaults: Record<ToolOutputGroup, number | "never"> = {
+  bash: 10,
+  generic: 3,
+  write: "never",
+  edit: "never",
+  apply_patch: "never",
+}
+export const ToolOutput = Schema.Struct({
+  collapse: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Union([Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), Schema.Literal("never")]),
+    ),
+  ).annotate({
+    description: [
+      "How many lines of a tool block's output show before 'Click to expand', per group or tool name.",
+      "Groups: 'bash' (default 10), 'generic' - plugin, MCP and other tools without their own view (default 3),",
+      "'write', 'edit', 'apply_patch' (default 'never').",
+      "A tool name, such as 'vibeterm_prompt_session', overrides its group.",
+      "A number of lines; 0 hides the output entirely until clicked; 'never' always shows all of it.",
+      "Long lines count too: the preview is capped at that many lines' worth of characters.",
+    ].join(" "),
+  }),
+}).annotate({ description: "Tool output in the session transcript" })
+export type ToolOutput = Schema.Schema.Type<typeof ToolOutput>
+
+// Lines of output a tool block shows while collapsed; undefined when it never collapses.
+export function toolOutputLimit(config: ToolOutput | undefined, tool: string, group: ToolOutputGroup) {
+  const value = config?.collapse?.[tool] ?? config?.collapse?.[group] ?? ToolOutputCollapseDefaults[group]
+  return value === "never" ? undefined : value
+}
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -302,6 +334,7 @@ export const Info = Schema.Struct({
   }),
   footer: Schema.optional(Footer),
   datetime_format: Schema.optional(DateTimeFormat),
+  tool_output: Schema.optional(ToolOutput),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })

@@ -406,6 +406,7 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
 - `footer` - Chooses which details message footers and other transcript entries show: agent, model, variant, time, duration, total and message ID. See [Footer](#footer).
 - `datetime_format` - How times and dates are written. See [Date and time format](#date-and-time-format).
+- `tool_output.collapse` - How much of a tool's output shows before **Click to expand**. See [Tool output](#tool-output).
 - `model_label` - How message footers and the prompt name a model: `"name"` (default) shows its display name, such as `Claude Sonnet 4.5`; `"id"` shows `providerID/modelID`, such as `anthropic/claude-sonnet-4-5`.
 - `turn_timing`, `footer_variant`, `timestamps` - Older settings that `footer` replaces; they keep working. See [Older footer settings](#older-footer-settings).
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
@@ -499,6 +500,40 @@ This shows `14:20:07` for today and `2026-10-07 14:20:07` for an older entry.
 | `time` | `a`    | `am` or `pm`              |
 
 Uppercase `MM` is always the month and lowercase `mm` the minute. Each part accepts only its own tokens, so a time written as `HH:MM:SS` is rejected rather than shown with the month in place of the minute. Any other letter must be put in brackets: `h[h]mm` writes `2h20`. Digits, spaces and punctuation are written as they are.
+
+### Tool output
+
+`tool_output.collapse` sets how many lines of a tool block's output show before **Click to expand**. Clicking the block expands it to the full output, and clicking again collapses it.
+
+```json title="tui.json"
+{
+  "tool_output": {
+    "collapse": {
+      "bash": 0,
+      "generic": 10,
+      "edit": 20,
+      "vibeterm_prompt_session": 0
+    }
+  }
+}
+```
+
+| Key           | Covers                                                          | Default   |
+| ------------- | --------------------------------------------------------------- | --------- |
+| `bash`        | Shell commands and their output                                 | `10`      |
+| `generic`     | Plugin, MCP and other tools without a view of their own         | `3`       |
+| `write`       | The content of a written file                                   | `"never"` |
+| `edit`        | The diff of an edited file                                      | `"never"` |
+| `apply_patch` | The diff of each patched file                                   | `"never"` |
+| a tool name   | That tool only, overriding its group: `"vibeterm_prompt_session"` | its group |
+
+Each value is a number of lines or `"never"`:
+
+- A number shows that many lines, then `…` and the hint. A long line counts as more than one: the preview is capped at that many lines' worth of characters.
+- `0` hides the output until clicked. The block is just its title or command, a blank line, and the hint, with the [footer](#footer) on the hint line: `Click to expand · 16:13:02 · 1.5s`.
+- `"never"` always shows all of it, with no hint.
+
+`write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on.
 
 ### Older footer settings
 

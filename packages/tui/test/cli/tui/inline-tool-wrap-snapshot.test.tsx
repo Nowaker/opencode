@@ -7,6 +7,8 @@ import {
   formatSubagentRetry,
   formatSubagentTitle,
   formatSubagentToolcalls,
+  ClippedRows,
+  collapseOutput,
   formatToolTimestamp,
   userFooterGap,
   InlineToolRow,
@@ -267,6 +269,61 @@ describe("TUI inline tool wrapping", () => {
     const lines = frame.split("\n").map((line) => line.trim())
     expect(lines).toContain("second line]")
     expect(lines).toContain("1:07 PM · 1.2s")
+  })
+
+  test("tool output collapses to its limit, hides it all at 0, and never cuts without one", () => {
+    const output = ["one", "two", "three", "four"].join("\n")
+    expect(collapseOutput(output, undefined, 80)).toEqual({ output, overflow: false })
+    expect(collapseOutput(output, 2, 80)).toEqual({ output: "one\ntwo\n…", overflow: true })
+    expect(collapseOutput(output, 4, 80)).toEqual({ output, overflow: false })
+    expect(collapseOutput(output, 0, 80)).toEqual({ output: "", overflow: true })
+    expect(collapseOutput("", 0, 80)).toEqual({ output: "", overflow: false })
+  })
+
+  test("a clipped block shows its first rows and reports that more are hidden", async () => {
+    const clips: boolean[] = []
+    const rows = () => (
+      <box>
+        <For each={["row 1", "row 2", "row 3", "row 4"]}>{(row) => <text>{row}</text>}</For>
+      </box>
+    )
+    const frame = await renderFrame(
+      () => (
+        <box>
+          <ClippedRows limit={2} expanded={false} onClip={(clipped) => clips.push(clipped)}>
+            {rows()}
+          </ClippedRows>
+          <text>after</text>
+        </box>
+      ),
+      { width: 20, height: 6 },
+    )
+    expect(frame.split("\n")).toEqual(["row 1", "row 2", "after"])
+    expect(clips.at(-1)).toBe(true)
+    const open = await renderFrame(
+      () => (
+        <box>
+          <ClippedRows limit={2} expanded={true} onClip={() => {}}>
+            {rows()}
+          </ClippedRows>
+          <text>after</text>
+        </box>
+      ),
+      { width: 20, height: 6 },
+    )
+    expect(open.split("\n")).toEqual(["row 1", "row 2", "row 3", "row 4", "after"])
+    const hidden = await renderFrame(
+      () => (
+        <box>
+          <ClippedRows limit={0} expanded={false} onClip={() => {}}>
+            {rows()}
+          </ClippedRows>
+          <text>after</text>
+        </box>
+      ),
+      { width: 20, height: 6 },
+    )
+    expect(hidden).toBe("after")
   })
 
   test("formats a running tool call's start time and whole-second stopwatch", () => {
