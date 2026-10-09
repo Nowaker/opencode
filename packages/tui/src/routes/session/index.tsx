@@ -1911,7 +1911,10 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
           <Show when={ctx.footer("time", "error", props.message.id)}>
             <text fg={theme.textMuted}>
-              {Locale.todayTimeOrDateFirst(props.message.time.completed ?? props.message.time.created, ctx.tui.datetime_format)}
+              {Locale.todayTimeOrDateFirst(
+                props.message.time.completed ?? props.message.time.created,
+                ctx.tui.datetime_format,
+              )}
             </text>
           </Show>
         </box>
@@ -2194,9 +2197,9 @@ function GenericTool(props: ToolProps) {
   const ctx = use()
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 3
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
+  const collapsed = createMemo(() =>
+    collapseOutput(output(), TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"), ctx.width),
+  )
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
@@ -2223,9 +2226,11 @@ function GenericTool(props: ToolProps) {
         hint={expandHint(collapsed().overflow, expanded())}
         onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
       >
-        <box gap={1}>
-          <text fg={theme.text}>{limited()}</text>
-        </box>
+        <Show when={!collapsed().overflow || expanded() || limited()}>
+          <box gap={1}>
+            <text fg={theme.text}>{limited()}</text>
+          </box>
+        </Show>
       </BlockTool>
     </Show>
   )
@@ -2269,9 +2274,7 @@ function InlineTool(props: {
   )
 
   const failed = createMemo(() => Boolean(error() && !denied()))
-  const timestamp = createMemo(() =>
-    formatToolTimestamp(props.part.state, toolFooter(ctx, props.part)),
-  )
+  const timestamp = createMemo(() => formatToolTimestamp(props.part.state, toolFooter(ctx, props.part)))
   const clickable = createMemo(() => Boolean(props.onClick || failed()))
   const fg = createMemo(() => {
     if (props.color) return props.color
@@ -2499,9 +2502,9 @@ function Shell(props: ToolProps) {
   const isRunning = createMemo(() => props.part.state.status === "running")
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output)?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 10
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
+  const collapsed = createMemo(() =>
+    collapseOutput(output(), TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "bash"), ctx.width),
+  )
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
@@ -2534,7 +2537,7 @@ function Shell(props: ToolProps) {
             <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
               <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
             </Show>
-            <Show when={output()}>
+            <Show when={limited()}>
               <text fg={theme.text}>{limited()}</text>
             </Show>
           </box>
@@ -2555,20 +2558,32 @@ function Write(props: ToolProps) {
   const code = createMemo(() => {
     return stringValue(props.input.content) ?? ""
   })
+  const collapse = useBlockCollapse(
+    () => props.tool,
+    "write",
+    () => code().length > 0,
+  )
 
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
-        <BlockTool title={"# Wrote " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-            <code
-              conceal={false}
-              fg={theme.text}
-              filetype={filetype(stringValue(props.input.filePath))}
-              syntaxStyle={syntax()}
-              content={code()}
-            />
-          </line_number>
+        <BlockTool
+          title={"# Wrote " + pathFormatter.format(stringValue(props.input.filePath))}
+          part={props.part}
+          hint={collapse.hint()}
+          onClick={collapse.onClick()}
+        >
+          <ClippedRows limit={collapse.limit()} expanded={collapse.expanded()} onClip={collapse.setClipped}>
+            <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
+              <code
+                conceal={false}
+                fg={theme.text}
+                filetype={filetype(stringValue(props.input.filePath))}
+                syntaxStyle={syntax()}
+                content={code()}
+              />
+            </line_number>
+          </ClippedRows>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
         </BlockTool>
       </Match>
@@ -2773,6 +2788,53 @@ function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
   }
 }
 
+// A tool's text output cut to `limit` lines and that many lines' worth of characters; undefined never cuts.
+export function collapseOutput(output: string, limit: number | undefined, width: number) {
+  if (limit === undefined) return { output, overflow: false }
+  return collapseToolOutput(output, limit, limit * Math.max(20, width - 6))
+}
+
+// Collapsing for a tool block drawn by a component (code, diff) rather than as text: shows the
+// first `limit` rows of what it renders, and reports whether anything is hidden.
+function useBlockCollapse(tool: () => string, group: TuiConfig.ToolOutputGroup, content: () => boolean) {
+  const ctx = use()
+  const limit = createMemo(() => TuiConfig.toolOutputLimit(ctx.tui.tool_output, tool(), group))
+  const [expanded, setExpanded] = createSignal(false)
+  const [clipped, setClipped] = createSignal(false)
+  const overflow = () => (limit() === 0 ? content() : clipped())
+  return {
+    limit,
+    expanded,
+    setClipped,
+    hint: () => expandHint(overflow(), expanded()),
+    onClick: () => (overflow() ? () => setExpanded((value) => !value) : undefined),
+  }
+}
+
+export function ClippedRows(props: {
+  limit: number | undefined
+  expanded: boolean
+  onClip: (clipped: boolean) => void
+  children: JSX.Element
+}) {
+  return (
+    <Show when={props.limit !== undefined && !props.expanded} fallback={props.children}>
+      <Show when={props.limit! > 0}>
+        <box maxHeight={props.limit} overflow="hidden" flexShrink={0}>
+          <box
+            flexShrink={0}
+            onSizeChange={function () {
+              props.onClip(this.height > props.limit!)
+            }}
+          >
+            {props.children}
+          </box>
+        </box>
+      </Show>
+    </Show>
+  )
+}
+
 function expandHint(overflow: boolean, expanded: boolean) {
   if (!overflow) return
   return expanded ? "Click to collapse" : "Click to expand"
@@ -2908,32 +2970,44 @@ function Edit(props: ToolProps) {
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
+  const collapse = useBlockCollapse(
+    () => props.tool,
+    "edit",
+    () => diffContent().length > 0,
+  )
 
   return (
     <Switch>
       <Match when={stringValue(props.metadata.diff) !== undefined}>
-        <BlockTool title={"← Edit " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <box paddingLeft={1}>
-            <diff
-              diff={diffContent()}
-              view={view()}
-              filetype={ft()}
-              syntaxStyle={syntax()}
-              showLineNumbers={true}
-              width="100%"
-              wrapMode={ctx.diffWrapMode()}
-              fg={theme.text}
-              addedBg={theme.diffAddedBg}
-              removedBg={theme.diffRemovedBg}
-              contextBg={theme.diffContextBg}
-              addedSignColor={theme.diffHighlightAdded}
-              removedSignColor={theme.diffHighlightRemoved}
-              lineNumberFg={theme.diffLineNumber}
-              lineNumberBg={theme.diffContextBg}
-              addedLineNumberBg={theme.diffAddedLineNumberBg}
-              removedLineNumberBg={theme.diffRemovedLineNumberBg}
-            />
-          </box>
+        <BlockTool
+          title={"← Edit " + pathFormatter.format(stringValue(props.input.filePath))}
+          part={props.part}
+          hint={collapse.hint()}
+          onClick={collapse.onClick()}
+        >
+          <ClippedRows limit={collapse.limit()} expanded={collapse.expanded()} onClip={collapse.setClipped}>
+            <box paddingLeft={1}>
+              <diff
+                diff={diffContent()}
+                view={view()}
+                filetype={ft()}
+                syntaxStyle={syntax()}
+                showLineNumbers={true}
+                width="100%"
+                wrapMode={ctx.diffWrapMode()}
+                fg={theme.text}
+                addedBg={theme.diffAddedBg}
+                removedBg={theme.diffRemovedBg}
+                contextBg={theme.diffContextBg}
+                addedSignColor={theme.diffHighlightAdded}
+                removedSignColor={theme.diffHighlightRemoved}
+                lineNumberFg={theme.diffLineNumber}
+                lineNumberBg={theme.diffContextBg}
+                addedLineNumberBg={theme.diffAddedLineNumberBg}
+                removedLineNumberBg={theme.diffRemovedLineNumberBg}
+              />
+            </box>
+          </ClippedRows>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
         </BlockTool>
       </Match>
@@ -2996,21 +3070,31 @@ function ApplyPatch(props: ToolProps) {
     <Switch>
       <Match when={files().length > 0}>
         <For each={files()}>
-          {(file) => (
-            <BlockTool title={title(file)} part={props.part}>
-              <Show
-                when={file.type !== "delete"}
-                fallback={
-                  <text fg={theme.diffRemoved}>
-                    -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
-                  </text>
-                }
-              >
-                <Diff diff={file.patch} filePath={file.filePath} />
-                <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
-              </Show>
-            </BlockTool>
-          )}
+          {(file) => {
+            // A deleted file is one line already, so only the other files collapse.
+            const collapse = useBlockCollapse(
+              () => props.tool,
+              "apply_patch",
+              () => file.type !== "delete" && file.patch.length > 0,
+            )
+            return (
+              <BlockTool title={title(file)} part={props.part} hint={collapse.hint()} onClick={collapse.onClick()}>
+                <Show
+                  when={file.type !== "delete"}
+                  fallback={
+                    <text fg={theme.diffRemoved}>
+                      -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
+                    </text>
+                  }
+                >
+                  <ClippedRows limit={collapse.limit()} expanded={collapse.expanded()} onClip={collapse.setClipped}>
+                    <Diff diff={file.patch} filePath={file.filePath} />
+                  </ClippedRows>
+                  <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
+                </Show>
+              </BlockTool>
+            )
+          }}
         </For>
       </Match>
       <Match when={true}>
