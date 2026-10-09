@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `footer-elements` (worktree); upstream `tui-footer-elements`
 - Upstream base: `907b3bc518` (contains `v1.18.34`); upstream stack on `663fbd7573`
-- Source result commit(s): `42ce3944c3`, `ea714f8a10`
+- Source result commit(s): `42ce3944c3`, `ea714f8a10`, `9799e18401`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -33,6 +33,13 @@ vt-177 with every footer key `"all"`:
 
 > should add an extra \n (unless prompt already ends with excess \n)
 
+Configurable tool-output collapsing, in the shape the user approved:
+
+> `tool_output: { collapse: { bash: 10, generic: 3, write: "never", edit:
+> "never", apply_patch: "never", "<tool name>": N } }` in tui.json.
+
+> default values should match current opencode's rules; mine are set for me
+
 ## Goals
 
 - A message ID shows once per message: on the assistant footer, and on a
@@ -45,6 +52,8 @@ vt-177 with every footer key `"all"`:
   stopwatch from one shared clock that stops when nothing runs; finished
   durations keep tenths up to 11 minutes.
 - One blank line between a prompt's text and its footer.
+- `tool_output.collapse` per group or tool name, `0` hiding output until
+  clicked; defaults unchanged; every group `0` on both hosts.
 
 ## Constraints and non-goals
 
@@ -57,6 +66,8 @@ vt-177 with every footer key `"all"`:
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `e23cc19484` | `42ce3944c3` | fast-forward from `footer-elements`; pushed both remotes |
 | `opencode` | `dev-nowaker` | `c69bc5b43c` | `ea714f8a10` | fast-forward (stopwatch, prompt footer gap); pushed both remotes |
+| `opencode` | `dev-nowaker` | `868dc8ad37` | `9799e18401` | fast-forward (tool output collapsing); pushed both remotes |
+| `opencode` (GitHub fork + GitLab) | `tui-tool-collapse` | - | `50803d8078` | new branch on `tui-footer-elements` `09ff703f7a`, no AI trailers; head of PR #54039 |
 | `opencode` (GitHub fork + GitLab) | `tui-footer-elements` | `2b2a43d6db` | `09ff703f7a` | stopwatch folded into the feature commit; force-with-lease both remotes; PR #53877 body updated |
 | `opencode` (GitHub fork + GitLab) | `tui-footer-elements` | `cc947a75a7` | `2b2a43d6db` | change folded into the feature commit, no AI trailers; force-with-lease both remotes; PR #53877 body updated |
 
@@ -66,6 +77,7 @@ vt-177 with every footer key `"all"`:
 |---|---|---|
 | [Choose every message footer detail the same way](../features/2026-10-07-tui-footer-elements.md) | extended: `datetime_format`, message ID once, hint line | tests, isolated captures, mouse clicks |
 | [Choose which transcript entries show timestamps](../features/2026-10-06-tui-part-timestamps.md) | extended: entry timestamps follow `datetime_format` | `fmt` capture |
+| [Choose how much tool output shows before "Click to expand"](../features/2026-10-08-tui-tool-output-collapse.md) | introduced | tests, `0`-case captures, default transcript diff |
 | [Per-turn completion time and duration](../features/2026-10-04-tui-turn-timing.md) | extended: turn times follow `datetime_format`, date-first on other days | `locale.test.ts` |
 
 ## Other delivered work
@@ -77,6 +89,12 @@ vt-177 with every footer key `"all"`:
   jsonc-parser `modify` plus temp-file rename; only `datetime_format` changed.
   Decoded with the new schema, both render `2026-10-07 14:20:07` for an older
   entry and `16:07:41` for today.
+- Host config: `"tool_output": {"collapse": {"bash": 0, "generic": 0,
+  "write": 0, "edit": 0, "apply_patch": 0}}` on desktop and m4max by the same
+  method; only `tool_output` changed; both decode to limit `0` for every
+  group and for `vibeterm_prompt_session`.
+- Upstream PR [#54039](https://github.com/anomalyco/opencode/pull/54039)
+  (bot-closed, v1) and comments on #40096, #45538 and #51229.
 
 ## Verification
 
@@ -102,12 +120,17 @@ vt-177 with every footer key `"all"`:
   not on PATH on either host), carry the retry-cap and stopwatch markers,
   and the retry patch sha1 matches the canonical patch. Serve PIDs 2451613
   and 2451599 unchanged.
+- `9799e18401`: desktop and m4max `1.18.34-vt-190-907b3bc518` (inodes
+  `49946752` and `22275070`), guard gate passed on both, retry patch sha1
+  matches, retry-cap and `tool_output` schema markers present; serve PIDs
+  2451613 and 2451599 unchanged.
 - Running TUIs pick it up on their next restart.
 
 ## Commit provenance
 
 - `42ce3944c3` - `datetime_format`, message ID once, hint line footer.
 - `ea714f8a10` - running tool call stopwatch, prompt footer gap.
+- `9799e18401` - `tool_output.collapse`.
 - Required trailer: `AI-Session-ID: ses_ee68aab01ffei41gwUGJ5ESj6W`
 
 ## Unknowns and blocked verification

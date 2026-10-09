@@ -79,6 +79,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Answer prompts queued around /compact and resume the turn it cut](./features/2026-10-07-compaction-queued-resume.md)
 - [Act on clicks on the shown agent, model, IDs, usage, files and todos](./features/2026-10-07-tui-click-controls.md)
 - [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
+- [Choose how much tool output shows before "Click to expand"](./features/2026-10-08-tui-tool-output-collapse.md)
 - [Pass messageID to the shell.env hook](./features/2026-10-08-shell-env-message-id.md)
 
 ## Session records
@@ -94,7 +95,8 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-08 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-08-tui-footer-datetime-format.md)
   - `datetime_format` for every time the TUI writes, each message ID once,
     the footer on a block tool's expand hint line, a stopwatch on running
-    tool calls and a blank line before a prompt's footer; PR #53877 branch and
+    tool calls, a blank line before a prompt's footer, and
+    `tool_output.collapse` (PR #54039); PR #53877 branch and
     body updated; build and install on both hosts, `YYYY-MM-DD` /
     `HH:mm:ss` in their `tui.json`.
 
