@@ -81,8 +81,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Choose every message footer detail the same way, message ID included](./features/2026-10-07-tui-footer-elements.md)
 - [Choose how much tool output shows before "Click to expand"](./features/2026-10-08-tui-tool-output-collapse.md)
 - [Pass messageID to the shell.env hook](./features/2026-10-08-shell-env-message-id.md)
+- [Editor-standard Home and End defaults](./features/2026-10-09-editor-home-end.md)
 
 ## Session records
+
+- [2026-10-09 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-09-editor-home-end.md)
+  - Default Home/End to the editor-standard scheme (`home`/`end` line,
+    `ctrl+home`/`ctrl+end` prompt, `ctrl+alt+home`/`ctrl+alt+end`
+    conversation), fork-only; opencode-tools composer fallback `ctrl+end`;
+    build and install on both hosts.
 
 - [2026-10-08 `ses_ee26f677effe6fzY9wzepyBf13`](./sessions/2026-10-08-shell-env-message-id.md)
   - `messageID` in the `shell.env` hook input; upstream PR #54032; build
