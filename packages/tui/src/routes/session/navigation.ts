@@ -56,12 +56,7 @@ export function navigationTargets(
 // Whether a transcript entry is a landmark of `navigationTargets(..., "landmark")`: a part by its
 // own ID, a message-level entry (prompt, footer, error box, compaction divider) when the message
 // or any of its parts is one.
-export function isLandmark(
-  targets: ReadonlySet<string>,
-  parts: readonly Part[],
-  messageID: string,
-  partID?: string,
-) {
+export function isLandmark(targets: ReadonlySet<string>, parts: readonly Part[], messageID: string, partID?: string) {
   if (partID) return targets.has(partID)
   return targets.has(messageID) || parts.some((part) => targets.has(part.id))
 }
@@ -85,8 +80,8 @@ export function pickNavigationTarget(
   return { id, y }
 }
 
-// messages_last (ctrl+end) remembers where a scrolled-up reader was, so the
-// next messages_first (ctrl+home) brings them back there instead of to the top;
+// messages_last remembers where a scrolled-up reader was, so the next
+// messages_first brings them back there instead of to the top;
 // a second messages_first then goes to the top. The mark is the block that was
 // at the top of the viewport and its offset from that edge, so it survives
 // content changing above or below it.

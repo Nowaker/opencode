@@ -134,7 +134,9 @@ describe("instant keybinds", () => {
     expect(InstantEditor.match(table, InstantKeys.key("return", { shift: true }))).toBe("newline")
     expect(InstantEditor.match(table, InstantKeys.key("j", { ctrl: true }))).toBe("newline")
     expect(InstantEditor.match(table, InstantKeys.key("return"))).toBe("submit")
-    expect(InstantEditor.match(table, InstantKeys.key("home"))).toBe("buffer_home")
+    expect(InstantEditor.match(table, InstantKeys.key("home"))).toBe("line_home")
+    expect(InstantEditor.match(table, InstantKeys.key("home", { ctrl: true }))).toBe("buffer_home")
+    expect(InstantEditor.match(table, InstantKeys.key("end", { shift: true }))).toBe("select_line_end")
   })
 
   test("tui.json overrides replace the default strokes", () => {
