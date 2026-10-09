@@ -125,6 +125,11 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   - `50b9d3b329`: prompt navigation on `ctrl+up`/`ctrl+down`, blocks on
     `ctrl+alt+shift+up`/`down`; PR #53333 amended to `fdba5ac828`; build and
     install on desktop and m4max.
+- 2026-10-09
+  [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-09-editor-home-end.md)
+  - `680e8a0daa`: `ctrl+home` / `ctrl+end` no longer reach `messages_first` /
+    `messages_last` by default; those are `ctrl+g,ctrl+alt+home` /
+    `ctrl+alt+g,ctrl+alt+end` (editor-standard scheme).
 
 ## Current maintenance notes
 

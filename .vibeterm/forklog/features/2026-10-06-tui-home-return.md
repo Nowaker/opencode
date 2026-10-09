@@ -73,6 +73,11 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-06-tui-nav-layout.md)
   - `bed5ec8209`: introduce; upstream issue #53629 and stacked PR #53630;
     build and install on desktop and m4max.
+- 2026-10-09
+  [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-09-editor-home-end.md)
+  - `680e8a0daa`: the fork's editor-standard defaults move `messages_first` /
+    `messages_last` to `ctrl+alt+home` / `ctrl+alt+end`; the return-to-mark
+    follows the command.
 
 ## Current maintenance notes
 
