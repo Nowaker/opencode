@@ -10,6 +10,7 @@ import {
   footerShows,
   Info,
   toolFooterShowsMessageID,
+  toolOutputLimit,
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
@@ -236,6 +237,24 @@ describe("footer elements", () => {
     expect(footerSelects(important, "reasoning")).toBe(true)
     expect(footerSelects(none, "assistant")).toBe(false)
   })
+})
+
+test("tool_output.collapse takes lines or never, a tool name over its group, and defaults to upstream", () => {
+  expect(toolOutputLimit(undefined, "bash", "bash")).toBe(10)
+  expect(toolOutputLimit(undefined, "vibeterm_prompt_session", "generic")).toBe(3)
+  for (const group of ["write", "edit", "apply_patch"] as const) expect(toolOutputLimit({}, group, group)).toBeUndefined()
+  const config = decodeInfo({
+    tool_output: { collapse: { bash: 0, generic: 5, vibeterm_prompt_session: 0, write: 2, edit: "never" } },
+  }).tool_output
+  expect(toolOutputLimit(config, "bash", "bash")).toBe(0)
+  expect(toolOutputLimit(config, "vibeterm_prompt_session", "generic")).toBe(0)
+  expect(toolOutputLimit(config, "context7_query-docs", "generic")).toBe(5)
+  expect(toolOutputLimit(config, "write", "write")).toBe(2)
+  expect(toolOutputLimit(config, "edit", "edit")).toBeUndefined()
+  expect(toolOutputLimit(config, "apply_patch", "apply_patch")).toBeUndefined()
+  expect(() => decodeInfo({ tool_output: { collapse: { bash: -1 } } })).toThrow()
+  expect(() => decodeInfo({ tool_output: { collapse: { bash: 1.5 } } })).toThrow()
+  expect(() => decodeInfo({ tool_output: { collapse: { bash: "always" } } })).toThrow()
 })
 
 test("resolves host-neutral defaults", () => {
