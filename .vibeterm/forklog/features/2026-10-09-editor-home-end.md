@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `home-end-keys` (worktree off `dev-nowaker` `b79f6659f7`)
 - First local commit: `680e8a0daa`
-- Current local commit(s): `680e8a0daa`
+- Current local commit(s): `680e8a0daa`, `ab1574bed8`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `907b3bc518` (upstream `dev`)
 - Upstream: none; a fork-only default change
@@ -40,6 +40,15 @@ conventions:
 
 ## Rationale and constraints
 
+- opencode's `gotoLineEnd` / `gotoLineHome` step onto the next / previous
+  line when the caret is already at the edge, so with home/end on line
+  start/end a repeated press walked the prompt (reported 2026-10-10).
+  `gotoLineEdge` stays put; the instant editor mirrors it.
+- The Terminal.app VibeTerm profile had no Home/End modifier rows, so
+  ctrl+home and ctrl+option+home arrived as plain Home. dotfiles `f201350`
+  adds `ESC[1;<mod>H/F` rows; plain shift+home/end cannot be mapped there
+  because Terminal scrolls its buffer first (use ctrl+shift+a / ctrl+shift+e).
+
 - Before, `home` / `end` were bound to both the prompt's buffer ends and the
   conversation's first/last, so the key's effect depended on which layer the
   keymap resolved, and the prompt had no Home/End for line navigation.
@@ -61,6 +70,7 @@ conventions:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `680e8a0daa` | 2026-10-09 | editor-standard Home/End defaults | the ten defaults in `packages/tui/src/config/keybind-definitions.ts`; `keybinds.mdx` defaults; "Home and End" in `tui.mdx`; `keymap.test.tsx` "share no key" and "home and end keys reach the prompt or the conversation"; `test/instant/editor.test.ts` defaults |
+| `ab1574bed8` | 2026-10-10 | repeated home/end stay on the caret's line | `gotoLineEdge` in `packages/tui/src/util/line-edge.ts`; `registerLineEdgeCommands` in `packages/tui/src/keymap.tsx` (overrides `input.line.home/end` and `input.select.line.home/end`); `lineStart` / `lineEnd` for `line_*` in `src/instant/editor.ts`; `test/instant/parity.ts` line actions |
 
 ## Verification
 
@@ -83,12 +93,22 @@ conventions:
   System Events: `ctrl+option+home/end` `\e[1;7H` / `\e[1;7F`, `shift+home`
   `\e[1;2H`, every other chord as on Linux.
 - Vibeterm's tmux binds nothing on `C-M-Home` / `C-M-End` in any table.
+- 2026-10-10, after the owner's report from m4max: Terminal.app on the
+  VibeTerm profile (m2pro), over ssh into a throwaway forked-tmux socket on
+  desktop, into the worktree TUI with the hosts' keybinds. A two-line draft
+  `alpha beta` / `gamma delta` became `alpha betaB` / `Agamma deltaC` after
+  home home A, ctrl+home end end B, ctrl+end C; ctrl+alt+home / end went to
+  the conversation top and back. `bun test` 382 pass.
 
 ## Timeline
 
 - 2026-10-09
   [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-09-editor-home-end.md)
   - `680e8a0daa`: introduce; build and install on desktop and m4max.
+- 2026-10-10
+  [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-10-home-end-regression.md)
+  - `ab1574bed8`: repeated home/end no longer walk lines; Terminal.app profile
+    rows in dotfiles `f201350`; build and install on desktop and m4max.
 
 ## Current maintenance notes
 

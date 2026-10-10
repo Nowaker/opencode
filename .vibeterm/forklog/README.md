@@ -85,6 +85,12 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-10 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-10-home-end-regression.md)
+  - Fix the editor-standard Home/End regression seen from m4max: repeated
+    home/end stay on the line (`gotoLineEdge`), and the Terminal.app VibeTerm
+    profile sends ctrl and ctrl+option Home/End (dotfiles `f201350`); build
+    and install on both hosts.
+
 - [2026-10-09 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-09-editor-home-end.md)
   - Default Home/End to the editor-standard scheme (`home`/`end` line,
     `ctrl+home`/`ctrl+end` prompt, `ctrl+alt+home`/`ctrl+alt+end`
