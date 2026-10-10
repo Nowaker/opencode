@@ -1,9 +1,11 @@
 import { createTestRenderer } from "@opentui/core/testing"
 import { TextareaRenderable } from "@opentui/core"
 import { InstantEditor } from "../../src/instant/editor"
+import { gotoLineEdge } from "../../src/util/line-edge"
 
 // Runs one editing action through opentui's own textarea and through the
 // instant prompt's editor, from the same text and caret, and reports both.
+// Line start/end go through the TUI's gotoLineEdge, as the keymap runs them.
 export async function createParity(width: number) {
   const setup = await createTestRenderer({ width: width + 10, height: 40 })
   const textarea = new TextareaRenderable(setup.renderer, { width, height: 30 })
@@ -20,10 +22,10 @@ export async function createParity(width: number) {
     select_right: () => textarea.moveCursorRight({ select: true }),
     select_up: () => textarea.moveCursorUp({ select: true }),
     select_down: () => textarea.moveCursorDown({ select: true }),
-    line_home: () => textarea.gotoLineHome(),
-    line_end: () => textarea.gotoLineEnd(),
-    select_line_home: () => textarea.gotoLineHome({ select: true }),
-    select_line_end: () => textarea.gotoLineEnd({ select: true }),
+    line_home: () => gotoLineEdge(textarea, "home", false),
+    line_end: () => gotoLineEdge(textarea, "end", false),
+    select_line_home: () => gotoLineEdge(textarea, "home", true),
+    select_line_end: () => gotoLineEdge(textarea, "end", true),
     visual_line_home: () => textarea.gotoVisualLineHome(),
     visual_line_end: () => textarea.gotoVisualLineEnd(),
     select_visual_line_home: () => textarea.gotoVisualLineHome({ select: true }),

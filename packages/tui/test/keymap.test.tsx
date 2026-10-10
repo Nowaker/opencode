@@ -238,8 +238,14 @@ test("home and end keys reach the prompt or the conversation, never both", async
     editor.cursorOffset = 5
     await press("\x1b[1~") // home, as tmux sends it: start of the line "two"
     expect(editor.cursorOffset).toBe(4)
-    await press("\x1b[4~") // end, as tmux sends it: end of that line
-    expect(editor.cursorOffset).toBe(7)
+    await press("\x1b[1~") // home again stays there rather than stepping onto "one"
+    expect(editor.cursorOffset).toBe(4)
+    editor.cursorOffset = 1
+    await press("\x1b[4~") // end, as tmux sends it: end of the line "one"
+    expect(editor.cursorOffset).toBe(3)
+    await press("\x1b[4~") // end again stays there rather than stepping onto "two"
+    expect(editor.cursorOffset).toBe(3)
+    editor.cursorOffset = 5
     await press("\x1b[1;5H") // ctrl+home: start of the prompt
     expect(editor.cursorOffset).toBe(0)
     await press("\x1b[1;5F") // ctrl+end: end of the prompt
