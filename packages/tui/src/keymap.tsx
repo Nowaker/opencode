@@ -16,6 +16,7 @@ import { KeymapProvider, useKeymap, useKeymapSelector, useBindings } from "@open
 import { createMemo, type Accessor } from "solid-js"
 import { useTuiConfig } from "./config"
 import { TuiKeybind } from "./config/keybind"
+import { gotoLineEdge } from "./util/line-edge"
 
 export const LEADER_TOKEN = "leader"
 export const OPENCODE_BASE_MODE = "base"
@@ -182,6 +183,27 @@ const inputCommands = [
   "input.submit",
 ] as const
 
+// Replaces the textarea's line start/end commands, which a later layer runs
+// first, with ones that stay at the edge on a repeated press.
+function registerLineEdgeCommands(keymap: OpenTuiKeymap, renderer: CliRenderer) {
+  const command = (name: string, edge: "home" | "end", select: boolean) => ({
+    name,
+    run() {
+      const editor = renderer.currentFocusedEditor
+      if (!editor || editor.isDestroyed) return false
+      return gotoLineEdge(editor, edge, select)
+    },
+  })
+  return keymap.registerLayer({
+    commands: [
+      command("input.line.home", "home", false),
+      command("input.line.end", "end", false),
+      command("input.select.line.home", "home", true),
+      command("input.select.line.end", "end", true),
+    ],
+  })
+}
+
 function hasManagedTextareaFocus(renderer: CliRenderer) {
   const editor = renderer.currentFocusedEditor
   return editor instanceof TextareaRenderable && !(editor instanceof InputRenderable)
@@ -241,8 +263,10 @@ export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRende
     enabled: () => hasManagedTextareaFocus(renderer),
     bindings: config.keybinds.gather("input", inputCommands),
   })
+  const offLineEdges = registerLineEdgeCommands(keymap, renderer)
 
   return () => {
+    offLineEdges()
     offInputBindings()
     offBackspace()
     offEscape()

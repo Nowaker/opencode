@@ -356,16 +356,6 @@ export function create(input: Partial<Snapshot> = {}) {
 
   // At a line's edge, line home/end step across the newline to the
   // neighbouring line, as opentui's gotoLineHome/gotoLineEnd do.
-  function lineHome(offset: number) {
-    const start = lineStart(offset)
-    return start === offset && offset > 0 ? offset - 1 : start
-  }
-
-  function lineEndFrom(offset: number) {
-    const end = lineEnd(offset)
-    return end === offset && offset < state.text.length ? offset + 1 : end
-  }
-
   return {
     get text() {
       return state.text
@@ -420,13 +410,13 @@ export function create(input: Partial<Snapshot> = {}) {
         case "select_down":
           return vertical(1, width, true)
         case "line_home":
-          return move(lineHome(state.caret), false)
+          return move(lineStart(state.caret), false)
         case "line_end":
-          return move(lineEndFrom(state.caret), false)
+          return move(lineEnd(state.caret), false)
         case "select_line_home":
-          return move(lineHome(state.caret), true)
+          return move(lineStart(state.caret), true)
         case "select_line_end":
-          return move(lineEndFrom(state.caret), true)
+          return move(lineEnd(state.caret), true)
         case "visual_line_home":
           return move(visualLine(width).start, false)
         case "visual_line_end":
