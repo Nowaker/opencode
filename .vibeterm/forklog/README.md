@@ -92,8 +92,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Grouped prompt undo and redo on ctrl+z / ctrl+shift+z](./features/2026-10-10-prompt-undo-history.md)
 - [Open a paste placeholder's text by clicking it](./features/2026-10-10-paste-edit-dialog.md)
 - [End every tool call that runs past a time limit](./features/2026-10-11-tool-call-time-limit.md)
+- [Never delete a file whose earlier content the snapshot store lost](./features/2026-10-11-revert-keep-missing.md)
 
 ## Session records
+
+- [2026-10-11 `ses_ed759a0b4ffeCubC9xxc8hYgHY`](./sessions/2026-10-11-revert-keep-missing.md)
+  - A file revert deleted every file whose earlier content the snapshot store
+    had pruned; it now keeps them and names them in a notice. Issue #54577,
+    PR #54578 against `v1`; build and install on both hosts.
 
 - [2026-10-11 `ses_ee0ceb1aaffeh6u0RxoARcBsk1`](./sessions/2026-10-11-owner-retirement.md)
   - Idle-safe engine and native composer retirement for Vibeterm's durable,
