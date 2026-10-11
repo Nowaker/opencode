@@ -93,6 +93,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Open a paste placeholder's text by clicking it](./features/2026-10-10-paste-edit-dialog.md)
 - [End every tool call that runs past a time limit](./features/2026-10-11-tool-call-time-limit.md)
 - [Never delete a file whose earlier content the snapshot store lost](./features/2026-10-11-revert-keep-missing.md)
+- [Log which process holds the SQLite write lock too long](./features/2026-10-11-sqlite-write-hold-log.md)
 
 ## Session records
 
