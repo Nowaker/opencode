@@ -7,6 +7,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 interface Metadata {
   [key: string]: any
@@ -146,7 +147,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
               ...(truncated.truncated && { outputPath: truncated.outputPath }),
             },
           }
-        }).pipe(Effect.orDie, Effect.withSpan("Tool.execute", { attributes: attrs }))
+        }).pipe(OwnerQuiescence.activity, Effect.orDie, Effect.withSpan("Tool.execute", { attributes: attrs }))
       }
       return toolInfo
     })

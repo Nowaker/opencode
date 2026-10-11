@@ -10,7 +10,13 @@ import type {
   Part,
   Config as SDKConfig,
 } from "@opencode-ai/sdk"
-import type { Provider as ProviderV2, Model as ModelV2, Auth } from "@opencode-ai/sdk/v2"
+import type {
+  Provider as ProviderV2,
+  Model as ModelV2,
+  Auth,
+  OwnerQuiescenceStatus,
+  OwnerQuiescenceCapability,
+} from "@opencode-ai/sdk/v2"
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
@@ -54,6 +60,15 @@ export type WorkspaceAdapter = {
 }
 
 export type PluginInput = {
+  readonly ownerQuiescence?: {
+    readonly status: () => Readonly<OwnerQuiescenceStatus>
+    readonly acquire: () =>
+      | { readonly status: "acquired"; readonly lease: Readonly<OwnerQuiescenceCapability> & Disposable }
+      | { readonly status: "busy"; readonly active: number }
+      | { readonly status: "sealed"; readonly generation: number }
+    readonly release: (capability: Readonly<OwnerQuiescenceCapability>) => boolean
+    readonly commit: (capability: Readonly<OwnerQuiescenceCapability>) => boolean
+  }
   client: ReturnType<typeof createOpencodeClient>
   project: Project
   directory: string

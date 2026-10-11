@@ -17,11 +17,14 @@ export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.dispos
   function* (options?: { swallowErrors?: boolean }) {
     const store = yield* InstanceStore.Service
     yield* Effect.gen(function* () {
-      yield* options?.swallowErrors
-        ? store.disposeAll().pipe(Effect.catchCause((cause) => Effect.logWarning("global disposal failed", { cause })))
-        : store.disposeAll()
+      yield* store.disposeAll()
       yield* emitGlobalDisposed
-    }).pipe(Effect.uninterruptible)
+    }).pipe(
+      Effect.uninterruptible,
+      (work) => options?.swallowErrors
+        ? work.pipe(Effect.catchCause((cause) => Effect.logWarning("global disposal failed", { cause })))
+        : work,
+    )
   },
 )
 

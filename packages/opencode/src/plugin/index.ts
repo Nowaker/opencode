@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import type {
   Hooks,
   PluginInput,
@@ -151,6 +152,7 @@ const layer = Layer.effect(
         })
         const cfg = yield* config.get()
         const input: PluginInput = {
+          ownerQuiescence: OwnerQuiescence.control,
           client,
           project: ctx.project,
           worktree: ctx.worktree,
@@ -169,7 +171,7 @@ const layer = Layer.effect(
 
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
           const init = yield* Effect.tryPromise({
-            try: () => plugin(input),
+            try: () => OwnerQuiescence.runPromise(() => plugin(input)),
             catch: errorMessage,
           }).pipe(
             Effect.tapError((error) => Effect.logError("failed to load internal plugin", { name: plugin.name, error })),
@@ -183,7 +185,7 @@ const layer = Layer.effect(
         }
         if (plugins.length) yield* config.waitForDependencies()
 
-        const loaded = yield* Effect.promise(() =>
+        const loaded = yield* OwnerQuiescence.promise(() =>
           PluginLoader.loadExternal({
             items: plugins,
             kind: "server",
@@ -222,7 +224,7 @@ const layer = Layer.effect(
           // Keep plugin execution sequential so hook registration and execution
           // order remains deterministic across plugin runs.
           yield* Effect.tryPromise({
-            try: () => applyPlugin(load, input, hooks),
+            try: () => OwnerQuiescence.runPromise(() => applyPlugin(load, input, hooks)),
             catch: (err) => {
               const message = errorMessage(err)
               return message
@@ -244,7 +246,7 @@ const layer = Layer.effect(
         // Notify plugins of current config
         for (const hook of hooks) {
           yield* Effect.tryPromise({
-            try: () => Promise.resolve((hook as any).config?.(cfg)),
+            try: () => OwnerQuiescence.runPromise(() => Promise.resolve((hook as any).config?.(cfg))),
             catch: errorMessage,
           }).pipe(
             Effect.tapError((error) => Effect.logError("plugin config hook failed", { error })),
@@ -256,7 +258,8 @@ const layer = Layer.effect(
           if (event.location?.directory !== ctx.directory) return Effect.void
           return Effect.sync(() => {
             for (const hook of hooks) {
-              void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })
+              if (!hook.event) continue
+              void OwnerQuiescence.whenReleased(async () => hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any }))
             }
           })
         })
@@ -291,7 +294,7 @@ const layer = Layer.effect(
       for (const hook of s.hooks) {
         const fn = hook[name] as any
         if (!fn) continue
-        yield* Effect.promise(async () => fn(input, output))
+        yield* OwnerQuiescence.promise(async () => fn(input, output))
       }
       return output
     })

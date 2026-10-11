@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { makeGlobalNode, Node } from "@opencode-ai/core/effect/app-node"
 import { GlobalBus } from "@/bus/global"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -93,7 +94,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
     const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
       yield* Effect.logInfo("disposing instance", { directory: ctx.directory })
-      yield* Effect.promise(() => runDisposers(ctx.directory))
+      yield* Effect.promise(() => OwnerQuiescence.cleanupPromise(() => runDisposers(ctx.directory)))
       yield* emitDisposed({ directory: ctx.directory, project: ctx.project.id })
     })
 
@@ -107,40 +108,48 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
     const load = (input: LoadInput): Effect.Effect<InstanceContext> => {
       const directory = FSUtil.resolve(input.directory)
-      return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          const existing = cache.get(directory)
-          if (existing) return yield* restore(Deferred.await(existing.deferred))
+      return Effect.suspend(() => {
+        const existing = cache.get(directory)
+        if (existing) return Deferred.await(existing.deferred)
+        return OwnerQuiescence.activity(
+          Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              const existing = cache.get(directory)
+              if (existing) return yield* restore(Deferred.await(existing.deferred))
 
-          const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
-          cache.set(directory, entry)
-          yield* Effect.gen(function* () {
-            yield* Effect.logInfo("creating instance", { directory: directory })
-            yield* completeLoad(directory, input, entry)
-          }).pipe(Effect.forkIn(scope, { startImmediately: true }))
-          return yield* restore(Deferred.await(entry.deferred))
-        }),
-      ).pipe(Effect.withSpan("InstanceStore.load"))
+              const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
+              cache.set(directory, entry)
+              yield* Effect.gen(function* () {
+                yield* Effect.logInfo("creating instance", { directory: directory })
+                yield* completeLoad(directory, input, entry)
+              }).pipe((work) => OwnerQuiescence.fork(work, scope, true))
+              return yield* restore(Deferred.await(entry.deferred))
+            }),
+          ),
+        )
+      }).pipe(Effect.withSpan("InstanceStore.load"))
     }
 
     const reload = (input: LoadInput): Effect.Effect<InstanceContext> => {
       const directory = FSUtil.resolve(input.directory)
-      return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          const previous = cache.get(directory)
-          const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
-          cache.set(directory, entry)
-          yield* Effect.gen(function* () {
-            yield* Effect.logInfo("reloading instance", { directory: directory })
-            if (previous) {
-              yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
-              yield* Effect.promise(() => runDisposers(directory))
-              yield* emitDisposed({ directory, project: input.project?.id })
-            }
-            yield* completeLoad(directory, input, entry)
-          }).pipe(Effect.forkIn(scope, { startImmediately: true }))
-          return yield* restore(Deferred.await(entry.deferred))
-        }),
+      return OwnerQuiescence.activity(
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const previous = cache.get(directory)
+            const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
+            cache.set(directory, entry)
+            yield* Effect.gen(function* () {
+              yield* Effect.logInfo("reloading instance", { directory: directory })
+              if (previous) {
+                yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
+                yield* OwnerQuiescence.promise(() => runDisposers(directory))
+                yield* emitDisposed({ directory, project: input.project?.id })
+              }
+              yield* completeLoad(directory, input, entry)
+            }).pipe((work) => OwnerQuiescence.fork(work, scope, true))
+            return yield* restore(Deferred.await(entry.deferred))
+          }),
+        ),
       ).pipe(Effect.withSpan("InstanceStore.reload"))
     }
 
@@ -194,9 +203,9 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     return Service.of({
       load,
       reload,
-      dispose,
-      disposeDirectory,
-      disposeAll,
+      dispose: (ctx) => OwnerQuiescence.cleanup(dispose(ctx).pipe(Effect.uninterruptible)),
+      disposeDirectory: (directory) => OwnerQuiescence.cleanup(disposeDirectory(directory).pipe(Effect.uninterruptible)),
+      disposeAll: () => OwnerQuiescence.cleanup(disposeAll().pipe(Effect.uninterruptible)),
       provide,
     })
   }),

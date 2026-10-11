@@ -3,6 +3,7 @@ import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Command } from "@/command"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { Permission } from "@/permission"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
@@ -340,7 +341,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             })
           }),
         ),
-        Effect.forkIn(scope, { startImmediately: true }),
+        (work) => OwnerQuiescence.fork(work, scope, true),
       )
       return HttpApiSchema.NoContent.make()
     })
@@ -466,7 +467,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("init", init)
       .handle("share", share)
       .handle("unshare", unshare)
-      .handle("summarize", summarize)
+      .handle("summarize", (ctx) => OwnerQuiescence.activity(summarize(ctx)))
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
       .handle("command", command)

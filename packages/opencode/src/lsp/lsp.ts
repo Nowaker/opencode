@@ -14,6 +14,7 @@ import { containsPath } from "@/project/instance-context"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LspEvent } from "@opencode-ai/schema/lsp-event"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 export const Event = LspEvent
 
@@ -110,6 +111,7 @@ const filterExperimentalServers = (servers: Record<string, LSPServer.Info>, flag
 type LocInput = { file: string; line: number; character: number }
 
 interface State {
+  closing: boolean
   clients: LSPClient.Info[]
   servers: Record<string, LSPServer.Info>
   broken: Set<string>
@@ -189,6 +191,7 @@ const layer = Layer.effect(
         }
 
         const s: State = {
+          closing: false,
           clients: [],
           servers,
           broken: new Set(),
@@ -196,9 +199,11 @@ const layer = Layer.effect(
         }
 
         yield* Effect.addFinalizer(() =>
-          Effect.promise(async () => {
-            await Promise.all(s.clients.map((client) => client.shutdown()))
-          }),
+          Effect.promise(() => OwnerQuiescence.cleanupPromise(async () => {
+            s.closing = true
+            await Promise.allSettled(s.spawning.values())
+            await Promise.all(s.clients.map((client) => OwnerQuiescence.cleanupPromise(() => client.shutdown())))
+          })),
         )
 
         return s
@@ -209,7 +214,7 @@ const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       if (!containsPath(file, ctx)) return [] as LSPClient.Info[]
       const s = yield* InstanceState.get(state)
-      const clients = yield* Effect.promise(async () => {
+      const clients = yield* OwnerQuiescence.promise(async () => {
         const extension = path.parse(file).ext || file
         const result: LSPClient.Info[] = []
         let updated = 0
@@ -255,6 +260,7 @@ const layer = Layer.effect(
           if (server.extensions.length && !server.extensions.includes(extension)) continue
 
           const root = await server.root(file, ctx)
+          if (s.closing) break
           if (!root) continue
           if (s.broken.has(root + server.id)) continue
 
@@ -298,12 +304,12 @@ const layer = Layer.effect(
 
     const run = Effect.fnUntraced(function* <T>(file: string, fn: (client: LSPClient.Info) => Promise<T>) {
       const clients = yield* getClients(file)
-      return yield* Effect.promise(() => Promise.all(clients.map((x) => fn(x))))
+      return yield* OwnerQuiescence.promise(() => Promise.all(clients.map((x) => OwnerQuiescence.runPromise(() => fn(x)))))
     })
 
     const runAll = Effect.fnUntraced(function* <T>(fn: (client: LSPClient.Info) => Promise<T>) {
       const s = yield* InstanceState.get(state)
-      return yield* Effect.promise(() => Promise.all(s.clients.map((x) => fn(x))))
+      return yield* OwnerQuiescence.promise(() => Promise.all(s.clients.map((x) => OwnerQuiescence.runPromise(() => fn(x)))))
     })
 
     const init = Effect.fn("LSP.init")(function* () {
@@ -328,7 +334,7 @@ const layer = Layer.effect(
     const hasClients = Effect.fn("LSP.hasClients")(function* (file: string) {
       const ctx = yield* InstanceState.context
       const s = yield* InstanceState.get(state)
-      return yield* Effect.promise(async () => {
+      return yield* OwnerQuiescence.promise(async () => {
         const extension = path.parse(file).ext || file
         for (const server of Object.values(s.servers)) {
           if (server.extensions.length && !server.extensions.includes(extension)) continue
@@ -344,9 +350,9 @@ const layer = Layer.effect(
     const touchFile = Effect.fn("LSP.touchFile")(function* (input: string, diagnostics?: "document" | "full") {
       yield* Effect.logInfo("touching file", { file: input })
       const clients = yield* getClients(input)
-      yield* Effect.promise(() =>
+      yield* OwnerQuiescence.promise(() =>
         Promise.all(
-          clients.map(async (client) => {
+          clients.map((client) => OwnerQuiescence.runPromise(async () => {
             const after = Date.now()
             const version = await client.notify.open({ path: input })
             if (!diagnostics) return
@@ -356,7 +362,7 @@ const layer = Layer.effect(
               mode: diagnostics,
               after,
             })
-          }),
+          })),
         ).catch(() => {}),
       )
     })

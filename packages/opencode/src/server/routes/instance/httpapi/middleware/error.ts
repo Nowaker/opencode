@@ -1,4 +1,6 @@
 import { NamedError } from "@opencode-ai/core/util/error"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { OwnerSealedError } from "../errors"
 import { TransactionDiagnostic } from "@opencode-ai/core/database/transaction-diagnostic"
 import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
 import { Cause, Effect } from "effect"
@@ -17,6 +19,9 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
       if (!defect) return Effect.failCause(cause)
 
       const error = defect.defect
+      if (error instanceof OwnerQuiescence.Sealed) {
+        return Effect.succeed(HttpServerResponse.jsonUnsafe(new OwnerSealedError({ generation: error.generation }), { status: 409 }))
+      }
       if (
         ConfigErrorV1.JsonError.isInstance(error) ||
         ConfigErrorV1.InvalidError.isInstance(error) ||

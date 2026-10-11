@@ -149,6 +149,26 @@ export type MoveSessionError = {
   }
 }
 
+export type OwnerQuiescenceStatus = {
+  ownerID: string
+  generation: number
+  sealed: boolean
+  committed: boolean
+  active: number
+}
+
+export type OwnerQuiescenceCapability = {
+  ownerID: string
+  generation: number
+  token: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
 export type SnapshotFileDiff = {
   file?: string
   patch?: string
@@ -2573,6 +2593,11 @@ export type NotFoundError = {
   }
 }
 
+export type OwnerSealed = {
+  _tag: "OwnerSealed"
+  generation: number
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -2743,12 +2768,6 @@ export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
 }
 
 export type ServiceUnavailableError = {
@@ -7268,6 +7287,89 @@ export type ExperimentalControlPlaneMoveSessionResponses = {
 export type ExperimentalControlPlaneMoveSessionResponse =
   ExperimentalControlPlaneMoveSessionResponses[keyof ExperimentalControlPlaneMoveSessionResponses]
 
+export type GlobalQuiescenceReleaseData = {
+  body?: OwnerQuiescenceCapability
+  path?: never
+  query?: never
+  url: "/global/quiescence"
+}
+
+export type GlobalQuiescenceReleaseErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalQuiescenceReleaseError = GlobalQuiescenceReleaseErrors[keyof GlobalQuiescenceReleaseErrors]
+
+export type GlobalQuiescenceReleaseResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type GlobalQuiescenceReleaseResponse = GlobalQuiescenceReleaseResponses[keyof GlobalQuiescenceReleaseResponses]
+
+export type GlobalQuiescenceStatusData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/quiescence"
+}
+
+export type GlobalQuiescenceStatusErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalQuiescenceStatusError = GlobalQuiescenceStatusErrors[keyof GlobalQuiescenceStatusErrors]
+
+export type GlobalQuiescenceStatusResponses = {
+  /**
+   * OwnerQuiescenceStatus
+   */
+  200: OwnerQuiescenceStatus
+}
+
+export type GlobalQuiescenceStatusResponse = GlobalQuiescenceStatusResponses[keyof GlobalQuiescenceStatusResponses]
+
+export type GlobalQuiescenceAcquireData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/quiescence"
+}
+
+export type GlobalQuiescenceAcquireErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalQuiescenceAcquireError = GlobalQuiescenceAcquireErrors[keyof GlobalQuiescenceAcquireErrors]
+
+export type GlobalQuiescenceAcquireResponses = {
+  /**
+   * OwnerQuiescenceCapability
+   */
+  200: OwnerQuiescenceCapability
+}
+
+export type GlobalQuiescenceAcquireResponse = GlobalQuiescenceAcquireResponses[keyof GlobalQuiescenceAcquireResponses]
+
 export type GlobalHealthData = {
   body?: never
   path?: never
@@ -9932,6 +10034,10 @@ export type SessionPromptErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed
+   */
+  409: OwnerSealed
 }
 
 export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
@@ -10116,6 +10222,10 @@ export type SessionInitErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed
+   */
+  409: OwnerSealed
 }
 
 export type SessionInitError = SessionInitErrors[keyof SessionInitErrors]
@@ -10230,6 +10340,10 @@ export type SessionSummarizeErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed
+   */
+  409: OwnerSealed
 }
 
 export type SessionSummarizeError = SessionSummarizeErrors[keyof SessionSummarizeErrors]
@@ -10279,6 +10393,10 @@ export type SessionPromptAsyncErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed
+   */
+  409: OwnerSealed
 }
 
 export type SessionPromptAsyncError = SessionPromptAsyncErrors[keyof SessionPromptAsyncErrors]
@@ -10328,6 +10446,10 @@ export type SessionCommandErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed
+   */
+  409: OwnerSealed
 }
 
 export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]
@@ -10374,9 +10496,9 @@ export type SessionShellErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | OwnerSealed
    */
-  409: SessionBusyError
+  409: SessionBusyError | OwnerSealed
 }
 
 export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]

@@ -9,6 +9,7 @@ import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -250,7 +251,7 @@ export const TaskTool = Tool.define(
               },
             ],
           })
-          .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+          .pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope, true))
       })
 
       const notify = Effect.fn("TaskTool.notifyBackgroundResult")(function* (jobID: string) {
@@ -260,7 +261,7 @@ export const TaskTool = Tool.define(
             if (result.info?.status === "error") return inject("error", result.info.error ?? "")
             return Effect.void
           }),
-          Effect.forkIn(scope, { startImmediately: true }),
+          (work) => OwnerQuiescence.fork(work, scope, true),
         )
       })
 
@@ -365,7 +366,7 @@ export const TaskTool = Tool.define(
       parameters: Parameters,
       jsonSchema: flags.experimentalBackgroundSubagents ? undefined : ToolJsonSchema.fromSchema(BaseParameters),
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
-        run(params, ctx).pipe(Effect.orDie),
+        run(params, ctx).pipe(OwnerQuiescence.activity, Effect.orDie),
     }
   }),
 )

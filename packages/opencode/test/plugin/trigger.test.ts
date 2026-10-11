@@ -1,5 +1,8 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
+import { OwnerQuiescence } from "../../src/owner/quiescence"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { Session } from "../../src/session/session"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Npm } from "@opencode-ai/core/npm"
 import path from "path"
@@ -20,7 +23,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Plugin.node, CrossSpawnSpawner.node]), [
+  AppNodeBuilder.build(LayerNode.group([Plugin.node, CrossSpawnSpawner.node, EventV2Bridge.node]), [
     [Auth.node, AuthTest.empty],
     [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
@@ -73,6 +76,29 @@ const triggerSystemTransform = Effect.fn("PluginTriggerTest.triggerSystemTransfo
 })
 
 describe("plugin.trigger", () => {
+  it.instance("delivers events after an abandoned seal instead of dropping them", () =>
+    withProject("export default async () => ({})", Effect.gen(function* () {
+      const plugin = yield* Plugin.Service
+      const hooks = yield* plugin.list()
+      const delivered = yield* Deferred.make<void>()
+      const received: string[] = []
+      const hook = hooks[0]
+      if (!hook) throw new Error("plugin did not load")
+      hook.event = async ({ event }) => {
+        received.push(event.type)
+        Deferred.doneUnsafe(delivered, Effect.void)
+      }
+      const events = yield* EventV2Bridge.Service
+      {
+        using seal = OwnerQuiescence.lease()
+        yield* events.publish(Session.Event.Error, { error: { name: "UnknownError", data: { message: "probe" } } })
+        expect(received).toEqual([])
+      }
+      yield* Deferred.await(delivered)
+      expect(received).toEqual([Session.Event.Error.type])
+    })),
+  )
+
   it.instance("runs synchronous hooks without crashing", () =>
     withProject(
       [

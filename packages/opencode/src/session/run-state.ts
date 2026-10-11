@@ -7,6 +7,7 @@ import { Effect, Latch, Layer, Scope, Context } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
@@ -107,7 +108,12 @@ const layer = Layer.effect(
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({
+      assertNotBusy,
+      cancel,
+      ensureRunning: (...args) => OwnerQuiescence.activity(ensureRunning(...args)),
+      startShell: (...args) => OwnerQuiescence.activity(startShell(...args)),
+    })
   }),
 )
 

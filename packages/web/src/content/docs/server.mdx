@@ -94,6 +94,73 @@ The opencode server exposes the following APIs.
 | `GET`  | `/global/health` | Get server health and version  | `{ healthy: true, version: string }` |
 | `GET`  | `/global/event`  | Get global events (SSE stream) | Event stream                         |
 
+#### Idle Owner Quiescence
+
+The v1 engine exposes a process-wide admission seal, independent of directory
+and session. It does not cancel work or wait for idle.
+
+| Method | Path | SDK v2 method | Response |
+| ------ | ---- | ------------- | -------- |
+| `GET` | `/global/quiescence` | `client.global.quiescence.status()` | `{ ownerID, generation, sealed, committed, active }` |
+| `POST` | `/global/quiescence` | `client.global.quiescence.acquire()` | `{ ownerID, generation, token }` |
+| `DELETE` | `/global/quiescence` | `client.global.quiescence.release({ ownerQuiescenceCapability: capability })` | `true` |
+
+Acquisition and admission use synchronous process-local bookkeeping: acquisition
+fails with HTTP 409 if any admission is active or another seal is held. Active
+counts nested admission/reservation scopes, not unique sessions or turns. It
+means preparation, runners, shells, native commands, compaction, pending
+questions/permissions, background jobs, and detached title/summary/continuation
+work across every owned session and instance. No active turn is interrupted.
+Promise-backed preparation remains active until its underlying promise settles,
+even if its waiting fiber is interrupted. Fork reservations include queued work
+and asynchronous cleanup, not just a runner's visible busy state.
+
+While sealed, new execution admissions fail with HTTP 409 (`OwnerSealed`), before
+their writes, command substitutions, or tool execution. Existing instance reads
+remain available; new instance creation, reload, and disposal are refused.
+New plugin event deliveries are deferred while sealed and replayed on release,
+but discarded on commitment. A seal is not a database lock and does not fence another OpenCode process, arbitrary
+plugin I/O, or unrelated session edits through CRUD endpoints.
+
+Release requires the exact capability in the DELETE JSON body. A different
+owner, generation, or token fails with 409 and cannot unseal a newer owner.
+Keep the token private. Seals have no expiry: the controller must release in a
+`finally` block if retirement is abandoned. Process exit discards its seal; a
+new process has a different `ownerID`. Status does not expose the token.
+
+In-process control integrations use `OwnerQuiescence.lease()` from
+`packages/opencode/src/owner/quiescence.ts` with `using` for scoped release, or
+`acquire()`, `status()`, and `release(capability)` directly. The lease must be
+acquired outside an admitted command or tool, which itself makes the owner busy.
+An external retirement controller acquires on the actual owning process, keeps
+that capability until it has retired that process, and releases all acquired
+capabilities if it cannot retire every owner safely.
+
+Server plugins use the optional, typed `input.ownerQuiescence` capability;
+they do not need a listener, an unrelated server, or a source import. The
+portless TUI supplies this capability too. Older engines omit it.
+
+`status()` returns the same status as GET. `acquire()` returns one of
+`{ status: "acquired", lease }`, `{ status: "busy", active }`, or
+`{ status: "sealed", generation }`. The lease carries the capability fields
+and `[Symbol.dispose]()`. `release(capability)` returns `true` on a matching
+CAS, `false` for a stale capability. Lease disposal is idempotent after explicit
+release and never releases a later generation. Keep the lease inside the
+authenticated owner-control implementation, never in model-facing tool output.
+
+`commit(lease)` atomically validates the current owner ID, generation and token
+and returns `true` only for that exact capability (including an idempotent
+repeat). Status then has `committed: true`. Commitment never expires or reopens:
+`release(lease)` returns `false`, lease disposal is inert, and queued plugin
+events are discarded rather than replayed. Discarded event promises remain
+pending until process exit. Only explicit internal shutdown cleanup paths can
+run through the committed fence; ordinary admissions remain refused even
+inside a disposer. Abandonment may release only before commitment. There is no
+HTTP commit endpoint: commitment belongs to the authenticated in-process
+owner-control integration, after its durable retirement authorization.
+The legacy `input.client` is not extended; use this callback for owner control
+or the separately generated SDK v2 for the HTTP surface.
+
 ---
 
 ### Project

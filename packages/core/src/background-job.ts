@@ -117,7 +117,9 @@ function errorText(error: unknown) {
  * separate durable ownership slice rather than pretending this registry has
  * those semantics.
  */
-export const make = Effect.gen(function* () {
+export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
+  forkRun: (work: Effect.Effect<void>, scope: Scope.Scope) => Effect.Effect<void>,
+) {
   const state: State = {
     jobs: yield* SynchronizedRef.make(new Map()),
     scope: yield* Scope.Scope,
@@ -165,7 +167,7 @@ export const make = Effect.gen(function* () {
     })
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) {
-      yield* Scope.close(result.scope, Exit.void).pipe(Effect.forkIn(state.scope, { startImmediately: true }))
+      yield* forkRun(Scope.close(result.scope, Exit.void), state.scope)
     }
     return result.info
   })
@@ -183,7 +185,7 @@ export const make = Effect.gen(function* () {
         onFailure: (cause) => settle(id, token, sequence, Exit.failCause(cause)),
       }),
       Effect.asVoid,
-      Effect.forkIn(scope, { startImmediately: true }),
+      (work) => forkRun(work, scope),
     )
   })
 
@@ -359,6 +361,8 @@ export const make = Effect.gen(function* () {
 
   return Service.of({ list, get, start, extend, wait, waitForPromotion, promote, cancel })
 })
+
+export const make = makeWithFork((work, scope) => work.pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid))
 
 const layer = Layer.effect(Service, make)
 

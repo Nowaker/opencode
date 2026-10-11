@@ -88,6 +88,12 @@ import type {
   GlobalHealthResponses,
   GlobalMemoryErrors,
   GlobalMemoryResponses,
+  GlobalQuiescenceAcquireErrors,
+  GlobalQuiescenceAcquireResponses,
+  GlobalQuiescenceReleaseErrors,
+  GlobalQuiescenceReleaseResponses,
+  GlobalQuiescenceStatusErrors,
+  GlobalQuiescenceStatusResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeErrors,
@@ -116,6 +122,7 @@ import type {
   ModelRef,
   MoveSessionDestination,
   OutputFormat,
+  OwnerQuiescenceCapability,
   Part as Part2,
   PartDeleteErrors,
   PartDeleteResponses,
@@ -1281,6 +1288,56 @@ export class Experimental extends HeyApiClient {
   }
 }
 
+export class Quiescence extends HeyApiClient {
+  /**
+   * Release an owner seal by capability
+   */
+  public release<ThrowOnError extends boolean = false>(
+    parameters?: {
+      ownerQuiescenceCapability?: OwnerQuiescenceCapability
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "ownerQuiescenceCapability", map: "body" }] }])
+    return (options?.client ?? this.client).delete<
+      GlobalQuiescenceReleaseResponses,
+      GlobalQuiescenceReleaseErrors,
+      ThrowOnError
+    >({
+      url: "/global/quiescence",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get owner admission status
+   */
+  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GlobalQuiescenceStatusResponses,
+      GlobalQuiescenceStatusErrors,
+      ThrowOnError
+    >({ url: "/global/quiescence", ...options })
+  }
+
+  /**
+   * Seal an idle process owner
+   */
+  public acquire<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      GlobalQuiescenceAcquireResponses,
+      GlobalQuiescenceAcquireErrors,
+      ThrowOnError
+    >({ url: "/global/quiescence", ...options })
+  }
+}
+
 export class Config extends HeyApiClient {
   /**
    * Get global configuration
@@ -1390,6 +1447,11 @@ export class Global extends HeyApiClient {
       url: "/global/memory",
       ...options,
     })
+  }
+
+  private _quiescence?: Quiescence
+  get quiescence(): Quiescence {
+    return (this._quiescence ??= new Quiescence({ client: this.client }))
   }
 
   private _config?: Config

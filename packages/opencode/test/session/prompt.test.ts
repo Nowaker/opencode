@@ -1,4 +1,5 @@
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -240,8 +241,113 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 }
 
 const it = testEffect(makeHttp())
+it.instance("owner seal refuses cross-session admissions before persistence or command execution", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const marker = path.join(test.directory, "quiescence-side-effect")
+    yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      command: { probe: { native: true, template: `!\`touch '${marker}'\`` } },
+    }))
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const compaction = yield* SessionCompaction.Service
+    const background = yield* BackgroundJob.Service
+    const question = yield* Question.Service
+    const permission = yield* Permission.Service
+    const registry = yield* ToolRegistry.Service
+    const tools = yield* registry.named()
+    const parent = yield* sessions.create({ title: "Parent" })
+    const child = yield* sessions.create({ parentID: parent.id, title: "Child" })
+    yield* pollWithTimeout(Effect.sync(() => OwnerQuiescence.status().active === 0 ? true : undefined), "owner fixture did not become idle")
+    yield* Effect.acquireUseRelease(Effect.sync(OwnerQuiescence.lease), () => Effect.gen(function* () {
+      const work: readonly Effect.Effect<unknown, unknown>[] = [
+        prompt.prompt({ sessionID: parent.id, parts: [{ type: "text", text: "input" }], noReply: true }),
+        prompt.prompt({ sessionID: child.id, parts: [{ type: "text", text: "input" }] }),
+        prompt.loop({ sessionID: child.id }),
+        prompt.command({ sessionID: parent.id, command: "probe", arguments: "" }),
+        prompt.shell({ sessionID: child.id, agent: "build", command: "touch quiescence-side-effect" }),
+        compaction.create({ sessionID: child.id, agent: "build", model: ref, auto: false }),
+        background.start({ type: "probe", run: Effect.succeed("output") }),
+        question.ask({ sessionID: child.id, questions: [{ header: "probe", question: "probe", options: [] }] }),
+        permission.ask({ sessionID: child.id, permission: "probe", patterns: ["*"], always: ["*"], metadata: {}, ruleset: [] }),
+        tools.task.execute({ description: "probe", prompt: "input", subagent_type: "explore" }, {
+          sessionID: child.id,
+          messageID: MessageID.ascending(),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        }),
+      ]
+      for (const effect of work) {
+        const exit = yield* effect.pipe(Effect.exit)
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof OwnerQuiescence.Sealed).toBe(true)
+      }
+      expect(yield* sessions.messages({ sessionID: parent.id })).toEqual([])
+      expect(yield* sessions.messages({ sessionID: child.id })).toEqual([])
+      expect(yield* Effect.promise(() => Bun.file(path.join(test.directory, "quiescence-side-effect")).exists())).toBe(false)
+    }), (seal) => Effect.sync(() => seal[Symbol.dispose]()))
+    const result = yield* prompt.prompt({ sessionID: child.id, parts: [{ type: "text", text: "input" }], noReply: true })
+    expect(result.info.role).toBe("user")
+  }), { git: true }, 30_000)
 const noLLMServer = testEffect(makeHttpNoLLMServer())
+it.instance("owner acquisition refuses native command preparation without cutting its execution", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const ready = path.join(test.directory, "quiescence-ready")
+    const finish = path.join(test.directory, "quiescence-finish")
+    yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      command: { probe: { native: true, template: `!\`touch '${ready}'; while [ ! -f '${finish}' ]; do sleep 0.01; done\`` } },
+    }))
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const fs = yield* FSUtil.Service
+    const chat = yield* sessions.create({ title: "Preparation" })
+    const fiber = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: "" }).pipe(Effect.forkChild)
+    yield* pollWithTimeout(fs.existsSafe(ready).pipe(
+      Effect.map((exists) => exists ? true : undefined)), "command did not enter preparation")
+    expect(OwnerQuiescence.control.acquire().status).toBe("busy")
+    expect(yield* sessions.messages({ sessionID: chat.id })).toEqual([])
+    yield* Effect.promise(() => Bun.write(finish, ""))
+    const result = yield* Fiber.join(fiber)
+    expect(result.info.role).toBe("user")
+  }), { git: true }, 30_000)
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
+it.instance("owner acquisition refuses an active child model turn without interrupting it", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const parent = yield* sessions.create({ title: "Parent" })
+    const child = yield* sessions.create({ parentID: parent.id, title: "Child" })
+    const gate = yield* Deferred.make<void>()
+    yield* llm.hold("output", deferredAsPromise(gate))
+    const turn = yield* prompt.prompt(queuedPrompt(child.id, MessageID.ascending(), "input")).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    expect(OwnerQuiescence.control.acquire().status).toBe("busy")
+    yield* Deferred.succeed(gate, undefined)
+    const result = yield* Fiber.join(turn)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") {
+      expect(result.info.finish).toBe("stop")
+      expect(result.info.error).toBeUndefined()
+    }
+    expect(yield* llm.calls).toBe(1)
+  }), { git: true }, 30_000)
+it.instance("owner acquisition accounts for pending questions without a runner", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const question = yield* Question.Service
+    const chat = yield* sessions.create({ title: "Question" })
+    const fiber = yield* question.ask({ sessionID: chat.id, questions: [{ header: "probe", question: "probe", options: [{ label: "ok", description: "probe" }] }] }).pipe(Effect.forkChild)
+    const pending = yield* pollWithTimeout(question.list().pipe(Effect.map((items) => items.find((item) => item.sessionID === chat.id))), "question did not become pending")
+    expect(OwnerQuiescence.control.acquire().status).toBe("busy")
+    yield* question.reply({ requestID: pending.id, answers: [["ok"]] })
+    expect(yield* Fiber.join(fiber)).toEqual([["ok"]])
+  }), { git: true }, 30_000)
 const withMcpInstructions = testEffect(
   makeHttp({
     mcpInstructions: [

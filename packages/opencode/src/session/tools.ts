@@ -25,6 +25,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -439,7 +440,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           )
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
-            return yield* Effect.promise(() => execute(args, { ...opts, abortSignal: call.signal }))
+            return yield* OwnerQuiescence.promise(() => execute(args, { ...opts, abortSignal: call.signal }))
           }).pipe(
             Effect.withSpan("Tool.execute", {
               attributes: {

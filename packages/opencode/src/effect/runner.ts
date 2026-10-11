@@ -1,4 +1,5 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Latch, Schema, Scope, SynchronizedRef } from "effect"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 export interface Runner<A, E = never> {
   readonly state: State<A, E>
@@ -85,7 +86,7 @@ export const make = <A, E = never>(
       const id = next()
       const fiber = yield* work.pipe(
         Effect.onExit((exit) => finishRun(id, done, exit)),
-        Effect.forkIn(scope),
+        (work) => OwnerQuiescence.fork(work, scope),
       )
       return { id, done, fiber } satisfies RunHandle<A, E>
     })
@@ -148,7 +149,7 @@ export const make = <A, E = never>(
         yield* onBusy
         const id = next()
         const cancelled = yield* Deferred.make<void>()
-        const fiber = yield* work.pipe(Effect.ensuring(finishShell(id)), Effect.forkChild)
+        const fiber = yield* work.pipe(Effect.ensuring(finishShell(id)), (work) => OwnerQuiescence.fork(work))
         const shell = { id, cancelled, ready, fiber } satisfies ShellHandle<A, E>
         return [
           Effect.gen(function* () {

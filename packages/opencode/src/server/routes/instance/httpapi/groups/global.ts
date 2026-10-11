@@ -8,6 +8,8 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import semver from "semver"
 import { described } from "./metadata"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { ConflictError } from "../errors"
 
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
@@ -99,11 +101,24 @@ export const GlobalPaths = {
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
   memory: "/global/memory",
+  quiescence: "/global/quiescence",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
   HttpApiGroup.make("global")
     .add(
+      HttpApiEndpoint.get("quiescenceStatus", GlobalPaths.quiescence, {
+        success: OwnerQuiescence.Status,
+      }).annotateMerge(OpenApi.annotations({ identifier: "global.quiescence.status", summary: "Get owner admission status" })),
+      HttpApiEndpoint.post("quiescenceAcquire", GlobalPaths.quiescence, {
+        success: OwnerQuiescence.Capability,
+        error: ConflictError,
+      }).annotateMerge(OpenApi.annotations({ identifier: "global.quiescence.acquire", summary: "Seal an idle process owner" })),
+      HttpApiEndpoint.delete("quiescenceRelease", GlobalPaths.quiescence, {
+        payload: OwnerQuiescence.Capability,
+        success: Schema.Boolean,
+        error: ConflictError,
+      }).annotateMerge(OpenApi.annotations({ identifier: "global.quiescence.release", summary: "Release an owner seal by capability" })),
       HttpApiEndpoint.get("health", GlobalPaths.health, {
         success: described(GlobalHealth, "Health information"),
       }).annotateMerge(

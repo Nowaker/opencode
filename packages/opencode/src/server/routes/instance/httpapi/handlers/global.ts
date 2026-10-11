@@ -1,12 +1,13 @@
 import { Config } from "@/config/config"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { ConflictError } from "../errors"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
-import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { heapStats, memoryUsage as jscMemoryUsage } from "bun:jsc"
-import { Effect, Queue } from "effect"
+import { Effect, Queue, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -62,7 +63,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
-    const bridge = yield* EffectBridge.make()
+    const scope = yield* Scope.Scope
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       return { healthy: true as const, version: InstallationVersion }
@@ -78,9 +79,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
-      if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
+      if (result.changed) yield* OwnerQuiescence.fork(disposeAllInstancesAndEmitGlobalDisposed(), scope)
       return result.info
-    })
+    }, Effect.uninterruptible, OwnerQuiescence.activity)
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
       yield* disposeAllInstancesAndEmitGlobalDisposed()
@@ -114,7 +115,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         },
       })
       return HttpServerResponse.jsonUnsafe(result)
-    })
+    }, OwnerQuiescence.activity)
 
     const memory = Effect.fn("GlobalHttpApi.memory")(function* () {
       const proc = process.memoryUsage()
@@ -149,6 +150,22 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     return handlers
+      .handle("quiescenceStatus", () => Effect.sync(OwnerQuiescence.status))
+      .handle("quiescenceAcquire", () => Effect.try({
+        try: OwnerQuiescence.acquire,
+        catch: (error) => {
+          if (error instanceof OwnerQuiescence.Busy) return new ConflictError({ message: "Owner has active admissions", resource: "owner" })
+          if (error instanceof OwnerQuiescence.Sealed) return new ConflictError({ message: "Owner is already sealed", resource: "owner" })
+          throw error
+        },
+      }))
+      .handle("quiescenceRelease", ({ payload }) => Effect.try({
+        try: () => { OwnerQuiescence.release(payload); return true },
+        catch: (error) => {
+          if (error instanceof OwnerQuiescence.Stale) return new ConflictError({ message: "Stale owner capability", resource: "owner" })
+          throw error
+        },
+      }))
       .handle("health", health)
       .handleRaw("event", event)
       .handle("configGet", configGet)

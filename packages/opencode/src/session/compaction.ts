@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Session } from "./session"
@@ -651,9 +652,9 @@ const layer = Layer.effect(
 
     return Service.of({
       isOverflow,
-      prune,
-      process: processCompaction,
-      create,
+      prune: (input) => OwnerQuiescence.activity(prune(input)),
+      process: (input) => OwnerQuiescence.activity(processCompaction(input)),
+      create: (input) => OwnerQuiescence.activity(create(input)),
     })
   }),
 )

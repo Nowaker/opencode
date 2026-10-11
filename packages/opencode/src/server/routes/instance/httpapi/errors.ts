@@ -1,5 +1,11 @@
 import { Schema } from "effect"
 
+export class OwnerSealedError extends Schema.TaggedErrorClass<OwnerSealedError>()(
+  "OwnerSealed",
+  { generation: Schema.Finite },
+  { httpApiStatus: 409 },
+) {}
+
 export class InvalidRequestError extends Schema.TaggedErrorClass<InvalidRequestError>()(
   "InvalidRequestError",
   {

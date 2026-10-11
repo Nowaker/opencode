@@ -61,6 +61,7 @@ import { SessionReminders } from "./reminders"
 import { NotFoundError } from "@/storage/storage"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { OwnerQuiescence } from "@/owner/quiescence"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1265,7 +1266,7 @@ const layer = Layer.effect(
               modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
               history: msgs,
-            }).pipe(Effect.ignore, Effect.forkIn(scope))
+            }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
@@ -1463,7 +1464,7 @@ const layer = Layer.effect(
             }
 
             if (step === 1)
-              yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
+              yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
@@ -1571,7 +1572,7 @@ const layer = Layer.effect(
           continue
         }
 
-        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
         return yield* lastAssistant(sessionID)
       },
     )
@@ -1611,7 +1612,7 @@ const layer = Layer.effect(
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-      const templateCommand = yield* Effect.promise(async () => cmd.template)
+      const templateCommand = yield* OwnerQuiescence.promise(async () => cmd.template)
 
       const placeholders = templateCommand.match(placeholderRegex) ?? []
       let last = 0
@@ -1638,7 +1639,7 @@ const layer = Layer.effect(
       if (shellMatches.length > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
-        const results = yield* Effect.promise(() =>
+        const results = yield* OwnerQuiescence.promise(() =>
           Promise.all(
             shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
           ),
@@ -1732,7 +1733,7 @@ const layer = Layer.effect(
              it executable. */
           const exec = McpCatalog.convertTool(mcpEntry.def, mcpEntry.client, mcpEntry.timeout).execute
           if (!exec) return `error: MCP tool "${toolID}" declares no executable form`
-          const result = yield* Effect.promise(async () =>
+          const result = yield* OwnerQuiescence.promise(async () =>
             exec(args, {
               toolCallId: PartID.ascending(),
               messages: [],
@@ -1847,10 +1848,10 @@ const layer = Layer.effect(
 
     return Service.of({
       cancel,
-      prompt,
-      loop,
-      shell,
-      command,
+      prompt: (input) => OwnerQuiescence.activity(prompt(input)),
+      loop: (input) => OwnerQuiescence.activity(loop(input)),
+      shell: (input) => OwnerQuiescence.activity(shell(input)),
+      command: (input) => OwnerQuiescence.activity(command(input)),
       resolvePromptParts,
       unqueue,
     })
