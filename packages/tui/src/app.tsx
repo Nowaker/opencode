@@ -68,6 +68,7 @@ import * as Model from "./util/model"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
 import { openUrl } from "@opencode-ai/core/open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
+import { ComposerSealProvider, createComposerSeal, useComposerSeal } from "./context/composer-seal"
 import { TuiConfigProvider, useTuiConfig, type TuiConfig } from "./config"
 import { createTuiApiAdapters } from "./plugin/adapters"
 import { copyText, onClick } from "./ui/click"
@@ -260,6 +261,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         if (renderer.isDestroyed) return
 
         await render(() => {
+          const composerSeal = createComposerSeal(renderer)
           return (
             <ExitProvider
               exit={(reason) => {
@@ -300,64 +302,66 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                             <ArgsProvider {...input.args}>
                               <KVProvider>
                                 <ToastProvider>
-                                  <RouteProvider
-                                    initialRoute={
-                                      input.args.continue
-                                        ? {
-                                            type: "session",
-                                            sessionID: "dummy",
-                                          }
-                                        : undefined
-                                    }
-                                  >
-                                    <TuiConfigProvider config={input.config}>
-                                      <PluginRuntimeProvider value={pluginRuntime}>
-                                        <SDKProvider
-                                          url={input.url}
-                                          directory={input.directory}
-                                          fetch={input.fetch}
-                                          headers={input.headers}
-                                          events={input.events}
-                                        >
-                                          <PermissionProvider>
-                                            <ProjectProvider>
-                                              <SyncProvider>
-                                                <DataProvider>
-                                                  <ThemeProvider mode={mode}>
-                                                    <LocalProvider>
-                                                      <PromptStashProvider>
-                                                        <DialogProvider>
-                                                          <FrecencyProvider>
-                                                            <PromptHistoryProvider>
-                                                              <PromptAdmissionProvider>
-                                                                <PromptRefProvider>
-                                                                  <EditorContextProvider>
-                                                                    <LocationProvider>
-                                                                      <UpdateNotificationProvider updater={input.updater}>
-                                                                        <App
-                                                                          instant={instant}
-                                                                          onSnapshot={input.onSnapshot}
-                                                                          pluginHost={input.pluginHost}
-                                                                        />
-                                                                      </UpdateNotificationProvider>
-                                                                    </LocationProvider>
-                                                                  </EditorContextProvider>
-                                                                </PromptRefProvider>
-                                                              </PromptAdmissionProvider>
-                                                            </PromptHistoryProvider>
-                                                          </FrecencyProvider>
-                                                        </DialogProvider>
-                                                      </PromptStashProvider>
-                                                    </LocalProvider>
-                                                  </ThemeProvider>
-                                                </DataProvider>
-                                              </SyncProvider>
-                                            </ProjectProvider>
-                                          </PermissionProvider>
-                                        </SDKProvider>
-                                      </PluginRuntimeProvider>
-                                    </TuiConfigProvider>
-                                  </RouteProvider>
+                                  <ComposerSealProvider value={composerSeal}>
+                                    <RouteProvider
+                                      initialRoute={
+                                        input.args.continue
+                                          ? {
+                                              type: "session",
+                                              sessionID: "dummy",
+                                            }
+                                          : undefined
+                                      }
+                                    >
+                                      <TuiConfigProvider config={input.config}>
+                                        <PluginRuntimeProvider value={pluginRuntime}>
+                                          <SDKProvider
+                                            url={input.url}
+                                            directory={input.directory}
+                                            fetch={input.fetch}
+                                            headers={input.headers}
+                                            events={input.events}
+                                          >
+                                            <PermissionProvider>
+                                              <ProjectProvider>
+                                                <SyncProvider>
+                                                  <DataProvider>
+                                                    <ThemeProvider mode={mode}>
+                                                      <LocalProvider>
+                                                        <PromptStashProvider>
+                                                          <DialogProvider>
+                                                            <FrecencyProvider>
+                                                              <PromptHistoryProvider>
+                                                                <PromptAdmissionProvider>
+                                                                  <PromptRefProvider>
+                                                                    <EditorContextProvider>
+                                                                      <LocationProvider>
+                                                                        <UpdateNotificationProvider updater={input.updater}>
+                                                                          <App
+                                                                            instant={instant}
+                                                                            onSnapshot={input.onSnapshot}
+                                                                            pluginHost={input.pluginHost}
+                                                                          />
+                                                                        </UpdateNotificationProvider>
+                                                                      </LocationProvider>
+                                                                    </EditorContextProvider>
+                                                                  </PromptRefProvider>
+                                                                </PromptAdmissionProvider>
+                                                              </PromptHistoryProvider>
+                                                            </FrecencyProvider>
+                                                          </DialogProvider>
+                                                        </PromptStashProvider>
+                                                      </LocalProvider>
+                                                    </ThemeProvider>
+                                                  </DataProvider>
+                                                </SyncProvider>
+                                              </ProjectProvider>
+                                            </PermissionProvider>
+                                          </SDKProvider>
+                                        </PluginRuntimeProvider>
+                                      </TuiConfigProvider>
+                                    </RouteProvider>
+                                  </ComposerSealProvider>
                                 </ToastProvider>
                               </KVProvider>
                             </ArgsProvider>
@@ -426,6 +430,8 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
     return true
   })
 
+  const composerSeal = useComposerSeal()
+  let retiring = false
   const api = createTuiApi(
     createTuiApiAdapters({
       version: InstallationVersion,
@@ -443,9 +449,18 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
       renderer,
       attention,
       promptRef,
+      composerSeal,
       Slot: pluginRuntime.Slot,
       click: { on: ids.on },
     }),
+    (seal) => {
+      if (!composerSeal?.commit(seal)) return { status: "stale" }
+      if (!retiring) {
+        retiring = true
+        void exit()
+      }
+      return { status: "accepted" }
+    },
   )
   const [ready, setReady] = createSignal(false)
   props.pluginHost

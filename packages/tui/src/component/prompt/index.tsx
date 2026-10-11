@@ -63,6 +63,7 @@ import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, u
 import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
+import { useComposerSeal } from "../../context/composer-seal"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
 import { TuiLayout } from "../../layout"
@@ -111,6 +112,7 @@ export type PromptRef = {
     readonly visible: boolean
     readonly disabled: boolean
     readonly ready: boolean
+    readonly busy?: boolean
     submit?(expected: { input: string; parts: number }): void
     caret?(): TuiComposerCaret
     place?(caret: TuiComposerCaret): void
@@ -202,6 +204,12 @@ export function Prompt(props: PromptProps) {
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
   const exit = useExit()
+  const composerSeal = useComposerSeal()
+  const sealed = () => composerSeal?.sealed() === true
+  const disabled = () => props.disabled === true || sealed()
+  const whileOpen = (work: () => void) => (composerSeal ? composerSeal.whileOpen(work) : work())
+  // Async work that can still change the prompt once it resumes. A seal refuses while any runs.
+  const whilePending = <T,>(work: () => Promise<T>) => (composerSeal ? composerSeal.track(work) : work())
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
   const kv = useKV()
@@ -275,21 +283,23 @@ export function Prompt(props: PromptProps) {
 
   event.on("tui.prompt.append", (evt, { workspace }) => {
     if (workspace !== project.workspace.current()) return
-    if (!input || input.isDestroyed) return
-    input.insertText(evt.properties.text)
-    setTimeout(() => {
-      // setTimeout is a workaround and needs to be addressed properly
-      if (!input || input.isDestroyed) return
-      input.getLayoutNode().markDirty()
-      input.gotoBufferEnd()
-      renderer.requestRender()
-    }, 0)
+    whileOpen(() => {
+      void whilePending(async () => {
+        if (!input || input.isDestroyed) return
+        input.insertText(evt.properties.text)
+        await Bun.sleep(0)
+        if (!input || input.isDestroyed) return
+        input.getLayoutNode().markDirty()
+        input.gotoBufferEnd()
+        renderer.requestRender()
+      })
+    })
   })
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.disabled) input.cursorColor = theme.backgroundElement
-    if (!props.disabled) input.cursorColor = theme.text
+    if (disabled()) input.cursorColor = theme.backgroundElement
+    if (!disabled()) input.cursorColor = theme.text
     if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
   })
 
@@ -452,36 +462,39 @@ export function Prompt(props: PromptProps) {
         run: async (ctx: CommandContext<Renderable, KeyEvent>) => {
           ctx.event.preventDefault()
           ctx.event.stopPropagation()
-          const content = await clipboard.read?.()
-          if (content?.mime.startsWith("image/")) {
-            await pasteAttachment({
-              filename: "clipboard",
-              mime: content.mime,
-              content: content.data,
-            })
-            return
-          }
-          if (content?.mime === "text/plain") {
-            await pasteInputText(content.data)
-          }
+          await whilePending(async () => {
+            const content = await clipboard.read?.()
+            if (content?.mime.startsWith("image/")) {
+              await pasteAttachment({
+                filename: "clipboard",
+                mime: content.mime,
+                content: content.data,
+              })
+              return
+            }
+            if (content?.mime === "text/plain") {
+              await pasteInputText(content.data)
+            }
+          })
         },
       },
       {
         title: "Paste without a placeholder",
         name: "prompt.paste.raw",
         category: "Prompt",
-        run: async () => {
-          const content = await clipboard.read?.()
-          if (content?.mime.startsWith("image/")) {
-            await pasteAttachment({
-              filename: "clipboard",
-              mime: content.mime,
-              content: content.data,
-            })
-            return
-          }
-          if (content?.mime === "text/plain") insertPastedText(normalizeLineEndings(content.data))
-        },
+        run: () =>
+          whilePending(async () => {
+            const content = await clipboard.read?.()
+            if (content?.mime.startsWith("image/")) {
+              await pasteAttachment({
+                filename: "clipboard",
+                mime: content.mime,
+                content: content.data,
+              })
+              return
+            }
+            if (content?.mime === "text/plain") insertPastedText(normalizeLineEndings(content.data))
+          }),
       },
       {
         title: "Interrupt session",
@@ -525,7 +538,7 @@ export function Prompt(props: PromptProps) {
         category: "Session",
         name: "prompt.editor",
         slashName: "editor",
-        run: async () => {
+        run: () => whilePending(async () => {
           dialog.clear()
 
           // replace summarized text parts with the actual text
@@ -610,7 +623,7 @@ export function Prompt(props: PromptProps) {
           })
           restoreExtmarksFromParts(updatedNonTextParts)
           input.cursorOffset = Bun.stringWidth(normalized)
-        },
+        }),
       },
       {
         title: "Skills",
@@ -660,6 +673,7 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
+    enabled: !sealed(),
     commands: promptCommands(),
   }))
 
@@ -748,9 +762,17 @@ export function Prompt(props: PromptProps) {
       return {
         revision: handoffRevision,
         visible: props.visible !== false,
-        disabled: props.disabled === true,
+        disabled: disabled(),
         ready: !!input && !input.isDestroyed && sync.ready && local.model.ready
           && !workspace.creating() && !move.creating() && !auto()?.visible,
+        busy:
+          composerSeal?.busy() === true ||
+          submitting ||
+          !!auto()?.visible ||
+          workspace.creating() ||
+          move.creating() ||
+          admission.entries().length > 0 ||
+          startupNotice()?.type === "queued",
         submit(expected: { input: string; parts: number }) { void submit(expected) },
         caret: readCaret,
         place: placeCaret,
@@ -769,23 +791,27 @@ export function Prompt(props: PromptProps) {
       input.blur()
     },
     set(prompt) {
-      input.setText(prompt.input)
-      setStore("prompt", prompt)
-      if (prompt.mode !== undefined) setStore("mode", prompt.mode)
-      restoreExtmarksFromParts(prompt.parts)
-      input.gotoBufferEnd()
+      whileOpen(() => {
+        input.setText(prompt.input)
+        setStore("prompt", prompt)
+        if (prompt.mode !== undefined) setStore("mode", prompt.mode)
+        restoreExtmarksFromParts(prompt.parts)
+        input.gotoBufferEnd()
+      })
     },
     reset() {
-      input.clear()
-      input.extmarks.clear()
-      setStore("prompt", {
-        input: "",
-        parts: [],
+      whileOpen(() => {
+        input.clear()
+        input.extmarks.clear()
+        setStore("prompt", {
+          input: "",
+          parts: [],
+        })
+        setStore("extmarkToPartIndex", new Map())
       })
-      setStore("extmarkToPartIndex", new Map())
     },
     submit() {
-      void submit()
+      whileOpen(() => void submit())
     },
   }
 
@@ -1136,13 +1162,14 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
+    enabled: !sealed(),
     commands: stashCommands(),
   }))
 
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled,
+      enabled: inputTarget() !== undefined && !disabled(),
       bindings: tuiConfig.keybinds.get("prompt.paste"),
     }
   })
@@ -1150,7 +1177,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled,
+      enabled: inputTarget() !== undefined && !disabled(),
       bindings: tuiConfig.keybinds.get("prompt.paste.raw"),
     }
   })
@@ -1160,7 +1187,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled,
+      enabled: inputTarget() !== undefined && !disabled(),
       commands: [
         { name: "input.undo", title: "Undo in prompt", category: "Prompt", run: () => stepUndo("undo") },
         { name: "input.redo", title: "Redo in prompt", category: "Prompt", run: () => stepUndo("redo") },
@@ -1171,7 +1198,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled && store.prompt.input !== "",
+      enabled: inputTarget() !== undefined && !disabled() && store.prompt.input !== "",
       bindings: tuiConfig.keybinds.get("prompt.clear"),
     }
   })
@@ -1183,7 +1210,7 @@ export function Prompt(props: PromptProps) {
         cursorVersion()
         return (
           inputTarget() !== undefined &&
-          !props.disabled &&
+          !disabled() &&
           store.mode === "normal" &&
           !auto()?.visible &&
           input?.visualCursor.offset === 0
@@ -1227,7 +1254,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
+        return inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined
       })(),
       commands: [
         {
@@ -1259,7 +1286,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
+        return inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined
       })(),
       commands: [
         {
@@ -1319,7 +1346,7 @@ export function Prompt(props: PromptProps) {
       syncExtmarksWithPromptParts()
     }
     if (expected && (store.prompt.input !== expected.input || store.prompt.parts.length !== expected.parts)) return false
-    if (props.disabled) return false
+    if (disabled()) return false
     if (workspace.creating() || move.creating()) return false
     if (auto()?.visible) return false
     if (!store.prompt.input) return false
@@ -1870,7 +1897,7 @@ export function Prompt(props: PromptProps) {
   const maxHeight = createMemo(() => TuiLayout.promptMaxHeight(tuiConfig.prompt?.max_height, dimensions().height))
   // A click on a paste placeholder opens its text; the press has already put the caret there.
   const pasteClick = onClick(() => {
-    if (!props.disabled) openPaste()
+    if (!disabled()) openPaste()
   })
   const moveLabelWidth = createMemo(() => Math.max(12, Math.min(44, dimensions().width - 48)))
 
@@ -1917,7 +1944,7 @@ export function Prompt(props: PromptProps) {
                 observeUndo()
               }}
               onKeyDown={(e: { preventDefault(): void }) => {
-                if (props.disabled) {
+                if (disabled()) {
                   e.preventDefault()
                   return
                 }
@@ -1925,10 +1952,14 @@ export function Prompt(props: PromptProps) {
               onSubmit={() => {
                 // IME: double-defer so the last composed character (e.g. Korean
                 // hangul) is flushed to plainText before we read it for submission.
-                setTimeout(() => setTimeout(() => submit(), 0), 0)
+                void whilePending(async () => {
+                  await Bun.sleep(0)
+                  await Bun.sleep(0)
+                  await submit()
+                })
               }}
               onPaste={async (event: PasteEvent) => {
-                if (props.disabled) {
+                if (disabled()) {
                   event.preventDefault()
                   return
                 }
@@ -1958,7 +1989,7 @@ export function Prompt(props: PromptProps) {
                   insertPastedText(normalizedText)
                   return
                 }
-                await pasteInputText(normalizedText)
+                await whilePending(() => pasteInputText(normalizedText))
               }}
               ref={(r: TextareaRenderable) => {
                 input = r
@@ -1983,7 +2014,7 @@ export function Prompt(props: PromptProps) {
               }}
               onMouseUp={pasteClick.onMouseUp}
               focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled ? theme.backgroundElement : theme.text}
+              cursorColor={disabled() ? theme.backgroundElement : theme.text}
               cursorStyle={tuiConfig.cursor}
               syntaxStyle={syntax()}
             />
@@ -2071,6 +2102,13 @@ export function Prompt(props: PromptProps) {
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
+            <Match when={sealed()}>
+              <box paddingLeft={3} flexGrow={1} flexShrink={1}>
+                <Spinner color={theme.accent}>
+                  Input paused for restart - keys and pastes are not accepted
+                </Spinner>
+              </box>
+            </Match>
             <Match when={status().type !== "idle"}>
               <box
                 flexDirection="row"

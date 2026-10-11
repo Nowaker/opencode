@@ -253,6 +253,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       }),
     },
     lifecycle: {
+      retire: () => ({ status: "stale" }),
       signal: ctrl.signal,
       onDispose() {
         return () => {}
@@ -268,6 +269,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       read: () => ({ ...composer, input: "", parts: [], caret: null }),
       replace: () => ({ status: "not-ready", snapshot: composer }),
       submit: () => ({ status: "not-ready", snapshot: composer }),
+      seal: () => ({ status: "refused", reason: "unsupported" }),
     },
     route: {
       register: () => {

@@ -18,6 +18,7 @@ import * as Keymap from "../keymap"
 import { createCommandShim } from "./command-shim"
 import { createPromptControl } from "./prompt-control"
 import type { usePromptRef } from "../context/prompt"
+import type { ComposerSeal } from "../context/composer-seal"
 import type { PluginRoutes } from "./api"
 export type { RouteMap } from "./api"
 export { createPluginRoutes, createTuiApi } from "./api"
@@ -38,6 +39,7 @@ type Input = {
   renderer: TuiPluginApi["renderer"]
   attention: TuiPluginApi["attention"]
   promptRef?: ReturnType<typeof usePromptRef>
+  composerSeal?: ComposerSeal
   Slot: TuiPluginApi["ui"]["Slot"]
   click: TuiPluginApi["click"]
 }
@@ -178,11 +180,15 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
   return {
     app: appApi(input.version),
     attention: input.attention,
-    prompt: createPromptControl(() => input.promptRef?.current, () => ({
-      dialog: input.dialog.stack.length > 0,
-      ready: input.sync.ready,
-      sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
-    })),
+    prompt: createPromptControl(
+      () => input.promptRef?.current,
+      () => ({
+        dialog: input.dialog.stack.length > 0,
+        ready: input.sync.ready,
+        sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
+      }),
+      input.composerSeal,
+    ),
     // Keep deprecated `api.command` working for v1 plugins; remove in v2.
     command: createCommandShim(input.keymap, input.dialog, input.tuiConfig.keybinds),
     click: input.click,

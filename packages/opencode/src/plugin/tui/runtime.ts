@@ -417,6 +417,7 @@ function createPluginScope(load: PluginLoad, id: string, disposeTimeoutMs: numbe
   }
 
   const lifecycle: TuiPluginApi["lifecycle"] = {
+    retire: () => ({ status: "stale" }),
     signal: ctrl.signal,
     onDispose,
   }
@@ -654,7 +655,7 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
         return installPluginBySpec(runtime, spec, options?.global)
       },
     },
-    lifecycle: scope.lifecycle,
+    lifecycle: { ...scope.lifecycle, retire: api.lifecycle.retire },
   }
 }
 

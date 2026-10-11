@@ -39,10 +39,14 @@ export function createPluginRoutes() {
 
 export type PluginRoutes = ReturnType<typeof createPluginRoutes>
 
-export function createTuiApi(input: Omit<TuiPluginApi, "lifecycle">): TuiPluginApi {
+export function createTuiApi(
+  input: Omit<TuiPluginApi, "lifecycle">,
+  retire: TuiPluginApi["lifecycle"]["retire"] = () => ({ status: "stale" }),
+): TuiPluginApi {
   return {
     ...input,
     lifecycle: {
+      retire,
       signal: new AbortController().signal,
       onDispose() {
         return () => {}

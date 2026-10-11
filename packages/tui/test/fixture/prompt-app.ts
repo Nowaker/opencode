@@ -28,6 +28,7 @@ export async function wait(fn: () => boolean, timeout = 10_000) {
 }
 
 export type PromptRig = {
+  api: TuiPluginApi
   press(bytes: string): Promise<void>
   click(x: number, y: number): Promise<void>
   frame(): string
@@ -123,6 +124,7 @@ export async function withPrompt(body: (rig: PromptRig) => Promise<void>, option
     // The prompt keeps its text across a remount, and so across the tests in this file.
     if (api.prompt.read().input) await press("\x03")
     await body({
+      api,
       press,
       async click(x, y) {
         await setup.mockMouse.click(x, y)

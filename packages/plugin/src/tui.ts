@@ -34,6 +34,9 @@ export type {
   TuiComposerDraft,
   TuiComposerGuard,
   TuiComposerResult,
+  TuiComposerSeal,
+  TuiComposerSealRefusal,
+  TuiComposerSealResult,
   TuiComposerSnapshot,
 } from "./tui-prompt.js"
 
@@ -214,6 +217,8 @@ export type TuiPromptRef = {
     readonly visible: boolean
     readonly disabled: boolean
     readonly ready: boolean
+    /** Work already started can still change the prompt; a provider without it cannot be sealed. */
+    readonly busy?: boolean
     submit?(expected: { input: string; parts: number }): void
     caret?(): TuiComposerCaret
     place?(caret: TuiComposerCaret): void
@@ -544,6 +549,7 @@ export type TuiDispose = () => void | Promise<void>
 export type TuiLifecycle = {
   readonly signal: AbortSignal
   onDispose: (fn: TuiDispose) => () => void
+  retire: (seal: { readonly generation: number; release(): boolean }) => { status: "accepted" } | { status: "stale" }
 }
 
 export type TuiPluginState = "first" | "updated" | "same"

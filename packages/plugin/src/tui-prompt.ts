@@ -43,7 +43,34 @@ export type TuiComposerDraft = Pick<TuiComposerSnapshot, "generation" | "revisio
   caret: TuiComposerCaret | null
 }
 
+/**
+ * Why `seal()` refused; a refused seal changes nothing. `busy` means something already started can still change the
+ * composer: a paste or the external editor still running, a prompt not yet admitted by the server, open
+ * autocomplete, workspace or directory work, or a queued startup submit.
+ */
+export type TuiComposerSealRefusal = "unmounted" | "unsupported" | "sealed" | "dialog" | "busy"
+
+export type TuiComposerSeal = Disposable & {
+  /** Counts the seals this process has granted; never reused. */
+  readonly generation: number
+  /** Reopens input without replaying blocked attempts. False when this seal had already ended. */
+  release(): boolean
+}
+
+export type TuiComposerSealResult =
+  | { status: "sealed"; seal: TuiComposerSeal; draft: TuiComposerDraft }
+  | { status: "refused"; reason: TuiComposerSealRefusal }
+
 export type TuiComposerApi = {
+  /**
+    * Pauses composer input synchronously until release. Keys, pastes, mouse input, navigation and legacy prompt
+    * mutations are blocked, not queued or accepted; the TUI shows persistent paused feedback. `replace()`/`submit()`
+    * answer `not-ready` (`reason: "disabled"`). Release accepts fresh input only; blocked attempts must be retried.
+    * `draft` is what the composer holds under the seal. The caller must persist it before stopping this process
+    * and keep this exact seal held through termination. Releasing before killing reopens an input-loss race.
+    * This API neither persists the draft nor authorizes a parent kill; no final snapshot closes that race.
+   */
+  seal(): TuiComposerSealResult
   snapshot(): TuiComposerSnapshot
   /** The composer's text and parts. Nothing is hashed, so it is cheap to poll by revision. */
   read(): TuiComposerDraft

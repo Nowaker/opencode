@@ -8,6 +8,48 @@ import { mockTuiRuntime } from "../../fixture/tui-runtime"
 
 const { TuiPluginRuntime } = await import("../../../src/plugin/tui/runtime")
 
+test("loaded plugins retire through the host with the original seal object", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      const file = path.join(dir, "retirement.ts")
+      await Bun.write(file, `export default {
+        id: "demo.retirement",
+        tui(api) {
+          const result = api.prompt.seal()
+          if (result.status !== "sealed") throw new Error("missing seal")
+          api.lifecycle.retire(result.seal)
+          api.lifecycle.onDispose(() => result.seal.release())
+        },
+      }`)
+      return pathToFileURL(file).href
+    },
+  })
+  const { config, restore } = mockTuiRuntime(tmp.path, [tmp.extra])
+  const api = createTuiPluginApi()
+  let committed = false
+  let releaseAfterCommit = false
+  const release = () => {
+    releaseAfterCommit = committed
+    return !committed
+  }
+  const seal = { generation: 1, release, [Symbol.dispose]: release }
+  api.prompt.seal = () => ({ status: "sealed", seal, draft: api.prompt.read() })
+  api.lifecycle.retire = (input) => {
+    expect(input).toBe(seal)
+    committed = true
+    return { status: "accepted" }
+  }
+  try {
+    await TuiPluginRuntime.init({ api, config })
+    expect(committed).toBe(true)
+    await TuiPluginRuntime.dispose()
+    expect(releaseAfterCommit).toBe(true)
+  } finally {
+    await TuiPluginRuntime.dispose()
+    restore()
+  }
+})
+
 test("hands a loaded plugin the host composer", async () => {
   // Given: a plugin that records the composer it was handed. The per-plugin api
   // is projected field by field rather than spread, so a capability the host

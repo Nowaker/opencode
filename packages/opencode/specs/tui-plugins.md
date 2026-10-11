@@ -468,6 +468,26 @@ Theme install behavior:
 - The API is local to the TUI thread. It creates no listener and publishes no
   raw text, credential or draft file. A transport plugin must authenticate its
   caller and preserve the generation and content guard.
+- `api.prompt.seal()` returns `{ status: "sealed", seal, draft }` only while
+  the mounted composer has no outstanding work or dialog. The original seal
+  has `generation`, `release(): boolean`, and `[Symbol.dispose]()`. It blocks
+  input and navigation synchronously; blocked attempts are not buffered.
+- `api.lifecycle.retire(seal)` accepts only that exact current seal object,
+  not a copy with the same generation. It makes the seal irreversible before
+  invoking the existing renderer exit and plugin cleanup chain. Release and
+  disposal then return false or do nothing, never reopening input. Repeating
+  retirement with the same committed object returns `{ status: "accepted" }`
+  without restarting cleanup; released or foreign seals return `{ status: "stale" }`.
+- `accepted` means exit was initiated, not that the OS process has died.
+  Controllers still wait for the original PID/start-token to disappear before
+  replacing it. The transport must authenticate and authorize retirement,
+  persist the draft, and commit the owning engine first; this TUI-local API
+  does not verify the worker's engine lease or a durable retirement fence.
+- A mounted home prompt uses the same path, with a null session ID. An
+  otherwise idle mounted prompt may seal while hidden, disabled or unsynced;
+  `draft.ready` is not a sealing prerequisite. An
+  unmounted prompt reports `unmounted`; a headless owner has no TUI seal.
+  Neither case supplies composer retirement confirmation.
 
 ### Slots
 

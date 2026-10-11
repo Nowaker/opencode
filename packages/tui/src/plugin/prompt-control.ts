@@ -4,15 +4,22 @@ import type {
   TuiComposerDraft,
   TuiComposerGuard,
   TuiComposerResult,
+  TuiComposerSealResult,
   TuiComposerSnapshot,
   TuiPromptRef,
 } from "@opencode-ai/plugin/tui"
+import type { ComposerSeal } from "../context/composer-seal"
+import { copyPromptParts } from "../prompt/undo"
 
 type State = { dialog: boolean; ready: boolean; sessionID: string | null }
 type Content = Pick<TuiComposerSnapshot, "generation" | "sha256" | "partsSha256">
 
 /** All checks and mutations run synchronously on the owning TUI thread. */
-export function createPromptControl(read: () => TuiPromptRef | undefined, state: () => State): TuiComposerApi {
+export function createPromptControl(
+  read: () => TuiPromptRef | undefined,
+  state: () => State,
+  composerSeal?: ComposerSeal,
+): TuiComposerApi {
   let active: TuiPromptRef | undefined
   let generation = randomUUID()
   const replacements = new Map<string, { key: string; receipt: TuiComposerResult }>()
@@ -28,7 +35,8 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
     const current = ref?.current
     const handoff = ref?.handoff
     const flags = state()
-    const reason: TuiComposerSnapshot["reason"] = !ref ? "unmounted" : !handoff ? "unsupported" : flags.dialog ? "dialog"
+    const reason: TuiComposerSnapshot["reason"] = !ref ? "unmounted" : !handoff ? "unsupported"
+      : composerSeal?.sealed() ? "disabled" : flags.dialog ? "dialog"
       : !handoff.visible ? "hidden" : handoff.disabled ? "disabled"
       : current?.mode === "shell" ? "shell"
       : !flags.ready || !handoff.ready ? "syncing" : "ready"
@@ -49,7 +57,7 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
     return {
       generation, revision: handoff?.revision ?? 0, ready: reason === "ready", reason,
       focused: ref?.focused ?? false, visible: handoff?.visible ?? false,
-      disabled: handoff?.disabled ?? true, dialog: flags.dialog, sessionID: flags.sessionID,
+      disabled: reason === "disabled" || (handoff?.disabled ?? true), dialog: flags.dialog, sessionID: flags.sessionID,
       sha256: createHash("sha256").update(current?.input ?? "").digest("hex"),
       partsSha256: createHash("sha256").update(JSON.stringify(current?.parts ?? [])).digest("hex"),
       inputBytes: Buffer.byteLength(current?.input ?? ""), parts: current?.parts.length ?? 0,
@@ -68,7 +76,24 @@ export function createPromptControl(read: () => TuiPromptRef | undefined, state:
     return JSON.stringify([request.generation, request.sha256, request.partsSha256, request.correlationId])
   }
 
+  function seal(): TuiComposerSealResult {
+    const { ref, handoff, flags } = observe()
+    if (!ref) return { status: "refused", reason: "unmounted" }
+    if (!composerSeal || handoff?.busy === undefined) return { status: "refused", reason: "unsupported" }
+    if (composerSeal.sealed()) return { status: "refused", reason: "sealed" }
+    if (flags.dialog) return { status: "refused", reason: "dialog" }
+    if (handoff.busy || composerSeal.busy()) return { status: "refused", reason: "busy" }
+    const held = composerSeal.acquire()
+    const captured = draft()
+    return {
+      status: "sealed",
+      seal: held,
+      draft: { ...captured, parts: copyPromptParts(captured.parts), caret: captured.caret && structuredClone(captured.caret) },
+    }
+  }
+
   return {
+    seal,
     snapshot,
     read: draft,
     replace(request) {

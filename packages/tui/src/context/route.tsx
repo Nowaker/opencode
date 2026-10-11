@@ -2,6 +2,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import type { PromptInfo } from "../prompt/history"
 import { useTuiStartup } from "./runtime"
+import { useComposerSeal } from "./composer-seal"
 
 export type HomeRoute = {
   type: "home"
@@ -26,16 +27,19 @@ export const { use: useRoute, provider: RouteProvider } = createSimpleContext({
   name: "Route",
   init: (props: { initialRoute?: Route }) => {
     const startup = useTuiStartup()
+    const seal = useComposerSeal()
     const [store, setStore] = createStore<Route>(
       props.initialRoute ?? initialRoute(startup.initialRoute) ?? { type: "home" },
     )
+    const go = (route: Route) => setStore(reconcile(route))
 
     return {
       get data() {
         return store
       },
       navigate(route: Route) {
-        setStore(reconcile(route))
+        if (seal) seal.whileOpen(() => go(route))
+        else go(route)
       },
     }
   },
