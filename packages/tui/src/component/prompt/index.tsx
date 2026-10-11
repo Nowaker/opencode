@@ -34,6 +34,7 @@ import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
+import { pasteSummary } from "../../prompt/paste"
 import { usePromptStash } from "../../prompt/stash"
 import { usePromptAdmission } from "../../prompt/admission"
 import { mergeFailedPrompt } from "../../prompt/merge"
@@ -1465,12 +1466,9 @@ export function Prompt(props: PromptProps) {
       }
     }
 
-    const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1
-    if (
-      (lineCount >= 3 || pastedContent.length > 150) &&
-      kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)
-    ) {
-      pasteText(pastedContent, `[Pasted ~${lineCount} lines]`)
+    const summary = pasteSummary(pastedContent, tuiConfig.prompt?.paste_summary)
+    if (summary && kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)) {
+      pasteText(pastedContent, summary)
       return
     }
 
