@@ -84,6 +84,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Editor-standard Home and End defaults](./features/2026-10-09-editor-home-end.md)
 - [Revert messages without reverting files, shown at once](./features/2026-10-10-tui-revert-messages.md)
 - [Unqueue a prompt waiting behind the running turn](./features/2026-10-10-tui-unqueue-prompt.md)
+- [Delete a paste placeholder whole on word and line deletes](./features/2026-10-10-paste-placeholder-delete.md)
+- [Configure when a paste is summarized and what its placeholder says](./features/2026-10-10-paste-summary-config.md)
+- [Paste without a placeholder](./features/2026-10-10-paste-raw-key.md)
+- [Grouped prompt undo and redo on ctrl+z / ctrl+shift+z](./features/2026-10-10-prompt-undo-history.md)
+- [Open a paste placeholder's text by clicking it](./features/2026-10-10-paste-edit-dialog.md)
 
 ## Session records
 
