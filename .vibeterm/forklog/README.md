@@ -82,9 +82,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Choose how much tool output shows before "Click to expand"](./features/2026-10-08-tui-tool-output-collapse.md)
 - [Pass messageID to the shell.env hook](./features/2026-10-08-shell-env-message-id.md)
 - [Editor-standard Home and End defaults](./features/2026-10-09-editor-home-end.md)
+- [Revert messages without reverting files, shown at once](./features/2026-10-10-tui-revert-messages.md)
+- [Unqueue a prompt waiting behind the running turn](./features/2026-10-10-tui-unqueue-prompt.md)
 
 ## Session records
 
+- [2026-10-10 `ses_ed759a0b4ffeCubC9xxc8hYgHY`](./sessions/2026-10-10-revert-unqueue.md)
+  - "Revert messages" vs "Revert messages and files" (`files` on the revert
+    route, `revert.files`, fork default messages only), reverts shown at once,
+    and "Unqueue" for a queued prompt with a race-safe server guard; PRs
+    #54436 and #54437; build and install on both hosts.
 - [2026-10-10 `ses_ef46f1775ffe29MtElYF4DQySL`](./sessions/2026-10-10-home-end-regression.md)
   - Fix the editor-standard Home/End regression seen from m4max: repeated
     home/end stay on the line (`gotoLineEdge`), and the Terminal.app VibeTerm
