@@ -56,6 +56,7 @@ import { DialogAlert } from "../../ui/dialog-alert"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import { revertSession, unrevertSession } from "./revert"
+import { mergeFailedPrompt } from "../../prompt/merge"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
@@ -450,6 +451,16 @@ export function Session() {
       ),
     )
     dialog.clear()
+  }
+
+  // An unqueued prompt goes back to the composer above anything typed there since, as a prompt that failed to
+  // send does.
+  const restorePrompt = (draft: PromptInfo) => {
+    const current = prompt?.current
+    if (!prompt || !current) return
+    if (!current.input && current.parts.length === 0) return prompt.set(draft)
+    const merged = mergeFailedPrompt(draft, current)
+    if (merged) prompt.set(merged.prompt)
   }
   const bind = (r: PromptRef | undefined) => {
     prompt = r
@@ -1543,7 +1554,9 @@ export function Session() {
                                 <DialogMessage
                                   messageID={message.id}
                                   sessionID={route.sessionID}
+                                  queued={pending() !== undefined && index() > pending()!}
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                                  restorePrompt={restorePrompt}
                                 />
                               ))
                             }}
