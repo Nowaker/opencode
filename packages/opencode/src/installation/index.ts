@@ -11,7 +11,7 @@ import { AppProcess } from "@opencode-ai/core/process"
 import path from "path"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
-import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationBaseVersion, InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { NpmConfig } from "@opencode-ai/core/npm-config"
 import { InstallationEvent } from "@opencode-ai/schema/installation-event"
 
@@ -97,22 +97,22 @@ const MAJOR_INSTALL: Partial<Record<Method, { remove: string[]; install: string[
   npm: {
     remove: ["npm", "uninstall", "-g", "opencode-ai"],
     install: ["npm", "install", "-g", "@opencode/cli"],
-    restore: ["npm", "install", "-g", `opencode-ai@${InstallationVersion}`],
+    restore: ["npm", "install", "-g", `opencode-ai@${InstallationBaseVersion}`],
   },
   pnpm: {
     remove: ["pnpm", "remove", "-g", "opencode-ai"],
     install: ["pnpm", "add", "-g", "--allow-build=@opencode/cli", "@opencode/cli"],
-    restore: ["pnpm", "add", "-g", `opencode-ai@${InstallationVersion}`],
+    restore: ["pnpm", "add", "-g", `opencode-ai@${InstallationBaseVersion}`],
   },
   bun: {
     remove: ["bun", "remove", "-g", "opencode-ai"],
     install: ["bun", "install", "-g", "--trust", "@opencode/cli"],
-    restore: ["bun", "install", "-g", `opencode-ai@${InstallationVersion}`],
+    restore: ["bun", "install", "-g", `opencode-ai@${InstallationBaseVersion}`],
   },
   yarn: {
     remove: ["yarn", "global", "remove", "opencode-ai"],
     install: ["yarn", "global", "add", "@opencode/cli"],
-    restore: ["yarn", "global", "add", `opencode-ai@${InstallationVersion}`],
+    restore: ["yarn", "global", "add", `opencode-ai@${InstallationBaseVersion}`],
   },
 }
 

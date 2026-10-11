@@ -11,7 +11,7 @@ import { Filesystem } from "@/util/filesystem"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import type { EventSource } from "@opencode-ai/tui/context/sdk"
 import type { UpdateNotice, UpdateSource } from "@opencode-ai/tui"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationBaseVersion } from "@opencode-ai/core/installation/version"
 import { writeHeapSnapshot } from "v8"
 import { ServerAuth } from "@/server/auth"
 import { validateSession } from "../tui/validate-session"
@@ -74,7 +74,7 @@ function createUpdater(latest: () => Promise<UpdateNotice | undefined>): UpdateS
     },
     check: async () => {
       const { Installation } = await import("@/installation")
-      return { current: InstallationVersion, latest: await Installation.latest(await Installation.method()) }
+      return { current: InstallationBaseVersion, latest: await Installation.latest(await Installation.method()) }
     },
     apply: async (target) => {
       const { Installation } = await import("@/installation")
