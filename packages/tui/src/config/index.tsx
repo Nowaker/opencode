@@ -371,11 +371,11 @@ export const Transcript = Schema.Struct({
   }),
 }).annotate({ description: "Session transcript loading" })
 
-export const RevertFilesDefault = true
+export const RevertFilesDefault = false
 export const Revert = Schema.Struct({
   files: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Whether /undo, its keybind and the first Revert action in the message dialog also revert the file changes the reverted messages made (default: true). The other choice is always the second Revert action, /undo-messages or /undo-files",
+      "Whether /undo, its keybind and the first Revert action in the message dialog also revert the file changes the reverted messages made (default: false). The other choice is always the second Revert action, /undo-messages or /undo-files",
   }),
 }).annotate({ description: "Message revert settings" })
 

@@ -52,10 +52,10 @@ describe("revert choices", () => {
     ])
   })
 
-  test("default to reverting files, unless tui.json says otherwise", () => {
-    expect(revertFiles(undefined)).toBe(true)
-    expect(revertFiles({ files: false })).toBe(false)
-    expect(resolve({ revert: { files: false } }, { terminalSuspend: true }).revert).toEqual({ files: false })
+  test("default to keeping files, unless tui.json says otherwise", () => {
+    expect(revertFiles(undefined)).toBe(false)
+    expect(revertFiles({ files: true })).toBe(true)
+    expect(resolve({ revert: { files: true } }, { terminalSuspend: true }).revert).toEqual({ files: true })
   })
 
   test("the undo variants take their own keybinds", () => {

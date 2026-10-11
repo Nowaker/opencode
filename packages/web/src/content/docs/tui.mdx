@@ -311,7 +311,7 @@ This command only controls whether thinking blocks are **displayed** - it does n
 
 ### undo
 
-Undo last message in the conversation. Removes the most recent user message and all subsequent responses, and by default any file changes they made. Set [`revert.files`](#options) to `false` to keep the files.
+Undo last message in the conversation. Removes the most recent user message and all subsequent responses. Files stay as they are unless [`revert.files`](#options) is `true`, which also reverts the file changes those messages made.
 
 :::tip
 `/undo-messages` always keeps the files and `/undo-files` always reverts them, whatever `revert.files` says.
@@ -517,7 +517,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `sidebar.mcp_list` - Controls the MCP server rows in the session sidebar. `"descriptive"` (default) shows the status dot, the server name and its status text (`Connected`, `Disabled`, the failure reason, and so on); `"compact"` shows only the status dot and the server name, leaving the dot color to carry the status. `/status` still lists every server with its full status.
 - `sidebar.todo_summary` - Shows todo counts after the sidebar Todo heading: `"never"` (default), `"collapsed"` (only while the list is collapsed; lists of two or fewer items never collapse), or `"always"`. `sidebar.todo_summary_style` picks the format: `"progress"` (default) is completed+in progress/total, e.g. `10+1/12`; `"icons"` is a count per status, e.g. `✓10 •1 ○1`.
 - `sidebar.todo_completed` - What the sidebar Todo section does once every item is completed: `"hide"` (default) removes it, `"collapsed"` keeps the heading and collapses the list (lists of two or fewer items never collapse), `"show"` keeps the list open.
-- `revert.files` - Whether `/undo`, its keybind and the first Revert action in [message actions](#message-actions) also revert the file changes the reverted messages made (default: `true`). The other choice is always one row down in message actions, or `/undo-messages` and `/undo-files`, which you can bind with `messages_undo_keep_files` and `messages_undo_with_files`.
+- `revert.files` - Whether `/undo`, its keybind and the first Revert action in [message actions](#message-actions) also revert the file changes the reverted messages made (default: `false`). The other choice is always one row down in message actions, or `/undo-messages` and `/undo-files`, which you can bind with `messages_undo_keep_files` and `messages_undo_with_files`.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
 - `keep_scroll_on_submit` - Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: `false`). Toggle it at runtime with `/keep-scroll`; the toggle is remembered and takes precedence over this option.
 - `sidebar.pin_title` - Keep the session title at the top of the sidebar while the rest of the sidebar scrolls (default: `false`). The `/pin-title` command toggles it for the current machine.
