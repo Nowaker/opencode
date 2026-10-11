@@ -1450,6 +1450,7 @@ const layer = Layer.effect(
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Truncate.Service, truncate),
               Effect.provideService(RuntimeFlags.Service, flags),
+              Effect.provideService(Config.Service, config),
             )
 
             if (lastUser.format?.type === "json_schema") {
