@@ -4274,7 +4274,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Revert message
    *
-   * Revert a specific message in a session, undoing its effects and restoring the previous state.
+   * Revert a specific message in a session, undoing its effects and restoring the previous state. Pass `files: false` to revert only the messages and leave every file untouched.
    */
   public revert<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4283,6 +4283,7 @@ export class Session2 extends HeyApiClient {
       workspace?: string
       messageID?: string
       partID?: string
+      files?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4296,6 +4297,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
             { in: "body", key: "partID" },
+            { in: "body", key: "files" },
           ],
         },
       ],

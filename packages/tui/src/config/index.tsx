@@ -371,6 +371,18 @@ export const Transcript = Schema.Struct({
   }),
 }).annotate({ description: "Session transcript loading" })
 
+export const RevertFilesDefault = true
+export const Revert = Schema.Struct({
+  files: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Whether /undo, its keybind and the first Revert action in the message dialog also revert the file changes the reverted messages made (default: true). The other choice is always the second Revert action, /undo-messages or /undo-files",
+  }),
+}).annotate({ description: "Message revert settings" })
+
+export function revertFiles(value: Info["revert"]) {
+  return value?.files ?? RevertFilesDefault
+}
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -432,6 +444,7 @@ export const Info = Schema.Struct({
   sidebar: Schema.optional(Sidebar),
   usage: Schema.optional(Usage),
   transcript: Schema.optional(Transcript),
+  revert: Schema.optional(Revert),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })
 export type Info = Schema.Schema.Type<typeof Info>

@@ -55,6 +55,7 @@ import { useDialog } from "../../ui/dialog"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
+import { revertSession, unrevertSession } from "./revert"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
@@ -144,6 +145,8 @@ const sessionBindingCommands = [
   "session.compact",
   "session.unshare",
   "session.undo",
+  "session.undo.messages",
+  "session.undo.files",
   "session.redo",
   "session.sidebar.toggle",
   "session.sidebar.pin_title",
@@ -424,6 +427,30 @@ export function Session() {
   let seeded = false
   let scroll: ScrollBoxRenderable
   let prompt: PromptRef | undefined
+
+  const undo = async (files: boolean) => {
+    const status = sync.data.session_status?.[route.sessionID]
+    if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
+    const message = messagesBeforeRevert().findLast((item) => item.role === "user")
+    if (!message) return
+    void revertSession({ sync, sdk, toast, sessionID: route.sessionID, messageID: message.id, files }).then(() =>
+      toBottom(),
+    )
+    const parts = sync.data.part[message.id]
+    prompt?.set(
+      parts.reduce(
+        (agg, part) => {
+          if (part.type === "text") {
+            if (!part.synthetic) agg.input += part.text
+          }
+          if (part.type === "file") agg.parts.push(part)
+          return agg
+        },
+        { input: "", parts: [] as PromptInfo["parts"] },
+      ),
+    )
+    dialog.clear()
+  }
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)
@@ -706,34 +733,25 @@ export function Session() {
       slash: {
         name: "undo",
       },
-      run: async () => {
-        const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
-        const message = messagesBeforeRevert().findLast((item) => item.role === "user")
-        if (!message) return
-        void sdk.client.session
-          .revert({
-            sessionID: route.sessionID,
-            messageID: message.id,
-          })
-          .then(() => {
-            toBottom()
-          })
-        const parts = sync.data.part[message.id]
-        prompt?.set(
-          parts.reduce(
-            (agg, part) => {
-              if (part.type === "text") {
-                if (!part.synthetic) agg.input += part.text
-              }
-              if (part.type === "file") agg.parts.push(part)
-              return agg
-            },
-            { input: "", parts: [] as PromptInfo["parts"] },
-          ),
-        )
-        dialog.clear()
+      run: () => undo(TuiConfig.revertFiles(tuiConfig.revert)),
+    },
+    {
+      title: "Undo previous message, keep file changes",
+      value: "session.undo.messages",
+      category: "Session",
+      slash: {
+        name: "undo-messages",
       },
+      run: () => undo(false),
+    },
+    {
+      title: "Undo previous message and its file changes",
+      value: "session.undo.files",
+      category: "Session",
+      slash: {
+        name: "undo-files",
+      },
+      run: () => undo(true),
     },
     {
       title: "Redo",
@@ -745,19 +763,21 @@ export function Session() {
       },
       run: () => {
         dialog.clear()
-        const messageID = session()?.revert?.messageID
-        if (!messageID) return
-        const message = messages().find((x) => x.role === "user" && x.id > messageID)
+        const revert = session()?.revert
+        if (!revert) return
+        const message = messages().find((x) => x.role === "user" && x.id > revert.messageID)
         if (!message) {
-          void sdk.client.session.unrevert({
-            sessionID: route.sessionID,
-          })
+          void unrevertSession({ sync, sdk, toast, sessionID: route.sessionID })
           prompt?.set({ input: "", parts: [] })
           return
         }
-        void sdk.client.session.revert({
+        void revertSession({
+          sync,
+          sdk,
+          toast,
           sessionID: route.sessionID,
           messageID: message.id,
+          files: !!revert.snapshot,
         })
       },
     },
@@ -1456,7 +1476,9 @@ export function Session() {
                               const confirmed = await DialogConfirm.show(
                                 dialog,
                                 "Confirm Redo",
-                                "Are you sure you want to restore the reverted messages?",
+                                revertInfo()?.snapshot
+                                  ? "Are you sure you want to restore the reverted messages? Files go back to how they were when you reverted, overwriting any change made since."
+                                  : "Are you sure you want to restore the reverted messages? Files are not touched.",
                               )
                               if (confirmed) {
                                 keymap.dispatchCommand("session.redo")

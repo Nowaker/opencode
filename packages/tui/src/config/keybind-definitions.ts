@@ -146,6 +146,8 @@ export const Definitions = {
   messages_hidden_all: keybind("none", "Load all hidden messages"),
   messages_copy: keybind("<leader>y", "Copy message"),
   messages_undo: keybind("<leader>u", "Undo message"),
+  messages_undo_keep_files: keybind("none", "Undo message, keep file changes"),
+  messages_undo_with_files: keybind("none", "Undo message and its file changes"),
   messages_redo: keybind("<leader>r", "Redo message"),
   messages_toggle_conceal: keybind("<leader>h", "Toggle code block concealment in messages"),
   tool_details: keybind("none", "Toggle tool details visibility"),

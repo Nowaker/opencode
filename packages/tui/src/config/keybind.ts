@@ -167,6 +167,8 @@ export const CommandMap = {
   messages_hidden_all: "session.hidden.all",
   messages_copy: "messages.copy",
   messages_undo: "session.undo",
+  messages_undo_keep_files: "session.undo.messages",
+  messages_undo_with_files: "session.undo.files",
   messages_redo: "session.redo",
   messages_toggle_conceal: "session.toggle.conceal",
   tool_details: "session.toggle.actions",
