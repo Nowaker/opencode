@@ -507,6 +507,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `datetime_format` - How times and dates are written. See [Date and time format](#date-and-time-format).
 - `tool_output.collapse` - How much of a tool's output shows before **Click to expand**. See [Tool output](#tool-output).
 - `prompt.paste_summary` - When a paste is replaced by a placeholder such as `[Pasted ~12 lines]`, and what the placeholder says. See [Paste summary](#paste-summary).
+- `prompt.undo_depth` - How many steps of prompt edits undo can take back. Defaults to `500`. See [Undo in the prompt](#undo-in-the-prompt).
 - `model_label` - How message footers and the prompt name a model: `"name"` (default) shows its display name, such as `Claude Sonnet 4.5`; `"id"` shows `providerID/modelID`, such as `anthropic/claude-sonnet-4-5`.
 - `turn_timing`, `footer_variant`, `timestamps` - Older settings that `footer` replaces; they keep working. See [Older footer settings](#older-footer-settings).
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
@@ -678,6 +679,25 @@ A paste of three lines or more, or of more than 150 characters, goes into the pr
 - `excerpt` - How many characters `{excerpt}` shows before it is cut with `…`. Defaults to `30`.
 
 With the example above, a 12-line stack trace that starts with `TypeError: Cannot read properties of undefined` shows as `[Pasted 12 lines, 1834 B: TypeError: Cannot read properties of und…]`. **Disable paste summary** in the command palette turns summarizing off for every paste, and **Enable paste summary** turns it back on.
+
+### Undo in the prompt
+
+`input_undo` and `input_redo` (see [Keybinds](/docs/keybinds)) step back and forward through what you did in the prompt:
+
+- Typing comes back a word at a time. A pause of more than a second, moving the caret, or switching between typing and deleting also starts a new step.
+- A paste, a word or line delete such as <kbd>ctrl+w</kbd> or <kbd>ctrl+u</kbd>, a newline, clearing the prompt and recalling a previous prompt are each one step.
+- Undo restores pasted-text placeholders and attachments with their content, not only their labels.
+- After you submit, undo brings back what you sent, as if you had pressed up to recall it. The turn it started keeps running, and redo empties the prompt again.
+
+The history is shared by the prompts in one OpenCode window and holds `prompt.undo_depth` steps, 500 by default:
+
+```json title="tui.json"
+{
+  "prompt": {
+    "undo_depth": 1000
+  }
+}
+```
 
 ### Older footer settings
 
