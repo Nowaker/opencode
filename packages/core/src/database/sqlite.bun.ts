@@ -15,6 +15,7 @@ import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
 import { Sqlite } from "./sqlite"
 import { SessionMaintenanceWrite } from "./session-maintenance-write"
+import { WriteHold } from "./write-hold"
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -54,13 +55,22 @@ const make = (options: Config) =>
       ? Statement.defaultTransforms(options.transformResultNames).array
       : undefined
 
+    const hold = WriteHold.make(() => native.inTransaction)
+
     const run = (query: string, params: ReadonlyArray<unknown> = []) =>
       Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = native.query(query)
         // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
         statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
         try {
-          return Effect.succeed(SessionMaintenanceWrite.run(native, () => (statement.all(...(params as any)) ?? []) as Array<Record<string, unknown>>))
+          return Effect.succeed(
+            hold(fiber, query, () =>
+              SessionMaintenanceWrite.run(
+                native,
+                () => (statement.all(...(params as any)) ?? []) as Array<Record<string, unknown>>,
+              ),
+            ),
+          )
         } catch (cause) {
           return Effect.fail(
             new SqlError({
@@ -76,7 +86,11 @@ const make = (options: Config) =>
         // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
         statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
         try {
-          return Effect.succeed(SessionMaintenanceWrite.run(native, () => (statement.values(...(params as any)) ?? []) as Array<unknown[]>))
+          return Effect.succeed(
+            hold(fiber, query, () =>
+              SessionMaintenanceWrite.run(native, () => (statement.values(...(params as any)) ?? []) as Array<unknown[]>),
+            ),
+          )
         } catch (cause) {
           return Effect.fail(
             new SqlError({
