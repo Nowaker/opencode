@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `prompt-paste-undo` (fork); `paste-placeholder-delete` (upstream PR head `13680808c7` on `v1` `dfb56f76c7`); opentui fork `~/projekty/forks/opentui` branch `atomic-virtual-extmarks` (`bec96676`)
+- Development branch(es): `prompt-paste-undo` (fork); `paste-placeholder-delete` (upstream PR head `13680808c7` on `v1` `dfb56f76c7`); opentui fork `~/projekty/forks/opentui`: PR branch `atomic-virtual-extmarks` (`bec96676`), integration branch `main-nowaker` (`b3bc112c`, upstream `main` `v0.6.0` plus the fix)
 - First local commit: `0714559fe2`
-- Current local commit(s): `0714559fe2`
+- Current local commit(s): `5659adcaf7` (`0714559fe2` before the v1 rebase)
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: opencode PR [#54457](https://github.com/anomalyco/opencode/pull/54457) against `v1`; opentui PR [anomalyco/opentui#1628](https://github.com/anomalyco/opentui/pull/1628). **Needs a v2 port later.**

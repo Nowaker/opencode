@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `prompt-paste-undo` (fork); `prompt-undo-history` (upstream PR head `8206ce472a`, stacked on `paste-placeholder-delete`)
 - First local commit: `6a50eb5d4f`
-- Current local commit(s): `6a50eb5d4f`, `832a7fe5c0` (fork-only defaults)
+- Current local commit(s): `ce41fc2f43`, `ac0d3e64b6` (fork-only defaults); `6a50eb5d4f`, `832a7fe5c0` before the v1 rebase
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54460](https://github.com/anomalyco/opencode/pull/54460) against `v1`, keeping upstream's key defaults and showing the ctrl+z config. `832a7fe5c0` is fork-only. **Needs a v2 port later.**

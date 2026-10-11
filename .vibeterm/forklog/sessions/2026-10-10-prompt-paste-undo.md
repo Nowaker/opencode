@@ -9,8 +9,8 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `prompt-paste-undo` (worktree off `dev-nowaker`); upstream PR branches `paste-placeholder-delete`, `paste-summary-config`, `paste-raw-key`, `prompt-undo-history`, `paste-edit-dialog` off upstream `v1` `dfb56f76c7`
 - Upstream base: `907b3bc518` (upstream `dev`, contains `v1.18.34`); unchanged
-- Source result commit(s): `0714559fe2`, `1db2260dee`, `549df87541`, `6a50eb5d4f`, `832a7fe5c0`, `460027c707`
-- Forklog commit: this file's introducing commit
+- Source result commit(s): `0714559fe2`, `1db2260dee`, `549df87541`, `6a50eb5d4f`, `832a7fe5c0`, `460027c707`, `578201bc79`; after item 30's rebase onto upstream `v1`: `5659adcaf7`, `f6291588e9`, `fdcac445ac`, `ce41fc2f43`, `ac0d3e64b6`, `f14cf8f3c5`, `612c137f8a`
+- Forklog commit: this file's introducing commit, plus a second one for the Inline follow-up below (the first was already pushed, and `dev-nowaker` had just been force-pushed by item 30, so it was not amended)
 
 ## User requests
 
@@ -30,7 +30,7 @@ Item 28, relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`; the user's wor
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
 | `opencode` | `dev-nowaker` | `0c11fdeec8` | `460027c707` + this forklog commit | rebase `prompt-paste-undo`, fast-forward; pushed to `origin` and `nowaker-github` |
-| `opentui` fork (`~/projekty/forks/opentui`) | `atomic-virtual-extmarks` | upstream `main` `dfbb61f5` (`v0.6.0`) | `bec96676` | new fork of anomalyco/opentui; PR [#1628](https://github.com/anomalyco/opentui/pull/1628) |
+| `opentui` fork (`~/projekty/forks/opentui`) | `atomic-virtual-extmarks` (PR); `main-nowaker` `b3bc112c` (integration) | upstream `main` `dfbb61f5` (`v0.6.0`) | `bec96676` | new fork of anomalyco/opentui; PR [#1628](https://github.com/anomalyco/opentui/pull/1628) |
 | `opencode-tools` | `master` | `3323391` | `0220818` | drop the default ctrl+z mask in opencode panes, decode `\x1a` in the sidebar; pushed to `origin` |
 
 Upstream note: `anomalyco/opencode` `dev` is now the v2 line (`packages/opencode` removed); v1 maintenance moved to branch `v1` (`v1.19.0`). This session's PRs target `v1`. The fork's `merge-base HEAD github/dev` is still `907b3bc518`.
@@ -72,7 +72,20 @@ Upstream note: `anomalyco/opencode` `dev` is now the v2 line (`packages/opencode
 
 - Feature commits above, each with `AI-Session-ID: ses_ed7634c31ffeH84yR0S99Ty8Nd`; upstream PR branch commits carry no AI trailers.
 
+## Follow-up: Inline button off screen
+
+Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after the user tested vt-206:
+
+> after click on pastie, the window seems to be going below the end of viewport, so i don't see the inline button. the window opens on line row 15 of opencode viewport, maybe some maths problem.
+
+- Cause: `ui/dialog.tsx` starts every dialog at `paddingTop={height / 4}`, but `DialogPaste` sized its editor as `height - 14`, ignoring that offset. At 60 rows the dialog opened on row 15 and ran about 8 rows past the bottom.
+- Fix `578201bc79` (`612c137f8a` after item 30's v1 rebase): the editor gets `height - ceil(height / 4) - 7` rows (6 rows of dialog chrome and a 1-row margin), no more than the text needs; a longer paste scrolls. PR #54463's branch updated to `39bd9309ed`.
+- Tests: a 50-line paste at 16, 24 and 60 rows clicks Inline; the 60-row case fails without the fix. The paste and undo app tests get a 30s default timeout, as the first test in each file starts the whole app.
+- Real-PTY rig (scratch build `1.18.34-vt-207`, throwaway tmux socket): Inline on row 22 of 24 and row 58 of 60, clickable, all 50 lines inlined.
+- Build and install were done by item 30 (`ses_ed5f9f826ffeno6fI51rL96d5Q`) as part of its v1.19.0 rebase: desktop `1.19.0-vt-211-dfb56f76c7`, m4max `1.19.0-vt-212-dfb56f76c7` (vt-212 adds another session's commit `d107564059`). Both binaries contain the new `editorHeight` expression (`strings` on the installed binary).
+
 ## Unknowns and blocked verification
+
 
 - ctrl+minus / ctrl+period do not reach opencode from Terminal.app (the profile has no rows for them); ctrl+z / ctrl+shift+z do.
 - m4max's opencode-tools checkout has unpushed local commits from another session and was not fast-forwarded; the explicit `shortcutMasks: []` covers its old default.

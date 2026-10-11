@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `prompt-paste-undo` (fork); `paste-edit-dialog` (upstream PR head `0de7073e89`, stacked on undo, paste summary and #53871)
+- Development branch(es): `prompt-paste-undo` (fork); `paste-edit-dialog` (upstream PR head `39bd9309ed`, stacked on undo, paste summary and #53871)
 - First local commit: `460027c707`
-- Current local commit(s): `460027c707`
+- Current local commit(s): `f14cf8f3c5`, `612c137f8a` (Inline on screen); `460027c707` before the v1 rebase
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54463](https://github.com/anomalyco/opencode/pull/54463) against `v1`; comment on [#8501](https://github.com/anomalyco/opencode/issues/8501#issuecomment-6105872904). **Needs a v2 port later.**
@@ -27,11 +27,13 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `460027c707` | 2026-10-10 | click-to-edit dialog | `packages/tui/src/component/dialog-paste.tsx`; `pasteAtCaret`, `openPaste`, `replacePaste`, `pasteClick` in `component/prompt/index.tsx`; `pasteLabel` in `prompt/paste.ts`; `test/component/prompt-paste.test.tsx`, `test/fixture/prompt-app.ts`; tui.mdx Clickable elements and "Paste summary" |
+| `612c137f8a` (`578201bc79` before the v1 rebase) | 2026-10-10 | the editor's height leaves room for the dialog's quarter-screen top offset, so Inline stays on screen and a long paste scrolls | `editorHeight` in `dialog-paste.tsx` (mirrors `paddingTop={height / 4}` in `ui/dialog.tsx`); `test/component/prompt-paste.test.tsx` "keeps Inline on screen at %i rows"; `withPrompt` `height` option in `test/fixture/prompt-app.ts` |
 
 ## Verification
 
-- `prompt-paste.test.tsx` 4 pass (real app, mouse click on the placeholder).
+- `prompt-paste.test.tsx` 7 pass (real app, mouse click on the placeholder); the 50-line paste at 60 rows fails without `612c137f8a`.
 - Real-PTY rig: SGR click on `[Pasted ~3 lines]` opened the dialog; `zero` + enter + esc gave `[Pasted ~4 lines]`; a click on **Inline** put four lines in the prompt; ctrl+z restored the placeholder.
+- Real-PTY rig after `612c137f8a`: a 50-line paste clicked from row 13 of 24 put Inline on row 22; clicked from row 31 of 60, on row 58; clicking it inlined all 50 lines.
 
 ## Timeline
 
@@ -39,4 +41,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-10 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-10-prompt-paste-undo.md) -
+  Inline was below the screen in a tall terminal (user report on vt-206);
+  fixed in `612c137f8a`, installed as vt-211 (desktop) and vt-212 (m4max).
+  Evidence: session "Follow-up: Inline button off screen".
 

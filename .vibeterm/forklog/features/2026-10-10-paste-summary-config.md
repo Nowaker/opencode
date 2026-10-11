@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `prompt-paste-undo` (fork); `paste-summary-config` (upstream PR head `adefc0be51` on `v1` `dfb56f76c7`)
 - First local commit: `1db2260dee`
-- Current local commit(s): `1db2260dee`, `460027c707` (adds `pasteLabel`)
+- Current local commit(s): `f6291588e9`, `f14cf8f3c5` (adds `pasteLabel`); `1db2260dee`, `460027c707` before the v1 rebase
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54458](https://github.com/anomalyco/opencode/pull/54458) against `v1`; comment on [#15767](https://github.com/anomalyco/opencode/issues/15767#issuecomment-6105872750). **Needs a v2 port later.**

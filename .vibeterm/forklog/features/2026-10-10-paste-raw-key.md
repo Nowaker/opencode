@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `prompt-paste-undo` (fork); `paste-raw-key` (upstream PR head `5294c452c1` on `v1` `dfb56f76c7`)
 - First local commit: `549df87541`
-- Current local commit(s): `549df87541`
+- Current local commit(s): `fdcac445ac` (`549df87541` before the v1 rebase)
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54459](https://github.com/anomalyco/opencode/pull/54459) against `v1`. **Needs a v2 port later.**
