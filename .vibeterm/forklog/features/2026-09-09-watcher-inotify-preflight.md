@@ -8,7 +8,7 @@
 - First local commit: `34aa414cf`
 - Current local commit(s): `34aa414cf`
 - Upstream base when introduced: `a9a6fad0f` (upstream `dev`, past `v1.18.29`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 Authored upstream-first as `84b8fcdfe` on `watcher-emfile-degrade`, based
 directly on `a9a6fad0f`, so it can be offered upstream unchanged.
@@ -149,6 +149,9 @@ Stable seams an upstream bump must inspect:
 - 2026-10-04 [`ses_ef81db9cdffe5vRz7Y2HqCmvNs`](../sessions/2026-10-04-upstream-1.18.34.md) -
   rebased unchanged onto upstream `dev`
   `907b3bc518` (contains `v1.18.34`). Evidence: that session's gates.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

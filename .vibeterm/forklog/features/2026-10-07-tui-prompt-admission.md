@@ -8,7 +8,7 @@
 - First local commit: `777a8045b8`
 - Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`, `38a64a3d4a`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `a697115b20` (upstream `dev`, vanilla repro)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -154,6 +154,10 @@ text vanished from the composer and was retyped.
   prompt`. Render test fails before (3/3) and passes after; tmux footer
   matrix (sending, checking, rejected, unknown beside running, again to
   interrupt, aborting, idle). Evidence: `38a64a3d4a`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`). Conflict in
+  `app.tsx`: `PromptAdmissionProvider` wraps v1's new
+  `UpdateNotificationProvider` subtree. Evidence: TUI suite, that session.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `1d075a48b8`, `1ada8e5eb3` (cherry-picks of `6a20e39624`, `3f028d0283`)
 - Current local commit(s): `1d075a48b8`, `1ada8e5eb3`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`) for the PR branches; `dev-nowaker` stays on `907b3bc518`
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issues [#53652](https://github.com/anomalyco/opencode/issues/53652) and [#53653](https://github.com/anomalyco/opencode/issues/53653), PRs [#53655](https://github.com/anomalyco/opencode/pull/53655) and [#53656](https://github.com/anomalyco/opencode/pull/53656) (stacked on #53655)
 
 ## Original request
@@ -95,6 +95,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   - `1d075a48b8`, `1ada8e5eb3`: introduce; upstream issues #53652/#53653 and
     PRs #53655/#53656; build and install on desktop and m4max;
     `session_abort: "alt+escape,ctrl+k"` in both hosts' `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

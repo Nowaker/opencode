@@ -8,7 +8,7 @@
 - First local commit: `d17ac9a02a`
 - Current local commit(s): `d17ac9a02a`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -61,6 +61,9 @@ From coordinator `ses_ef8235798ffejGr4sa22eXmVNv`'s brief, quoting the user:
 
 - 2026-10-08 [`ses_ee2d6b316ffeQ4Lr6J5QvW225u`](../sessions/2026-10-08-v1-db-guard-gate.md) -
   initial gate. Evidence: `d17ac9a02a`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

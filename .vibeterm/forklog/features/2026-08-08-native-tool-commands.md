@@ -11,7 +11,7 @@
 - Current local commit(s): `f39c4abf8`, `32457b6d1`, `615d27bad`,
   `dd5bc77d1`, `a209a8289`, `daab8893a`, `24326cf48`, `6630dbc2c`
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -139,6 +139,9 @@ extension imported during this workday.
   source was found. Parser tests did not cover the native flag's no-model
   command dispatch or native/subtask refusal; current regression audit covers
   those gaps separately in the linked Vibeterm inventory.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

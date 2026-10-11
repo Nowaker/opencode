@@ -8,7 +8,7 @@
 - First local commit: `0714559fe2`
 - Current local commit(s): `0714559fe2`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: opencode PR [#54457](https://github.com/anomalyco/opencode/pull/54457) against `v1`; opentui PR [anomalyco/opentui#1628](https://github.com/anomalyco/opentui/pull/1628). **Needs a v2 port later.**
 
 ## Original request
@@ -44,6 +44,11 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 ## Timeline
 
 - 2026-10-10 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-10-prompt-paste-undo.md) - introduced. Evidence: commit above, session Verification.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`), which keeps
+  `@opentui/core` at `0.4.5`, so the patch carries over unchanged; the
+  `bun.lock` `patchedDependencies` conflict with v1's xai patch keeps both.
+  Evidence: `bun install` no-op, TUI suite, that session.
 
 ## Current maintenance notes
 

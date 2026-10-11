@@ -9,7 +9,7 @@
 - Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `eb573a78de`
   (was `2475f7552b` before the `v1.18.34` rebase), `192f58aec9`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -112,6 +112,9 @@ The code change was authored by coordinator session
   read's `GET <baseURL>/models` consumed `llm.test.ts`'s queued `/responses`
   mock; the mock now answers it with 404 outside the queue. Evidence:
   `llm.test.ts` 33/33 on `dev-nowaker`; 5 OpenAI tests fail without the fix.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `17dca85fb5`
 - Current local commit(s): `17dca85fb5`, `d80de8e705`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53192](https://github.com/anomalyco/opencode/issues/53192), PR [#53195](https://github.com/anomalyco/opencode/pull/53195)
 
 ## Original request
@@ -114,6 +114,9 @@ quoting the user:
     feedback ("datetime good, timedate weird"); the same change amended into
     the PR head (`b14b75e5d8`). Build and install: desktop and m4max
     `1.18.34-vt-91-907b3bc518`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

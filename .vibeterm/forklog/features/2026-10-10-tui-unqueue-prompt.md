@@ -8,7 +8,7 @@
 - First local commit: `ddfb911883`
 - Current local commit(s): `ddfb911883`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518`
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54437](https://github.com/anomalyco/opencode/pull/54437) (`v1-unqueue-prompt`, `d86f7b11ea`), stacked on #54436. **Needs a v2 port later.**
 
 ## Original request
@@ -79,6 +79,9 @@ Session [`ses_ed759a0b4ffeCubC9xxc8hYgHY`](../sessions/2026-10-10-revert-unqueue
 - 2026-10-10 [`ses_ed759a0b4ffeCubC9xxc8hYgHY`](../sessions/2026-10-10-revert-unqueue.md) -
   initial build, upstream PR #54437, installed on desktop and m4max.
   Evidence: `ddfb911883`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `6ece456497`
 - Current local commit(s): `6ece456497`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53193](https://github.com/anomalyco/opencode/issues/53193), PR [#53194](https://github.com/anomalyco/opencode/pull/53194)
 
 ## Original request
@@ -79,6 +79,9 @@ quoting the user:
   [`ses_ef81bccccffeaNpV0Vw2TPKgyP`](../sessions/2026-10-04-sidebar-pin-title.md)
   - `6ece456497`: introduce; open upstream issue #53193 and PR #53194;
   enable on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

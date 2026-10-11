@@ -8,7 +8,7 @@
 - First local commit: `f2fd2979ad`
 - Current local commit(s): `f2fd2979ad`, `b433a219dd`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53200](https://github.com/anomalyco/opencode/issues/53200), PR [#53205](https://github.com/anomalyco/opencode/pull/53205)
 
 ## Original request
@@ -112,6 +112,9 @@ quoting the user:
     not drag-copy it); its `▶` arrow stays the section drag handle and a
     click on the line still toggles. Re-verified in tmux and on desktop
     `vt-101`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

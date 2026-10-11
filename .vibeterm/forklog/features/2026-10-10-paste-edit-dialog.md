@@ -8,7 +8,7 @@
 - First local commit: `460027c707`
 - Current local commit(s): `460027c707`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54463](https://github.com/anomalyco/opencode/pull/54463) against `v1`; comment on [#8501](https://github.com/anomalyco/opencode/issues/8501#issuecomment-6105872904). **Needs a v2 port later.**
 
 ## Original request
@@ -36,3 +36,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 ## Timeline
 
 - 2026-10-10 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-10-prompt-paste-undo.md) - introduced. Evidence: commit above.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
+

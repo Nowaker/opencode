@@ -8,7 +8,7 @@
 - First local commit: `6c3472125a`
 - Current local commit(s): `6c3472125a`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `388406238b` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream PR: [anomalyco/opencode#54032](https://github.com/anomalyco/opencode/pull/54032)
   (branch `shell-env-message`, `b005b94a86`, no AI trailers)
 
@@ -63,6 +63,9 @@ From coordinator `ses_ef8235798ffejGr4sa22eXmVNv`'s brief:
 
 - 2026-10-08 [`ses_ee26f677effe6fzY9wzepyBf13`](../sessions/2026-10-08-shell-env-message-id.md) -
   initial build and upstream PR #54032. Evidence: `6c3472125a`, tests above.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

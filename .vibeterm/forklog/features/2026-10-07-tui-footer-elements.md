@@ -8,7 +8,7 @@
 - First local commit: `1ca196f2b2`
 - Current local commit(s): `1ca196f2b2`, `efc7b3db27`, `4c6be131b4`, `42ce3944c3`, `ea714f8a10`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `663fbd7573` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#53877](https://github.com/anomalyco/opencode/pull/53877), closed by opencode-agent[bot] within a minute (v1 takes critical fixes only); kept current for others. Comment on [#50891](https://github.com/anomalyco/opencode/issues/50891#issuecomment-6053344669). **Needs a v2 port later.**
 
 ## Original request
@@ -161,6 +161,9 @@ Follow-ups on 2026-10-08, after using it with every key `"all"`:
   - `ea714f8a10`: running tool call stopwatch, finished tenths up to 11m,
   blank line before a prompt's footer; PR #53877 branch `09ff703f7a` and
   body updated; installed on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

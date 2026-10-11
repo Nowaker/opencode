@@ -8,7 +8,7 @@
 - First local commit: `d1442208f5`
 - Current local commit(s): `d1442208f5`
 - Upstream base when introduced: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53089](https://github.com/anomalyco/opencode/issues/53089), PR [#53090](https://github.com/anomalyco/opencode/pull/53090)
 
 ## Original request
@@ -85,6 +85,9 @@ Relayed by opencode-tools coordinator `ses_efbf81be2ffeOUhnv0uLJM0Jog`, condense
   [`ses_eec5b2a34ffe9sjf6Wf21vNSMg`](../sessions/2026-10-06-idle-cpu-startup.md)
   - composed with the idle log flush in `bb01eb1db2`; rename and delete tests
     still pass (9 pass in `observability.test.ts`).
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

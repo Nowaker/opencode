@@ -8,7 +8,7 @@
 - First local commit: `b12845f999` (cherry-pick of `0dae58048c`, the first version of stage 1)
 - Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`), `12a11e65f1` (startup fix: the diff from `620cd1e333` to `f829a6a3f7`)
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `provisional-prompt`); `dev-nowaker` stays on `907b3bc518`
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53696](https://github.com/anomalyco/opencode/issues/53696), PR [#53698](https://github.com/anomalyco/opencode/pull/53698)
 
 ## Original request
@@ -173,6 +173,12 @@ white "still loading" / red "changed" notices for Enter during loading.
   - `12a11e65f1`: keep a damaged startup cache or a small pane from breaking
     startup (PR #53698 commits rebuilt as `8b7f258af6` and `f829a6a3f7`);
     build and install on desktop and m4max (`1.18.34-vt-148-907b3bc518`).
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`). Conflict with v1's
+  `/update` notice: `App` sits inside `UpdateNotificationProvider`, and the
+  home route keeps the `TuiLayout` geometry plus v1's `logoWidth` and
+  `<UpdateNotification>` row, which renders nothing for an unmanaged build,
+  so the instant frame still matches. Evidence: TUI suite, that session.
 
 ## Current maintenance notes
 

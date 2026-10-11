@@ -142,3 +142,7 @@ contention without replaying tools, model calls, or non-idempotent callbacks.
   was not sufficient. No false broad-issue closure, automatic reopening or
   v2 rewrite. Local fix and qualified evidence remain; next direction is gated
   by `qst_11a67d235001lXLmtYXc8PoQdF`. Canonical inventory retains actual state.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
+

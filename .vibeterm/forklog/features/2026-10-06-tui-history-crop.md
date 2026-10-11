@@ -8,7 +8,7 @@
 - First local commit: `fcf142f4c4`
 - Current local commit(s): `fcf142f4c4`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, contains `v1.18.34`); landed on `dev-nowaker` above `a04c68d8e2`
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53642](https://github.com/anomalyco/opencode/issues/53642), PR [#53660](https://github.com/anomalyco/opencode/pull/53660)
 
 ## Original request
@@ -121,6 +121,9 @@ Halving the limit saves about 40 MB of settled RSS on this session; doubling it 
   [`ses_eec5b71ddffe4A47jCysfkQh6l`](../sessions/2026-10-06-tui-history-crop.md)
   - `fcf142f4c4`: introduce; upstream issue #53642 and PR #53660; build and install
     on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `dc76be7263`
 - Current local commit(s): `dc76be7263`, `6f6107700b`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53263](https://github.com/anomalyco/opencode/issues/53263), PR [#53264](https://github.com/anomalyco/opencode/pull/53264) (builds on #53205)
 
 ## Original request
@@ -99,6 +99,9 @@ Follow-up relayed by the coordinator on 2026-10-05 (04:38, still the
     `util/usage-color.ts`, move the keys to `usage.*`; PR #53264 amended to
     `94d6044030`; build and install on desktop and m4max (`vt-94`); both
     hosts' `tui.json` migrated to `usage.context_color: "colored"`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

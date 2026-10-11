@@ -8,7 +8,7 @@
 - First local commit: `9799e18401`
 - Current local commit(s): `9799e18401`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `663fbd7573` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54039](https://github.com/anomalyco/opencode/pull/54039), closed by opencode-agent[bot] (v1 takes critical fixes only); kept current for others. Comments on [#40096](https://github.com/anomalyco/opencode/issues/40096#issuecomment-6071873304), [#45538](https://github.com/anomalyco/opencode/issues/45538#issuecomment-6071873910), [#51229](https://github.com/anomalyco/opencode/issues/51229#issuecomment-6071874402). **Needs a v2 port later.**
 
 ## Original request
@@ -76,6 +76,9 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
   - `9799e18401`: build, docs, PR #54039; installed on desktop and m4max;
   every group `0` in both hosts' `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

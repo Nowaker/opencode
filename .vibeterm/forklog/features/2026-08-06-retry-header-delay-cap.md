@@ -10,7 +10,7 @@
 - Current local commit(s): `opencode-tools:824532a2b`, `2dfe1da2f`,
   `a88ab4589`, `1f16a2b66`; OpenCode source diff remains uncommitted
 - Upstream base when introduced: `aefaf140c1` (`v1.18.13`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -112,6 +112,11 @@ that exact two-file diff uncommitted.
   reverse the patch, rebase onto upstream
   `dev` `907b3bc518` (contains `v1.18.34`), and reapply it unchanged; upstream left
   `session/retry.ts` untouched. Evidence: `retry.test.ts` passes, patch body byte-identical.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  reversed before and reapplied after the rebase onto upstream `v1`
+  `dfb56f76c7` (`v1.19.0`); `session/retry.ts` and its test are untouched
+  upstream, so the canonical patch applies unchanged. Evidence: that
+  session's gates and binary marker.
 
 ## Current maintenance notes
 

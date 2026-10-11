@@ -8,7 +8,7 @@
 - First local commit: `712382574a`
 - Current local commit(s): `712382574a`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53260](https://github.com/anomalyco/opencode/issues/53260), PR [#53261](https://github.com/anomalyco/opencode/pull/53261)
 
 ## Original request
@@ -86,6 +86,9 @@ quoting the user:
   - `1c06f291b3`: the counts and the collapsed `(N active, M errors)`
     summary move out of the non-selectable `MCP` text into their own text,
     so they copy on drag-select (`•3`); rendering unchanged (`▼ MCP •3`).
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

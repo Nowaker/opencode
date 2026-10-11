@@ -8,7 +8,7 @@
 - First local commit: `680e8a0daa`
 - Current local commit(s): `680e8a0daa`, `ab1574bed8`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: none; a fork-only default change
 
 ## Original request
@@ -109,6 +109,9 @@ conventions:
   [`ses_ef46f1775ffe29MtElYF4DQySL`](../sessions/2026-10-10-home-end-regression.md)
   - `ab1574bed8`: repeated home/end no longer walk lines; Terminal.app profile
     rows in dotfiles `f201350`; build and install on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

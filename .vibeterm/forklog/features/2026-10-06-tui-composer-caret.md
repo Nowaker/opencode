@@ -9,7 +9,7 @@
 - First local commit: `bba3ccfe3b`
 - Current local commit(s): `bba3ccfe3b`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -73,6 +73,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 16 of its
 - 2026-10-06 [`ses_eec44ad14ffeownfvFKtEeqk4N`](../sessions/2026-10-06-tui-composer-caret.md) -
   introduced, built and installed on desktop and m4max. Evidence: `bba3ccfe3b`,
   linked session.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

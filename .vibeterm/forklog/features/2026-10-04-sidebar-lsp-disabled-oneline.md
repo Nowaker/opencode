@@ -8,7 +8,7 @@
 - First local commit: `1f2bfda9bd`
 - Current local commit(s): `1f2bfda9bd`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53183](https://github.com/anomalyco/opencode/issues/53183), PR [#53185](https://github.com/anomalyco/opencode/pull/53185)
 
 ## Original request
@@ -75,6 +75,9 @@ quoting the user:
   - `1c06f291b3`: "are disabled" moves out of the non-selectable `LSPs`
     text into its own text, so it copies on drag-select; rendering
     unchanged.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

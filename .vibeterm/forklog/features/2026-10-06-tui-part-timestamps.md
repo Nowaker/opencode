@@ -8,7 +8,7 @@
 - First local commit: `9163ac0f36`
 - Current local commit(s): `9163ac0f36`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#42498](https://github.com/anomalyco/opencode/issues/42498) (design [comment](https://github.com/anomalyco/opencode/issues/42498#issuecomment-6028995049)), PR [#53654](https://github.com/anomalyco/opencode/pull/53654), stacked on PR [#53195](https://github.com/anomalyco/opencode/pull/53195)
 
 ## Original request
@@ -109,6 +109,9 @@ quoting the user:
     resolved by keeping both); design comment on #42498, PR #53654.
   - Build and install: desktop and m4max `1.18.34-vt-130-907b3bc518`;
     `"timestamps": "all"` in both hosts' `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

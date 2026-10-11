@@ -8,7 +8,7 @@
 - First local commit: `2333a1edb1` (rebase of `fe10a35c26`, itself the fork-side reapplication of `18d6718b62` on `sidebar-session-id`)
 - Current local commit(s): `2333a1edb1`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `sidebar-session-id`); `dev-nowaker` stays on `907b3bc518`
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53662](https://github.com/anomalyco/opencode/issues/53662), PR [#53663](https://github.com/anomalyco/opencode/pull/53663)
 
 ## Original request
@@ -71,6 +71,9 @@ the user:
   [`ses_eebf95604ffekfFQU7LOgARLnt`](../sessions/2026-10-06-sidebar-session-id.md)
   - `2333a1edb1`: introduce; upstream issue #53662 and PR #53663; installed
     on desktop and m4max; no host `tui.json` change.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

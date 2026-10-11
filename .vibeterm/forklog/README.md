@@ -92,6 +92,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-11 `ses_ed5f9f826ffeno6fI51rL96d5Q`](./sessions/2026-10-11-upstream-v1-19.md)
+  - Upstream `dev` became the v2 line: repoint the fork, `build.sh` and
+    opencode-tools from `github/dev` to `github/v1`, rebase `dev-nowaker`
+    onto `v1.19.0`, retarget the open and closed upstream PRs to `v1`;
+    build and install on both hosts.
 - [2026-10-10 `ses_ed759a0b4ffeCubC9xxc8hYgHY`](./sessions/2026-10-10-revert-unqueue.md)
   - "Revert messages" vs "Revert messages and files" (`files` on the revert
     route, `revert.files`, fork default messages only), reverts shown at once,

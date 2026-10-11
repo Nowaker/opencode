@@ -8,7 +8,7 @@
 - First local commit: `173921d2f3`
 - Current local commit(s): `173921d2f3`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: no issue or PR. Searched `anomalyco/opencode` issues and PRs
   for todo sidebar visibility on 2026-10-05; the only related item, PR
   #53303 ("propose completed todo visibility toggle"), was a design-only
@@ -80,6 +80,9 @@
   [`ses_ef49a49d9ffeKmNRrjg4DFrQtW`](../sessions/2026-10-05-sidebar-todo-completed.md)
   - `173921d2f3`: introduce; build and install on desktop and m4max; `show`
     set in both hosts' `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

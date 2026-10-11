@@ -8,7 +8,7 @@
 - First local commit: `66ce641060` (cherry-pick of `8c2d0bde91` on `tui-model-id`)
 - Current local commit(s): `66ce641060`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `tui-model-id`); `dev-nowaker` stays on `907b3bc518`
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53638](https://github.com/anomalyco/opencode/issues/53638), PR [#53639](https://github.com/anomalyco/opencode/pull/53639)
 
 ## Original request
@@ -74,6 +74,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   [`ses_eec44cf7effeFCqQefM0NkWLaW`](../sessions/2026-10-06-tui-model-label.md)
   - `66ce641060`: introduce; upstream issue #53638 and PR #53639; build and
     install on desktop and m4max, `"id"` set in their `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `bc5aa4ec1e`
 - Current local commit(s): `bc5aa4ec1e`, `dc68262b8a`, `1c06f291b3`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53198](https://github.com/anomalyco/opencode/issues/53198), PR [#53201](https://github.com/anomalyco/opencode/pull/53201) (config), PR [#53217](https://github.com/anomalyco/opencode/pull/53217) (drag-and-drop, builds on #53201)
 
 ## Original request
@@ -107,6 +107,9 @@ quoting the user:
     the MCP counts; only names and arrows stay the drag handle now, and a
     drag starts only on a section's first line. PR #53217 head amended to
     `937fde86d9`. Build and install on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `8bfa57bb26`
 - Current local commit(s): `8bfa57bb26`
 - Upstream base when introduced: `2406400f0a` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -43,7 +43,8 @@ brief:
   from, or newer than, the fork.
 - `base`: newest release HEAD contains (highest `vX.Y.Z` whose release
   commit's parent is an ancestor), never a v2 tag cut from another line.
-  `seq`: `git rev-list --count $(git merge-base HEAD github/dev)..HEAD`.
+  `seq`: `git rev-list --count $(git merge-base HEAD github/v1)..HEAD`
+  (`github/dev` until 2026-10-11, when upstream `dev` became the v2 line).
   `sha`: first 10 hex chars of that merge-base.
 - The stamp must not start with `0.0.0-`: the Script module would then infer
   a preview channel instead of `latest`.
@@ -60,6 +61,8 @@ brief:
 |---|---|---|---|
 | `8bfa57bb26` | 2026-09-29 | Track the build script; vt stamp; `--print-version` | `.vibeterm/build.sh` `detect_version` |
 | `8bfa57bb26` | 2026-09-29 | `InstallationBaseVersion` for the plugin pin, `engines.opencode` check and upgrade check | `packages/core/src/installation/version.ts` `baseVersion`; `packages/opencode/src/config/config.ts`, `config/tui.ts`, `plugin/loader.ts`, `cli/upgrade.ts`, `cli/cmd/upgrade.ts` |
+| `b07638b10f` | 2026-10-11 | `seq`/`sha` against `<tag remote>/v1`, since upstream `dev` became the v2 line | `.vibeterm/build.sh` `UPSTREAM_REF` |
+| `f0df2fa2f1` | 2026-10-11 | `InstallationBaseVersion` for v1.19.0's `/update` check and the OpenCode 2 restore pins | `packages/opencode/src/cli/cmd/tui.ts` updater `check`; `packages/opencode/src/installation/index.ts` `MAJOR_INSTALL` |
 
 Consumers deliberately left on the full stamp: every `User-Agent`, TUI
 sidebar/debug/error display, `/global/health`, OTLP `serviceVersion`, MCP and
@@ -94,14 +97,22 @@ ACP client info, the session `version` field, and the CLI daemon registry
   `907b3bc518` (contains `v1.18.34`). Evidence: both hosts build
   `1.18.34-vt-61-907b3bc518`; upstream's darwin ad-hoc re-sign in `build.ts`
   runs under `--single` and the macOS binary passes `codesign -v`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`); upstream `dev` is now the
+  v2 line, so `build.sh` takes `seq`/`sha` against `<tag remote>/v1`
+  (`b07638b10f` on the old base), the startup check's conflict was resolved
+  onto v1's `/update` flow with `InstallationBaseVersion`, and the new
+  `/update` check and OpenCode 2 restore pins use it too (`f0df2fa2f1`).
+  Evidence: both hosts build `1.19.0-vt-<seq>-dfb56f76c7`.
 
 ## Current maintenance notes
 
 - Every new `InstallationVersion` consumer that talks to a registry, a semver
   range or an "is this the latest release" check must use
   `InstallationBaseVersion` instead.
-- `OPENCODE_UPSTREAM_REF` (default `<OPENCODE_TAG_REMOTE>/dev`) chooses the
-  ref the merge-base is taken against.
+- `OPENCODE_UPSTREAM_REF` (default `<OPENCODE_TAG_REMOTE>/v1`) chooses the
+  ref the merge-base is taken against. Upstream `dev` is the v2 line; never
+  point it there.
 
 ### Upstream integration checklist
 

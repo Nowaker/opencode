@@ -8,7 +8,7 @@
 - First local commit: `bd9676d499`
 - Current local commit(s): `bd9676d499`; the render now lives in item 24's `1ca196f2b2` footer list, dimmed by its `efc7b3db27`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `a697115b20` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53846](https://github.com/anomalyco/opencode/issues/53846), PR [#53848](https://github.com/anomalyco/opencode/pull/53848) against v1 `dev`. Its body opens with the user's note that v1 is the maintenance branch and a v2 version follows once their plugin setup runs on v2. **Needs a v2 port later.**
 
 ## Original request
@@ -105,6 +105,9 @@ Clarified by the user on 2026-10-07, relayed by the coordinator:
     and m4max. Isolated `capture-pane -e`: before, `high` in
     `38;2;245;167;66` (warning); after, the whole
     ` · QA Model · high · 4.3s` run in `38;2;128;128;128`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

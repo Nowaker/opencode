@@ -8,7 +8,7 @@
 - First local commit: `14eba13ee7`
 - Current local commit(s): `14eba13ee7`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53321](https://github.com/anomalyco/opencode/issues/53321), PR [#53322](https://github.com/anomalyco/opencode/pull/53322)
 
 ## Original request
@@ -80,6 +80,9 @@ quoting the user:
   - `14eba13ee7`: introduce; open upstream issue #53321 and PR #53322;
     build and install on desktop and m4max (`vt-93`); `compact` set in both
     hosts' `tui.json`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

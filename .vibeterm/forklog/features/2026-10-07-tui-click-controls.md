@@ -8,7 +8,7 @@
 - First local commit: `feaf2e5468`
 - Current local commit(s): `feaf2e5468`, `b503ecd0e9`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `5d9cd9b259` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#53871](https://github.com/anomalyco/opencode/pull/53871) against v1 `dev`, closing issue #48563. opencode-agent[bot] closed it within a minute (v1 takes critical fixes only); it stays open for linking. Comments with the PR link on #48563, #40521 and #13242. **Needs a v2 port later.**
 
 ## Original request
@@ -166,6 +166,10 @@ user:
   - `99d94f2f6c` on `tui-click-controls-pr`, rebased onto upstream `dev`
     `5d9cd9b259`: the same without the plugin hook (IDs copy only) and
     without the instant-screen part; PR #53871 body updated.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`). Conflict in
+  `App`: the clicked-ID handler sits beside v1's `useUpdateNotification()`.
+  Evidence: TUI suite, that session.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `bb01eb1db2`
 - Current local commit(s): `bb01eb1db2`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `ecc4916b5a` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53673](https://github.com/anomalyco/opencode/issues/53673), PR [#53674](https://github.com/anomalyco/opencode/pull/53674)
 
 ## Original request
@@ -68,6 +68,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 13), the user's wo
   [`ses_eec5b2a34ffe9sjf6Wf21vNSMg`](../sessions/2026-10-06-idle-cpu-startup.md)
   - `bb01eb1db2`: introduce, measured on desktop and m2pro; upstream issue
     #53673 and PR #53674; build and install on desktop and m4max.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

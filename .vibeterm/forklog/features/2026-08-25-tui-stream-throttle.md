@@ -8,7 +8,7 @@
 - First local commit: `4a2673957`
 - Current local commit(s): `4a2673957`
 - Upstream base when introduced: `4643e65ad6` (`v1.18.18`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
 ## Original request
 
@@ -93,6 +93,9 @@ evening-to-early-morning convention does not move this work to August 24.
   from the 100-message prune. Evidence: the installed
   `1.18.34-vt-61-907b3bc518` held a scrolled-up view through a streamed
   agent run, the same as vanilla `dev`.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

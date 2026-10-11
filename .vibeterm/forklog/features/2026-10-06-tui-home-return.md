@@ -8,7 +8,7 @@
 - First local commit: `bed5ec8209` (cherry-pick of `78ce706b7d` on `tui-home-return`)
 - Current local commit(s): `bed5ec8209`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53629](https://github.com/anomalyco/opencode/issues/53629), PR [#53630](https://github.com/anomalyco/opencode/pull/53630) (stacked on #53333)
 
 ## Original request
@@ -78,6 +78,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   - `680e8a0daa`: the fork's editor-standard defaults move `messages_first` /
     `messages_last` to `ctrl+alt+home` / `ctrl+alt+end`; the return-to-mark
     follows the command.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 

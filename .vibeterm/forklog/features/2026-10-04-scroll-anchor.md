@@ -8,7 +8,7 @@
 - First local commit: `6ff168d896`
 - Current local commit(s): `6ff168d896`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
-- Last checked against upstream: `907b3bc518` (upstream `dev`)
+- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: existing issue [#41243](https://github.com/anomalyco/opencode/issues/41243)
   (root cause of #29094 / #4196), PR [#53219](https://github.com/anomalyco/opencode/pull/53219)
 
@@ -91,6 +91,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   now hides the oldest message after the pinned first prompt;
   `sync-scroll-anchor.test.tsx` mounts `TuiConfigProvider` and passes, and a
   load into the gap leaves the viewport unchanged.
+- 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
+  rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
+  Evidence: patch-identical in `git range-diff`; that session's gates.
 
 ## Current maintenance notes
 
