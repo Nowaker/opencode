@@ -43,6 +43,27 @@
 
 ---
 
+### Vibeterm Machine Provenance (Fork)
+
+The legacy v1 engine opts in when `VIBETERM_MACHINE_ID` contains the persistent
+opaque machine ID supplied by Vibeterm. `VIBETERM_MACHINE_NAME` is an optional
+display name; hostname and platform come from the OS. Without the ID, creation
+and execution stamping are inert, with no generated fallback identity.
+
+New persisted user and assistant messages carry `vibeterm.creator` with
+`objectId`, `machineId`, nullable `machine` and `hostname`, `platform`, creation
+time `at` (epoch milliseconds), and `source: "stamped"`. Streaming updates and
+imports do not restamp. Forks and compaction copies preserve the creation host
+and time, remap `objectId`, and retain `originalObjectId`.
+
+Actual admitted prompt loops and shell runs record one
+`session.metadata.vibeterm.lastExecution`: `sessionId`, the same host fields,
+`at`, and a unique `executionId`. Joining an existing runner, importing history,
+or updating a message is not an execution. Session projections retain the latest
+valid same-session record by `(at, executionId, machineId)`; new fork sessions
+do not inherit it. This uses existing JSON storage, not migrations, triggers,
+historical backfills, or writes on streamed deltas.
+
 ### Installation
 
 ```bash

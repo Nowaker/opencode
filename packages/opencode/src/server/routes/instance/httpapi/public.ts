@@ -269,6 +269,10 @@ function applyLegacySchemaOverrides(spec: OpenApiSpec) {
   }
   if (schemas.GlobalSession?.properties?.project)
     schemas.GlobalSession.properties.project = nullable(schemas.GlobalSession.properties.project)
+  if (schemas.VibetermCreator?.properties) {
+    schemas.VibetermCreator.properties.machine = nullable(schemas.VibetermCreator.properties.machine)
+    schemas.VibetermCreator.properties.hostname = nullable(schemas.VibetermCreator.properties.hostname)
+  }
   const providerOptions = schemas.ProviderConfig?.properties?.options
   if (providerOptions) providerOptions.additionalProperties = {}
   const model = schemas.ProviderConfig?.properties?.models?.additionalProperties

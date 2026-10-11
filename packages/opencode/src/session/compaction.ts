@@ -5,6 +5,7 @@ import { Session } from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
+import { MachineProvenance } from "./machine-provenance"
 import { Token } from "@/util/token"
 import { SessionProcessor } from "./processor"
 import { Agent } from "@/agent/agent"
@@ -450,7 +451,7 @@ const layer = Layer.effect(
           created: Date.now(),
         },
       }
-      yield* session.updateMessage(msg)
+      yield* session.createMessage(msg)
       const processor = yield* processors.create({
         assistantMessage: msg,
         sessionID: input.sessionID,
@@ -515,8 +516,10 @@ const layer = Layer.effect(
       if (result === "continue" && (input.auto || input.resume)) {
         if (replay) {
           const original = replay.info
+          const replayID = MessageID.ascending()
           const replayMsg = yield* session.updateMessage({
-            id: MessageID.ascending(),
+            id: replayID,
+            vibeterm: MachineProvenance.copy(original, replayID),
             role: "user",
             sessionID: input.sessionID,
             time: { created: Date.now() },
@@ -563,7 +566,7 @@ const layer = Layer.effect(
               { enabled: true },
             )).enabled
           ) {
-            const continueMsg = yield* session.updateMessage({
+            const continueMsg = yield* session.createMessage({
               id: MessageID.ascending(),
               role: "user",
               sessionID: input.sessionID,
@@ -600,9 +603,11 @@ const layer = Layer.effect(
       // new one; the loop then answers it as the next turn.
       if (result === "continue" && !processor.message.error) {
         for (const msg of queued) {
+          const movedID = MessageID.ascending()
           const moved = yield* session.updateMessage({
             ...msg.info,
-            id: MessageID.ascending(),
+            id: movedID,
+            vibeterm: MachineProvenance.copy(msg.info, movedID),
             time: { ...msg.info.time, created: Date.now() },
           })
           for (const part of msg.parts) {
@@ -626,7 +631,7 @@ const layer = Layer.effect(
       auto: boolean
       overflow?: boolean
     }) {
-      const msg = yield* session.updateMessage({
+      const msg = yield* session.createMessage({
         id: MessageID.ascending(),
         role: "user",
         model: input.model,

@@ -122,6 +122,7 @@ function buildAssistantInfo(row: typeof MessageTable.$inferSelect): Info {
   const d = row.data as Partial<Assistant>
   return {
     role: "assistant",
+    vibeterm: d.vibeterm,
     time: d.time,
     error: d.error,
     parentID: d.parentID,
@@ -145,6 +146,7 @@ function buildUserInfo(row: typeof MessageTable.$inferSelect): Info {
   const d = row.data as Partial<User>
   return {
     role: "user",
+    vibeterm: d.vibeterm,
     time: d.time,
     format: d.format,
     summary: d.summary,

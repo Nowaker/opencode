@@ -307,7 +307,7 @@ const layer = Layer.effect(
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
-      const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
+      const assistantMessage: SessionV1.Assistant = yield* sessions.createMessage({
         id: MessageID.ascending(),
         role: "assistant",
         parentID: lastUser.id,
@@ -479,7 +479,7 @@ const layer = Layer.effect(
         agent: lastUser.agent,
         model: lastUser.model,
       }
-      yield* sessions.updateMessage(summaryUserMsg)
+      yield* sessions.createMessage(summaryUserMsg)
       yield* sessions.updatePart({
         id: PartID.ascending(),
         messageID: summaryUserMsg.id,
@@ -517,7 +517,7 @@ const layer = Layer.effect(
               agent: input.agent,
               model: { providerID: model.providerID, modelID: model.modelID },
             }
-            yield* sessions.updateMessage(userMsg)
+            yield* sessions.createMessage(userMsg)
             const userPart: SessionV1.Part = {
               type: "text",
               id: PartID.ascending(),
@@ -542,7 +542,7 @@ const layer = Layer.effect(
               modelID: model.modelID,
               providerID: model.providerID,
             }
-            yield* sessions.updateMessage(msg)
+            yield* sessions.createMessage(msg)
             const started = Date.now()
             const part: SessionV1.ToolPart = {
               type: "tool",
@@ -1085,7 +1085,7 @@ const layer = Layer.effect(
         })
       }
 
-      yield* sessions.updateMessage(info)
+      yield* sessions.createMessage(info)
       for (const part of parts) yield* sessions.updatePart(part)
 
       return { info, parts }
@@ -1410,7 +1410,7 @@ const layer = Layer.effect(
             time: { created: Date.now() },
             sessionID,
           }
-          yield* sessions.updateMessage(msg)
+          yield* sessions.createMessage(msg)
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return

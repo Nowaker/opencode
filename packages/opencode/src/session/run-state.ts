@@ -31,6 +31,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const status = yield* SessionStatus.Service
+    const sessions = yield* Session.Service
 
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* () {
@@ -90,7 +91,9 @@ const layer = Layer.effect(
       onInterrupt: Effect.Effect<SessionV1.WithParts>,
       work: Effect.Effect<SessionV1.WithParts>,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
+      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(
+        Effect.andThen(sessions.recordExecution(sessionID), work),
+      )
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -100,7 +103,7 @@ const layer = Layer.effect(
       ready?: Latch.Latch,
     ) {
       return yield* (yield* runner(sessionID, onInterrupt))
-        .startShell(work, ready)
+        .startShell(Effect.andThen(sessions.recordExecution(sessionID), work), ready)
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
@@ -146,6 +149,6 @@ function busyError(sessionID: SessionID) {
   return new Session.BusyError({ sessionID })
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [BackgroundJob.node, SessionStatus.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [BackgroundJob.node, SessionStatus.node, Session.node] })
 
 export * as SessionRunState from "./run-state"

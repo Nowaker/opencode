@@ -237,6 +237,9 @@ export type OutputFormatJsonSchema = {
 export type OutputFormat = OutputFormatText | OutputFormatJsonSchema
 
 export type UserMessage = {
+  vibeterm?: {
+    creator?: VibetermCreator
+  }
   id: string
   sessionID: string
   role: "user"
@@ -331,6 +334,9 @@ export type ApiError = {
 }
 
 export type AssistantMessage = {
+  vibeterm?: {
+    creator?: VibetermCreator
+  }
   id: string
   sessionID: string
   role: "assistant"
@@ -2231,6 +2237,9 @@ export type GlobalSession = {
     variant?: string
   }
   version: string
+  /**
+   * Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId.
+   */
   metadata?: {
     [key: string]: unknown
   }
@@ -3047,6 +3056,17 @@ export type SkillV2Source = SkillV2DirectorySource | SkillV2UrlSource | SkillV2E
 
 export type MoveSessionDestination = {
   directory: string
+}
+
+export type VibetermCreator = {
+  machineId: string
+  machine: string | null
+  hostname: string | null
+  platform: string
+  at: number
+  objectId: string
+  originalObjectId?: string
+  source: "stamped"
 }
 
 export type ModelRef = {
@@ -9546,6 +9566,9 @@ export type SessionCreateData = {
       providerID: string
       variant?: string
     }
+    /**
+     * Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId.
+     */
     metadata?: {
       [key: string]: unknown
     }
@@ -9679,6 +9702,9 @@ export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
 export type SessionUpdateData = {
   body?: {
     title?: string
+    /**
+     * Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId.
+     */
     metadata?: {
       [key: string]: unknown
     }

@@ -14,6 +14,7 @@ import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
 import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import type { DeepMutable } from "../schema"
+import { MachineProvenance } from "@opencode-ai/schema/machine-provenance"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -215,7 +216,10 @@ const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         const stored = yield* db
           .insert(SessionTable)
-          .values(sessionRow(event.data.info))
+          .values(sessionRow({
+            ...event.data.info,
+            metadata: MachineProvenance.mergeMetadata(event.data.sessionID, event.data.info.metadata),
+          }))
           .onConflictDoNothing()
           .returning({ sessionID: SessionTable.id })
           .get()
@@ -232,12 +236,27 @@ const layer = Layer.effectDiscard(
       }),
     )
     yield* events.project(SessionV1.Event.Updated, (event) =>
-      db
-        .update(SessionTable)
-        .set(sessionRow(event.data.info))
-        .where(eq(SessionTable.id, event.data.sessionID))
-        .run()
-        .pipe(Effect.orDie),
+      Effect.gen(function* () {
+        const current = yield* db
+          .select({ metadata: SessionTable.metadata })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        yield* db
+          .update(SessionTable)
+          .set(sessionRow({
+            ...event.data.info,
+            metadata: MachineProvenance.mergeMetadata(
+              event.data.sessionID,
+              event.data.info.metadata,
+              current?.metadata ?? undefined,
+            ),
+          }))
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .run()
+          .pipe(Effect.orDie)
+      }),
     )
     yield* events.project(SessionEvent.Moved, (event) =>
       Effect.gen(function* () {
@@ -266,7 +285,15 @@ const layer = Layer.effectDiscard(
         yield* db
           .insert(MessageTable)
           .values({ id, session_id: sessionID, time_created, data })
-          .onConflictDoUpdate({ target: MessageTable.id, set: { data } })
+          .onConflictDoUpdate({
+            target: MessageTable.id,
+            set: {
+              data: sql`case when json_type(${MessageTable.data}, '$.vibeterm.creator') is not null
+                then json_set(json_set(excluded.data, '$.vibeterm', coalesce(json_extract(excluded.data, '$.vibeterm'), json('{}'))),
+                  '$.vibeterm.creator', json_extract(${MessageTable.data}, '$.vibeterm.creator'))
+                else json_remove(excluded.data, '$.vibeterm.creator') end`,
+            },
+          })
           .run()
           .pipe(Effect.orDie)
       }),

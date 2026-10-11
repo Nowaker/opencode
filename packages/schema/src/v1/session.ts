@@ -1,4 +1,5 @@
 export * as SessionV1 from "./session"
+import { MachineProvenance } from "../machine-provenance"
 
 import { Effect, Schema, Types } from "effect"
 import { define, inventory } from "../event"
@@ -325,6 +326,7 @@ export type ToolPart = Omit<Types.DeepMutable<Schema.Schema.Type<typeof ToolPart
 }
 
 const messageBase = {
+  vibeterm: optional(MachineProvenance.Message),
   id: MessageID,
   sessionID: partBase.sessionID,
 }

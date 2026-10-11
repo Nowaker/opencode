@@ -27,9 +27,11 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { MessageV2 } from "./message-v2"
+import { MachineProvenance } from "./machine-provenance"
+import { mergeMetadata } from "@opencode-ai/schema/machine-provenance"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
@@ -106,7 +108,7 @@ export function fromRow(row: SessionRow): Info {
       },
     },
     share,
-    metadata: row.metadata ?? undefined,
+    metadata: mergeMetadata(row.id, row.metadata ?? undefined),
     revert,
     permission: row.permission ? [...row.permission] : undefined,
     time: {
@@ -169,6 +171,12 @@ function getForkedTitle(title: string): string {
   return `${title} (fork #1)`
 }
 
+function forkMetadata(metadata: Info["metadata"]) {
+  const result = structuredClone(metadata)
+  if (result?.vibeterm) delete result.vibeterm.lastExecution
+  return result
+}
+
 function sessionPath(worktree: string, cwd: string) {
   return path.relative(path.resolve(worktree), cwd).replaceAll("\\", "/")
 }
@@ -220,7 +228,9 @@ const Model = Schema.Struct({
   variant: optional(Schema.String),
 })
 
-export const Metadata = Schema.Record(Schema.String, Schema.Any)
+export const Metadata = Schema.Record(Schema.String, Schema.Any).annotate({
+  description: "Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId.",
+})
 
 export const Info = Schema.Struct({
   id: SessionID,
@@ -450,6 +460,8 @@ export interface Interface {
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
+  readonly createMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
+  readonly recordExecution: (sessionID: SessionID) => Effect.Effect<void>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
   readonly getPart: (input: {
@@ -634,6 +646,14 @@ const layer: Layer.Layer<
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
+    const createMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
+      Effect.gen(function* () {
+        yield* updateMessage(MachineProvenance.create(msg))
+        const stored = yield* db.select({ data: MessageTable.data }).from(MessageTable)
+          .where(eq(MessageTable.id, msg.id)).get().pipe(Effect.orDie)
+        return Object.assign(msg, { vibeterm: stored?.data.vibeterm })
+      }).pipe(Effect.withSpan("Session.createMessage"))
+
     const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         yield* events.publish(SessionV1.Event.PartUpdated, {
@@ -699,7 +719,7 @@ const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
-        metadata: structuredClone(original.metadata),
+        metadata: forkMetadata(original.metadata),
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()
@@ -714,6 +734,7 @@ const layer: Layer.Layer<
           ...msg.info,
           sessionID: session.id,
           id: newID,
+          vibeterm: MachineProvenance.copy(msg.info, newID),
           ...(parentID && { parentID }),
         })
 
@@ -762,6 +783,15 @@ const layer: Layer.Layer<
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
       yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
+    const recordExecution = Effect.fn("Session.recordExecution")(function* (sessionID: SessionID) {
+      const stamp = MachineProvenance.execution(sessionID)
+      if (!stamp) return
+      yield* setMetadata({
+        sessionID,
+        metadata: { vibeterm: { lastExecution: stamp } },
+      })
     })
 
     const setAgentModel = Effect.fn("Session.setAgentModel")(function* (input: {
@@ -927,6 +957,8 @@ const layer: Layer.Layer<
       children,
       remove,
       updateMessage,
+      createMessage,
+      recordExecution,
       removeMessage,
       removePart,
       updatePart,

@@ -58,7 +58,7 @@ export const PlanExitTool = Tool.define(
             agent: "build",
             model,
           }
-          yield* session.updateMessage(msg)
+          yield* session.createMessage(msg)
           yield* session.updatePart({
             id: PartID.ascending(),
             messageID: msg.id,
