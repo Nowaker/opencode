@@ -182,6 +182,7 @@ export const CommandMap = {
   workspace_set: "workspace.set",
   input_clear: "prompt.clear",
   input_paste: "prompt.paste",
+  input_paste_raw: "prompt.paste.raw",
   input_submit: "input.submit",
   input_newline: "input.newline",
   input_move_left: "input.move.left",

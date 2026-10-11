@@ -87,6 +87,11 @@ export type PromptProps = {
   }
 }
 
+// Replace CRLF first, then any remaining CR.
+function normalizeLineEndings(text: string) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+}
+
 function pastedFilepath(value: string, platform: string) {
   const raw = value.replace(/^['"]+|['"]+$/g, "")
   if (raw.startsWith("file://")) {
@@ -453,6 +458,23 @@ export function Prompt(props: PromptProps) {
           if (content?.mime === "text/plain") {
             await pasteInputText(content.data)
           }
+        },
+      },
+      {
+        title: "Paste without a placeholder",
+        name: "prompt.paste.raw",
+        category: "Prompt",
+        run: async () => {
+          const content = await clipboard.read?.()
+          if (content?.mime.startsWith("image/")) {
+            await pasteAttachment({
+              filename: "clipboard",
+              mime: content.mime,
+              content: content.data,
+            })
+            return
+          }
+          if (content?.mime === "text/plain") insertPastedText(normalizeLineEndings(content.data))
         },
       },
       {
@@ -1073,6 +1095,14 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
+      enabled: inputTarget() !== undefined && !props.disabled,
+      bindings: tuiConfig.keybinds.get("prompt.paste.raw"),
+    }
+  })
+
+  useBindings(() => {
+    return {
+      target: inputTarget,
       enabled: inputTarget() !== undefined && !props.disabled && store.prompt.input !== "",
       bindings: tuiConfig.keybinds.get("prompt.clear"),
     }
@@ -1444,7 +1474,7 @@ export function Prompt(props: PromptProps) {
   }
 
   async function pasteInputText(text: string) {
-    const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    const normalizedText = normalizeLineEndings(text)
     const pastedContent = normalizedText.trim()
     const filepath = pastedFilepath(pastedContent, terminalEnvironment.platform)
     const isUrl = /^(https?):\/\//.test(filepath)
@@ -1472,7 +1502,11 @@ export function Prompt(props: PromptProps) {
       return
     }
 
-    input.insertText(normalizedText)
+    insertPastedText(normalizedText)
+  }
+
+  function insertPastedText(text: string) {
+    input.insertText(text)
 
     setTimeout(() => {
       if (!input || input.isDestroyed) return
@@ -1768,9 +1802,13 @@ export function Prompt(props: PromptProps) {
 
                 // Normalize line endings at the boundary
                 // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                // Replace CRLF first, then any remaining CR
-                const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+                const normalizedText = normalizeLineEndings(decodePasteBytes(event.bytes))
                 const pastedContent = normalizedText.trim()
+                // A terminal paste right after the leader key goes in as typed, the way the raw paste key
+                // does with the clipboard: over ssh or tmux, the terminal's paste is the one that holds the
+                // clipboard of the machine the user is sitting at.
+                const raw = leader()
+                if (raw) keymap.clearPendingSequence()
 
                 // Windows Terminal <1.25 can surface image-only clipboard as an
                 // empty bracketed paste. Windows Terminal 1.25+ does not.
@@ -1783,6 +1821,10 @@ export function Prompt(props: PromptProps) {
                 // default paste unless we suppress it first and handle insertion ourselves.
                 event.preventDefault()
 
+                if (raw) {
+                  insertPastedText(normalizedText)
+                  return
+                }
                 await pasteInputText(normalizedText)
               }}
               ref={(r: TextareaRenderable) => {
