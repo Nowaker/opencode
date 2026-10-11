@@ -287,7 +287,7 @@ test("resolves host-neutral defaults", () => {
   })
   expect(config.leader_timeout).toBe(LeaderTimeoutDefault)
   expect(config.mouse).toBe(true)
-  expect(config.keybinds.has("terminal.suspend")).toBe(true)
+  expect(config.keybinds.has("terminal.suspend")).toBe(false)
   expect(config.keybinds.has("session.list")).toBe(true)
   expect(config.cursor).toBeUndefined()
 })
@@ -338,6 +338,14 @@ test("resolves a session move keybind", () => {
   const config = resolve({ keybinds: { session_move: "ctrl+o" } }, { terminalSuspend: true })
 
   expect(config.keybinds.get("session.move")).toMatchObject([{ key: "ctrl+o" }])
+})
+
+test("binds ctrl+z and ctrl+shift+z to undo and redo, and nothing to suspend", () => {
+  const config = resolve({}, { terminalSuspend: true })
+
+  expect(config.keybinds.has("terminal.suspend")).toBe(false)
+  expect(config.keybinds.get("input.undo")).toMatchObject([{ key: "ctrl+z,ctrl+-,super+z" }])
+  expect(config.keybinds.get("input.redo")).toMatchObject([{ key: "ctrl+shift+z,ctrl+.,super+shift+z" }])
 })
 
 test("disables suspend and assigns ctrl+z to undo when unsupported", () => {

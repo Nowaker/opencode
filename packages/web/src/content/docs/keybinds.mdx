@@ -140,8 +140,8 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
     "input_delete_to_line_start": "ctrl+u",
     "input_backspace": "backspace,shift+backspace",
     "input_delete": "ctrl+d,delete,shift+delete",
-    "input_undo": "ctrl+-,super+z",
-    "input_redo": "ctrl+.,super+shift+z",
+    "input_undo": "ctrl+z,ctrl+-,super+z",
+    "input_redo": "ctrl+shift+z,ctrl+.,super+shift+z",
     "input_word_forward": "alt+f,alt+right,ctrl+right",
     "input_word_backward": "alt+b,alt+left,ctrl+left",
     "input_select_word_forward": "alt+shift+f,alt+shift+right",
@@ -170,7 +170,7 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
     "plugins.toggle": "space",
     "dialog.plugins.install": "shift+i",
 
-    "terminal_suspend": "ctrl+z",
+    "terminal_suspend": "none",
     "terminal_title_toggle": "none",
     "tips_toggle": "<leader>h",
     "plugin_manager": "none",
@@ -192,30 +192,26 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
 ```
 
 :::note
-On Windows, the defaults for `input_undo` and `terminal_suspend` are different:
-
-- `input_undo` defaults to `ctrl+z,ctrl+-,super+z` when it is not explicitly configured. The `ctrl+z` binding is added because Windows terminals do not support POSIX suspend.
-- `terminal_suspend` is forced to `none` because native Windows terminals do not support POSIX suspend.
-  :::
+On Windows, `terminal_suspend` is forced to `none`, because native Windows terminals do not support POSIX suspend.
+:::
 
 ---
 
 ## Undo with ctrl+z
 
-`input_undo` and `input_redo` step through the prompt's [undo history](/docs/tui#undo-in-the-prompt). On macOS and Linux, <kbd>ctrl+z</kbd> suspends OpenCode by default. To use <kbd>ctrl+z</kbd> and <kbd>ctrl+shift+z</kbd> for undo and redo instead, unbind suspend:
+<kbd>ctrl+z</kbd> and <kbd>ctrl+shift+z</kbd> step back and forward through the prompt's [undo history](/docs/tui#undo-in-the-prompt), as in any editor. Suspending OpenCode to the shell (`terminal_suspend`) has no key by default; to bring it back, bind it to a free key, or to <kbd>ctrl+z</kbd> after removing that key from `input_undo`:
 
 ```json title="tui.json"
 {
   "$schema": "https://opencode.ai/tui.json",
   "keybinds": {
-    "terminal_suspend": "none",
-    "input_undo": "ctrl+z,ctrl+-,super+z",
-    "input_redo": "ctrl+shift+z,ctrl+.,super+shift+z"
+    "terminal_suspend": "ctrl+z",
+    "input_undo": "ctrl+-,super+z"
   }
 }
 ```
 
-<kbd>ctrl+shift+z</kbd> reaches OpenCode only in a terminal that reports it apart from <kbd>ctrl+z</kbd>, through the kitty keyboard protocol or `modifyOtherKeys`; inside tmux that also needs `extended-keys`. <kbd>ctrl+.</kbd> needs the same.
+<kbd>ctrl+shift+z</kbd> reaches OpenCode only in a terminal that reports it apart from <kbd>ctrl+z</kbd>, through the kitty keyboard protocol or `modifyOtherKeys`; inside tmux that also needs `extended-keys`. Where it does not, <kbd>ctrl+.</kbd> redoes, given the same support, and <kbd>super+shift+z</kbd> wherever the terminal passes it through.
 
 ---
 

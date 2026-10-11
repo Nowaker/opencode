@@ -316,3 +316,46 @@ test("leader then v runs the raw paste, and a terminal paste after the leader fi
     app.renderer.destroy()
   }
 })
+
+// Byte forms measured through Vibeterm's tmux: \x1a from every terminal for ctrl+z; ctrl+shift+z
+// as Ghostty's modifyOtherKeys report relayed by tmux (uppercase Z), its lowercase form, and the
+// CSI-u forms Terminal.app's VibeTerm profile and kitty-protocol terminals send.
+test("ctrl+z undoes and ctrl+shift+z redoes in the prompt in every byte form that reaches it", async () => {
+  const ran: string[] = []
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createResolvedKeymapConfig()
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offLayer = keymap.registerLayer({
+      commands: [
+        { name: "input.undo", run: () => void ran.push("undo") },
+        { name: "input.redo", run: () => void ran.push("redo") },
+        { name: "terminal.suspend", run: () => void ran.push("suspend") },
+      ],
+      bindings: config.keybinds.gather("input", ["input.undo", "input.redo", "terminal.suspend"]),
+    })
+    onCleanup(() => {
+      offLayer()
+      offKeymap()
+    })
+
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <textarea focused />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  try {
+    for (const bytes of ["\x1a", "\x1b[27;6;90~", "\x1b[27;6;122~", "\x1b[90;6u", "\x1b[122;6u"]) {
+      app.renderer.stdin.emit("data", Buffer.from(bytes))
+      await Bun.sleep(50)
+    }
+    expect(ran).toEqual(["undo", "redo", "redo", "redo", "redo"])
+  } finally {
+    app.renderer.destroy()
+  }
+})
