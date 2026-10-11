@@ -89,9 +89,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Paste without a placeholder](./features/2026-10-10-paste-raw-key.md)
 - [Grouped prompt undo and redo on ctrl+z / ctrl+shift+z](./features/2026-10-10-prompt-undo-history.md)
 - [Open a paste placeholder's text by clicking it](./features/2026-10-10-paste-edit-dialog.md)
+- [End every tool call that runs past a time limit](./features/2026-10-11-tool-call-time-limit.md)
 
 ## Session records
 
+- [2026-10-11 `ses_ed5bde150ffepnn3xqxHaucDLN`](./sessions/2026-10-11-tool-call-time-limit.md)
+  - A hard time limit on every tool call (`tool_timeout`, plugin
+    `tool({ timeout })`, MCP `tool_timeout`), upstream PR #54503; build and
+    install on both hosts, desktop serve units restarted.
 - [2026-10-11 `ses_ed5f9f826ffeno6fI51rL96d5Q`](./sessions/2026-10-11-upstream-v1-19.md)
   - Upstream `dev` became the v2 line: repoint the fork, `build.sh` and
     opencode-tools from `github/dev` to `github/v1`, rebase `dev-nowaker`
