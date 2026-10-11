@@ -26,6 +26,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Cooperative owner retirement](./features/2026-10-11-owner-retirement.md)
+
 - [SQLite admission recovery and safe diagnosis](./features/sqlite-admission.md)
 
 - [Unchanged message summary event suppression](./features/2026-09-26-summary-event-dedup.md)
@@ -92,6 +94,10 @@ carries every feature forward unchanged. That commit includes the full
 - [End every tool call that runs past a time limit](./features/2026-10-11-tool-call-time-limit.md)
 
 ## Session records
+
+- [2026-10-11 `ses_ee0ceb1aaffeh6u0RxoARcBsk1`](./sessions/2026-10-11-owner-retirement.md)
+  - Idle-safe engine and native composer retirement for Vibeterm's durable,
+    fenced whole-server restart scheduler; source and real-surface verification.
 
 - [2026-10-11 `ses_ed5bde150ffepnn3xqxHaucDLN`](./sessions/2026-10-11-tool-call-time-limit.md)
   - A hard time limit on every tool call (`tool_timeout`, plugin
