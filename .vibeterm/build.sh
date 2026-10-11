@@ -28,14 +28,16 @@
 #     an upstream release build, not a fork build.
 #   - Otherwise:
 #     - base: the newest release HEAD contains - the highest vX.Y.Z tag
-#       whose release commit's parent is an ancestor of HEAD. dev past
+#       whose release commit's parent is an ancestor of HEAD. v1 past
 #       v1.18.32 has base 1.18.32; a v2.x tag cut from another line is
 #       never picked.
 #     - seq: fork commits on top of upstream,
 #       git rev-list --count $(git merge-base HEAD <upstream>)..HEAD
 #     - sha: first 10 hex chars of that merge-base, the upstream commit
 #       dev-nowaker is reintegrated onto.
-#     <upstream> is OPENCODE_UPSTREAM_REF, default <tag remote>/dev.
+#     <upstream> is OPENCODE_UPSTREAM_REF, default <tag remote>/v1: the
+#     upstream v1 maintenance line. Upstream `dev` is the v2 line and no
+#     longer has packages/opencode.
 #   The stamp is a semver prerelease of <base>, so an upstream release on
 #   the system (1.18.33) is detectable as newer than the fork's base.
 #   opencode itself strips the suffix (InstallationBaseVersion) wherever a
@@ -110,7 +112,7 @@ if [ -z "${OPENCODE_TAG_REMOTE-}" ] && ! git -C "$SRC" remote get-url github >/d
   OPENCODE_TAG_REMOTE=upstream
 fi
 TAG_REMOTE="${OPENCODE_TAG_REMOTE:-github}"
-UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/dev}"
+UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/v1}"
 LOCKFILE="$SRC/bun.lock"
 LOCKFILE_BACKUP=""
 
