@@ -96,8 +96,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Log which process holds the SQLite write lock too long](./features/2026-10-11-sqlite-write-hold-log.md)
 - [Machine provenance on messages and session execution](./features/2026-10-10-machine-provenance.md)
 - [Syntax coloring in tool calls: bash, heredocs, file languages, tool input](./features/2026-10-11-tool-syntax-coloring.md)
+- [Answer a failed TUI worker request instead of hanging](./features/2026-10-12-tui-worker-error-reply.md)
 
 ## Session records
+
+- [2026-10-12 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-12-tui-worker-hang.md)
+  - `opencode -s` hung forever when a busy database failed session
+    maintenance at startup: maintenance now retries the lock for up to 60 s,
+    and a failed TUI worker request is answered (issue #54934, PR #54936
+    against `v1`); build and install on both hosts.
 
 - [2026-10-12 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-12-tool-input-compact.md)
   - Tool input block: one row per value while collapsed, compact YAML lists;

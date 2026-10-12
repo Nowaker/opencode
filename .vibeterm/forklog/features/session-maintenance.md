@@ -23,6 +23,9 @@
 - Existing connections retain their TEMP guards until refreshed. Installation
   of a binary alone does not upgrade their capability.
 - Unknown expression or partial unique indexes fail closed during installation.
+- Registration and guard repair take the write lock through
+  `DatabaseTransaction.immediate`, retrying for up to 60 s while another
+  process holds it. A lock held longer still fails startup.
 - Tests cover REPLACE, UPDATE collisions, composite NOCASE/RTRIM keys, migration
   rollback/idempotence, emergency activation, and unrelated-session writes.
 - A 500,000-row fixture executes 195 update / 134 insert VM steps with both
@@ -49,4 +52,12 @@
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-12 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-12-tui-worker-hang.md) -
+  `22e6326a61`: registration and guard repair retry the write lock for up to
+  60 s instead of failing the database layer after the 5 s busy timeout, which
+  left `opencode -s` hanging when processes started on a locked database
+  (single `BEGIN IMMEDIATE` since `1eccd8068e`). Evidence: new lock-holder test
+  in `session-maintenance-startup.test.ts` (red before, green after); 60
+  maintenance and transaction tests pass; installed `1.19.0-vt-248` repro in
+  the session record.
 
