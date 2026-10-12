@@ -528,6 +528,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `transcript.max_messages` - How many of a session's most recent messages the TUI keeps loaded (default: `100`). Older messages are hidden behind a divider showing how many there are, with actions to load 50 more from either edge of the gap or all of them. The same actions are in the command palette and `/load-hidden` loads all of them.
 - `transcript.keep_first_prompt` - Keep the session's first prompt at the top, above the divider, when older messages are hidden (default: `true`).
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
+- `syntax` - Controls syntax highlighting in tool calls. [Learn more](#syntax-highlighting).
 - `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
 - `sidebar.hidden` - Session sidebar sections to hide, using the same names as `sidebar.order`.
 
@@ -656,6 +657,20 @@ Each value is a number of lines or `"never"`:
 - `"never"` always shows all of it, with no hint.
 
 `write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on.
+
+### Syntax highlighting
+
+Tool calls are colored by language. Each part can be turned on or off under `syntax`:
+
+```json title="tui.json"
+{
+  "syntax": {
+    "bash": true
+  }
+}
+```
+
+- `bash` - Color the bash tool's command as shell code. Defaults to `true`.
 
 ### Paste summary
 

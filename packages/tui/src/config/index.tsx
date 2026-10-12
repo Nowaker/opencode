@@ -34,6 +34,11 @@ export const ModelLabel = Schema.Literals(["name", "id"]).annotate({
   description:
     "How message footers and the prompt label a model: 'name' (default) shows its display name, 'id' shows providerID/modelID, e.g. anthropic/claude-sonnet-4-5",
 })
+export const Syntax = Schema.Struct({
+  bash: Schema.optional(Schema.Boolean).annotate({
+    description: "Color the bash tool's command as shell code (default: true)",
+  }),
+}).annotate({ description: "Syntax highlighting in tool calls" })
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({
     description: "Cursor shape. Use 'default' to preserve the terminal setting",
@@ -471,6 +476,7 @@ export const Info = Schema.Struct({
   footer: Schema.optional(Footer),
   datetime_format: Schema.optional(DateTimeFormat),
   tool_output: Schema.optional(ToolOutput),
+  syntax: Schema.optional(Syntax),
   cursor: Schema.optional(Cursor),
   sidebar: Schema.optional(Sidebar),
   usage: Schema.optional(Usage),

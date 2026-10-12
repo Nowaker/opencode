@@ -100,6 +100,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ datetime_format: { date: "YYYY-mm-dd" } })).toThrow()
   expect(() => decodeInfo({ datetime_format: { date: "DD Mon YYYY" } })).toThrow()
   expect(() => decodeInfo({ datetime_format: { time: "" } })).toThrow()
+  expect(decodeInfo({ syntax: { bash: false } })).toEqual({ syntax: { bash: false } })
+  expect(() => decodeInfo({ syntax: { bash: "off" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 

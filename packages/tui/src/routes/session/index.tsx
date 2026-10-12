@@ -65,6 +65,8 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
+import { cachedTreeSitterClient } from "../../util/highlight-cache"
+import { narrowBashHighlights } from "../../util/bash-highlight"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
@@ -2569,8 +2571,15 @@ function Shell(props: ToolProps) {
           onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
-            <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
-              <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
+            <Show
+              when={ctx.tui.syntax?.bash !== false}
+              fallback={
+                <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
+                  <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
+                </Show>
+              }
+            >
+              <ShellCommand command={stringValue(props.input.command) ?? ""} running={isRunning()} />
             </Show>
             <Show when={limited()}>
               <text fg={theme.text}>{limited()}</text>
@@ -2584,6 +2593,32 @@ function Shell(props: ToolProps) {
         </InlineTool>
       </Match>
     </Switch>
+  )
+}
+
+// The command as shell code. It draws as plain text at once and takes its colors when the parser
+// worker answers, which the shared cache makes immediate for a command already seen.
+export function ShellCommand(props: { command: string; running: boolean }) {
+  const { theme, syntax } = useTheme()
+  return (
+    <box flexDirection="row">
+      <Show when={props.running} fallback={<text fg={theme.text}>$ </text>}>
+        <box paddingRight={1}>
+          <Spinner color={theme.text} />
+        </box>
+      </Show>
+      <code
+        flexGrow={1}
+        flexShrink={1}
+        conceal={false}
+        fg={theme.text}
+        filetype="bash"
+        syntaxStyle={syntax()}
+        treeSitterClient={cachedTreeSitterClient()}
+        onHighlight={(highlights, context) => narrowBashHighlights(highlights, context.content)}
+        content={props.command}
+      />
+    </box>
   )
 }
 
