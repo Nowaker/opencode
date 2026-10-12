@@ -323,7 +323,7 @@ export const DateTimeFormat = Schema.Struct({
   }),
 }).annotate({
   description:
-    "How times and dates are written in message footers, entry timestamps, the compaction divider and the timeline and stash dialogs. Entries from today show only the time",
+    "How times and dates are written in message footers, entry timestamps, the compaction divider and the timeline and stash dialogs. Entries from today show only the time, and switch to the date and time at midnight",
 })
 
 export const ToolOutputGroup = Schema.Literals(["bash", "generic", "write", "edit", "apply_patch"])

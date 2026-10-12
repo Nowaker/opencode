@@ -1,3 +1,5 @@
+import { localDay } from "./day"
+
 export function titlecase(str: string) {
   return str.replace(/\b\w/g, (c) => c.toUpperCase())
 }
@@ -62,7 +64,9 @@ function pattern(input: number, format: string) {
   return format.replace(PATTERN_TOKENS, (token, literal: string | undefined) => literal ?? values[token])
 }
 
+// Subscribes the calling computation to the local day, so it re-runs at midnight.
 function isToday(input: number) {
+  localDay.read()
   const date = new Date(input)
   const now = new Date()
   return (
