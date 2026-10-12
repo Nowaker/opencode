@@ -1,4 +1,4 @@
-# Tool input block: one row per value, compact YAML
+# Tool input block: one row per value, compact YAML; tool output coloring
 
 ## Identity
 
@@ -9,7 +9,8 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `syntax-integration` (off `dev-nowaker`); upstream `tool-input-block`
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
-- Source result commit(s): `84d27d0f49`; `8e3a183698` (opencode `*.scm` declaration)
+- Source result commit(s): `84d27d0f49`; `8e3a183698` (opencode `*.scm` declaration);
+  `0ab6637c9d` (tool output coloring)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -39,6 +40,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
 | `opencode` | `dev-nowaker` | `3d554e9df1` | `84d27d0f49` + forklog `bfc03b0daf` | fix commit, fast-forward; pushed to both remotes |
 | `opencode` | `dev-nowaker` | `bfc03b0daf` | `8e3a183698` + this record's second forklog commit | opencode typecheck fix, fast-forward; pushed to both remotes |
 | `opencode` | `file-languages` | `f885d7e3ba` | `d6087eb738` | amended with the same declaration; PR #54706 |
+| `opencode` | `tool-output-syntax` | - | `e9809aa4f3` | new, stacked on `bash-syntax`; issue #54957, PR #54968 |
+| `opencode` | `dev-nowaker` | `c1c1d4fb1a` | `0ab6637c9d` + this record's third forklog commit | feature commit, fast-forward; pushed to both remotes |
 
 ## Features touched
 
@@ -74,6 +77,52 @@ does not include tui's `parsers/assets.d.ts`. Turbo replayed a cached
   packages/tui typecheck clean on `file-languages`.
 - Not rebuilt or installed: a type declaration does not change the binary.
 
+## Tool output coloring
+
+Relayed by the coordinator: a `browser` result that was plain JSON was drawn
+uncolored. User, verbatim:
+
+> returned json wasn't picked up as json. is it because there is no detection
+> of content/type of the tool call result? (...probably expensive and not worth
+> it?) maybe we should provide some configurability for per-tool calls syntax
+> highlighting [...] could be come a property in plugin sdk where each tool call
+> can define the content type of their output for syntax highlighting purposes
+> [make a note for future on that].
+
+- Cause: `GenericTool` drew output as `<text>{limited()}</text>`; nothing
+  recorded or detected its type (plugin tools return strings, MCP text results
+  carry no content type).
+- `syntax.tool_output`: tool name or glob -> language id, `auto` or `none`;
+  unset by default. Separate PR stacked on #54704 rather than folded into
+  #54707: it reuses #54704's highlight cache and non-red palette, and
+  `tool-input-block` is not built on `bash-syntax`.
+- Sniff cost: 564 generic outputs from the 6154-part session, 6.1 us each
+  cold, 2.1 us warm; a 46 KB candidate 0.05 ms.
+- A first PTY run showed the collapsed preview losing key colors after the
+  cut: the preview was highlighted on its own and did not parse. Fixed by
+  highlighting the whole output and keeping the highlights inside the shared
+  prefix (`previewHighlights`).
+- packages/tui on `syntax-integration` (rebased on `c1c1d4fb1a`): typecheck
+  clean; full suite 619 pass, 1 skip, 0 fail; packages/opencode typecheck 0
+  errors. `tool-output-syntax`: 129 focused tests pass.
+- Real PTY (vt-252, throwaway tmux socket, generic output shown, `browser`
+  JSON and a plain-text result under `"*": "auto"`) at 80 and 160 columns:
+  screen text byte-identical with the setting on and off; keys peach, strings
+  green in the collapsed preview; plain text stays plain; no red cell.
+- A/B/B/A, same vt-252 binary, setting off vs on (`browser: json`,
+  `*: auto`), worldmodern session copy (5623 parts, 86 JSON results, generic
+  output shown), 60 samples per run: scroll p50 19.7 -> 17.3 ms, p95
+  42.5 -> 49.0 ms; keystroke p50 24.6 -> 25.3 ms, p95 41.3 -> 54.0 ms
+  (per-run keystroke p50 22.3-29.5 ms in each arm); idle CPU 1.9% both; RSS
+  766/792 -> 810/837 MB. Keystrokes from the first frame, while colors land:
+  p50 10.7-12.5 ms in all four runs. Run-to-run spread covers each difference.
+- Installed `1.19.0-vt-252-dfb56f76c7`: desktop inode `49962238`, m4max
+  inode `31336912`; gate PASSED on both; retry marker present; retry patch
+  reverse-applied on both; `opencode-serve-tailscale` still PID `4038768`.
+- `syntax.tool_output: {"browser": "json", "*": "auto"}` set in
+  `~/.config/opencode/tui.json` on desktop and m4max; backups
+  `tui.json.bak-before-syntax-tool-output`.
+
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
@@ -89,6 +138,7 @@ does not include tui's `parsers/assets.d.ts`. Turbo replayed a cached
 
 - `84d27d0f49` - show every tool input value on one row, in compact YAML
 - `8e3a183698` - declare .scm imports for the opencode typecheck
+- `0ab6637c9d` - color plugin and MCP tool output by language
 - Required trailer: `AI-Session-ID: ses_ed1e2b932ffe6tTqhsOiGuYXRE`
 
 ```sh
