@@ -95,8 +95,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Never delete a file whose earlier content the snapshot store lost](./features/2026-10-11-revert-keep-missing.md)
 - [Log which process holds the SQLite write lock too long](./features/2026-10-11-sqlite-write-hold-log.md)
 - [Machine provenance on messages and session execution](./features/2026-10-10-machine-provenance.md)
+- [Syntax coloring in tool calls: bash, heredocs, file languages, tool input](./features/2026-10-11-tool-syntax-coloring.md)
 
 ## Session records
+
+- [2026-10-11 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-11-tool-syntax-coloring.md)
+  - Syntax coloring in tool calls: bash command, heredocs by consumer, file
+    languages with bundled grammars, opt-in tool input block; upstream PRs
+    #54704-#54707; build and install on both hosts.
 
 - [2026-10-11 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-11-tui-footer-midnight.md)
   - On-screen footers and timestamps switch to the date-and-time form at

@@ -79,6 +79,10 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-11 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-11-tool-syntax-coloring.md) -
+  preserved under syntax coloring: `Write` keeps its collapse while it also
+  draws a running write; the generic tool input block folds with `toolOutputLimit`.
+  Evidence: `60edf2a182`, `8a360b4aa0`; full tui suite.
 
 ## Current maintenance notes
 
