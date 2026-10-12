@@ -104,7 +104,7 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-12 `ses_ece4671adffe4Y4d8Yv35NSjXh`](./sessions/2026-10-12-v1-v2-patch-rig.md)
   - opencode-tools `opencode-patch-rig.ts` tests every TUI patch on v1 and v2
     in a real terminal; the [matrix](#tui-patches-on-v1-and-v2); nine v2
-    ports with PRs #54958-#54966 against `dev`.
+    ports with PRs #54958-#54966 and #54978 against `dev`.
 
 - [2026-10-12 `ses_ece469f46ffeIkbDfxO1jJY6D6`](./sessions/2026-10-12-home-screen-layout.md)
   - The prompt never grows past the screen; `prompt.min_height`, percentage
@@ -463,7 +463,7 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `fix-scroll-follow` | #53219 | pass | TBD: v2 has its own scroll anchor | - |
 | `tui-todo-summary` | #53259 | pass | not applicable: v2 sidebar has no Todo section | - |
 | `tui-mcp-summary` | #53261 | proved | ported `v2-mcp-summary` (`session.mcp_summary`), proved | [#54960](https://github.com/anomalyco/opencode/pull/54960) |
-| `tui-context-colors` | #53264 | pass | S on top of `v2-context-compact` | - |
+| `tui-context-colors` | #53264 | proved | ported `v2-context-colors` (`usage`), proved, stacked on #54966 | [#54978](https://github.com/anomalyco/opencode/pull/54978) |
 | `tui-todo-completed` | - | pass | not applicable: no Todo section | - |
 | `tui-mcp-list` | #53322 | proved | ported `v2-mcp-list` (`session.mcp_list`), proved | [#54965](https://github.com/anomalyco/opencode/pull/54965) |
 | `tui-block-nav` | #53333 | pass | L: v2 has its own message navigation and anchors; compare first | - |
