@@ -20,7 +20,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import {
@@ -135,12 +135,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       )
       const total = yield* MessageV2.total(ctx.params.sessionID)
       if (!page.cursor) {
-        return HttpServerResponse.jsonUnsafe(page.items, {
-          headers: {
-            "Access-Control-Expose-Headers": "X-Total-Count",
-            "X-Total-Count": total.toString(),
-          },
-        })
+        // Returning the items, not a jsonUnsafe response, keeps them going
+        // through the success schema, so a corrupt stored row is still a 400.
+        yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+          Effect.succeed(
+            response.status >= 400
+              ? response
+              : HttpServerResponse.setHeaders(response, {
+                  "Access-Control-Expose-Headers": "X-Total-Count",
+                  "X-Total-Count": total.toString(),
+                }),
+          ),
+        )
+        return page.items
       }
 
       const request = yield* HttpServerRequest.HttpServerRequest
