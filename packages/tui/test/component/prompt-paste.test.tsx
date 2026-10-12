@@ -6,6 +6,11 @@ setDefaultTimeout(30_000)
 
 const UNDO = "\x1b[45;5u"
 const ESCAPE = "\x1b"
+const ENTER = "\r"
+const SHIFT_ENTER = "\x1b[13;2u"
+const CTRL_J = "\n"
+const UP = "\x1b[A"
+const DOWN = "\x1b[B"
 
 // Where the frame shows `label`, as the cell to click inside it.
 function find(rig: PromptRig, label: string) {
@@ -27,6 +32,10 @@ async function close(rig: PromptRig) {
   await wait(() => !rig.frame().includes("Pasted text"))
 }
 
+async function closed(rig: PromptRig) {
+  await wait(() => !rig.frame().includes("Pasted text"))
+}
+
 async function openPlaceholder(rig: PromptRig) {
   const at = find(rig, "[Pasted ~3 lines]")
   await rig.click(at.x, at.y)
@@ -45,7 +54,7 @@ test("clicking a placeholder opens its text to edit, and escape keeps the edit",
     await pasteBlock(rig)
     await openPlaceholder(rig)
     for (const char of "zero") await rig.press(char)
-    await rig.press("\r") // a new line in the editor, not a submit
+    await rig.press(SHIFT_ENTER) // the prompt's newline key adds a line
     await close(rig)
     expect(rig.text()).toBe("see [Pasted ~4 lines] ")
     expect(rig.sent).toEqual([])
@@ -70,7 +79,7 @@ test("Inline replaces the placeholder with its text, and undo puts the placehold
     await openPlaceholder(rig)
     const button = find(rig, "Inline")
     await rig.click(button.x, button.y)
-    expect(rig.frame()).not.toContain("Pasted text")
+    await closed(rig)
     expect(rig.text()).toBe("see one\ntwo\nthree ")
     expect(rig.parts()).toBe(0)
     await rig.press(UNDO)
@@ -78,6 +87,73 @@ test("Inline replaces the placeholder with its text, and undo puts the placehold
     expect(rig.parts()).toBe(1)
     expect(await submitted(rig)).toBe("see one\ntwo\nthree ")
   })
+})
+
+test("enter saves and closes like escape, and ctrl+j adds a line", async () => {
+  await withPrompt(async (rig) => {
+    await pasteBlock(rig)
+    await openPlaceholder(rig)
+    await rig.press("X")
+    await rig.press(CTRL_J)
+    await rig.press(ENTER)
+    await closed(rig)
+    expect(rig.text()).toBe("see [Pasted ~4 lines] ")
+    expect(rig.sent).toEqual([])
+    expect(await submitted(rig)).toBe("see X\none\ntwo\nthree ")
+  })
+})
+
+test("up on the first row moves to Inline, enter presses it", async () => {
+  await withPrompt(async (rig) => {
+    await pasteBlock(rig)
+    await openPlaceholder(rig)
+    await rig.press(UP)
+    find(rig, "enter inline")
+    await rig.press(ENTER)
+    await closed(rig)
+    expect(rig.text()).toBe("see one\ntwo\nthree ")
+    expect(rig.parts()).toBe(0)
+  })
+})
+
+test("up below the first row moves the caret, and down from Inline goes back to the text", async () => {
+  await withPrompt(async (rig) => {
+    await pasteBlock(rig)
+    await openPlaceholder(rig)
+    await rig.press(DOWN)
+    await rig.press(UP) // back to the first row, still in the text
+    await rig.press("A")
+    await rig.press(UP) // now on the first row: to Inline
+    find(rig, "enter inline")
+    await rig.press("Z") // typed while on Inline: goes nowhere
+    await rig.press(DOWN)
+    await rig.press("B")
+    await rig.press(ENTER)
+    await closed(rig)
+    expect(await submitted(rig)).toBe("see ABone\ntwo\nthree ")
+  })
+})
+
+// A paste of 6 lines, two of them longer than the editor is wide, is 8 rows once wrapped:
+// the editor shows all of them without scrolling.
+test("the editor is as tall as the paste once wrapped", async () => {
+  await withPrompt(
+    async (rig) => {
+      const long = (tag: string) => `${tag} ${"word ".repeat(30)}${tag}-end`
+      const text = ["one", long("A"), "three", long("B"), "five", "six"].join("\n")
+      await rig.press(`\x1b[200~${text}\x1b[201~`)
+      await rig.click(find(rig, "[Pasted ~6 lines]").x, find(rig, "[Pasted ~6 lines]").y)
+      const frame = rig.frame()
+      for (const visible of ["one", "A-end", "three", "B-end", "five", "six"]) expect(frame).toContain(visible)
+      const rows = frame.split("\n")
+      const first = rows.findIndex((row) => row.trim() === "one")
+      const last = rows.findIndex((row) => row.trim() === "six")
+      expect(last - first).toBe(7)
+      // Nothing but the dialog's own padding below the last row of text.
+      expect(rows.slice(last + 1, last + 2).every((row) => !row.includes("word"))).toBe(true)
+    },
+    { height: 40 },
+  )
 })
 
 test("undo takes back an edit made in the dialog", async () => {
@@ -108,7 +184,7 @@ test.each([16, 24, 60])("a 50-line paste keeps Inline on screen at %i rows", asy
       const button = find(rig, "Inline")
       expect(button.y).toBeLessThan(height)
       await rig.click(button.x, button.y)
-      expect(rig.frame()).not.toContain("Pasted text")
+      await closed(rig)
       expect(rig.text()).toBe(`${text} `)
     },
     { height },
