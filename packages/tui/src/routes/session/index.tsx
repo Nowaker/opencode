@@ -65,7 +65,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
-import { filetype } from "../../util/filetype"
+import { detectFiletype, filetype } from "../../util/filetype"
 import { cachedTreeSitterClient } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
@@ -2644,10 +2644,14 @@ async function shellHighlights(highlights: SimpleHighlight[], content: string, h
 
 function Write(props: ToolProps) {
   const { theme, syntax } = useTheme()
+  const ctx = use()
   const pathFormatter = usePathFormatter()
   const code = createMemo(() => {
     return stringValue(props.input.content) ?? ""
   })
+  const written = createMemo(() => props.metadata.diagnostics !== undefined)
+  // A running write already has its whole content, so it shows as code before the file is written.
+  const writing = createMemo(() => props.part.state.status === "running" && code().length > 0)
   const collapse = useBlockCollapse(
     () => props.tool,
     "write",
@@ -2656,9 +2660,9 @@ function Write(props: ToolProps) {
 
   return (
     <Switch>
-      <Match when={props.metadata.diagnostics !== undefined}>
+      <Match when={written() || writing()}>
         <BlockTool
-          title={"# Wrote " + pathFormatter.format(stringValue(props.input.filePath))}
+          title={(written() ? "# Wrote " : "# Writing ") + pathFormatter.format(stringValue(props.input.filePath))}
           part={props.part}
           hint={collapse.hint()}
           onClick={collapse.onClick()}
@@ -2668,7 +2672,7 @@ function Write(props: ToolProps) {
               <code
                 conceal={false}
                 fg={theme.text}
-                filetype={filetype(stringValue(props.input.filePath))}
+                filetype={fileLanguage(ctx, stringValue(props.input.filePath), code())}
                 syntaxStyle={syntax()}
                 content={code()}
               />
@@ -3057,7 +3061,7 @@ function Edit(props: ToolProps) {
     return ctx.width > 120 ? "split" : "unified"
   })
 
-  const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
+  const ft = createMemo(() => fileLanguage(ctx, stringValue(props.input.filePath), stringValue(props.metadata.diff)))
 
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
   const collapse = useBlockCollapse(
@@ -3129,7 +3133,7 @@ function ApplyPatch(props: ToolProps) {
         <diff
           diff={p.diff}
           view={view()}
-          filetype={filetype(p.filePath)}
+          filetype={fileLanguage(ctx, p.filePath, p.diff)}
           syntaxStyle={syntax()}
           showLineNumbers={true}
           width="100%"
@@ -3293,6 +3297,10 @@ function input(input: Record<string, unknown>, omit?: string[]): string {
   })
   if (primitives.length === 0) return ""
   return `[${primitives.map(([key, value]) => `${key}=${value}`).join(", ")}]`
+}
+
+function fileLanguage(ctx: ReturnType<typeof use>, file?: string, content?: string) {
+  return ctx.tui.syntax?.files === false ? filetype(file) : detectFiletype(file, content)
 }
 
 function stringValue(value: unknown) {

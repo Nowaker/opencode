@@ -42,6 +42,10 @@ export const Syntax = Schema.Struct({
     description:
       "Color a heredoc in a bash command in the language of the command that reads it, such as python or psql (default: true)",
   }),
+  files: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Detect the language of written, edited and patched files beyond their extension: SQL, Dockerfiles, ini-style config and systemd units, dotenv, ERB, HAML, and a #! line on files with none (default: true)",
+  }),
 }).annotate({ description: "Syntax highlighting in tool calls" })
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({

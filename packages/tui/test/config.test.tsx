@@ -102,6 +102,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ datetime_format: { time: "" } })).toThrow()
   expect(decodeInfo({ syntax: { bash: false } })).toEqual({ syntax: { bash: false } })
   expect(() => decodeInfo({ syntax: { bash: "off" } })).toThrow()
+  expect(decodeInfo({ syntax: { files: false } })).toEqual({ syntax: { files: false } })
+  expect(() => decodeInfo({ syntax: { files: 1 } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 

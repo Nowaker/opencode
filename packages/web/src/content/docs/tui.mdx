@@ -672,6 +672,7 @@ Tool calls are colored by language. Each part can be turned on or off under `syn
 
 - `bash` - Color the bash tool's command as shell code. Defaults to `true`.
 - `heredoc` - Color each heredoc in a bash command in the language of the command that reads it. Defaults to `true`.
+- `files` - Detect the language of written, edited and patched files beyond their extension, so these are colored too: SQL, Dockerfiles (`Dockerfile`, `Containerfile`, `*.dockerfile`), ini-style config and systemd units (`.ini`, `.cfg`, `.conf`, `.service`, `.timer` and the other unit types), dotenv files, shell scripts, ERB, HAML, file names such as `Makefile`, `Gemfile` and `PKGBUILD`, and a `#!` line on a file with no known extension. Defaults to `true`. When `false`, only the file extension decides.
 
 A heredoc's language comes from the command that consumes it:
 
