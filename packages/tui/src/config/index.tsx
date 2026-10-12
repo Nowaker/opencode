@@ -437,11 +437,30 @@ export const PasteSummary = Schema.Struct({
 }).annotate({ description: "When a paste is replaced by a placeholder, and what the placeholder says" })
 export type PasteSummary = Schema.Schema.Type<typeof PasteSummary>
 
-const PromptSize = Schema.Int.check(Schema.isGreaterThan(0))
+// A count of rows or columns, or a percentage from "1%" to "100%" of the room the prompt has.
+const PromptSize = Schema.Union([
+  Schema.Int.check(Schema.isGreaterThan(0)),
+  Schema.String.check(Schema.isPattern(/^(100|[1-9][0-9]?)%$/)),
+])
 export const Prompt = Schema.Struct({
-  max_height: Schema.optional(PromptSize).annotate({ description: "Prompt textarea max height" }),
+  min_height: Schema.optional(PromptSize).annotate({
+    description: [
+      "Rows the prompt's text area starts at, before it grows with its text (default: 1).",
+      "A percentage such as '30%' is of the rows the prompt can have on screen after everything else's",
+    ].join(" "),
+  }),
+  max_height: Schema.optional(PromptSize).annotate({
+    description: [
+      "Rows the prompt's text area grows to before it scrolls (default: a third of the terminal height, at least 6).",
+      "A percentage such as '80%' is of the rows the prompt can have on screen after everything else's.",
+      "The prompt never grows past the screen",
+    ].join(" "),
+  }),
   max_width: Schema.optional(Schema.Union([PromptSize, Schema.Literal("auto")])).annotate({
-    description: "Home prompt max width: a positive integer for a fixed cap, or 'auto' to scale with terminal width",
+    description: [
+      "Home prompt max width: columns for a fixed cap (default: 75), a percentage such as '80%' of the",
+      "home screen's width, or 'auto' to scale with terminal width",
+    ].join(" "),
   }),
   paste_summary: Schema.optional(PasteSummary),
   undo_depth: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))).annotate({
@@ -449,6 +468,23 @@ export const Prompt = Schema.Struct({
       "How many steps of prompt edits input_undo can take back (default: 500). Typing is grouped by word, and a paste, a line delete or a submit is one step",
   }),
 }).annotate({ description: "Prompt settings" })
+
+export const Home = Schema.Struct({
+  logo: Schema.optional(Schema.Boolean).annotate({
+    description: "Show the OpenCode logo above the home screen prompt (default: true)",
+  }),
+  tips: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show a tip below the home screen prompt (default: true). The 'Show tips' / 'Hide tips' command is remembered and takes precedence",
+  }),
+  prompt_position: Schema.optional(Schema.Literals(["middle", "top", "bottom"])).annotate({
+    description: [
+      "Where the home screen prompt sits: 'middle' (default) centers it, 'top' puts it at the top so it grows",
+      "down, 'bottom' at the bottom so it grows up. The logo stays directly above the prompt",
+    ].join(" "),
+  }),
+}).annotate({ description: "Home screen settings" })
+export type Home = Schema.Schema.Type<typeof Home>
 
 export const Startup = Schema.Struct({
   instant_prompt: Schema.optional(Schema.Boolean).annotate({
@@ -470,6 +506,7 @@ export const Info = Schema.Struct({
   leader_timeout: Schema.optional(LeaderTimeout),
   attention: Schema.optional(Attention),
   prompt: Schema.optional(Prompt),
+  home: Schema.optional(Home),
   startup: Schema.optional(Startup),
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),
   scroll_acceleration: Schema.optional(ScrollAcceleration),

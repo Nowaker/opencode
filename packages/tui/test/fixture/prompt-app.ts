@@ -6,6 +6,8 @@ import { Global } from "@opencode-ai/core/global"
 import { tmpdir } from "./fixture"
 import { createTuiResolvedConfig } from "./tui-runtime"
 import { createEventSource, createFetch, directory, json } from "./tui-sdk"
+import type { BuiltinTuiPlugin } from "../../src/feature-plugins/builtins"
+import { pluginMeta, withSlots } from "./sidebar"
 
 const sessionID = "ses_prompt_app"
 const session = {
@@ -32,16 +34,33 @@ export type PromptRig = {
   press(bytes: string): Promise<void>
   click(x: number, y: number): Promise<void>
   frame(): string
+  // Renders until the frame stops changing, for layout that follows measured sizes.
+  settle(): Promise<string>
   text(): string
   parts(): TuiComposerDraft["parts"]
   paths: string[]
 }
 
-// Runs the TUI in a session whose turn is running, and hands the test its prompt to type and click in.
-export async function withPrompt(body: (rig: PromptRig) => Promise<void>, options?: { height?: number }) {
+// Runs the TUI in a session whose turn is running, or on the home screen with `home`, and hands the
+// test its prompt to type and click in. `plugins` are built-in plugins to load, such as the home tips.
+export async function withPrompt(
+  body: (rig: PromptRig) => Promise<void>,
+  options?: {
+    width?: number
+    height?: number
+    config?: Parameters<typeof createTuiResolvedConfig>[0]
+    home?: boolean
+    plugins?: BuiltinTuiPlugin[]
+    kv?: Record<string, unknown>
+  },
+) {
   await using tmp = await tmpdir()
-  await Bun.write(`${tmp.path}/kv.json`, "{}")
-  const setup = await createTestRenderer({ width: 120, height: options?.height ?? 24, useThread: false })
+  await Bun.write(`${tmp.path}/kv.json`, JSON.stringify(options?.kv ?? {}))
+  const setup = await createTestRenderer({
+    width: options?.width ?? 120,
+    height: options?.height ?? 24,
+    useThread: false,
+  })
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
   const paths: string[] = []
@@ -83,13 +102,15 @@ export async function withPrompt(body: (rig: PromptRig) => Promise<void>, option
       run({
         url: "http://test",
         directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        config: createTuiResolvedConfig({ plugin_enabled: {}, ...options?.config }),
         fetch: calls.fetch,
         events: createEventSource().source,
-        args: { continue: true },
+        args: options?.home ? {} : { continue: true },
         pluginHost: {
           async start(input) {
-            input.runtime.setupSlots(input.api)
+            const host = input.runtime.setupSlots(input.api)
+            for (const plugin of options?.plugins ?? [])
+              await plugin.tui(withSlots(input.api, host, plugin.id), undefined, pluginMeta(plugin.id))
             started.resolve(input.api)
           },
           async dispose() {},
@@ -132,6 +153,17 @@ export async function withPrompt(body: (rig: PromptRig) => Promise<void>, option
         await render()
       },
       frame: () => setup.captureCharFrame(),
+      async settle() {
+        let last = ""
+        for (let attempt = 0; attempt < 50; attempt++) {
+          await Bun.sleep(10)
+          await render()
+          const frame = setup.captureCharFrame()
+          if (frame === last) return frame
+          last = frame
+        }
+        return last
+      },
       text: () => api.prompt.read().input,
       parts: () => JSON.parse(JSON.stringify(api.prompt.read().parts)),
       paths,

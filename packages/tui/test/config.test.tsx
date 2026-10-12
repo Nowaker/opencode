@@ -73,6 +73,16 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
   expect(() => decodeInfo({ attention: { volume: 1.1 } })).toThrow()
   expect(() => decodeInfo({ prompt: { max_width: 0 } })).toThrow()
+  expect(decodeInfo({ prompt: { min_height: "25%", max_height: "100%", max_width: "80%" } })).toEqual({
+    prompt: { min_height: "25%", max_height: "100%", max_width: "80%" },
+  })
+  expect(() => decodeInfo({ prompt: { max_height: "150%" } })).toThrow()
+  expect(() => decodeInfo({ prompt: { min_height: "0%" } })).toThrow()
+  expect(() => decodeInfo({ prompt: { max_width: "80" } })).toThrow()
+  expect(decodeInfo({ home: { logo: false, tips: false, prompt_position: "bottom" } })).toEqual({
+    home: { logo: false, tips: false, prompt_position: "bottom" },
+  })
+  expect(() => decodeInfo({ home: { prompt_position: "left" } })).toThrow()
   expect(() => decodeInfo({ scroll_speed: 0 })).toThrow()
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
   expect(decodeInfo({ sidebar: { pin_title: true } })).toEqual({ sidebar: { pin_title: true } })

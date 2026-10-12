@@ -121,7 +121,7 @@ export function classify(argv: string[], cwd = process.env.PWD ?? process.cwd())
 }
 
 // The TUI's kv.json in the state directory, a plain JSON file it writes on
-// every change; the sidebar settings come from there.
+// every change; the sidebar and tips settings come from there.
 function readKv(): Record<string, unknown> {
   try {
     const kv = JSON.parse(fs.readFileSync(path.join(GlobalPath.paths.state, "kv.json"), "utf8"))
@@ -154,7 +154,7 @@ export function start(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = pro
   if (!screen && !config.earlyInput) return
 
   const cache = screen ? InstantCache.read() : undefined
-  const kv = kind.mode === "session" ? readKv() : {}
+  const kv = screen ? readKv() : {}
   const init: InstantSession.Init = {
     screen,
     config,
@@ -173,6 +173,7 @@ export function start(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = pro
             }),
           }
         : undefined,
+    tips: TuiLayout.homeTipsShown({ kv: kv.tips_hidden, configured: config.homeTips }),
     cwd: kind.directory,
     home: GlobalPath.paths.home,
     version: InstallationVersion,

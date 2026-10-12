@@ -84,6 +84,8 @@ export type PromptProps = {
   hint?: JSX.Element
   right?: JSX.Element
   showPlaceholder?: boolean
+  // Rows the whole prompt may take on screen; the text area never grows past what is left of them.
+  space?: number
   placeholders?: {
     normal?: string[]
     shell?: string[]
@@ -1901,7 +1903,22 @@ export function Prompt(props: PromptProps) {
       }),
     }
   })
-  const maxHeight = createMemo(() => TuiLayout.promptMaxHeight(tuiConfig.prompt?.max_height, dimensions().height))
+  // Rows the prompt takes around its text area, measured once it is laid out: the status row can
+  // wrap. Sizes change one renderable at a time during a layout pass, so it reads them after it.
+  const [chrome, setChrome] = createSignal(TuiLayout.promptChromeRows(1))
+  const measureChrome = () =>
+    queueMicrotask(() => {
+      if (!anchor || !input || anchor.isDestroyed || input.isDestroyed || props.visible === false) return
+      setChrome(anchor.height - input.height)
+    })
+  const rows = createMemo(() =>
+    TuiLayout.promptRows({
+      min: tuiConfig.prompt?.min_height,
+      max: tuiConfig.prompt?.max_height,
+      terminalHeight: dimensions().height,
+      space: props.space === undefined ? undefined : props.space - chrome(),
+    }),
+  )
   // A click on a paste placeholder opens its text; the press has already put the caret there.
   const pasteClick = onClick(() => {
     if (!disabled()) openPaste()
@@ -1910,7 +1927,12 @@ export function Prompt(props: PromptProps) {
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+      <box
+        ref={(r: BoxRenderable) => (anchor = r)}
+        visible={props.visible !== false}
+        width="100%"
+        onSizeChange={measureChrome}
+      >
         <PromptFrame color={borderHighlight()}>
           <textarea
             width="100%"
@@ -1918,8 +1940,9 @@ export function Prompt(props: PromptProps) {
             placeholderColor={theme.textMuted}
             textColor={leader() ? theme.textMuted : theme.text}
             focusedTextColor={leader() ? theme.textMuted : theme.text}
-            minHeight={1}
-            maxHeight={maxHeight()}
+            minHeight={rows().min}
+            maxHeight={rows().max}
+            onSizeChange={measureChrome}
             onContentChange={() => {
               const value = input.plainText
               setStore("prompt", "input", value)

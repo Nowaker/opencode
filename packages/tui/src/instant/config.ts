@@ -4,6 +4,7 @@ import fs from "fs"
 import path from "path"
 import { parse } from "jsonc-parser"
 import { GlobalPath } from "@opencode-ai/core/global-path"
+import type { TuiLayout } from "../layout"
 
 // The handful of tui.json settings the instant startup prompt needs, read with
 // plain file I/O from the global config, OPENCODE_TUI_CONFIG and
@@ -13,8 +14,12 @@ import { GlobalPath } from "@opencode-ai/core/global-path"
 export type Settings = {
   instantPrompt: boolean
   earlyInput: boolean
-  promptMaxWidth?: number | "auto"
-  promptMaxHeight?: number
+  promptMaxWidth?: TuiLayout.Size | "auto"
+  promptMaxHeight?: TuiLayout.Size
+  promptMinHeight?: TuiLayout.Size
+  homeLogo?: boolean
+  homeTips?: boolean
+  homePromptPosition?: TuiLayout.PromptPosition
   sidebarSessionId?: boolean
   keybinds: Record<string, unknown>
   mouse: boolean
@@ -24,6 +29,8 @@ export type Settings = {
 type Raw = Record<string, unknown>
 
 const isRecord = (value: unknown): value is Raw => typeof value === "object" && value !== null && !Array.isArray(value)
+
+const isPercent = (value: unknown): value is string => typeof value === "string" && /^(100|[1-9][0-9]?)%$/.test(value)
 
 function load(file: string): Raw {
   const text = (() => {
@@ -64,15 +71,23 @@ export function read(env: NodeJS.ProcessEnv = process.env): Settings {
   const raw = files(env).map(load).reduce(merge, {})
   const startup = isRecord(raw.startup) ? raw.startup : {}
   const prompt = isRecord(raw.prompt) ? raw.prompt : {}
+  const home = isRecord(raw.home) ? raw.home : {}
   const cursor = isRecord(raw.cursor) ? raw.cursor : undefined
   const disableMouse = env.OPENCODE_DISABLE_MOUSE?.toLowerCase()
-  const positive = (value: unknown) =>
-    typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined
+  const size = (value: unknown): TuiLayout.Size | undefined => {
+    if (isPercent(value)) return value
+    return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined
+  }
   return {
     instantPrompt: startup.instant_prompt !== false,
     earlyInput: startup.early_input !== false,
-    promptMaxWidth: prompt.max_width === "auto" ? "auto" : positive(prompt.max_width),
-    promptMaxHeight: positive(prompt.max_height),
+    promptMaxWidth: prompt.max_width === "auto" ? "auto" : size(prompt.max_width),
+    promptMaxHeight: size(prompt.max_height),
+    promptMinHeight: size(prompt.min_height),
+    homeLogo: home.logo !== false,
+    homeTips: typeof home.tips === "boolean" ? home.tips : undefined,
+    homePromptPosition:
+      home.prompt_position === "top" || home.prompt_position === "bottom" ? home.prompt_position : "middle",
     sidebarSessionId:
       isRecord(raw.sidebar) && typeof raw.sidebar.session_id === "boolean" ? raw.sidebar.session_id : undefined,
     keybinds: isRecord(raw.keybinds) ? raw.keybinds : {},

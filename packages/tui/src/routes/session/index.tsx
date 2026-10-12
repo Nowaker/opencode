@@ -291,6 +291,11 @@ export function Session() {
     return children().flatMap((x) => sync.data.question[x.id] ?? [])
   })
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
+  const [columnHeight, setColumnHeight] = createSignal<number>()
+  const promptSpace = createMemo(() => {
+    const height = columnHeight()
+    if (height !== undefined) return TuiLayout.sessionPromptSpace(height)
+  })
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {
@@ -1457,6 +1462,9 @@ export function Session() {
             paddingLeft={TuiLayout.Session.paddingX}
             paddingRight={TuiLayout.Session.paddingX}
             gap={TuiLayout.Session.gap}
+            onSizeChange={function () {
+              setColumnHeight(this.height)
+            }}
           >
             <Show when={session()}>
               <scrollbox
@@ -1623,6 +1631,7 @@ export function Session() {
                       disabled={disabled()}
                       onSubmit={onPromptSubmit}
                       sessionID={route.sessionID}
+                      space={promptSpace()}
                       right={<pluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
                     />
                   </pluginRuntime.Slot>

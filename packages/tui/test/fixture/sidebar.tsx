@@ -62,7 +62,8 @@ export async function mountSidebar(input: {
     }
     const slots = createSlots()
     const host = slots.setup(api, config.sidebar)
-    for (const plugin of input.plugins) void plugin.tui(withSlots(api, host, plugin.id), undefined, meta(plugin.id))
+    for (const plugin of input.plugins)
+      void plugin.tui(withSlots(api, host, plugin.id), undefined, pluginMeta(plugin.id))
     return (
       <box gap={1}>
         <slots.Slot name="sidebar_content" session_id="ses_test" />
@@ -200,7 +201,7 @@ function sidebarState(paths: TuiState["path"], overrides: SidebarState = {}): Tu
 }
 
 // Each plugin registers its slots under its own id, as the plugin runtime does.
-function withSlots(api: TuiPluginApi, host: HostSlots, id: string): TuiPluginApi {
+export function withSlots(api: TuiPluginApi, host: HostSlots, id: string): TuiPluginApi {
   function register(plugin: TuiSlotPlugin): string
   function register<Slots extends Record<string, object>>(plugin: TuiSlotPlugin<Slots>): string
   function register<Slots extends Record<string, object>>(plugin: TuiSlotPlugin<Slots>) {
@@ -210,7 +211,7 @@ function withSlots(api: TuiPluginApi, host: HostSlots, id: string): TuiPluginApi
   return { ...api, slots: { register } }
 }
 
-function meta(id: string) {
+export function pluginMeta(id: string) {
   return {
     id,
     source: "internal",

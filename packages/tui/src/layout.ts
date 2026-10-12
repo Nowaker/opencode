@@ -9,6 +9,8 @@ export * as TuiLayout from "./layout"
 export const Home = {
   paddingX: 2,
   logoGapAbove: 4,
+  // The gap above the logo shrinks to this, never to nothing, when the prompt needs the room.
+  logoGapMin: 1,
   logoGapBelow: 1,
   promptPaddingTop: 1,
   tipsPaddingTop: 3,
@@ -81,6 +83,13 @@ export function sidebarShowsSessionId(input: { kv?: unknown; configured?: boolea
   return input.configured ?? input.channel !== "latest"
 }
 
+// The tips toggle ("tips_hidden" in kv.json) wins over tui.json's home.tips; with neither the
+// home screen shows a tip.
+export function homeTipsShown(input: { kv?: unknown; configured?: boolean }) {
+  if (typeof input.kv === "boolean") return !input.kv
+  return input.configured ?? true
+}
+
 export const StartupLoading = {
   bottom: 1,
   paddingX: 1,
@@ -109,11 +118,100 @@ export function promptPlaceholder(mode: "normal" | "shell", example: string) {
   return `Ask anything… "${example}"`
 }
 
-export function homePromptMaxWidth(configured: number | "auto" | undefined, terminalWidth: number) {
-  if (configured === "auto") return Math.max(Prompt.defaultMaxWidth, Math.floor(terminalWidth * Prompt.autoWidthRatio))
-  return configured ?? Prompt.defaultMaxWidth
+// A prompt size from tui.json: a count of rows or columns, or a percentage such as "80%" of the
+// space the prompt has once every other element has the room it always keeps.
+export type Size = number | string
+
+export type PromptPosition = "top" | "middle" | "bottom"
+
+export function size(value: Size | undefined, space: number) {
+  if (typeof value !== "string") return value
+  return Math.max(1, Math.floor((space * Number(value.slice(0, -1))) / 100))
 }
 
-export function promptMaxHeight(configured: number | undefined, terminalHeight: number) {
-  return configured ?? Math.max(Prompt.minMaxHeight, Math.floor(terminalHeight * Prompt.maxHeightRatio))
+// A percentage is of the home column's width inside its padding.
+export function homePromptMaxWidth(configured: Size | "auto" | undefined, terminalWidth: number) {
+  if (configured === "auto") return Math.max(Prompt.defaultMaxWidth, Math.floor(terminalWidth * Prompt.autoWidthRatio))
+  return size(configured, terminalWidth - 2 * Home.paddingX) ?? Prompt.defaultMaxWidth
+}
+
+// Rows the prompt adds around its text: the padding above it, the padding and agent/model row
+// below it, the frame's bottom edge and the status row, which can wrap to `statusRows`.
+export function promptChromeRows(statusRows: number) {
+  return Prompt.paddingTop + Prompt.metaPaddingTop + 2 + statusRows
+}
+
+// The text area starts `min` rows tall and grows with its text up to `max`, then scrolls. `space`
+// is the rows it has on screen: neither bound exceeds it, so the prompt never grows past the
+// screen, and a percentage is of it. Where the space is not known yet, a percentage is of the
+// terminal height and only the configured rows bound the text area.
+export function promptRows(input: { min?: Size; max?: Size; terminalHeight: number; space?: number }) {
+  const space = input.space === undefined ? undefined : Math.max(1, input.space)
+  const fallback = Math.max(Prompt.minMaxHeight, Math.floor(input.terminalHeight * Prompt.maxHeightRatio))
+  const configured = size(input.max, space ?? input.terminalHeight) ?? fallback
+  const max = Math.max(1, Math.min(configured, space ?? configured))
+  return { min: Math.min(max, Math.max(1, size(input.min, space ?? input.terminalHeight) ?? 1)), max }
+}
+
+// Rows the home prompt may take, chrome included: the home column less the logo with the row it
+// always keeps above it, the update notice and the prompt's top padding. The gap below the logo
+// and the tips give their rows up first.
+export function homePromptSpace(input: { height: number; logo: number; notice: number }) {
+  return input.height - (input.logo > 0 ? input.logo + Home.logoGapMin : 0) - input.notice - Home.promptPaddingTop
+}
+
+// The logo gives way on a terminal too short for it and a prompt with one row to type in.
+export function homeLogoFits(input: { height: number; logo: number; notice: number }) {
+  return homePromptSpace(input) - promptChromeRows(1) >= 1
+}
+
+// Rows the session prompt may take, chrome included: the transcript column less its bottom
+// padding and the gap above the prompt. The transcript gives its rows up.
+export function sessionPromptSpace(columnHeight: number) {
+  return columnHeight - Session.paddingBottom - Session.gap
+}
+
+// The rows of the home column from the top: the spacer, the gap above the logo, the gap below it
+// and the home_bottom block (the tips), given the logo's rows (0 when hidden) and the rows of
+// everything from the update notice to the prompt's bottom. The prompt sits in the middle, or at
+// the top or bottom with the logo above it. When the column is too short, the gaps and the tips
+// shrink in proportion to their size, as flexbox would, the gap above the logo no further than
+// Home.logoGapMin. The TUI sets these heights itself: Yoga does not shrink a box with a height.
+export function homeStack(input: {
+  height: number
+  logo: number
+  prompt: number
+  bottom: number
+  position: PromptPosition
+}) {
+  const gaps = input.logo > 0 ? [homeLogoGapAbove(input.position), Home.logoGapBelow] : [0, 0]
+  const mins = [input.logo > 0 ? Home.logoGapMin : 0, 0, 0]
+  const sizes = shrink([...gaps, input.bottom], mins, input.height - input.logo - input.prompt).map(Math.floor)
+  const free = Math.max(0, input.height - input.logo - input.prompt - sizes.reduce((sum, value) => sum + value, 0))
+  const spacer = input.position === "middle" ? free / 2 : input.position === "bottom" ? free : 0
+  return { spacer, gapAbove: sizes[0], gapBelow: sizes[1], bottom: sizes[2] }
+}
+
+export function homeLogoGapAbove(position: PromptPosition) {
+  return position === "middle" ? Home.logoGapAbove : Home.logoGapMin
+}
+
+// Flexbox shrinking: each size gives up room in proportion to itself until they fit in `room`;
+// one that reaches its minimum stops there and the rest give up the remainder.
+function shrink(sizes: number[], mins: number[], room: number) {
+  const result = [...sizes]
+  const frozen = sizes.map((value, index) => value <= mins[index])
+  for (;;) {
+    const over = result.reduce((sum, value) => sum + value, 0) - room
+    const basis = sizes.reduce((sum, value, index) => (frozen[index] ? sum : sum + value), 0)
+    if (over <= 0 || basis === 0) return result
+    const next = result.map((value, index) => (frozen[index] ? value : sizes[index] - (over * sizes[index]) / basis))
+    const fixed = next.map((value, index) => !frozen[index] && value < mins[index])
+    if (!fixed.some(Boolean)) return next
+    fixed.forEach((hit, index) => {
+      if (!hit) return
+      frozen[index] = true
+      result[index] = mins[index]
+    })
+  }
 }

@@ -32,6 +32,8 @@ export type Input = {
   theme?: Partial<InstantCache.Theme>
   entry?: InstantCache.Directory
   session?: SessionView
+  // Whether the home screen shows a tip (TuiLayout.homeTipsShown); shown when unset.
+  tips?: boolean
   shortcuts: { agents: string; commands: string }
   cwd: string
   home: string
@@ -104,17 +106,21 @@ function statusRow(input: Input, promptWidth: number) {
   return { right, usage, rightWidth, sessionNotice, noticeWidth, left, leftLines, rows: Math.max(1, leftLines.length) }
 }
 
-function promptGeometry(input: Input, promptWidth: number) {
+// `space` is the rows the whole prompt may take, as the TUI passes it to the prompt.
+function promptGeometry(input: Input, promptWidth: number, space: number) {
   const P = TuiLayout.Prompt
   const textWidth = promptWidth - P.borderWidth - 2 * P.paddingX
   const lines = InstantEditor.layout(input.editor.text, textWidth)
-  const textRows = Math.min(
-    Math.max(1, lines.length),
-    TuiLayout.promptMaxHeight(input.config.promptMaxHeight, input.height),
-  )
   const status = statusRow(input, promptWidth)
-  const height = P.paddingTop + textRows + P.metaPaddingTop + 2 + status.rows
-  return { textWidth, lines, textRows, status, height }
+  const chrome = TuiLayout.promptChromeRows(status.rows)
+  const rows = TuiLayout.promptRows({
+    min: input.config.promptMinHeight,
+    max: input.config.promptMaxHeight,
+    terminalHeight: input.height,
+    space: space - chrome,
+  })
+  const textRows = Math.min(Math.max(rows.min, lines.length), rows.max)
+  return { textWidth, lines, textRows, status, height: chrome + textRows }
 }
 
 export function layout(input: Input) {
@@ -130,27 +136,35 @@ export function layout(input: Input) {
   const inner = input.width - 2 * H.paddingX
   const promptWidth = Math.min(inner, TuiLayout.homePromptMaxWidth(input.config.promptMaxWidth, input.width))
   const promptX = Math.round(H.paddingX + (inner - promptWidth) / 2)
-  const geometry = promptGeometry(input, promptWidth)
+  const logoShown =
+    input.config.homeLogo !== false && TuiLayout.homeLogoFits({ height: homeHeight, logo: logo.left.length, notice: 0 })
+  const logoHeight = logoShown ? logo.left.length : 0
+  const geometry = promptGeometry(
+    input,
+    promptWidth,
+    TuiLayout.homePromptSpace({ height: homeHeight, logo: logoHeight, notice: 0 }),
+  )
   const promptHeight = H.promptPaddingTop + geometry.height
-  const logoHeight = logo.left.length
   const logoWidth = logo.left[0].length + 1 + logo.right[0].length
-  const bottomRows = input.entry?.homeBottomRows ?? TuiLayout.defaultHomeBottomRows
-
-  const shrinkable = [H.logoGapAbove, H.logoGapBelow, bottomRows]
-  const fixed = logoHeight + promptHeight + shrinkable.reduce((sum, value) => sum + value, 0)
-  const free = homeHeight - fixed
-  const total = shrinkable.reduce((sum, value) => sum + value, 0)
-  const [gapAbove, gapBelow] =
-    free >= 0 || total === 0 ? shrinkable : shrinkable.map((value) => Math.max(0, value + (free * value) / total))
-  const spacer = Math.max(0, free) / 2
+  // A recorded 0 is the tips hidden on an earlier run; shown now, they take their default rows.
+  const bottomRows = input.tips === false ? 0 : input.entry?.homeBottomRows || TuiLayout.defaultHomeBottomRows
+  const stack = TuiLayout.homeStack({
+    height: homeHeight,
+    logo: logoHeight,
+    prompt: promptHeight,
+    bottom: bottomRows,
+    position: input.config.homePromptPosition ?? "middle",
+  })
 
   return {
     footer: { lines: footerLines, label: footerLabel, y: homeHeight + H.footerPaddingY, height: footerHeight },
     version: { x: input.width - H.footerPaddingX - versionWidth },
-    logo: { x: Math.round(H.paddingX + (inner - logoWidth) / 2), y: Math.round(spacer + gapAbove) },
+    logo: logoHeight
+      ? { x: Math.round(H.paddingX + (inner - logoWidth) / 2), y: Math.round(stack.spacer + stack.gapAbove) }
+      : undefined,
     prompt: {
       x: promptX,
-      y: Math.round(spacer + gapAbove + logoHeight + gapBelow + H.promptPaddingTop),
+      y: Math.round(stack.spacer + stack.gapAbove + logoHeight + stack.gapBelow + H.promptPaddingTop),
       width: promptWidth,
       textX: promptX + P.borderWidth + P.paddingX,
       ...geometry,
@@ -168,7 +182,7 @@ export function sessionLayout(input: Input & { session: SessionView }) {
     child: !!input.session.entry?.child,
   })
   const promptWidth = TuiLayout.sessionContentWidth(input.width, sidebar)
-  const geometry = promptGeometry(input, promptWidth)
+  const geometry = promptGeometry(input, promptWidth, TuiLayout.sessionPromptSpace(input.height))
   return {
     sidebar,
     prompt: {
@@ -342,10 +356,12 @@ function paintHome(c: Canvas, input: Input) {
       x++
     }
   }
-  logo.left.forEach((line, index) => {
-    paintLogo(line, box.logo.x, box.logo.y + index, logoMuted, false)
-    paintLogo(logo.right[index], box.logo.x + line.length + 1, box.logo.y + index, logoText, true)
-  })
+  const at = box.logo
+  if (at)
+    logo.left.forEach((line, index) => {
+      paintLogo(line, at.x, at.y + index, logoMuted, false)
+      paintLogo(logo.right[index], at.x + line.length + 1, at.y + index, logoText, true)
+    })
 
   const result = paintPrompt(c, input, box.prompt, input.entry)
 

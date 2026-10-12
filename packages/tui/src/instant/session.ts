@@ -17,6 +17,7 @@ export type Init = {
   cache?: InstantCache.Data
   entry?: InstantCache.Directory
   session?: InstantFrame.SessionView
+  tips?: boolean
   cwd: string
   home: string
   version: string
@@ -100,6 +101,7 @@ export function create(init: Init, state?: State) {
       theme: init.cache?.theme,
       entry: init.entry,
       session: init.session,
+      tips: init.tips,
       shortcuts: shortcuts(),
       cwd: init.cwd,
       home: init.home,
