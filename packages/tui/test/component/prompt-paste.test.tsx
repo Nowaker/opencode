@@ -139,14 +139,41 @@ test("the editor is as tall as the paste once wrapped", async () => {
       const frame = rig.frame()
       for (const visible of ["one", "A-end", "three", "B-end", "five", "six"]) expect(frame).toContain(visible)
       const rows = frame.split("\n")
-      const first = rows.findIndex((row) => row.trim() === "one")
-      const last = rows.findIndex((row) => row.trim() === "six")
+      const first = rows.findIndex((row) => /┃\s+one\s*$/.test(row))
+      const last = rows.findIndex((row) => /┃\s+six\s*$/.test(row))
       expect(last - first).toBe(7)
-      // Nothing but the dialog's own padding below the last row of text.
-      expect(rows.slice(last + 1, last + 2).every((row) => !row.includes("word"))).toBe(true)
+      // Below the last row of text: the box's padding row, then its edge.
+      expect(rows[last + 1]).toMatch(/┃\s*$/)
+      expect(rows[last + 2]).toContain("╹▀")
     },
     { height: 40 },
   )
+})
+
+// The editor sits in the prompt's box: the bar down its left, a padding row above and below the
+// text and the half-row edge, without the prompt's agent line.
+test("the editor is drawn in the prompt's box without the agent line", async () => {
+  await withPrompt(async (rig) => {
+    await pasteBlock(rig)
+    const prompt = rig.frame().split("\n")
+    const promptText = prompt.findIndex((row) => row.includes("see [Pasted"))
+    const promptColumn = prompt[promptText].indexOf("see")
+    await openPlaceholder(rig)
+    const rows = rig.frame().split("\n")
+    const action = rows.findIndex((row) => row.includes("esc/enter save"))
+    const one = rows.findIndex((row) => /┃\s+one\s*$/.test(row))
+    expect(one).toBe(action + 3)
+    expect(rows[action + 1].trim()).toBe("")
+    expect(rows[action + 2]).toMatch(/┃\s*$/)
+    for (const row of [rows[one], rows[one + 1], rows[one + 2]]) {
+      // The same gap from the bar to the text as in the prompt.
+      expect(row.indexOf("┃") + promptColumn - prompt[promptText].indexOf("┃")).toBe(row.search(/[a-z]/))
+    }
+    expect(rows[one + 3]).toMatch(/┃\s*$/)
+    expect(rows[one + 4]).toContain("╹▀")
+    const dialog = rows.slice(action, one + 5).join("\n")
+    expect(dialog).not.toContain("Build")
+  })
 })
 
 test("closing without an edit leaves the placeholder as it was", async () => {

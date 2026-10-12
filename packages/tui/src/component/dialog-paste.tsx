@@ -1,4 +1,4 @@
-import { TextareaRenderable, TextAttributes } from "@opentui/core"
+import { TextareaRenderable, TextAttributes, type RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal, onCleanup, onMount } from "solid-js"
 import { useTheme } from "../context/theme"
@@ -6,17 +6,20 @@ import { useTuiConfig } from "../config"
 import { useBindings } from "../keymap"
 import { createPromptUndo } from "../prompt/undo"
 import { useDialog } from "../ui/dialog"
+import { PromptFrame, promptFrameRows } from "./prompt/frame"
 import { onClick } from "../ui/click"
 
 export type DialogPasteProps = {
   text: string
+  // The prompt's bar color, so the editor's box matches the prompt's.
+  color: RGBA
   onChange(text: string): void
   onInline(): void
 }
 
-// The text behind a paste placeholder, in the prompt's own editor: the same textarea, input
-// keybinds, mouse caret placement and grouped undo. Enter saves and closes, as Esc does, and the
-// prompt's newline keys add a line. Inline, above the editor, replaces the placeholder with the
+// The text behind a paste placeholder, in the prompt's own editor and box: the same textarea,
+// input keybinds, mouse caret placement and grouped undo, without the agent line. Enter saves and
+// closes, as Esc does, and the prompt's newline keys add a line. Inline, above the editor, replaces the placeholder with the
 // text; Up on the editor's first row moves to it, Enter presses it and Down goes back.
 export function DialogPaste(props: DialogPasteProps) {
   const dialog = useDialog()
@@ -35,11 +38,11 @@ export function DialogPaste(props: DialogPasteProps) {
   onCleanup(() => clearTimeout(pressing))
 
   // The dialog starts a quarter of the way down the screen (ui/dialog.tsx), and around the editor
-  // it has 6 rows: its top padding, the title, two gaps, the action row and its bottom padding.
-  // The editor is as tall as the text once wrapped at its width, up to what is left above a
-  // one-row margin; longer text scrolls inside it.
+  // it has 6 rows: its top padding, the title, two gaps, the action row and its bottom padding,
+  // plus the prompt box's own rows. The editor is as tall as the text once wrapped at its width,
+  // up to what is left above a one-row margin; longer text scrolls inside it.
   const editorHeight = () => {
-    const room = dimensions().height - Math.ceil(dimensions().height / 4) - 7
+    const room = dimensions().height - Math.ceil(dimensions().height / 4) - 7 - promptFrameRows(true)
     return Math.max(1, Math.min(room, Math.max(3, rows())))
   }
 
@@ -154,34 +157,36 @@ export function DialogPaste(props: DialogPasteProps) {
           {inlineFocused() ? "enter inline · ↓ back" : "↑ to select"}
         </text>
       </box>
-      <textarea
-        width="100%"
-        height={editorHeight()}
-        initialValue={props.text}
-        ref={(value: TextareaRenderable) => {
-          textarea = value
-          setTarget(value)
-        }}
-        onContentChange={() => {
-          const text = textarea.plainText
-          setLines(text.split("\n").length)
-          measure()
-          props.onChange(text)
-          if (!applying) undo.observe(state())
-        }}
-        onCursorChange={() => {
-          if (!applying) undo.observe(state())
-        }}
-        onSizeChange={measure}
-        onMouseDown={() => focusEditor()}
-        textColor={theme.text}
-        focusedTextColor={theme.text}
-        backgroundColor={theme.backgroundElement}
-        focusedBackgroundColor={theme.backgroundElement}
-        cursorColor={theme.text}
-        cursorStyle={tuiConfig.cursor}
-        syntaxStyle={syntax()}
-      />
+      <PromptFrame color={props.color} padBottom>
+        <textarea
+          width="100%"
+          height={editorHeight()}
+          initialValue={props.text}
+          ref={(value: TextareaRenderable) => {
+            textarea = value
+            setTarget(value)
+          }}
+          onContentChange={() => {
+            const text = textarea.plainText
+            setLines(text.split("\n").length)
+            measure()
+            props.onChange(text)
+            if (!applying) undo.observe(state())
+          }}
+          onCursorChange={() => {
+            if (!applying) undo.observe(state())
+          }}
+          onSizeChange={measure}
+          onMouseDown={() => focusEditor()}
+          textColor={theme.text}
+          focusedTextColor={theme.text}
+          backgroundColor={theme.backgroundElement}
+          focusedBackgroundColor={theme.backgroundElement}
+          cursorColor={theme.text}
+          cursorStyle={tuiConfig.cursor}
+          syntaxStyle={syntax()}
+        />
+      </PromptFrame>
     </box>
   )
 }

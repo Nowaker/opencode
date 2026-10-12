@@ -17,7 +17,6 @@ import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { tint, useTheme } from "../../context/theme"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -67,6 +66,7 @@ import { useComposerSeal } from "../../context/composer-seal"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
 import { TuiLayout } from "../../layout"
+import { PromptFrame } from "./frame"
 import { InstantPrompt } from "../../instant"
 import { InstantCaret } from "../../instant/caret"
 import { InstantCache } from "../../instant/cache"
@@ -1678,7 +1678,14 @@ export function Prompt(props: PromptProps) {
     let text = original
     let inline = false
     dialog.replace(
-      () => <DialogPaste text={original} onChange={(value) => (text = value)} onInline={() => (inline = true)} />,
+      () => (
+        <DialogPaste
+          text={original}
+          color={borderHighlight()}
+          onChange={(value) => (text = value)}
+          onInline={() => (inline = true)}
+        />
+      ),
       () => {
         if (inline || text !== original) replacePaste(extmark.id, text, inline)
       },
@@ -1904,202 +1911,158 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
-          width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
-        >
-          <box
-            paddingLeft={TuiLayout.Prompt.paddingX}
-            paddingRight={TuiLayout.Prompt.paddingX}
-            paddingTop={TuiLayout.Prompt.paddingTop}
-            flexShrink={0}
-            backgroundColor={theme.backgroundElement}
-            flexGrow={1}
+        <PromptFrame color={borderHighlight()}>
+          <textarea
             width="100%"
-          >
-            <textarea
-              width="100%"
-              placeholder={placeholderText()}
-              placeholderColor={theme.textMuted}
-              textColor={leader() ? theme.textMuted : theme.text}
-              focusedTextColor={leader() ? theme.textMuted : theme.text}
-              minHeight={1}
-              maxHeight={maxHeight()}
-              onContentChange={() => {
-                const value = input.plainText
-                setStore("prompt", "input", value)
-                if (startupNotice()?.type === "changed") setStartupNotice(undefined)
-                auto()?.onInput(value)
-                syncExtmarksWithPromptParts()
-                setCursorVersion((value) => value + 1)
-                observeUndo()
-              }}
-              onCursorChange={() => {
-                setCursorVersion((value) => value + 1)
-                observeUndo()
-              }}
-              onKeyDown={(e: { preventDefault(): void }) => {
-                if (disabled()) {
-                  e.preventDefault()
-                  return
-                }
-              }}
-              onSubmit={() => {
-                // IME: double-defer so the last composed character (e.g. Korean
-                // hangul) is flushed to plainText before we read it for submission.
-                void whilePending(async () => {
-                  await Bun.sleep(0)
-                  await Bun.sleep(0)
-                  await submit()
-                })
-              }}
-              onPaste={async (event: PasteEvent) => {
-                if (disabled()) {
-                  event.preventDefault()
-                  return
-                }
-
-                // Normalize line endings at the boundary
-                // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                const normalizedText = normalizeLineEndings(decodePasteBytes(event.bytes))
-                const pastedContent = normalizedText.trim()
-                // A terminal paste right after the leader key goes in as typed, the way the raw paste key
-                // does with the clipboard: over ssh or tmux, the terminal's paste is the one that holds the
-                // clipboard of the machine the user is sitting at.
-                const raw = leader()
-                if (raw) keymap.clearPendingSequence()
-
-                // Windows Terminal <1.25 can surface image-only clipboard as an
-                // empty bracketed paste. Windows Terminal 1.25+ does not.
-                if (!pastedContent) {
-                  keymap.dispatchCommand("prompt.paste")
-                  return
-                }
-
-                // Once we cross an async boundary below, the terminal may perform its
-                // default paste unless we suppress it first and handle insertion ourselves.
+            placeholder={placeholderText()}
+            placeholderColor={theme.textMuted}
+            textColor={leader() ? theme.textMuted : theme.text}
+            focusedTextColor={leader() ? theme.textMuted : theme.text}
+            minHeight={1}
+            maxHeight={maxHeight()}
+            onContentChange={() => {
+              const value = input.plainText
+              setStore("prompt", "input", value)
+              if (startupNotice()?.type === "changed") setStartupNotice(undefined)
+              auto()?.onInput(value)
+              syncExtmarksWithPromptParts()
+              setCursorVersion((value) => value + 1)
+              observeUndo()
+            }}
+            onCursorChange={() => {
+              setCursorVersion((value) => value + 1)
+              observeUndo()
+            }}
+            onKeyDown={(e: { preventDefault(): void }) => {
+              if (disabled()) {
+                e.preventDefault()
+                return
+              }
+            }}
+            onSubmit={() => {
+              // IME: double-defer so the last composed character (e.g. Korean
+              // hangul) is flushed to plainText before we read it for submission.
+              void whilePending(async () => {
+                await Bun.sleep(0)
+                await Bun.sleep(0)
+                await submit()
+              })
+            }}
+            onPaste={async (event: PasteEvent) => {
+              if (disabled()) {
                 event.preventDefault()
+                return
+              }
 
-                if (raw) {
-                  insertPastedText(normalizedText)
-                  return
-                }
-                await whilePending(() => pasteInputText(normalizedText))
-              }}
-              ref={(r: TextareaRenderable) => {
-                input = r
-                Object.assign(r, {
-                  getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
-                })
-                setInputTarget(r)
-                if (promptPartTypeId === 0) {
-                  promptPartTypeId = input.extmarks.registerType("prompt-part")
-                }
-                props.ref?.(ref)
-                setTimeout(() => {
-                  // setTimeout is a workaround and needs to be addressed properly
-                  if (!input || input.isDestroyed) return
-                  input.cursorColor = theme.text
-                  if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
-                }, 0)
-              }}
-              onMouseDown={(r: MouseEvent) => {
-                r.target?.focus()
-                pasteClick.onMouseDown(r)
-              }}
-              onMouseUp={pasteClick.onMouseUp}
-              focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={disabled() ? theme.backgroundElement : theme.text}
-              cursorStyle={tuiConfig.cursor}
-              syntaxStyle={syntax()}
-            />
-            <box
-              flexDirection="row"
-              flexShrink={0}
-              paddingTop={TuiLayout.Prompt.metaPaddingTop}
-              gap={TuiLayout.Prompt.metaGap}
-              justifyContent="space-between"
-            >
-              <box flexDirection="row" gap={1}>
-                <Show when={local.agent.current()} fallback={<box height={1} />}>
-                  {(agent) => (
-                    <>
-                      <text
-                        fg={fadeColor(highlight(), agentMetaAlpha())}
-                        {...onClick(() => keymap.dispatchCommand("agent.list"))}
-                      >
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
-                      </text>
-                      <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
-                        <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
-                      </Show>
-                      <Show when={store.mode === "normal"}>
-                        <box flexDirection="row" gap={1}>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                          <box flexDirection="row" gap={1} {...onClick(() => keymap.dispatchCommand("model.list"))}>
-                            <text
-                              flexShrink={0}
-                              fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
-                            >
-                              {currentModelID() ?? local.model.parsed().model}
-                            </text>
-                            <Show when={!currentModelID()}>
-                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
-                            </Show>
-                          </box>
-                          <Show when={showVariant()}>
-                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                            <text {...onClick(() => keymap.dispatchCommand("variant.list"))}>
-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
-                                {local.model.variant.current()}
-                              </span>
-                            </text>
+              // Normalize line endings at the boundary
+              // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
+              const normalizedText = normalizeLineEndings(decodePasteBytes(event.bytes))
+              const pastedContent = normalizedText.trim()
+              // A terminal paste right after the leader key goes in as typed, the way the raw paste key
+              // does with the clipboard: over ssh or tmux, the terminal's paste is the one that holds the
+              // clipboard of the machine the user is sitting at.
+              const raw = leader()
+              if (raw) keymap.clearPendingSequence()
+
+              // Windows Terminal <1.25 can surface image-only clipboard as an
+              // empty bracketed paste. Windows Terminal 1.25+ does not.
+              if (!pastedContent) {
+                keymap.dispatchCommand("prompt.paste")
+                return
+              }
+
+              // Once we cross an async boundary below, the terminal may perform its
+              // default paste unless we suppress it first and handle insertion ourselves.
+              event.preventDefault()
+
+              if (raw) {
+                insertPastedText(normalizedText)
+                return
+              }
+              await whilePending(() => pasteInputText(normalizedText))
+            }}
+            ref={(r: TextareaRenderable) => {
+              input = r
+              Object.assign(r, {
+                getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
+              })
+              setInputTarget(r)
+              if (promptPartTypeId === 0) {
+                promptPartTypeId = input.extmarks.registerType("prompt-part")
+              }
+              props.ref?.(ref)
+              setTimeout(() => {
+                // setTimeout is a workaround and needs to be addressed properly
+                if (!input || input.isDestroyed) return
+                input.cursorColor = theme.text
+                if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
+              }, 0)
+            }}
+            onMouseDown={(r: MouseEvent) => {
+              r.target?.focus()
+              pasteClick.onMouseDown(r)
+            }}
+            onMouseUp={pasteClick.onMouseUp}
+            focusedBackgroundColor={theme.backgroundElement}
+            cursorColor={disabled() ? theme.backgroundElement : theme.text}
+            cursorStyle={tuiConfig.cursor}
+            syntaxStyle={syntax()}
+          />
+          <box
+            flexDirection="row"
+            flexShrink={0}
+            paddingTop={TuiLayout.Prompt.metaPaddingTop}
+            gap={TuiLayout.Prompt.metaGap}
+            justifyContent="space-between"
+          >
+            <box flexDirection="row" gap={1}>
+              <Show when={local.agent.current()} fallback={<box height={1} />}>
+                {(agent) => (
+                  <>
+                    <text
+                      fg={fadeColor(highlight(), agentMetaAlpha())}
+                      {...onClick(() => keymap.dispatchCommand("agent.list"))}
+                    >
+                      {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                    </text>
+                    <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
+                      <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
+                    </Show>
+                    <Show when={store.mode === "normal"}>
+                      <box flexDirection="row" gap={1}>
+                        <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                        <box flexDirection="row" gap={1} {...onClick(() => keymap.dispatchCommand("model.list"))}>
+                          <text
+                            flexShrink={0}
+                            fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
+                          >
+                            {currentModelID() ?? local.model.parsed().model}
+                          </text>
+                          <Show when={!currentModelID()}>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
                           </Show>
                         </box>
-                      </Show>
-                    </>
-                  )}
-                </Show>
-              </box>
-              <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
-                  {props.right}
-                </box>
+                        <Show when={showVariant()}>
+                          <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                          <text {...onClick(() => keymap.dispatchCommand("variant.list"))}>
+                            <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
+                              {local.model.variant.current()}
+                            </span>
+                          </text>
+                        </Show>
+                      </box>
+                    </Show>
+                  </>
+                )}
               </Show>
             </box>
+            <Show when={hasRightContent()}>
+              <box flexDirection="row" gap={1} alignItems="center">
+                {props.right}
+              </box>
+            </Show>
           </box>
-        </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+        </PromptFrame>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
             <Match when={sealed()}>
