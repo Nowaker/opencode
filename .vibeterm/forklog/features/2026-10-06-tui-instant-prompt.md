@@ -186,6 +186,8 @@ white "still loading" / red "changed" notices for Enter during loading.
   reads `prompt.min_height`, percentages and `home.*`, and `index.ts` reads
   kv.json's `tips_hidden` for the home screen too. Evidence: `7a377b7324`,
   the TUI/frame parity cases in `test/routes/home-layout.test.tsx`.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: PR head `provisional-prompt` conflicts on `v1.19.0` (predates it; `dev-nowaker` carries the rebased commits); v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

@@ -59,3 +59,5 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
   Keep as block and Insert inline buttons reached by tab, save hint bottom-right (user
   request on vt-230); `00ea612cb9`, installed as vt-233 on desktop and m4max. Evidence:
   that session's "Keep as block, Insert inline and tab" section.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `paste-edit-dialog` applies on `v1.19.0`; v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).

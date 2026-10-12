@@ -101,6 +101,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-12 `ses_ece4671adffe4Y4d8Yv35NSjXh`](./sessions/2026-10-12-v1-v2-patch-rig.md)
+  - opencode-tools `opencode-patch-rig.ts` tests every TUI patch on v1 and v2
+    in a real terminal; the [matrix](#tui-patches-on-v1-and-v2); nine v2
+    ports with PRs #54958-#54966 against `dev`.
+
 - [2026-10-12 `ses_ece469f46ffeIkbDfxO1jJY6D6`](./sessions/2026-10-12-home-screen-layout.md)
   - The prompt never grows past the screen; `prompt.min_height`, percentage
     sizes, `home.logo`/`tips`/`prompt_position`, logo gap one row; upstream
@@ -427,6 +432,67 @@ carries every feature forward unchanged. That commit includes the full
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
+
+## TUI patches on v1 and v2
+
+Upstream `dev` is v2; v1 (`github/v1`) gets maintenance only. Each TUI patch
+keeps its v1 PR and branch; a v2 port is a separate `v2-<name>` branch cut
+from `github/dev` with its own PR against `dev`. The opencode-tools rig
+[`opencode-patch-rig.ts`](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/_lib/opencode-patch-rig/README.md)
+produces this table: `bun opencode-patch-rig.ts --all` (about 35 minutes;
+`--levels apply` alone takes 40 seconds). `proved` means the scenario passes
+with the patch and fails on the vanilla base; `pass` without a scenario means
+the stack applies, typechecks and its own tests pass.
+
+v2 cost: `ported` (PR open), `S`/`M`/`L` (estimated port size; M and L wait
+for a decision), `not applicable` (v2 has no such surface), `superseded` (v2
+already behaves so), `TBD` (v2 has its own mechanism; prove the defect first).
+
+Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
+[session record](./sessions/2026-10-12-v1-v2-patch-rig.md).
+
+| Patch | v1 PR | v1 | v2 | v2 PR |
+|---|---|---|---|---|
+| `tui-lsp-oneline` | #53185 | proved | not applicable: v2 sidebar has no LSP section | - |
+| `tui-submit-scroll` | #53187 | proved | ported `v2-keep-scroll` (`session.keep_scroll_on_submit`), proved | [#54963](https://github.com/anomalyco/opencode/pull/54963) |
+| `tui-sidebar-pin-title` | #53194 | pass | superseded: v2 draws the title above the sidebar scroll box | - |
+| `tui-turn-timing` | #53195 | proved | M: v2 footer already shows duration; time of day, the total and `/turn-times` need porting | - |
+| `tui-sidebar-order` | #53201 | proved | L: v2 rewrote the plugin slot host | - |
+| `tui-context-display` | #53205 | proved | ported `v2-context-compact` (`session.context`), proved | [#54966](https://github.com/anomalyco/opencode/pull/54966) |
+| `tui-sidebar-drag` | #53217 | pass | L, after sidebar order | - |
+| `fix-scroll-follow` | #53219 | pass | TBD: v2 has its own scroll anchor | - |
+| `tui-todo-summary` | #53259 | pass | not applicable: v2 sidebar has no Todo section | - |
+| `tui-mcp-summary` | #53261 | proved | ported `v2-mcp-summary` (`session.mcp_summary`), proved | [#54960](https://github.com/anomalyco/opencode/pull/54960) |
+| `tui-context-colors` | #53264 | pass | S on top of `v2-context-compact` | - |
+| `tui-todo-completed` | - | pass | not applicable: no Todo section | - |
+| `tui-mcp-list` | #53322 | proved | ported `v2-mcp-list` (`session.mcp_list`), proved | [#54965](https://github.com/anomalyco/opencode/pull/54965) |
+| `tui-block-nav` | #53333 | pass | L: v2 has its own message navigation and anchors; compare first | - |
+| `tui-home-return` | #53630 | pass | L, after block navigation | - |
+| `tui-model-id` | #53639 | proved | ported `v2-model-label` (`session.model_label`), proved | [#54962](https://github.com/anomalyco/opencode/pull/54962) |
+| `tui-part-timestamps` | #53654 | proved | M, after turn timing | - |
+| `abort-feedback` | #53655 | proved | ported `v2-abort-feedback`, proved | [#54961](https://github.com/anomalyco/opencode/pull/54961) |
+| `abort-keybind-feedback` | #53656 | proved | M: command, keybind and Escape-burst resolver in v2's keymap | - |
+| `tui-history-crop` | #53660 | proved | L: needs v2 server paging and sync | - |
+| `sidebar-session-id` | #53663 | proved | ported `v2-sidebar-id` (`session.sidebar_id`, no `/session-id`), proved | [#54964](https://github.com/anomalyco/opencode/pull/54964) |
+| `tui-lazy-provider-list` | #53680 | pass | TBD: v2 loads catalogs per location; measure first | - |
+| `provisional-prompt` | #53698 | conflict: PR head predates `v1.19.0` (`dev-nowaker` carries it rebased) | L: v2 plan phase 2 | - |
+| `tui-footer-variant` | #53848 | proved | ported `v2-footer-variant` (`session.variant`), proved | [#54958](https://github.com/anomalyco/opencode/pull/54958) |
+| `tui-click-controls-pr` | #53871 | conflict: PR head predates `v1.19.0` | L: 15 files | - |
+| `tui-footer-elements` | #53877 | proved | L: v2 footer rewritten | - |
+| `tui-tool-collapse` | #54039 | proved | M: v2 tool views and verbosity differ | - |
+| `v1-revert-messages` | #54436 | pass | L: v2 revert is server-side and different | - |
+| `v1-unqueue-prompt` | #54437 | pass | TBD: v2 already has pending-prompt actions | - |
+| `paste-placeholder-delete` | #54457 | proved | M: the `@opentui/core` 0.4.5 patch needs redoing for 0.5.17 | - |
+| `paste-summary-config` | #54458 | proved | ported `v2-paste-summary` (`prompt.paste_summary`), proved | [#54959](https://github.com/anomalyco/opencode/pull/54959) |
+| `paste-raw-key` | #54459 | proved | M | - |
+| `prompt-undo-history` | #54460 | pass | L | - |
+| `paste-edit-dialog` | #54463 | pass | L | - |
+| `bash-syntax` | #54704 | proved | M: v2 tool views rewritten | - |
+| `heredoc-syntax` | #54705 | proved | M, after bash syntax | - |
+| `file-languages` | #54706 | proved | M | - |
+| `tool-input-block` | #54707 | pass | M | - |
+| `prompt-fit-screen` | #54948 | proved | superseded: v2 has no `prompt.max_height`, and a 30-line prompt stays on screen | - |
+| `home-layout-options` | #54949 | proved | L: v2 home screen differs; needs design | - |
 
 ## Upstream integration history
 

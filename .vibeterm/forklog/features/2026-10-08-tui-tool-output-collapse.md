@@ -87,7 +87,8 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   preserved: the generic tool input block no longer folds values by the line
   limit; it shows one row per value, and whole when the limit is `"never"`.
   Evidence: `84d27d0f49`.
-
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `tui-tool-collapse` proved on `v1.19.0` (`tool-output-collapse`); v2 port cost M. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

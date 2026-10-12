@@ -44,3 +44,5 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 - 2026-10-11 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-11-paste-dialog-keys.md) -
   re-verified the `{excerpt}` placeholder (one line, `…` when cut) with the user's new
   `tui.json` format `[Pasted ~{lines} lines: {excerpt}]`, excerpt 20; defaults unchanged.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `paste-summary-config` proved on `v1.19.0` (`paste-summary-format`); ported to v2 as `v2-paste-summary`, proved, PR #54959. See the [matrix](../README.md#tui-patches-on-v1-and-v2).

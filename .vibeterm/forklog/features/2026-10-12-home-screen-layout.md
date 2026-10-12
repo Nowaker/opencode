@@ -92,6 +92,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34:
 
 - 2026-10-12 [`ses_ece469f46ffeIkbDfxO1jJY6D6`](../sessions/2026-10-12-home-screen-layout.md) -
   initial build. Evidence: `7a377b7324`, that session's Verification.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `prompt-fit-screen` and `home-layout-options` proved on `v1.19.0` (`prompt-fits-screen`, `home-prompt-top`); prompt fit superseded on v2, layout options cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

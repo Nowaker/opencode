@@ -185,6 +185,8 @@ On 2026-10-11, looking at `Click to expand · 22:01:28 · 464ms`:
   - `c6420431f8`: on-screen times switch to the date at midnight; PR #53877
   branch `3bd1b72349` (and `tui-tool-collapse` `0dde205f4a`) and body
   updated; installed on desktop and m4max.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `tui-footer-elements` proved on `v1.19.0` (`footer-message-id`); v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

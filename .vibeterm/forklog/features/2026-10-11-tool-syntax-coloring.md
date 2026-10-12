@@ -101,6 +101,8 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   user feedback: JSON returned by `browser` was drawn plain. `syntax.tool_output`
   added, `auto` ships (sniff measured cheap); issue #54957, PR #54968.
   Evidence: `0ab6637c9d`; frames at 40/80/160; PTY at 80/160; A/B on vt-252.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `bash-syntax`, `heredoc-syntax`, `file-languages` proved on `v1.19.0`, `tool-input-block` applies; v2 port cost M each. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Future ideas
 

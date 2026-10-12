@@ -170,6 +170,8 @@ user:
   rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`). Conflict in
   `App`: the clicked-ID handler sits beside v1's `useUpdateNotification()`.
   Evidence: TUI suite, that session.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: PR head `tui-click-controls-pr` conflicts on `v1.19.0` (predates it); v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

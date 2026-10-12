@@ -66,6 +66,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 13), the user's wo
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `tui-lazy-provider-list` applies on `v1.19.0`; v2 TBD (catalogs load per location). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

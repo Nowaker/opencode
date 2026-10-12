@@ -115,6 +115,8 @@ quoting the user:
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `tui-context-display` proved on `v1.19.0` (`sidebar-context-compact`); ported to v2 as `v2-context-compact` (`session.context`), proved, PR #54966. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

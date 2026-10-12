@@ -49,6 +49,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
   `@opentui/core` at `0.4.5`, so the patch carries over unchanged; the
   `bun.lock` `patchedDependencies` conflict with v1's xai patch keeps both.
   Evidence: `bun install` no-op, TUI suite, that session.
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `paste-placeholder-delete` proved on `v1.19.0` (`paste-placeholder-alt-backspace`, `-ctrl-w`); v2 port cost M (opentui patch for 0.5.17). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

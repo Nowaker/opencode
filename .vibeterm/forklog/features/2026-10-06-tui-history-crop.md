@@ -130,6 +130,8 @@ Halving the limit saves about 40 MB of settled RSS on this session; doubling it 
   "corrupted stored row" passes at `fba21b8d6e^`, fails at `fba21b8d6e`,
   passes with the fix. PR #53660 head `tui-history-crop` amended to
   `7661b165d6` (both remotes).
+- 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
+  rig run: `tui-history-crop` proved on `v1.19.0` (`history-crop`); v2 port cost L (server paging and sync). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 
