@@ -85,6 +85,10 @@ quoting the user:
 
 ## Timeline
 
+- 2026-10-11
+  [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-11-tui-footer-midnight.md)
+  - `c6420431f8`: the today check from `8cca718c9e` reads a shared local-day signal, so turn times already on screen switch to date first at midnight. See [footer elements](./2026-10-07-tui-footer-elements.md).
+
 - 2026-10-08
   [`ses_ee68aab01ffei41gwUGJ5ESj6W`](../sessions/2026-10-08-tui-footer-datetime-format.md)
   - `42ce3944c3`: turn times follow `datetime_format` when set; other days stay date-first. See [footer elements](./2026-10-07-tui-footer-elements.md).

@@ -98,6 +98,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-11 `ses_ee68aab01ffei41gwUGJ5ESj6W`](./sessions/2026-10-11-tui-footer-midnight.md)
+  - On-screen footers and timestamps switch to the date-and-time form at
+    local midnight from one shared timer; PR #53877 branch and body
+    updated; build and install on both hosts.
+
 - [2026-10-11 `ses_ed2434bbbffelX96qcp5XqFLNw`](./sessions/2026-10-11-fork-test-regressions.md)
   - Fix three fork-owned test regressions: unpaged session messages skip
     the response schema, metadata updates lost to the provenance merge,
