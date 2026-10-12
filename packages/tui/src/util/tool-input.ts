@@ -1,7 +1,6 @@
 export type ToolInputKind = "indent" | "key" | "punctuation" | "string" | "number" | "boolean" | "null" | "fold"
 export type ToolInputSegment = { text: string; kind: ToolInputKind }
 export type ToolInputRow = ToolInputSegment[]
-export type ToolInputFold = (text: string) => { output: string; overflow: boolean }
 
 // The one-line `[key=value, ...]` form a tool's input is shown in by default. It only has room for
 // primitive values, so objects and arrays are left out.
@@ -24,15 +23,21 @@ export function fitsInline(input: Record<string, unknown>, width = 80) {
   return inlineToolInput(input).length <= width
 }
 
-// A tool's input as YAML-style rows: one key per row, nested objects and arrays indented beneath
-// their key, strings unquoted with their escapes already decoded (JSON gave us real newlines,
-// tabs and quotes), a multi-line string as its own indented lines. `fold` shortens each string;
-// `overflow` reports whether it cut any.
-export function formatToolInput(input: Record<string, unknown>, fold: ToolInputFold) {
+// A tool's input as YAML-style rows: one key per row, nested objects and arrays ind// A tool's input as compact YAML rows: one key per row, a nested object indented beneath its key,
+// a list's `- ` items at their key's indent with the item's other keys aligned under its first,
+// strings unquoted with their escapes already decoded (JSON gave us real newlines, tabs and
+// quotes), a multi-line string as its own indented lines.
+//
+// Given a `width`, the input is collapsed instead: every value takes exactly one row of that
+// many columns, a multi-line string joined onto it, and a value too long for the row is cut with
+// `…` at its end. `overflow` reports whether collapsing hid anything.
+export function formatToolInput(input: Record<string, unknown>, width?: number) {
   const rows: ToolInputRow[] = []
   let overflow = false
 
   const indent = (depth: number): ToolInputSegment => ({ text: "  ".repeat(depth), kind: "indent" })
+  const dash = (depth: number): ToolInputSegment[] => [indent(depth), { text: "- ", kind: "punctuation" }]
+  const isDash = (head: ToolInputSegment[]) => head.at(-1)?.text === "- "
 
   function object(value: Record<string, unknown>, depth: number, head?: ToolInputSegment[]) {
     Object.entries(value).forEach(([key, item], index) => {
@@ -41,59 +46,83 @@ export function formatToolInput(input: Record<string, unknown>, fold: ToolInputF
     })
   }
 
-  // `head` is the row so far, a key or an array dash, without its separator.
+  // One row: `head` (a key or a list dash), its separator and the value, cut to the row in
+  // collapsed mode.
+  function row(head: ToolInputSegment[], value: ToolInputSegment) {
+    const prefix = isDash(head) ? head : [...head, { text: ": ", kind: "punctuation" as const }]
+    if (width === undefined) return rows.push([...prefix, value])
+    const room = width - stringWidth(prefix.map((segment) => segment.text).join(""))
+    const cut = truncate(value.text, room)
+    overflow ||= cut !== value.text
+    if (cut === value.text) return rows.push([...prefix, value])
+    const kept = cut.slice(0, -1)
+    rows.push([...prefix, ...(kept ? [{ ...value, text: kept }] : []), { text: "…", kind: "fold" }])
+  }
+
+  // `head` is the row so far, a key or a list dash, without its separator; `depth` is its indent.
   function entry(head: ToolInputSegment[], depth: number, item: unknown) {
-    const separator: ToolInputSegment = { text: head.at(-1)?.kind === "key" ? ": " : " ", kind: "punctuation" }
-    const opened = () => rows.push(head.at(-1)?.kind === "key" ? [...head, { text: ":", kind: "punctuation" }] : head)
+    const opened = () => {
+      if (isDash(head)) rows.push([...head.slice(0, -1), { text: "-", kind: "punctuation" }])
+      else rows.push([...head, { text: ":", kind: "punctuation" }])
+    }
     if (typeof item === "string") {
-      const folded = fold(item)
-      overflow ||= folded.overflow
-      if (folded.output === "") {
-        rows.push([
-          ...head,
-          separator,
-          folded.overflow ? { text: "…", kind: "fold" } : { text: '""', kind: "punctuation" },
-        ])
-        return
+      if (item === "") return row(head, { text: '""', kind: "punctuation" })
+      if (!item.includes("\n")) return row(head, { text: item, kind: "string" })
+      if (width !== undefined) {
+        overflow = true
+        return row(head, { text: item.replace(/[ \t]*\n[ \t]*/g, " ").trim(), kind: "string" })
       }
-      if (!folded.output.includes("\n")) {
-        rows.push([...head, separator, { text: folded.output, kind: "string" }])
-        return
-      }
-      opened()
-      for (const line of folded.output.split("\n")) rows.push([indent(depth + 1), { text: line, kind: "string" }])
+      // A list item's text starts after its dash; a key's text starts on the next row.
+      const [first, ...rest] = item.split("\n")
+      if (!isDash(head)) opened()
+      rows.push([...(isDash(head) ? head : [indent(depth + 1)]), { text: first, kind: "string" }])
+      for (const line of rest) rows.push([indent(depth + 1), { text: line, kind: "string" }])
       return
     }
     if (Array.isArray(item)) {
-      if (item.length === 0) {
-        rows.push([...head, separator, { text: "[]", kind: "punctuation" }])
-        return
-      }
+      if (item.length === 0) return row(head, { text: "[]", kind: "punctuation" })
       opened()
+      // A list under a key sits at the key's indent; a list inside a list one level in.
+      const items = isDash(head) ? depth + 1 : depth
       for (const element of item) {
-        const dash: ToolInputSegment[] = [indent(depth + 1), { text: "-", kind: "punctuation" }]
         if (isRecord(element) && Object.keys(element).length > 0) {
-          object(element, depth + 2, [indent(depth + 1), { text: "- ", kind: "punctuation" }])
+          object(element, items + 1, dash(items))
           continue
         }
-        entry(dash, depth + 1, element)
+        entry(dash(items), items, element)
       }
       return
     }
     if (isRecord(item)) {
-      if (Object.keys(item).length === 0) {
-        rows.push([...head, separator, { text: "{}", kind: "punctuation" }])
-        return
-      }
+      if (Object.keys(item).length === 0) return row(head, { text: "{}", kind: "punctuation" })
       opened()
       object(item, depth + 1)
       return
     }
-    rows.push([...head, separator, scalar(item)])
+    row(head, scalar(item))
   }
 
   object(input, 0)
   return { rows, overflow }
+}
+
+// `text` cut to at most `room` columns, its last column a `…` when anything was cut.
+function truncate(text: string, room: number) {
+  if (stringWidth(text) <= room) return text
+  if (room <= 1) return "…"
+  let used = 0
+  let result = ""
+  for (const char of text) {
+    const width = stringWidth(char)
+    if (used + width > room - 1) break
+    result += char
+    used += width
+  }
+  return result + "…"
+}
+
+function stringWidth(text: string) {
+  return /^[\x20-\x7e]*$/.test(text) ? text.length : Bun.stringWidth(text)
 }
 
 function scalar(value: unknown): ToolInputSegment {

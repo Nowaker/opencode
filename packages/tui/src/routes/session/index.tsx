@@ -2255,11 +2255,12 @@ function GenericTool(props: ToolProps) {
     return collapsed().output
   })
   const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput()))
+  // The block's measured width, reported on layout and on resize only; until then an estimate.
+  const [inputWidth, setInputWidth] = createSignal<number>()
   const inputBlock = createMemo(() => {
     if (ctx.tui.syntax?.tool_input !== true || fitsInline(props.input)) return
-    return formatToolInput(props.input, (text) =>
-      expanded() ? { output: text, overflow: false } : collapseOutput(text, limit(), ctx.width),
-    )
+    const whole = expanded() || limit() === undefined
+    return formatToolInput(props.input, whole ? undefined : (inputWidth() ?? Math.max(20, ctx.width - 6)))
   })
   const overflow = createMemo(() => Boolean(inputBlock()?.overflow || (showOutput() && collapsed().overflow)))
 
@@ -2274,6 +2275,7 @@ function GenericTool(props: ToolProps) {
             onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
           >
             <ToolInput
+              onWidth={setInputWidth}
               rows={block().rows}
               colors={{
                 indent: code().text,
@@ -2321,19 +2323,32 @@ function GenericTool(props: ToolProps) {
   )
 }
 
-// A tool's input as rows of key and value, each value colored by its type.
-export function ToolInput(props: { rows: ToolInputRow[]; colors: Record<ToolInputKind, RGBA> }) {
+// A tool's input as rows of key and value, each value colored by its type. `onWidth` reports the
+// width the rows have to fit in, on layout and on resize.
+export function ToolInput(props: {
+  rows: ToolInputRow[]
+  colors: Record<ToolInputKind, RGBA>
+  onWidth?: (width: number) => void
+}) {
   return (
-    <text>
-      <For each={props.rows}>
-        {(row, index) => (
-          <>
-            <Show when={index() > 0}>{"\n"}</Show>
-            <For each={row}>{(segment) => <span style={{ fg: props.colors[segment.kind] }}>{segment.text}</span>}</For>
-          </>
-        )}
-      </For>
-    </text>
+    <box
+      onSizeChange={function () {
+        props.onWidth?.(this.width)
+      }}
+    >
+      <text>
+        <For each={props.rows}>
+          {(row, index) => (
+            <>
+              <Show when={index() > 0}>{"\n"}</Show>
+              <For each={row}>
+                {(segment) => <span style={{ fg: props.colors[segment.kind] }}>{segment.text}</span>}
+              </For>
+            </>
+          )}
+        </For>
+      </text>
+    </box>
   )
 }
 

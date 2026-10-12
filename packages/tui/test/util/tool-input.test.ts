@@ -25,19 +25,16 @@ describe("fitsInline", () => {
 })
 
 describe("formatToolInput", () => {
-  test("writes one key per row, nesting objects and arrays YAML-style", () => {
-    const { rows, overflow } = formatToolInput(
-      {
-        query: "select 1",
-        limit: 10,
-        exact: false,
-        cursor: null,
-        options: { tags: ["a", 2], deep: { on: true } },
-        items: [{ name: "x", id: 1 }, [], {}],
-        empty: "",
-      },
-      whole,
-    )
+  test("writes one key per row in compact YAML: list items at their key's indent", () => {
+    const { rows, overflow } = formatToolInput({
+      query: "select 1",
+      limit: 10,
+      exact: false,
+      cursor: null,
+      options: { tags: ["a", 2], deep: { on: true } },
+      items: [{ name: "x", id: 1 }, [], {}, ["p", "q"]],
+      empty: "",
+    })
     expect(overflow).toBe(false)
     expect(text(rows)).toEqual([
       "query: select 1",
@@ -46,31 +43,48 @@ describe("formatToolInput", () => {
       "cursor: null",
       "options:",
       "  tags:",
-      "    - a",
-      "    - 2",
+      "  - a",
+      "  - 2",
       "  deep:",
       "    on: true",
       "items:",
-      "  - name: x",
-      "    id: 1",
-      "  - []",
-      "  - {}",
+      "- name: x",
+      "  id: 1",
+      "- []",
+      "- {}",
+      "-",
+      "  - p",
+      "  - q",
       'empty: ""',
     ])
   })
 
+  test("lays out a question list the way YAML would", () => {
+    const { rows } = formatToolInput({
+      questions: [{ header: "Paste", question: "Works?", options: [{ label: "Yes", description: "All good" }] }],
+    })
+    expect(text(rows)).toEqual([
+      "questions:",
+      "- header: Paste",
+      "  question: Works?",
+      "  options:",
+      "  - label: Yes",
+      "    description: All good",
+    ])
+  })
+
   test("shows strings unquoted with their newlines, tabs and quotes as real characters", () => {
-    const { rows } = formatToolInput(JSON.parse('{"body":"say \\"hi\\"\\n\\tindented","title":"a \\"b\\""}'), whole)
+    const { rows } = formatToolInput(JSON.parse('{"body":"say \\"hi\\"\\n\\tindented","title":"a \\"b\\""}'))
     expect(text(rows)).toEqual(["body:", '  say "hi"', "  \tindented", 'title: a "b"'])
   })
 
-  test("indents a multi-line string inside an array element", () => {
-    const { rows } = formatToolInput({ steps: ["one\ntwo"] }, whole)
-    expect(text(rows)).toEqual(["steps:", "  -", "    one", "    two"])
+  test("starts a multi-line list item after its dash", () => {
+    const { rows } = formatToolInput({ steps: ["one\ntwo"] })
+    expect(text(rows)).toEqual(["steps:", "- one", "  two"])
   })
 
   test("colors keys and values by type", () => {
-    const { rows } = formatToolInput({ a: "s", b: 1, c: true, d: null }, whole)
+    const { rows } = formatToolInput({ a: "s", b: 1, c: true, d: null })
     expect(rows.map((row) => row.map((segment) => segment.kind))).toEqual([
       ["indent", "key", "punctuation", "string"],
       ["indent", "key", "punctuation", "number"],
@@ -79,18 +93,37 @@ describe("formatToolInput", () => {
     ])
   })
 
-  test("folds long strings and reports it", () => {
-    const fold = (output: string) =>
-      output.includes("\n") ? { output: output.split("\n")[0] + "\n…", overflow: true } : whole(output)
-    const { rows, overflow } = formatToolInput({ body: "one\ntwo\nthree", short: "x" }, fold)
+  test("collapsed, gives every value one row of the width, cut with an ellipsis", () => {
+    const { rows, overflow } = formatToolInput(
+      { title: "Color heredocs in bash", body: "Steps:\n\t1. run\n\t2. look", tags: ["tui", "a much longer label"] },
+      20,
+    )
     expect(overflow).toBe(true)
-    expect(text(rows)).toEqual(["body:", "  one", "  …", "short: x"])
+    expect(text(rows)).toEqual([
+      "title: Color heredo…",
+      "body: Steps: 1. run…",
+      "tags:",
+      "- tui",
+      "- a much longer lab…",
+    ])
+    expect(text(rows).every((row) => row.length <= 20)).toBe(true)
+    expect(rows[0].at(-1)).toEqual({ text: "…", kind: "fold" })
   })
 
-  test("shows an ellipsis for a string folded away entirely", () => {
-    const { rows, overflow } = formatToolInput({ body: "text" }, () => ({ output: "", overflow: true }))
+  test("collapsed, keeps values that fit and reports nothing hidden", () => {
+    const { rows, overflow } = formatToolInput({ title: "short", n: 2 }, 40)
+    expect(overflow).toBe(false)
+    expect(text(rows)).toEqual(["title: short", "n: 2"])
+  })
+
+  test("collapsed, joins a short multi-line string onto its row and still reports it hidden", () => {
+    const { rows, overflow } = formatToolInput({ body: "one\ntwo" }, 40)
     expect(overflow).toBe(true)
-    expect(text(rows)).toEqual(["body: …"])
-    expect(rows[0].at(-1)?.kind).toBe("fold")
+    expect(text(rows)).toEqual(["body: one two"])
+  })
+
+  test("collapsed, cuts by display width, not by characters", () => {
+    const { rows } = formatToolInput({ k: "日本語のテキスト" }, 10)
+    expect(text(rows)).toEqual(["k: 日本語…"])
   })
 })
