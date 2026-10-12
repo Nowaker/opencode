@@ -3,9 +3,9 @@ import { getTreeSitterClient, type TreeSitterClient } from "@opentui/core"
 type HighlightOnce = TreeSitterClient["highlightOnce"]
 type HighlightResult = Awaited<ReturnType<HighlightOnce>>
 
-// The parser worker's answer for a piece of text, kept by content and language. A <code> block
-// asks the worker every time it is created, so without this a remounted transcript, a reopened
-// session or a theme switch reparses every command it shows. Concurrent requests for the same
+// The parser worker's answer for a piece of text, kept by content and language. A command asks
+// for its colors every time its block is created, so without this a remounted transcript or a
+// reopened session reparses every command it shows. Concurrent requests for the same
 // text share one worker round trip, and a failed request is forgotten so it can be retried.
 export function createHighlightCache(highlightOnce: HighlightOnce, limit = { entries: 1000, chars: 4_000_000 }) {
   const entries = new Map<string, { result: Promise<HighlightResult>; chars: number }>()
@@ -41,20 +41,13 @@ export function createHighlightCache(highlightOnce: HighlightOnce, limit = { ent
   }
 }
 
-let shared: TreeSitterClient | undefined
+let shared: ((content: string, filetype: string) => Promise<HighlightResult>) | undefined
 
-// The shared parser worker with highlightOnce answered from the cache above. Everything else is
-// the worker itself, so <code treeSitterClient={...}> keeps a single worker.
-export function cachedTreeSitterClient() {
-  if (shared) return shared
-  const client = getTreeSitterClient()
-  const highlightOnce = createHighlightCache(client.highlightOnce.bind(client))
-  shared = new Proxy(client, {
-    get(target, property) {
-      if (property === "highlightOnce") return highlightOnce
-      const value = Reflect.get(target, property, target)
-      return typeof value === "function" ? value.bind(target) : value
-    },
-  })
-  return shared
+// The shared parser worker's highlightOnce, answered from the cache above.
+export function highlightCached(content: string, filetype: string) {
+  if (!shared) {
+    const client = getTreeSitterClient()
+    shared = createHighlightCache(client.highlightOnce.bind(client))
+  }
+  return shared(content, filetype)
 }

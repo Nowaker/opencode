@@ -1,5 +1,6 @@
 import {
   batch,
+  children,
   createContext,
   createEffect,
   createMemo,
@@ -32,6 +33,7 @@ import {
   RGBA,
   type MouseEvent,
   type Renderable,
+  treeSitterToTextChunks,
   type SimpleHighlight,
 } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -66,7 +68,7 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { detectFiletype, filetype } from "../../util/filetype"
-import { cachedTreeSitterClient } from "../../util/highlight-cache"
+import { highlightCached } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
 import {
@@ -2656,45 +2658,53 @@ function Shell(props: ToolProps) {
 }
 
 // The command as shell code, each heredoc body in the language of the command that reads it. It
-// draws as plain text at once and takes its colors when the parser worker answers, which the
-// shared cache makes immediate for a command already seen.
+// is the same <text> the plain command is, so it wraps and indents
+// exactly as before, with each token a colored span. It draws plain at once and takes its colors
+// when the parser worker answers, which the shared cache makes immediate for a command already
+// seen. Colors come from toolSyntax, which never uses red: in the transcript red means failure.
 export function ShellCommand(props: { command: string; running: boolean }) {
-  const { theme, syntax } = useTheme()
+  const { theme, toolSyntax } = useTheme()
   const ctx = use()
+  const [highlighted, setHighlighted] = createSignal<{ command: string; highlights: SimpleHighlight[] }>()
+  createEffect(() => {
+    const command = props.command
+    shellHighlights(command, ctx.tui.syntax?.heredoc !== false)
+      .then((highlights) => setHighlighted({ command, highlights }))
+      .catch(() => setHighlighted(undefined))
+  })
+  const segments = createMemo((): CommandSegment[] => {
+    const result = highlighted()
+    if (result?.command !== props.command) return [{ text: props.command, fg: theme.text }]
+    return treeSitterToTextChunks(result.command, result.highlights, toolSyntax(), { enabled: false })
+  })
+  const spans = children(() => <CommandSpans segments={segments()} />)
   return (
-    <box flexDirection="row">
-      <Show when={props.running} fallback={<text fg={theme.text}>$ </text>}>
-        <box paddingRight={1}>
-          <Spinner color={theme.text} />
-        </box>
-      </Show>
-      <code
-        flexGrow={1}
-        flexShrink={1}
-        conceal={false}
-        fg={theme.text}
-        filetype="bash"
-        syntaxStyle={syntax()}
-        treeSitterClient={cachedTreeSitterClient()}
-        onHighlight={(highlights, context) =>
-          shellHighlights(highlights, context.content, ctx.tui.syntax?.heredoc !== false)
-        }
-        content={props.command}
-      />
-    </box>
+    <Show when={props.running} fallback={<text fg={theme.text}>$ {spans()}</text>}>
+      <Spinner color={theme.text}>{spans()}</Spinner>
+    </Show>
   )
 }
 
-async function shellHighlights(highlights: SimpleHighlight[], content: string, heredocs: boolean) {
-  const narrowed = narrowBashHighlights(highlights, content)
+type CommandSegment = { text: string; fg?: RGBA; bg?: RGBA; attributes?: number }
+
+export function CommandSpans(props: { segments: CommandSegment[] }) {
+  return (
+    <For each={props.segments}>
+      {(segment) => (
+        <span style={{ fg: segment.fg, bg: segment.bg, attributes: segment.attributes }}>{segment.text}</span>
+      )}
+    </For>
+  )
+}
+
+async function shellHighlights(command: string, heredocs: boolean) {
+  const result = await highlightCached(command, "bash")
+  const narrowed = narrowBashHighlights(result.highlights ?? [], command)
   if (!heredocs) return narrowed
-  const client = cachedTreeSitterClient()
-  const merged = await highlightHeredocs(narrowed, content, (body, filetype) =>
-    client
-      .highlightOnce(body, filetype)
-      .then((result) =>
-        filetype === "bash" ? { highlights: narrowBashHighlights(result.highlights ?? [], body) } : result,
-      ),
+  const merged = await highlightHeredocs(narrowed, command, (body, filetype) =>
+    highlightCached(body, filetype).then((answer) =>
+      filetype === "bash" ? { highlights: narrowBashHighlights(answer.highlights ?? [], body) } : answer,
+    ),
   )
   return merged ?? narrowed
 }
