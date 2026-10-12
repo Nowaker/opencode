@@ -10,7 +10,8 @@
 - Development branch(es): `syntax-integration` (off `dev-nowaker`); upstream
   `bash-syntax`, `heredoc-syntax`, `file-languages`, `tool-input-block` (off `github/v1`)
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
-- Source result commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`
+- Source result commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`;
+  regression fixes `b23685155c`, `91e33c557e`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -34,11 +35,12 @@ approved "Build all four" and set the defaults quoted in the
 
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
-| `opencode` | `bash-syntax` | - | `0fceafe3ee` | PR #54704 |
-| `opencode` | `heredoc-syntax` | - | `2175f14d05` | stacked on `bash-syntax`; PR #54705 |
+| `opencode` | `bash-syntax` | - | `0fceafe3ee` -> `b0d93392c2` | PR #54704; amended for the regression fixes |
+| `opencode` | `heredoc-syntax` | - | `2175f14d05` -> `bf7cffb240` | stacked on `bash-syntax`; PR #54705; rebased and amended |
 | `opencode` | `file-languages` | - | `f885d7e3ba` | PR #54706 |
-| `opencode` | `tool-input-block` | - | `5fa8131033` | PR #54707 |
-| `opencode` | `dev-nowaker` | `08c6f7f9d4` | `8a360b4aa0` + this forklog commit | cherry-picks on `syntax-integration`, fast-forward; pushed to `origin` and `nowaker-github` |
+| `opencode` | `tool-input-block` | - | `5fa8131033` -> `02be94024c` | PR #54707; amended (non-red keys) |
+| `opencode` | `dev-nowaker` | `08c6f7f9d4` | `8a360b4aa0` + forklog `5f6e6fffaa` | cherry-picks on `syntax-integration`, fast-forward; pushed to `origin` and `nowaker-github` |
+| `opencode` | `dev-nowaker` | `5f6e6fffaa` | `91e33c557e` + this record's second forklog commit | two fix commits, fast-forward; pushed to both remotes |
 
 ## Features touched
 
@@ -72,6 +74,31 @@ approved "Build all four" and set the defaults quoted in the
   RSS ~815 -> ~850 MB. Run-to-run spread exceeds each difference. Harness:
   `opencode-tools/tmp/syntax-bench.ts`.
 
+## Regression fixes (relayed by the coordinator, same workday)
+
+The user reported, on vt-238:
+
+- the colored command dropped the space after `$`, hung continuation lines
+  one column in and ran past the block width (a `<code>` beside a separate
+  `$ ` text in a row box);
+- red tokens in successful commands, and red keys in tool input blocks.
+
+Fixed by drawing the command as the same `<text>$ ...</text>` the plain one is,
+with one span per token, and by `toolCodeTheme` (non-red alternatives for
+every red or error-colored slot) for the command, heredoc bodies and tool input.
+The plain command has no hanging indent: wrapped lines start under `$`, with
+`syntax.bash` on and off alike.
+
+- packages/tui on `syntax-integration`: typecheck clean; full suite 568 pass,
+  1 skip, 0 fail. Upstream branches: 114 / 159 / 111 focused tests pass.
+- Real PTY (compiled build, throwaway tmux socket) at 80 and 160 columns:
+  `capture-pane` text with `syntax.bash` on vs off is byte-identical,
+  including the long `cp` command; no red or unstyled cell in the bash,
+  heredoc or tool input blocks.
+- Installed `1.19.0-vt-241-dfb56f76c7`: desktop inode `49966524`, m4max inode
+  `30345304`; gate PASSED on both; retry marker present; retry patch
+  reverse-applied on both; `opencode-serve-tailscale` still PID `1994449`.
+
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
@@ -90,6 +117,8 @@ approved "Build all four" and set the defaults quoted in the
 - `65861b2734` - color heredocs in bash commands in their own language
 - `60edf2a182` - color SQL, Dockerfiles, config files and scripts in file tools
 - `8a360b4aa0` - show plugin and MCP tool input as a readable block
+- `b23685155c` - lay out the colored bash command exactly as the plain one
+- `91e33c557e` - draw no tool input key or value in red
 - Required trailer: `AI-Session-ID: ses_ed1e2b932ffe6tTqhsOiGuYXRE`
 
 ```sh
@@ -99,4 +128,8 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
 
 ## Unknowns and blocked verification
 
-- Running TUI tabs pick up vt-238 only when restarted; none was restarted.
+- Running TUI tabs pick up vt-241 only when restarted; none was restarted.
+- write, edit and apply_patch keep the regular palette (red builtins in diffs);
+  not in this fix's scope.
+- A second forklog commit for this session and workday: the first was already
+  pushed to the shared branch and is not rewritten.
