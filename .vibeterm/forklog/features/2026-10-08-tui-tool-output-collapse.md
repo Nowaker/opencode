@@ -83,6 +83,11 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   preserved under syntax coloring: `Write` keeps its collapse while it also
   draws a running write; the generic tool input block folds with `toolOutputLimit`.
   Evidence: `60edf2a182`, `8a360b4aa0`; full tui suite.
+- 2026-10-12 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-12-tool-input-compact.md) -
+  preserved: the generic tool input block no longer folds values by the line
+  limit; it shows one row per value, and whole when the limit is `"never"`.
+  Evidence: `84d27d0f49`.
+
 
 ## Current maintenance notes
 

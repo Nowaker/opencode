@@ -99,6 +99,10 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-12 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-12-tool-input-compact.md)
+  - Tool input block: one row per value while collapsed, compact YAML lists;
+    PR #54707 amended; build and install on both hosts.
+
 - [2026-10-11 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-11-tool-syntax-coloring.md)
   - Syntax coloring in tool calls: bash command, heredocs by consumer, file
     languages with bundled grammars, opt-in tool input block; upstream PRs
