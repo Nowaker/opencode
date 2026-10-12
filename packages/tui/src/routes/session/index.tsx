@@ -71,6 +71,7 @@ import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
+import { toolCodeTheme } from "../../theme/tool-code"
 import {
   fitsInline,
   formatToolInput,
@@ -2243,6 +2244,8 @@ type ToolProps = {
 function GenericTool(props: ToolProps) {
   const { theme } = useTheme()
   const ctx = use()
+  // Never red: in the transcript red means a failed tool call.
+  const code = createMemo(() => toolCodeTheme(theme))
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
   const limit = createMemo(() => TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"))
@@ -2273,14 +2276,14 @@ function GenericTool(props: ToolProps) {
             <ToolInput
               rows={block().rows}
               colors={{
-                indent: theme.text,
-                key: theme.syntaxVariable,
-                punctuation: theme.syntaxPunctuation,
-                string: theme.syntaxString,
-                number: theme.syntaxNumber,
-                boolean: theme.syntaxKeyword,
-                null: theme.syntaxKeyword,
-                fold: theme.textMuted,
+                indent: code().text,
+                key: code().syntaxVariable,
+                punctuation: code().syntaxPunctuation,
+                string: code().syntaxString,
+                number: code().syntaxNumber,
+                boolean: code().syntaxKeyword,
+                null: code().syntaxKeyword,
+                fold: code().textMuted,
               }}
             />
             <Show when={showOutput() && limited()}>
