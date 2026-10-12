@@ -34,6 +34,10 @@ export const Syntax = Schema.Struct({
   bash: Schema.optional(Schema.Boolean).annotate({
     description: "Color the bash tool's command as shell code (default: true)",
   }),
+  heredoc: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Color a heredoc in a bash command in the language of the command that reads it, such as python or psql (default: true)",
+  }),
 }).annotate({ description: "Syntax highlighting in tool calls" })
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({

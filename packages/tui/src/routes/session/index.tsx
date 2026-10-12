@@ -66,6 +66,7 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
+import { highlightHeredocs } from "../../util/heredoc"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
@@ -2120,16 +2121,18 @@ function Shell(props: ToolProps) {
   )
 }
 
-// The command as shell code. It is the same <text> the plain command is, so it wraps and indents
+// The command as shell code, each heredoc body in the language of the command that reads it. It
+// is the same <text> the plain command is, so it wraps and indents
 // exactly as before, with each token a colored span. It draws plain at once and takes its colors
 // when the parser worker answers, which the shared cache makes immediate for a command already
 // seen. Colors come from toolSyntax, which never uses red: in the transcript red means failure.
 export function ShellCommand(props: { command: string; running: boolean }) {
   const { theme, toolSyntax } = useTheme()
+  const ctx = use()
   const [highlighted, setHighlighted] = createSignal<{ command: string; highlights: SimpleHighlight[] }>()
   createEffect(() => {
     const command = props.command
-    shellHighlights(command)
+    shellHighlights(command, ctx.tui.syntax?.heredoc !== false)
       .then((highlights) => setHighlighted({ command, highlights }))
       .catch(() => setHighlighted(undefined))
   })
@@ -2158,9 +2161,16 @@ export function CommandSpans(props: { segments: CommandSegment[] }) {
   )
 }
 
-async function shellHighlights(command: string) {
+async function shellHighlights(command: string, heredocs: boolean) {
   const result = await highlightCached(command, "bash")
-  return narrowBashHighlights(result.highlights ?? [], command)
+  const narrowed = narrowBashHighlights(result.highlights ?? [], command)
+  if (!heredocs) return narrowed
+  const merged = await highlightHeredocs(narrowed, command, (body, filetype) =>
+    highlightCached(body, filetype).then((answer) =>
+      filetype === "bash" ? { highlights: narrowBashHighlights(answer.highlights ?? [], body) } : answer,
+    ),
+  )
+  return merged ?? narrowed
 }
 
 function Write(props: ToolProps) {
