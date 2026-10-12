@@ -10,7 +10,7 @@
 - Development branch(es): `paste-dialog-keys` (worktree `.vibeterm/worktrees/paste-dialog-keys`,
   cut from `dev-nowaker` `f33d89b212`); `paste-edit-dialog` (upstream PR #54463 head)
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
-- Source result commit(s): `633dbaade6`, `234cdf7f62`, `9dbcced655` on `dev-nowaker`; `04406f7356`, `90ccb4e4cb` on `paste-edit-dialog`
+- Source result commit(s): `633dbaade6`, `234cdf7f62`, `9dbcced655`, `00ea612cb9` on `dev-nowaker`; `04406f7356`, `90ccb4e4cb`, `36e8da9a5c` on `paste-edit-dialog`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -42,6 +42,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after the user tested vt
 | opencode | `dev-nowaker` | `f33d89b212` | `234cdf7f62` | ff-merge of `paste-dialog-keys` + docs commit |
 | opencode | `paste-edit-dialog` | `39bd9309ed` | `04406f7356` | cherry-pick, tests adapted to the PR fixture, no trailers |
 | opencode | `dev-nowaker` | `c6420431f8` | `9dbcced655` | prompt-box follow-up, rebased over another session's push |
+| opencode | `dev-nowaker` | `8ba2903a70` | `00ea612cb9` | buttons and tab follow-up, ff |
+| opencode | `paste-edit-dialog` | `90ccb4e4cb` | `36e8da9a5c` | buttons and tab follow-up, literal `gap={2}`, tests on the PR fixture |
 | opencode | `paste-edit-dialog` | `04406f7356` | `90ccb4e4cb` | prompt-box follow-up, frame with upstream's literal paddings |
 
 ## Features touched
@@ -80,6 +82,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after the user tested vt
 - `633dbaade6` - fix(tui): paste dialog saves on enter, reaches Inline by keyboard, fits wrapped text
 - `234cdf7f62` - docs(tui): describe the paste dialog's enter, newline and Inline keys
 - `9dbcced655` - fix(tui): draw the paste dialog's editor in the prompt's own box
+- `00ea612cb9` - fix(tui): paste dialog buttons Keep as block and Insert inline, reached by tab
 - Required trailer: `AI-Session-ID: ses_ed7634c31ffeH84yR0S99Ty8Nd`
 
 ```sh
@@ -108,6 +111,34 @@ Relayed by the coordinator after the user tested vt-223:
   shift+enter, enter and up-to-Inline unchanged.
 - Installed: desktop and m4max `1.19.0-vt-230-dfb56f76c7` (desktop inode 49968793), v2 gate
   PASSED on both; `padBottom` and the retry marker present in both binaries. No restarts.
+
+## Follow-up: Keep as block, Insert inline and tab
+
+Relayed by the coordinator after the user tested vt-230:
+
+> let's also add Tab to switch between buttons and prompt field, regardless where the block cursor is. make two buttons: [ Keep as block ]  [ Insert inline ].  esc/enter save goes to the bottom right, similar to where ctr+p commands is in main window.
+
+- Fix `00ea612cb9`: `DialogPaste` has a `focus` signal (`editor`, `keep`, `inline`). Keep as
+  block saves and keeps the placeholder; Insert inline is the old Inline. Tab and shift+tab
+  (bound literally, as `dialog-update.tsx` does) cycle editor -> Keep as block -> Insert
+  inline from any caret row; up on the first row still reaches the buttons, left/right move
+  between them, enter presses the focused one (inverted flash), down returns to the text. A
+  `tab switch  esc/enter save` row sits right-aligned under the box with
+  `TuiLayout.Prompt.statusGap`, like `ctrl+p commands`; on Insert inline it reads `esc save`.
+  The editor's room subtracts that row. tui.mdx "Paste summary" updated.
+- PR branch `36e8da9a5c`: same change, literal `gap={2}` (upstream has no `TuiLayout`), tests
+  asserting the submitted text on the PR fixture.
+- Verification: `prompt-paste.test.tsx` 16 pass (tab to Keep as block from a lower row, tab
+  twice + enter inlines, third tab back to the text and shift+tab reverse, up + right +
+  enter, click on Keep as block, hint right-aligned under the box, buttons and hint on screen
+  at 16/24/60 rows); full `packages/tui` 460 pass, 0 fail; PR branch 253 pass, 0 fail.
+  Real-PTY rig (scratch vt-233): tab highlighted Keep as block, then Insert inline (hint
+  `esc save`), then typing landed in the text; shift+tab twice + enter kept the edit as a
+  block; shift+tab + enter inlined it.
+- Installed: desktop and m4max `1.19.0-vt-233-dfb56f76c7` (desktop inode 49955393), v2 gate
+  PASSED on both; `Keep as block` and the retry marker present in both binaries. Another
+  `build.sh` (PID 2814131, owner unknown) was running on desktop when this build started and
+  had exited by the check; the installed binary is vt-233 with this change. No restarts.
 
 ## Historical evidence carried forward
 
