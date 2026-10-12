@@ -41,4 +41,6 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` (item 28), quoting the u
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
-
+- 2026-10-11 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-11-paste-dialog-keys.md) -
+  re-verified the `{excerpt}` placeholder (one line, `…` when cut) with the user's new
+  `tui.json` format `[Pasted ~{lines} lines: {excerpt}]`, excerpt 20; defaults unchanged.
