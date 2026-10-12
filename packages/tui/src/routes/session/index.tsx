@@ -32,6 +32,7 @@ import {
   RGBA,
   type MouseEvent,
   type Renderable,
+  type SimpleHighlight,
 } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
@@ -67,6 +68,7 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import { cachedTreeSitterClient } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
+import { highlightHeredocs } from "../../util/heredoc"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
@@ -2596,10 +2598,12 @@ function Shell(props: ToolProps) {
   )
 }
 
-// The command as shell code. It draws as plain text at once and takes its colors when the parser
-// worker answers, which the shared cache makes immediate for a command already seen.
+// The command as shell code, each heredoc body in the language of the command that reads it. It
+// draws as plain text at once and takes its colors when the parser worker answers, which the
+// shared cache makes immediate for a command already seen.
 export function ShellCommand(props: { command: string; running: boolean }) {
   const { theme, syntax } = useTheme()
+  const ctx = use()
   return (
     <box flexDirection="row">
       <Show when={props.running} fallback={<text fg={theme.text}>$ </text>}>
@@ -2615,11 +2619,27 @@ export function ShellCommand(props: { command: string; running: boolean }) {
         filetype="bash"
         syntaxStyle={syntax()}
         treeSitterClient={cachedTreeSitterClient()}
-        onHighlight={(highlights, context) => narrowBashHighlights(highlights, context.content)}
+        onHighlight={(highlights, context) =>
+          shellHighlights(highlights, context.content, ctx.tui.syntax?.heredoc !== false)
+        }
         content={props.command}
       />
     </box>
   )
+}
+
+async function shellHighlights(highlights: SimpleHighlight[], content: string, heredocs: boolean) {
+  const narrowed = narrowBashHighlights(highlights, content)
+  if (!heredocs) return narrowed
+  const client = cachedTreeSitterClient()
+  const merged = await highlightHeredocs(narrowed, content, (body, filetype) =>
+    client
+      .highlightOnce(body, filetype)
+      .then((result) =>
+        filetype === "bash" ? { highlights: narrowBashHighlights(result.highlights ?? [], body) } : result,
+      ),
+  )
+  return merged ?? narrowed
 }
 
 function Write(props: ToolProps) {
