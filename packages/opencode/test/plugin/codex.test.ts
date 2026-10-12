@@ -260,10 +260,13 @@ describe("plugin.codex", () => {
 
     const gateway = await hooks.auth!.loader!(oauth, { options: { baseURL: "http://127.0.0.1:3459/v1" } } as never)
     const chatgpt = await hooks.auth!.loader!(oauth, { options: {} } as never)
+    const openai = await hooks.auth!.loader!(oauth, { options: { baseURL: "https://api.openai.com/v1" } } as never)
 
     expect(gateway).toEqual({})
     expect(chatgpt.fetch).toBeFunction()
     expect(chatgpt.apiKey).toBeString()
+    expect(openai.fetch).toBeFunction()
+    expect(openai.apiKey).toBeString()
   })
 
   test("sends token residency through the WebSocket transport", async () => {

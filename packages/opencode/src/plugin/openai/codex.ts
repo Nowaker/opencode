@@ -336,10 +336,12 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           websocketFetches.push(websocketFetch)
           websocketFetchInstalled = true
         }
-        // A configured baseURL names the backend explicitly; the OAuth fetch
-        // would rewrite its /v1/responses calls to the ChatGPT Codex endpoint.
-        if (auth.type !== "oauth" || provider?.options?.baseURL)
-          return websocketFetch ? { fetch: websocketFetch } : {}
+        // A configured gateway baseURL names the backend explicitly; the OAuth
+        // fetch would rewrite its /v1/responses calls to the ChatGPT Codex
+        // endpoint. OpenAI's own default baseURL is not a gateway.
+        const baseURL = provider?.options?.baseURL
+        const gateway = typeof baseURL === "string" && baseURL && !/^https:\/\/api\.openai\.com\/v1\/?$/.test(baseURL)
+        if (auth.type !== "oauth" || gateway) return websocketFetch ? { fetch: websocketFetch } : {}
 
         let refreshPromise:
           | Promise<{
