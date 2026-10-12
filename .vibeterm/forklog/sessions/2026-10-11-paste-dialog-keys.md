@@ -10,7 +10,7 @@
 - Development branch(es): `paste-dialog-keys` (worktree `.vibeterm/worktrees/paste-dialog-keys`,
   cut from `dev-nowaker` `f33d89b212`); `paste-edit-dialog` (upstream PR #54463 head)
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
-- Source result commit(s): `633dbaade6`, `234cdf7f62` on `dev-nowaker`; `04406f7356` on `paste-edit-dialog`
+- Source result commit(s): `633dbaade6`, `234cdf7f62`, `9dbcced655` on `dev-nowaker`; `04406f7356`, `90ccb4e4cb` on `paste-edit-dialog`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -41,6 +41,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after the user tested vt
 |---|---|---|---|---|
 | opencode | `dev-nowaker` | `f33d89b212` | `234cdf7f62` | ff-merge of `paste-dialog-keys` + docs commit |
 | opencode | `paste-edit-dialog` | `39bd9309ed` | `04406f7356` | cherry-pick, tests adapted to the PR fixture, no trailers |
+| opencode | `dev-nowaker` | `c6420431f8` | `9dbcced655` | prompt-box follow-up, rebased over another session's push |
+| opencode | `paste-edit-dialog` | `04406f7356` | `90ccb4e4cb` | prompt-box follow-up, frame with upstream's literal paddings |
 
 ## Features touched
 
@@ -77,12 +79,35 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after the user tested vt
 
 - `633dbaade6` - fix(tui): paste dialog saves on enter, reaches Inline by keyboard, fits wrapped text
 - `234cdf7f62` - docs(tui): describe the paste dialog's enter, newline and Inline keys
+- `9dbcced655` - fix(tui): draw the paste dialog's editor in the prompt's own box
 - Required trailer: `AI-Session-ID: ses_ed7634c31ffeH84yR0S99Ty8Nd`
 
 ```sh
 git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
   .vibeterm/forklog/sessions/2026-10-11-paste-dialog-keys.md
 ```
+
+## Follow-up: the editor in the prompt's box
+
+Relayed by the coordinator after the user tested vt-223:
+
+> for the prompt field in the window, use the styping of the prompt window in main window; it has certain margins, and a colored | on the left. no agent should be listed there, but other than that, it has to resemble that prompt window
+
+- Cause: the dialog drew a bare textarea. The prompt's box (left bar in the agent color,
+  `TuiLayout.Prompt` padding on `backgroundElement`, `╹▀▀▀` edge row) was inline markup in
+  `component/prompt/index.tsx`.
+- Fix `9dbcced655` (`447f2699dd` before rebasing over `c6420431f8`): the box moves into
+  `PromptFrame` (`component/prompt/frame.tsx`), rendered by both the prompt and `DialogPaste`
+  (`color={borderHighlight()}`, `padBottom` for a padding row in place of the agent line).
+  `promptFrameRows(true)` is subtracted from the editor's room. PR branch `90ccb4e4cb` has
+  the same change, with upstream's literal paddings as constants in `frame.tsx`.
+- Verification: `prompt-paste.test.tsx` 12 pass (new test: bar, padding rows, edge, text at
+  the prompt's column, no agent line); full `packages/tui` 454 pass, 0 fail; PR branch 249
+  pass, 0 fail. Real-PTY rig (scratch vt-229): the dialog's box drew like the prompt's, with
+  the bar in the same color (RGB 92,156,245), all 8 wrapped rows of a 6-line paste,
+  shift+enter, enter and up-to-Inline unchanged.
+- Installed: desktop and m4max `1.19.0-vt-230-dfb56f76c7` (desktop inode 49968793), v2 gate
+  PASSED on both; `padBottom` and the retry marker present in both binaries. No restarts.
 
 ## Historical evidence carried forward
 
