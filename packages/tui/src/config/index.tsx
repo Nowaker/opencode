@@ -50,6 +50,10 @@ export const Syntax = Schema.Struct({
     description:
       "Show a plugin or MCP tool's input as a block with one key per line, nested objects and arrays included, when it is too long or nested for one line (default: false)",
   }),
+  tool_output: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description:
+      "Color plugin and MCP tool output by tool name or glob ('browser', 'github_*', '*'): a language id such as 'json', 'auto' to color output recognized as JSON, or 'none'. An exact name wins over globs, the most specific glob over the rest. Unset leaves output plain (default)",
+  }),
 }).annotate({ description: "Syntax highlighting in tool calls" })
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({

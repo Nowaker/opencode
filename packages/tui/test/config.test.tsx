@@ -112,6 +112,10 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ datetime_format: { time: "" } })).toThrow()
   expect(decodeInfo({ syntax: { bash: false } })).toEqual({ syntax: { bash: false } })
   expect(() => decodeInfo({ syntax: { bash: "off" } })).toThrow()
+  expect(decodeInfo({ syntax: { tool_output: { browser: "json", "*": "auto" } } })).toEqual({
+    syntax: { tool_output: { browser: "json", "*": "auto" } },
+  })
+  expect(() => decodeInfo({ syntax: { tool_output: { browser: true } } })).toThrow()
   expect(decodeInfo({ syntax: { files: false } })).toEqual({ syntax: { files: false } })
   expect(() => decodeInfo({ syntax: { files: 1 } })).toThrow()
   expect(decodeInfo({ syntax: { tool_input: true } })).toEqual({ syntax: { tool_input: true } })

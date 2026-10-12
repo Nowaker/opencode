@@ -33,8 +33,11 @@ import {
   RGBA,
   type MouseEvent,
   type Renderable,
+  StyledText,
+  TextRenderable,
   treeSitterToTextChunks,
   type SimpleHighlight,
+  type TextChunk,
 } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
@@ -69,6 +72,7 @@ import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
+import { outputLanguage, previewHighlights } from "../../util/tool-output"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
 import { toolCodeTheme } from "../../theme/tool-code"
@@ -2264,6 +2268,10 @@ function GenericTool(props: ToolProps) {
     return collapsed().output
   })
   const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput()))
+  // Only output that is shown is sniffed or colored.
+  const language = createMemo(() =>
+    showOutput() ? outputLanguage(ctx.tui.syntax?.tool_output, props.tool, output()) : undefined,
+  )
   // The block's measured width, reported on layout and on resize only; until then an estimate.
   const [inputWidth, setInputWidth] = createSignal<number>()
   const inputBlock = createMemo(() => {
@@ -2298,7 +2306,9 @@ function GenericTool(props: ToolProps) {
               }}
             />
             <Show when={showOutput() && limited()}>
-              <text fg={theme.text}>{limited()}</text>
+              <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
+                {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
+              </Show>
             </Show>
           </BlockTool>
         )}
@@ -2323,7 +2333,9 @@ function GenericTool(props: ToolProps) {
         >
           <Show when={!collapsed().overflow || expanded() || limited()}>
             <box gap={1}>
-              <text fg={theme.text}>{limited()}</text>
+              <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
+                {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
+              </Show>
             </box>
           </Show>
         </BlockTool>
@@ -2358,6 +2370,61 @@ export function ToolInput(props: {
         </For>
       </text>
     </box>
+  )
+}
+
+// A tool's output colored as `language`. It is drawn plain at once and takes its colors when the
+// parser worker answers, in the same non-red palette as a bash command: red means failure.
+// `shown` is the output as displayed: the whole of it, or a collapsed preview that is a prefix of it
+// plus an ellipsis. The whole output is highlighted, once and cached, because a preview cut through
+// the middle of a JSON value does not parse; the preview takes the highlights that fall inside the
+// part it shares with the output, and the ellipsis stays plain.
+function ToolOutputText(props: { output: string; shown: string; language: string }) {
+  const { theme, toolSyntax } = useTheme()
+  const [highlighted, setHighlighted] = createSignal<{
+    output: string
+    language: string
+    highlights: SimpleHighlight[]
+  }>()
+  createEffect(() => {
+    const output = props.output
+    const language = props.language
+    highlightCached(output, language)
+      .then((result) => setHighlighted({ output, language, highlights: result.highlights ?? [] }))
+      .catch(() => setHighlighted(undefined))
+  })
+  const chunks = createMemo(() => {
+    const result = highlighted()
+    if (!result || result.output !== props.output || result.language !== props.language) return
+    if (result.highlights.length === 0) return
+    return treeSitterToTextChunks(
+      props.shown,
+      previewHighlights(props.shown, result.output, result.highlights),
+      toolSyntax(),
+      { enabled: false },
+    )
+  })
+  return <StyledOutput content={props.shown} chunks={chunks()} fg={theme.text} />
+}
+
+// One text renderable whose content is the plain text, or the same text as colored chunks, so the
+// colors never change how it wraps. Chunks are set on the renderable rather than drawn as one
+// span each, which keeps a large output a single renderable.
+export function StyledOutput(props: { content: string; chunks?: TextChunk[]; fg: RGBA }) {
+  let text: TextRenderable | undefined
+  const content = () => (props.chunks ? new StyledText(props.chunks) : props.content)
+  createEffect(() => {
+    const value = content()
+    if (text) text.content = value
+  })
+  return (
+    <text
+      fg={props.fg}
+      ref={(el: TextRenderable) => {
+        text = el
+        el.content = content()
+      }}
+    />
   )
 }
 

@@ -679,6 +679,21 @@ Tool calls are colored by language. Each part can be turned on or off under `syn
 - `heredoc` - Color each heredoc in a bash command in the language of the command that reads it. Defaults to `true`.
 - `files` - Detect the language of written, edited and patched files beyond their extension, so these are colored too: SQL, Dockerfiles (`Dockerfile`, `Containerfile`, `*.dockerfile`), ini-style config and systemd units (`.ini`, `.cfg`, `.conf`, `.service`, `.timer` and the other unit types), dotenv files, shell scripts, ERB, HAML, file names such as `Makefile`, `Gemfile` and `PKGBUILD`, and a `#!` line on a file with no known extension. Defaults to `true`. When `false`, only the file extension decides.
 - `tool_input` - Show a plugin or MCP tool's input as a block, one key per line. Defaults to `false`, which shows only the input's text, number and boolean values, as `[key=value, ...]` on the tool's line. With `true`, input that is all such values and fits in 80 characters stays on that line; anything longer, multi-line or nested becomes a block: keys and values in different colors, values colored by type, text unquoted with its newlines, tabs and quotes shown as themselves, nested objects indented beneath their key, and lists laid out as YAML writes them, `- ` items at their key's indent. Until you click the block, every value takes one row, cut with `…` where it no longer fits; clicking shows it whole. With `tool_output.collapse` set to `"never"` for the tool, values always show whole.
+- `tool_output` - Color plugin and MCP tool output, by tool name. Keys are tool names or globs (`*` matches any run of characters, `?` one); values are a language id such as `json`, `yaml` or `markdown`, `auto`, or `none`. An exact name wins over any glob, and the glob with the most literal characters wins over the others. `auto` colors output that is a JSON object or array and leaves anything else plain. Output over 100,000 characters stays plain. Unset by default, which leaves all output plain. Colored output wraps exactly as the plain text does.
+
+With `tool_output`, for example:
+
+```json title="tui.json"
+{
+  "syntax": {
+    "tool_output": {
+      "browser": "json",
+      "todo_*": "none",
+      "*": "auto"
+    }
+  }
+}
+```
 
 A heredoc's language comes from the command that consumes it:
 
