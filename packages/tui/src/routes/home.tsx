@@ -14,6 +14,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
 import { HomeStack } from "./home/stack"
+import { homeMaxWidth } from "../component/prompt/size"
 import { useUpdateNotification } from "../context/update-notification"
 import { useTheme } from "../context/theme"
 import { useExit } from "../context/exit"
@@ -43,7 +44,9 @@ export function Home() {
   const [promptHeight, setPromptHeight] = createSignal(0)
   const [bottomHeight, setBottomHeight] = createSignal(0)
   const notice = () => (update.notification() ? noticeHeight() : 0)
+  const position = () => tuiConfig.home?.prompt_position ?? "middle"
   const showLogo = createMemo(() => {
+    if (tuiConfig.home?.logo === false) return false
     const height = columnHeight()
     if (height === undefined) return true
     // The logo's measured height is kept while it is hidden, so it comes back once it fits.
@@ -55,6 +58,7 @@ export function Home() {
       logo: showLogo() ? logoHeight() : 0,
       prompt: notice() + promptHeight(),
       bottom: bottomHeight(),
+      position: position(),
     }),
   )
   const promptSpace = createMemo(() => {
@@ -62,11 +66,29 @@ export function Home() {
     if (height === undefined) return
     return HomeStack.promptSpace({ height, logo: showLogo() ? logoHeight() : 0, notice: notice() })
   })
-  const promptMaxWidth = createMemo(() => {
-    const configured = tuiConfig.prompt?.max_width
-    if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
-    return configured ?? 75
-  })
+  const promptMaxWidth = createMemo(() =>
+    homeMaxWidth(tuiConfig.prompt?.max_width, dimensions().width, dimensions().width - 4),
+  )
+  // The tips keep their own height in an absolute box, which is how the layout learns it. Above
+  // the logo it hangs from the bottom, so a squeeze takes the padding above the tip first.
+  const tips = () => (
+    <box width="100%" height={layout().bottom} flexShrink={0} overflow="hidden">
+      <box
+        position="absolute"
+        top={layout().tipsAbove ? undefined : 0}
+        bottom={layout().tipsAbove ? 0 : undefined}
+        left={0}
+        width="100%"
+        alignItems="center"
+        onSizeChange={function () {
+          // An empty box is still a row tall.
+          setBottomHeight(this.getChildren().length ? this.height : 0)
+        }}
+      >
+        <pluginRuntime.Slot name="home_bottom" />
+      </box>
+    </box>
+  )
   let sent = false
 
   onMount(() => {
@@ -110,7 +132,8 @@ export function Home() {
           setColumnHeight(this.height)
         }}
       >
-        <box height={0} flexGrow={1} />
+        <box height={0} flexGrow={position() === "top" ? 0 : 1} />
+        <Show when={layout().tipsAbove}>{tips()}</Show>
         <Show when={showLogo()}>
           <box height={layout().gapAbove} flexShrink={0} />
           <box
@@ -146,23 +169,8 @@ export function Home() {
             />
           </pluginRuntime.Slot>
         </box>
-        {/* The tips keep their own height in an absolute box, which is how the layout learns it. */}
-        <box width="100%" height={layout().bottom} flexShrink={0} overflow="hidden">
-          <box
-            position="absolute"
-            top={0}
-            left={0}
-            width="100%"
-            alignItems="center"
-            onSizeChange={function () {
-              // An empty box is still a row tall.
-              setBottomHeight(this.getChildren().length ? this.height : 0)
-            }}
-          >
-            <pluginRuntime.Slot name="home_bottom" />
-          </box>
-        </box>
-        <box height={0} flexGrow={1} />
+        <Show when={!layout().tipsAbove}>{tips()}</Show>
+        <box height={0} flexGrow={position() === "bottom" ? 0 : 1} />
         <Toast />
       </box>
       <box width="100%" flexShrink={0}>

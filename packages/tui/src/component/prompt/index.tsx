@@ -57,7 +57,7 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
-import { CHROME_ROWS, maxRows } from "./size"
+import { CHROME_ROWS, rows } from "./size"
 
 registerOpencodeSpinner()
 
@@ -1353,9 +1353,11 @@ export function Prompt(props: PromptProps) {
       if (!anchor || !input || anchor.isDestroyed || input.isDestroyed || props.visible === false) return
       setChrome(anchor.height - input.height)
     })
-  const maxHeight = createMemo(() =>
-    maxRows({
-      configured: tuiConfig.prompt?.max_height,
+  const textRows = createMemo(() =>
+    // The home prompt (no session) takes the home.prompt_* heights, falling back to prompt.*.
+    rows({
+      min: (props.sessionID ? undefined : tuiConfig.home?.prompt_min_height) ?? tuiConfig.prompt?.min_height,
+      max: (props.sessionID ? undefined : tuiConfig.home?.prompt_max_height) ?? tuiConfig.prompt?.max_height,
       terminalHeight: dimensions().height,
       space: props.space === undefined ? undefined : props.space - chrome(),
     }),
@@ -1394,8 +1396,8 @@ export function Prompt(props: PromptProps) {
               placeholderColor={theme.textMuted}
               textColor={leader() ? theme.textMuted : theme.text}
               focusedTextColor={leader() ? theme.textMuted : theme.text}
-              minHeight={1}
-              maxHeight={maxHeight()}
+              minHeight={textRows().min}
+              maxHeight={textRows().max}
               onSizeChange={measureChrome}
               onContentChange={() => {
                 const value = input.plainText
