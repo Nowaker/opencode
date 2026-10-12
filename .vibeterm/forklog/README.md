@@ -96,9 +96,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Log which process holds the SQLite write lock too long](./features/2026-10-11-sqlite-write-hold-log.md)
 - [Machine provenance on messages and session execution](./features/2026-10-10-machine-provenance.md)
 - [Syntax coloring in tool calls: bash, heredocs, file languages, tool input](./features/2026-10-11-tool-syntax-coloring.md)
+- [Prompt start height, percentage sizes and home screen layout](./features/2026-10-12-home-screen-layout.md)
 - [Answer a failed TUI worker request instead of hanging](./features/2026-10-12-tui-worker-error-reply.md)
 
 ## Session records
+
+- [2026-10-12 `ses_ece469f46ffeIkbDfxO1jJY6D6`](./sessions/2026-10-12-home-screen-layout.md)
+  - The prompt never grows past the screen; `prompt.min_height`, percentage
+    sizes, `home.logo`/`tips`/`prompt_position`, logo gap one row; upstream
+    issues #54946/#54947, PRs #54948/#54949; opencode-tools seeds Vibeterm's
+    defaults; build and install on both hosts.
 
 - [2026-10-12 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-12-tui-worker-hang.md)
   - `opencode -s` hung forever when a busy database failed session

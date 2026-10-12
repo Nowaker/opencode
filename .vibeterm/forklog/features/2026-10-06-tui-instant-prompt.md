@@ -179,6 +179,13 @@ white "still loading" / red "changed" notices for Enter during loading.
   home route keeps the `TuiLayout` geometry plus v1's `logoWidth` and
   `<UpdateNotification>` row, which renders nothing for an unmanaged build,
   so the instant frame still matches. Evidence: TUI suite, that session.
+- 2026-10-12 [`ses_ece469f46ffeIkbDfxO1jJY6D6`](../sessions/2026-10-12-home-screen-layout.md) -
+  the frame follows [the home screen layout settings](./2026-10-12-home-screen-layout.md):
+  `promptGeometry` takes the prompt's `space` and `TuiLayout.promptRows`,
+  `layout` stacks the home column with `TuiLayout.homeStack`, `config.ts`
+  reads `prompt.min_height`, percentages and `home.*`, and `index.ts` reads
+  kv.json's `tips_hidden` for the home screen too. Evidence: `7a377b7324`,
+  the TUI/frame parity cases in `test/routes/home-layout.test.tsx`.
 
 ## Current maintenance notes
 
