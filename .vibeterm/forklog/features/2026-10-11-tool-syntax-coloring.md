@@ -6,11 +6,11 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `syntax-integration` (worktree off `dev-nowaker`);
   upstream branches `bash-syntax` (`b0d93392c2`), `heredoc-syntax`
-  (`bf7cffb240`, stacked on `bash-syntax`), `file-languages` (`f885d7e3ba`),
+  (`bf7cffb240`, stacked on `bash-syntax`), `file-languages` (`d6087eb738`),
   `tool-input-block` (`491363e6cf`), all off `github/v1` `dfb56f76c7`
 - First local commit: `dfbf7f6836`
 - Current local commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`,
-  `b23685155c`, `91e33c557e`, `84d27d0f49`
+  `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
 - Upstream: issues #54700-#54703; PRs
@@ -69,6 +69,7 @@ approved "Build all four". The user's words on defaults:
 | `8a360b4aa0` | 2026-10-11 | generic tool input block; `syntax.tool_input` (default off) | `util/tool-input.ts`; `GenericTool`, `ToolInput` in `routes/session/index.tsx` |
 | `b23685155c` | 2026-10-11 | bash command as one `<text>` of spans (layout identical to plain); non-red `toolSyntax` for command and heredocs | `ShellCommand`, `CommandSpans`, `shellHighlights` in `routes/session/index.tsx`; `theme/tool-code.ts` `toolCodeTheme`; `toolSyntax` in `context/theme.tsx`; `highlightCached`; `test/cli/tui/shell-command.test.tsx`, `test/tool-code-theme.test.ts` |
 | `91e33c557e` | 2026-10-11 | tool input keys and values from `toolCodeTheme` | `code` memo in `GenericTool` |
+| `8e3a183698` | 2026-10-12 | opencode typecheck: declare `*.scm` imports | `packages/opencode/src/audio.d.ts` |
 | `84d27d0f49` | 2026-10-12 | collapsed tool input: one row per value cut to the measured width; compact YAML lists | `formatToolInput(input, width)` in `util/tool-input.ts`; `inputWidth`/`onWidth` in `GenericTool`/`ToolInput`; `test/cli/tui/tool-input.test.tsx` |
 
 Docs: `Syntax highlighting` section in `packages/web/src/content/docs/tui.mdx`.

@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `syntax-integration` (off `dev-nowaker`); upstream `tool-input-block`
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
-- Source result commit(s): `84d27d0f49`
+- Source result commit(s): `84d27d0f49`; `8e3a183698` (opencode `*.scm` declaration)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -36,7 +36,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
 | `opencode` | `tool-input-block` | `02be94024c` | `491363e6cf` | amended; PR #54707 body updated |
-| `opencode` | `dev-nowaker` | `3d554e9df1` | `84d27d0f49` + this forklog commit | fix commit, fast-forward; pushed to both remotes |
+| `opencode` | `dev-nowaker` | `3d554e9df1` | `84d27d0f49` + forklog `bfc03b0daf` | fix commit, fast-forward; pushed to both remotes |
+| `opencode` | `dev-nowaker` | `bfc03b0daf` | `8e3a183698` + this record's second forklog commit | opencode typecheck fix, fast-forward; pushed to both remotes |
+| `opencode` | `file-languages` | `f885d7e3ba` | `d6087eb738` | amended with the same declaration; PR #54706 |
 
 ## Features touched
 
@@ -58,6 +60,20 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
   run: scroll p50 12.2 -> 11.7 ms, p95 24.1 -> 22.7 ms; keystroke p50
   19.9 -> 16.1 ms, p95 36.5 -> 28.3 ms; idle CPU 4.5% -> 3.8%.
 
+## opencode typecheck fix
+
+Reported by `ses_eebf9a83fffeIQQwW9gVFo5jaO`: since `60edf2a182`,
+`packages/opencode` failed `bun typecheck` with five TS2307 errors on the
+`.scm` imports in `packages/tui/src/parsers-config.ts`; the opencode program
+does not include tui's `parsers/assets.d.ts`. Turbo replayed a cached
+`opencode#typecheck` pass because its hash covers only packages/opencode.
+`packages/opencode/src/audio.d.ts` now declares `*.scm` beside `*.wasm`.
+
+- `bun typecheck` in packages/opencode: 0 errors on `syntax-integration` and
+  on `file-languages` (5 errors before on `file-languages` `f885d7e3ba`);
+  packages/tui typecheck clean on `file-languages`.
+- Not rebuilt or installed: a type declaration does not change the binary.
+
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
@@ -72,6 +88,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
 ## Commit provenance
 
 - `84d27d0f49` - show every tool input value on one row, in compact YAML
+- `8e3a183698` - declare .scm imports for the opencode typecheck
 - Required trailer: `AI-Session-ID: ses_ed1e2b932ffe6tTqhsOiGuYXRE`
 
 ```sh
