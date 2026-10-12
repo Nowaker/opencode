@@ -2,18 +2,18 @@ export * as SessionMaintenance from "./session-maintenance"
 
 import { sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
-import type { EffectDrizzleSqlite } from "@opencode-ai/effect-drizzle-sqlite"
+import type { Database } from "./database"
 import { SessionMaintenanceSql } from "./session-maintenance-sql"
 import { SessionMaintenanceTrigger } from "./session-maintenance-trigger"
 import { SessionMaintenancePlan } from "./session-maintenance-plan"
+import { DatabaseTransaction } from "./transaction"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 
-type Database = EffectDrizzleSqlite.EffectSQLiteDatabase
 class SchemaChanged extends Schema.TaggedErrorClass<SchemaChanged>()("MaintenanceSchemaChanged", {}) {}
 
-export function install(db: Database) {
+export function install(db: Database.Interface["db"]) {
   return Effect.gen(function* () {
     const database = yield* db.get<{ file: string }>(sql`SELECT file FROM pragma_database_list WHERE name='main'`)
     const emergency = Boolean(database?.file && existsSync(`${database.file}.conflict-guards-disabled`))
@@ -46,7 +46,7 @@ export function install(db: Database) {
     if (emergency) {
       // Disabling persistent guards and publishing protocol zero must share the
       // active-fence check's transaction, not commit in separate startup phases.
-      yield* db.transaction(() => Effect.gen(function* () {
+      yield* DatabaseTransaction.immediate(db, () => Effect.gen(function* () {
         for (const statement of SessionMaintenanceSql.schema) yield* db.run(sql.raw(statement))
         const active = yield* db.get(sql`SELECT 1 FROM session_maintenance_fence WHERE operation<>'' LIMIT 1`)
         if (active) return yield* Effect.die(new Error("cannot disable conflict guards during active maintenance"))
@@ -54,7 +54,7 @@ export function install(db: Database) {
         for (const statement of plan.repair) yield* db.run(sql.raw(statement))
         yield* stage(plan.temporary)
         yield* register()
-      }), { behavior: "immediate" })
+      }))
       yield* Effect.addFinalizer(() =>
         db.run(sql`DELETE FROM session_maintenance_runtime WHERE connection_id=${id}`).pipe(Effect.orDie),
       )
@@ -63,12 +63,11 @@ export function install(db: Database) {
     for (let replan = 0; replan <= 3; replan++) {
       const observed = yield* db.transaction(() => SessionMaintenancePlan.discover(db, emergency))
       if (observed.repair.length) {
-        yield* db.transaction(
-          () => Effect.gen(function* () {
+        yield* DatabaseTransaction.immediate(db, () =>
+          Effect.gen(function* () {
             const current = yield* SessionMaintenancePlan.discover(db, emergency)
             for (const statement of current.repair) yield* db.run(sql.raw(statement))
           }),
-          { behavior: "immediate" },
         )
       }
       const plan = observed.repair.length
@@ -76,15 +75,13 @@ export function install(db: Database) {
         : observed
       if (plan.repair.length) continue
       yield* stage(plan.temporary)
-      const registered = yield* db.transaction(
-        () =>
-          Effect.gen(function* () {
-            const version = yield* db.get<{ schema_version: number }>(sql`PRAGMA main.schema_version`)
-            if (version?.schema_version !== plan.version) return yield* Effect.fail(new SchemaChanged())
-            yield* register()
-            return true
-          }),
-        { behavior: "immediate" },
+      const registered = yield* DatabaseTransaction.immediate(db, () =>
+        Effect.gen(function* () {
+          const version = yield* db.get<{ schema_version: number }>(sql`PRAGMA main.schema_version`)
+          if (version?.schema_version !== plan.version) return yield* Effect.fail(new SchemaChanged())
+          yield* register()
+          return true
+        }),
       ).pipe(Effect.catchTag("MaintenanceSchemaChanged", () => Effect.succeed(false)))
       if (registered) {
         yield* Effect.addFinalizer(() =>
@@ -101,7 +98,7 @@ export function install(db: Database) {
   })
 }
 
-export function assertCurrent(db: Database, sessionID: string) {
+export function assertCurrent(db: Database.Interface["db"], sessionID: string) {
   return Effect.gen(function* () {
     const fenced = yield* db.get(
       sql`SELECT 1 FROM session_maintenance_fence WHERE session_id=${sessionID} AND operation<>''`,

@@ -217,3 +217,22 @@ test("quoted trigger names cannot certify a guard attached to a whitespace-disti
   expect(() => inspect.exec('INSERT INTO "owner  rows" VALUES(\'target\',\'owner\')')).toThrow("session_under_maintenance")
   expect(inspect.query('SELECT * FROM "owner  rows"').all()).toEqual([])
 })
+
+test("another process holding the write lock delays registration instead of failing startup", async () => {
+  // Given an initialized database whose write lock another process holds for 1.5 s.
+  await using tmp = await fixture()
+  await install(tmp.filename, async () => {})
+  const holder = Bun.spawn([Bun.which("bun") ?? "bun", `${import.meta.dir}/fixture/sqlite-lock-holder.ts`, tmp.filename, "1500"], {
+    stdout: "pipe",
+  })
+  const reader = holder.stdout.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe("locked\n")
+  reader.releaseLock()
+  // When a reconnecting process installs maintenance during that time.
+  const queries: string[] = []
+  await install(tmp.filename, async (query, phase) => { queries.push(`${phase} ${query.trim()}`) })
+  await holder.exited
+  // Then registration waits for the lock and publishes the capability once.
+  expect(queries.filter(query => /^before begin immediate$/i.test(query)).length).toBeGreaterThan(1)
+  expect(queries.filter(query => /^after INSERT INTO session_maintenance_runtime/i.test(query))).toHaveLength(1)
+}, 20_000)
