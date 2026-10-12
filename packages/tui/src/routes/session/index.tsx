@@ -69,6 +69,13 @@ import { detectFiletype, filetype } from "../../util/filetype"
 import { cachedTreeSitterClient } from "../../util/highlight-cache"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
+import {
+  fitsInline,
+  formatToolInput,
+  inlineToolInput,
+  type ToolInputKind,
+  type ToolInputRow,
+} from "../../util/tool-input"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
@@ -2236,18 +2243,51 @@ function GenericTool(props: ToolProps) {
   const ctx = use()
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const collapsed = createMemo(() =>
-    collapseOutput(output(), TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"), ctx.width),
-  )
+  const limit = createMemo(() => TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"))
+  const collapsed = createMemo(() => collapseOutput(output(), limit(), ctx.width))
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
   })
+  const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput()))
+  const inputBlock = createMemo(() => {
+    if (ctx.tui.syntax?.tool_input !== true || fitsInline(props.input)) return
+    return formatToolInput(props.input, (text) =>
+      expanded() ? { output: text, overflow: false } : collapseOutput(text, limit(), ctx.width),
+    )
+  })
+  const overflow = createMemo(() => Boolean(inputBlock()?.overflow || (showOutput() && collapsed().overflow)))
 
   return (
-    <Show
-      when={props.output && ctx.showGenericToolOutput()}
-      fallback={
+    <Switch>
+      <Match when={inputBlock()}>
+        {(block) => (
+          <BlockTool
+            title={`# ${props.tool}`}
+            part={props.part}
+            hint={expandHint(overflow(), expanded())}
+            onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
+          >
+            <ToolInput
+              rows={block().rows}
+              colors={{
+                indent: theme.text,
+                key: theme.syntaxVariable,
+                punctuation: theme.syntaxPunctuation,
+                string: theme.syntaxString,
+                number: theme.syntaxNumber,
+                boolean: theme.syntaxKeyword,
+                null: theme.syntaxKeyword,
+                fold: theme.textMuted,
+              }}
+            />
+            <Show when={showOutput() && limited()}>
+              <text fg={theme.text}>{limited()}</text>
+            </Show>
+          </BlockTool>
+        )}
+      </Match>
+      <Match when={!showOutput()}>
         <InlineTool
           icon="⚙"
           pending="Writing command…"
@@ -2257,21 +2297,38 @@ function GenericTool(props: ToolProps) {
         >
           {props.tool} {input(props.input)}
         </InlineTool>
-      }
-    >
-      <BlockTool
-        title={`# ${props.tool} ${input(props.input)}`}
-        part={props.part}
-        hint={expandHint(collapsed().overflow, expanded())}
-        onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
-      >
-        <Show when={!collapsed().overflow || expanded() || limited()}>
-          <box gap={1}>
-            <text fg={theme.text}>{limited()}</text>
-          </box>
-        </Show>
-      </BlockTool>
-    </Show>
+      </Match>
+      <Match when={true}>
+        <BlockTool
+          title={`# ${props.tool} ${input(props.input)}`}
+          part={props.part}
+          hint={expandHint(collapsed().overflow, expanded())}
+          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
+        >
+          <Show when={!collapsed().overflow || expanded() || limited()}>
+            <box gap={1}>
+              <text fg={theme.text}>{limited()}</text>
+            </box>
+          </Show>
+        </BlockTool>
+      </Match>
+    </Switch>
+  )
+}
+
+// A tool's input as rows of key and value, each value colored by its type.
+export function ToolInput(props: { rows: ToolInputRow[]; colors: Record<ToolInputKind, RGBA> }) {
+  return (
+    <text>
+      <For each={props.rows}>
+        {(row, index) => (
+          <>
+            <Show when={index() > 0}>{"\n"}</Show>
+            <For each={row}>{(segment) => <span style={{ fg: props.colors[segment.kind] }}>{segment.text}</span>}</For>
+          </>
+        )}
+      </For>
+    </text>
   )
 }
 
@@ -3291,12 +3348,7 @@ function Diagnostics(props: { diagnostics: unknown; filePath: string }) {
 }
 
 function input(input: Record<string, unknown>, omit?: string[]): string {
-  const primitives = Object.entries(input).filter(([key, value]) => {
-    if (omit?.includes(key)) return false
-    return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-  })
-  if (primitives.length === 0) return ""
-  return `[${primitives.map(([key, value]) => `${key}=${value}`).join(", ")}]`
+  return inlineToolInput(input, omit)
 }
 
 function fileLanguage(ctx: ReturnType<typeof use>, file?: string, content?: string) {

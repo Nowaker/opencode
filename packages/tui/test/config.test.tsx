@@ -104,6 +104,8 @@ test("validates config constraints", () => {
   expect(() => decodeInfo({ syntax: { bash: "off" } })).toThrow()
   expect(decodeInfo({ syntax: { files: false } })).toEqual({ syntax: { files: false } })
   expect(() => decodeInfo({ syntax: { files: 1 } })).toThrow()
+  expect(decodeInfo({ syntax: { tool_input: true } })).toEqual({ syntax: { tool_input: true } })
+  expect(() => decodeInfo({ syntax: { tool_input: "yes" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 

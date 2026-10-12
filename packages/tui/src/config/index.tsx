@@ -46,6 +46,10 @@ export const Syntax = Schema.Struct({
     description:
       "Detect the language of written, edited and patched files beyond their extension: SQL, Dockerfiles, ini-style config and systemd units, dotenv, ERB, HAML, and a #! line on files with none (default: true)",
   }),
+  tool_input: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Show a plugin or MCP tool's input as a block with one key per line, nested objects and arrays included, when it is too long or nested for one line (default: false)",
+  }),
 }).annotate({ description: "Syntax highlighting in tool calls" })
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({
