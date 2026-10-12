@@ -94,8 +94,15 @@ carries every feature forward unchanged. That commit includes the full
 - [End every tool call that runs past a time limit](./features/2026-10-11-tool-call-time-limit.md)
 - [Never delete a file whose earlier content the snapshot store lost](./features/2026-10-11-revert-keep-missing.md)
 - [Log which process holds the SQLite write lock too long](./features/2026-10-11-sqlite-write-hold-log.md)
+- [Machine provenance on messages and session execution](./features/2026-10-10-machine-provenance.md)
 
 ## Session records
+
+- [2026-10-11 `ses_ed2434bbbffelX96qcp5XqFLNw`](./sessions/2026-10-11-fork-test-regressions.md)
+  - Fix three fork-owned test regressions: unpaged session messages skip
+    the response schema, metadata updates lost to the provenance merge,
+    OpenAI OAuth dropped for the default baseURL; PR #53660 head amended;
+    build and install on both hosts.
 
 - [2026-10-11 `ses_ed759a0b4ffeCubC9xxc8hYgHY`](./sessions/2026-10-11-revert-keep-missing.md)
   - A file revert deleted every file whose earlier content the snapshot store

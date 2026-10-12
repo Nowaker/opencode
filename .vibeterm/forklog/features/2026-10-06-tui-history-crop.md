@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-history-crop` (also the upstream PR head)
 - First local commit: `fcf142f4c4`
-- Current local commit(s): `fcf142f4c4`
+- Current local commit(s): `fcf142f4c4`, `1947fdfb55`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, contains `v1.18.34`); landed on `dev-nowaker` above `a04c68d8e2`
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53642](https://github.com/anomalyco/opencode/issues/53642), PR [#53660](https://github.com/anomalyco/opencode/pull/53660)
@@ -79,6 +79,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `fcf142f4c4` | 2026-10-06 | settings, gap store, divider, load commands, paged-route directions | `HiddenMessages` / `hidden` / `session.load` / `session.hidden` in `packages/tui/src/context/sync.tsx`; `HiddenMessagesDivider`, `loadHidden` and `session.hidden.*` commands in `packages/tui/src/routes/session/index.tsx`; `Transcript` in `packages/tui/src/config/index.tsx`; `messages_hidden_*` in `packages/tui/src/config/keybind.ts`; `MessageV2.page` / `MessageV2.total` in `packages/opencode/src/session/message-v2.ts`; `MessagesQuery` and the `messages` handler in `packages/opencode/src/server/routes/instance/httpapi/` |
+| `1947fdfb55` | 2026-10-11 | The unpaged `GET /session/:id/message` returns its items through the success schema again and adds `X-Total-Count` in a pre-response handler, so a stored part that no longer encodes is a 400, not a 200 with `null` | `messages` handler in `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`; `test/server/httpapi-schema-error-body.test.ts` "corrupted stored row" |
 
 ## Measurements
 
@@ -124,6 +125,11 @@ Halving the limit saves about 40 MB of settled RSS on this session; doubling it 
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-11 [`ses_ed2434bbbffelX96qcp5XqFLNw`](../sessions/2026-10-11-fork-test-regressions.md) -
+  `1947fdfb55`: the unpaged response skipped the success schema. Evidence:
+  "corrupted stored row" passes at `fba21b8d6e^`, fails at `fba21b8d6e`,
+  passes with the fix. PR #53660 head `tui-history-crop` amended to
+  `7661b165d6` (both remotes).
 
 ## Current maintenance notes
 

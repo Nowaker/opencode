@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/openai-meridian-provider`
 - First local commit: `eea39ba935`
-- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `eb573a78de`
+- Current local commit(s): `eea39ba935`, `67884b2f3f`, `e185addfe5`, `eb573a78de`, `3ff282aa1d`
   (was `2475f7552b` before the `v1.18.34` rebase), `192f58aec9`
 - Upstream base when introduced: `2406400f0` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
@@ -55,6 +55,7 @@ The code change was authored by coordinator session
 | `67884b2f3f` | 2026-09-28 | Small model from family `gpt-luna` (base model, not `-fast` / `-pro`), because the Codex backend refuses every nano and mini for ChatGPT accounts | `CLONES[].smallFamilies` and `getSmallModel` in `provider.ts` |
 | `e185addfe5` | 2026-09-29 | Offer exactly the OpenAI ids `<baseURL>/models` lists (1.5 s timeout), keeping their models.dev metadata and `-fast`/`-pro` aliases, adding served ids models.dev lacks with defaults; a failed read is logged and falls back to the configured whitelist, else models.dev; a whitelist/blacklist still narrows the result | `CLONES[].servedModels`, `fetchServedModels`, `applyServedModels`, and the pass before the whitelist/blacklist loop in `provider.ts`; `test/provider/provider.test.ts` |
 | `2475f7552b` | 2026-10-02 | The built-in `openai` with a non-default `options.baseURL` gets the same `servedModels` + `smallFamilies` (`OPENAI_GATEWAY`) through `gatewayBehaviour()`; the Codex auth loader skips its chatgpt.com-rewriting OAuth fetch when a baseURL is configured | `OPENAI_GATEWAY`, `gatewayBehaviour` in `provider.ts`; `auth.loader` in `src/plugin/openai/codex.ts`; both test files |
+| `3ff282aa1d` | 2026-10-11 | The Codex auth loader keeps its OAuth fetch for OpenAI's own default baseURL (`https://api.openai.com/v1`); only a gateway baseURL skips it | `auth.loader` in `src/plugin/openai/codex.ts`; `test/plugin/codex.test.ts`; `test/session/llm-native-recorded.test.ts` "OpenAI OAuth" |
 
 ## Verification
 
@@ -115,6 +116,11 @@ The code change was authored by coordinator session
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
+- 2026-10-11 [`ses_ed2434bbbffelX96qcp5XqFLNw`](../sessions/2026-10-11-fork-test-regressions.md) -
+  `3ff282aa1d`: `2475f7552b` skipped OAuth for any set baseURL, the default
+  included, so an OpenAI OAuth login got no key ("OpenAI API key is
+  missing"). Evidence: `llm-native-recorded` "OpenAI OAuth" passes at
+  `dcb7f39d58^`, fails at `dcb7f39d58`, passes with the fix.
 
 ## Current maintenance notes
 
