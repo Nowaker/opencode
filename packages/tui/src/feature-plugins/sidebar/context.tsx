@@ -1,7 +1,8 @@
 import { Plugin } from "@opencode/plugin/tui"
-import { createMemo, createSignal, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { useConfig } from "../../config"
 import { contextUsage } from "../../util/session"
+import { usageColors } from "../../util/usage-color"
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -41,6 +42,15 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
       draft.mode = compact() ? "expanded" : "compact"
     }).catch((error) => console.error("Failed to persist context sidebar state", error))
 
+  const colors = createMemo(() =>
+    usageColors(
+      { muted: theme.text.muted, warning: theme.text.feedback.warning.base, error: theme.text.feedback.error.base },
+      config.data.usage,
+      state()?.percent,
+      cost(),
+    ),
+  )
+
   // The sidebar width is not fixed, so compact mode shows the most detailed line that fits beside the toggle icon.
   const line = createMemo(() => {
     const usage = state()
@@ -51,8 +61,8 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
       [`${tokens.toLocaleString()} tokens`, ...percent.map((value) => `${value} used`), `${money.format(spent)} spent`],
       [tokens.toLocaleString(), ...percent, money.format(spent)],
       [shortNumber.format(tokens), ...percent, (spent >= 1 ? wholeMoney : money).format(spent)],
-    ].map((parts) => parts.join(" · "))
-    return variants.find((item) => item.length <= width() - 2) ?? variants[variants.length - 1]
+    ]
+    return variants.find((parts) => parts.join(" · ").length <= width() - 2) ?? variants[variants.length - 1]
   })
 
   return (
@@ -75,15 +85,15 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
               <Show when={state()}>
                 {(value) => (
                   <>
-                    <text fg={theme.text.muted}>{value().tokens.toLocaleString()} tokens</text>
+                    <text fg={colors().context}>{value().tokens.toLocaleString()} tokens</text>
                     <Show when={value().percent !== undefined}>
-                      <text fg={theme.text.muted}>{value().percent}% used</text>
+                      <text fg={colors().context}>{value().percent}% used</text>
                     </Show>
                   </>
                 )}
               </Show>
               <Show when={cost() > 0}>
-                <text fg={theme.text.muted}>{money.format(cost())} spent</text>
+                <text fg={colors().cost}>{money.format(cost())} spent</text>
               </Show>
             </>
           }
@@ -91,7 +101,14 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
           <box flexDirection="row" gap={1} onMouseDown={toggle}>
             <text fg={theme.text.base}>▶</text>
             <text fg={theme.text.muted} wrapMode="none" truncate>
-              {line()}
+              <For each={line()}>
+                {(part, index) => (
+                  <>
+                    {index() > 0 ? " · " : ""}
+                    <span style={{ fg: index() === line().length - 1 ? colors().cost : colors().context }}>{part}</span>
+                  </>
+                )}
+              </For>
             </text>
           </box>
         </Show>

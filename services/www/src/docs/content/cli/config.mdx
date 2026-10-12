@@ -135,6 +135,9 @@ Configure how full-screen TUI sessions are presented and where new sessions star
 | Setting                 | Values                      | Description                                                                  |
 | ----------------------- | --------------------------- | ---------------------------------------------------------------------------- |
 | `session.sidebar`       | `auto` or `hide`            | Shows the sidebar when space permits or always hides it.                     |
+| `usage.context_color`   | `plain` or `colored`        | Colors the context usage in the sidebar and the prompt footer by `usage.context_thresholds`. |
+| `usage.context_thresholds` | array of percents        | Defaults to `[60, 70, 80, 90]`: above 60% is the theme's warning color, above 90% its error color, blended between. |
+| `usage.cost_thresholds` | array of dollars            | Colors the session cost the same way; unset by default, so cost stays muted. `[5, 20]` warns above $5 and errs above $20. |
 | `session.context`       | `expanded` or `compact`     | Shows the sidebar's tokens, percent used and cost on separate lines, or on one line that abbreviates as the sidebar narrows. Clicking the Context heading switches between them. |
 | `session.scrollbar`     | boolean                     | Shows the transcript scrollbar.                                              |
 | `session.thinking`      | `show` or `hide`            | Shows or hides model reasoning by default.                                   |

@@ -1,6 +1,9 @@
 import { Plugin } from "@opencode/plugin/tui"
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { contextUsage, formatContextUsage } from "../../util/session"
+import { usageColors } from "../../util/usage-color"
+import { useConfig } from "../../config"
+import type { RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { stringWidth } from "../../util/string-width"
 
@@ -16,6 +19,7 @@ export function PromptFooter(props: {
   showDetails: boolean
 }) {
   const dimensions = useTerminalDimensions()
+  const config = useConfig()
   const [liveHovered, setLiveHovered] = createSignal(false)
   const subagents = createMemo(() => {
     if (!props.sessionID) return 0
@@ -31,7 +35,7 @@ export function PromptFooter(props: {
       .filter((shell) => shell.metadata.sessionID === props.sessionID).length
     return count ? `${count} shell${count === 1 ? "" : "s"}` : undefined
   })
-  const status = createMemo(() => {
+  const usageItems = createMemo((): { text: string; color: RGBA }[] => {
     if (!props.sessionID) return []
     const session = props.context.data.session.get(props.sessionID)
     if (!session) return []
@@ -41,11 +45,19 @@ export function PromptFooter(props: {
       session.revert?.messageID,
     )
     const cost = props.context.data.session.cost(props.sessionID)
+    const theme = props.context.theme
+    const colors = usageColors(
+      { muted: theme.text.muted, warning: theme.text.feedback.warning.base, error: theme.text.feedback.error.base },
+      config.data.usage,
+      usage?.percent,
+      cost,
+    )
     return [
-      usage ? formatContextUsage(usage.tokens, usage.percent) : undefined,
-      cost > 0 ? money.format(cost) : undefined,
-    ].filter((item): item is string => Boolean(item))
+      ...(usage ? [{ text: formatContextUsage(usage.tokens, usage.percent), color: colors.context }] : []),
+      ...(cost > 0 ? [{ text: money.format(cost), color: colors.cost }] : []),
+    ]
   })
+  const status = createMemo(() => usageItems().map((item) => item.text))
   const live = createMemo(() => Boolean(subagents() || shells()))
   const shortcut = (id: string) => props.context.keymap.shortcuts(id)[0]
   const layout = createMemo(() => {
@@ -87,7 +99,14 @@ export function PromptFooter(props: {
               <Show when={props.showDetails && layout().usage && status().length > 0}>
                 <text fg={props.context.theme.text.muted} wrapMode="none" flexShrink={0}>
                   <Show when={live()}> · </Show>
-                  {status().join(" · ")}
+                  <For each={usageItems()}>
+                    {(item, index) => (
+                      <>
+                        {index() > 0 ? " · " : ""}
+                        <span style={{ fg: item.color }}>{item.text}</span>
+                      </>
+                    )}
+                  </For>
                 </text>
               </Show>
             </box>

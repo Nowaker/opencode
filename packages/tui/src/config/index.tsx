@@ -66,6 +66,24 @@ export const Cursor = Schema.Struct({
   }),
 }).annotate({ description: "Terminal cursor settings" })
 
+export const UsageContextThresholdsDefault = [60, 70, 80, 90]
+const UsageThresholds = Schema.Array(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
+export const Usage = Schema.Struct({
+  context_color: Schema.optional(Schema.Literals(["plain", "colored"])).annotate({
+    description:
+      "Context usage color: 'plain' keeps the muted text color, 'colored' colors tokens and percent used by context_thresholds",
+  }),
+  context_thresholds: Schema.optional(UsageThresholds).annotate({
+    description:
+      "Percent-used thresholds for 'colored': above the first is the warning color, above the last the error color, blended between (default: [60, 70, 80, 90])",
+  }),
+  cost_thresholds: Schema.optional(UsageThresholds).annotate({
+    description:
+      "Dollar thresholds for the session cost: above the first is the warning color, above the last the error color, blended between (default: none)",
+  }),
+}).annotate({ description: "Context usage and cost coloring in the sidebar Context block and the prompt footer" })
+export type Usage = Schema.Schema.Type<typeof Usage>
+
 export const Info = Schema.Struct({
   theme: Schema.optional(
     Schema.Struct({
@@ -248,6 +266,7 @@ export const Info = Schema.Struct({
     description: "Experimental features that may change or be removed at any time",
   }),
   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
+  usage: Schema.optional(Usage),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),
 })

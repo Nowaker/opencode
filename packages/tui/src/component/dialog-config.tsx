@@ -52,6 +52,14 @@ export const settings: Setting[] = [
     keywords: ["side panel"],
   },
   {
+    title: "Context usage color",
+    category: "Session",
+    path: ["usage", "context_color"],
+    default: "plain",
+    values: ["plain", "colored"],
+    keywords: ["tokens", "percent", "threshold", "warning"],
+  },
+  {
     title: "Sidebar context",
     category: "Session",
     path: ["session", "context"],
