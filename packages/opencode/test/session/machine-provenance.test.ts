@@ -56,7 +56,8 @@ it.instance("preserves external metadata when a stale engine event projects", ()
 
   const stored = yield* sessions.get(session.id)
   expect(stored.title).toBe("engine update")
-  expect(stored.metadata).toMatchObject({ external: { retained: true }, vibeterm: { creator, notes: [added, tombstone], sibling: "external", other: true } })
+  // Vibeterm owns only the vibeterm key; every other key follows the event.
+  expect(stored.metadata).toMatchObject({ external: { retained: false }, vibeterm: { creator, notes: [added, tombstone], sibling: "external", other: true } })
 })))
 
 it.instance("preserves persisted creator when a streamed update omits provenance", () => identity(Effect.gen(function* () {
@@ -166,6 +167,18 @@ it.instance("retains newer execution through stale and foreign metadata projecti
   const stamp = (yield* sessions.get(session.id)).metadata?.vibeterm.lastExecution
   yield* sessions.setMetadata({ sessionID: session.id, metadata: { unrelated: true, vibeterm: { lastExecution: { ...stamp, sessionId: "foreign", at: stamp.at + 100 } } } })
   expect((yield* sessions.get(session.id)).metadata).toMatchObject({ unrelated: true, vibeterm: { lastExecution: stamp } })
+})))
+
+it.instance("records execution without dropping other metadata, and a metadata update replaces it", () => identity(Effect.gen(function* () {
+  const sessions = yield* Session.Service
+  const note = { id: "note", createdAt: 1, updatedAt: 1 }
+  const session = yield* sessions.create({ metadata: { source: "sdk", vibeterm: { notes: [note] } } })
+  yield* sessions.recordExecution(session.id)
+  const recorded = (yield* sessions.get(session.id)).metadata
+  expect(recorded).toMatchObject({ source: "sdk", vibeterm: { notes: [note], lastExecution: { machineId: "machine-A" } } })
+
+  yield* sessions.setMetadata({ sessionID: session.id, metadata: { trace: "next" } })
+  expect((yield* sessions.get(session.id)).metadata).toEqual({ trace: "next", vibeterm: recorded?.vibeterm })
 })))
 
 it.instance("stays inert without persistent identity even on new creation and execution", () => identity(Effect.gen(function* () {

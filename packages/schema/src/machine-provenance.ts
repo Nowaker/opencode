@@ -81,10 +81,12 @@ export function mergeMetadata(
     }
   }
   const { lastExecution: ignored, ...rest } = { ...next, ...previous }
-  if (!incoming?.vibeterm && !current?.vibeterm) return incoming || current ? { ...incoming, ...current } : undefined
+  // Vibeterm writes only the `vibeterm` key straight to the row, so only that
+  // key is merged; every other key is the engine's and follows the event, as
+  // upstream, or a metadata update could never change or remove one.
+  if (!incoming?.vibeterm && !current?.vibeterm) return incoming
   return {
     ...incoming,
-    ...current,
     vibeterm: {
       ...rest,
       ...(notes.size ? { notes: [...notes.values()].sort((left, right) => left.createdAt - right.createdAt || compare(left.id, right.id)) } : {}),

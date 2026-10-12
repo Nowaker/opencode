@@ -788,9 +788,10 @@ const layer: Layer.Layer<
     const recordExecution = Effect.fn("Session.recordExecution")(function* (sessionID: SessionID) {
       const stamp = MachineProvenance.execution(sessionID)
       if (!stamp) return
+      const current = (yield* get(sessionID).pipe(Effect.orDie)).metadata
       yield* setMetadata({
         sessionID,
-        metadata: { vibeterm: { lastExecution: stamp } },
+        metadata: { ...current, vibeterm: { ...current?.vibeterm, lastExecution: stamp } },
       })
     })
 
