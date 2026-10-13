@@ -1,8 +1,8 @@
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
-import { useTuiConfig } from "../../config"
+import { TuiConfig, useTuiConfig } from "../../config"
 import { useKV } from "../../context/kv"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { usePluginRuntime } from "../../plugin/runtime"
@@ -13,6 +13,27 @@ import { TuiLayout } from "../../layout"
 import { useOpencodeKeymap } from "../../keymap"
 import { onClick } from "../../ui/click"
 import { markOwnIds } from "../../ui/id-click"
+
+type KV = Pick<ReturnType<typeof useKV>, "get" | "set">
+type Config = Pick<TuiConfig.Info, "sidebar">
+
+// sidebar.pin_title set in tui.json decides on every start and /pin-title then lasts until opencode
+// exits, across sessions; unset, /pin-title is remembered in kv.json.
+const [titlePinToggled, setTitlePinToggled] = createSignal<boolean>()
+
+export function sidebarTitlePinned(config: Config, kv: KV) {
+  return titlePinToggled() ?? config.sidebar?.pin_title ?? kv.get("sidebar_pin_title", false)
+}
+
+// Returns the message to show when the toggle lasts only until exit.
+export function toggleSidebarTitlePin(config: Config, kv: KV) {
+  const next = !sidebarTitlePinned(config, kv)
+  const configured = config.sidebar?.pin_title
+  if (configured === undefined) return kv.set("sidebar_pin_title", next)
+  setTitlePinToggled(next === configured ? undefined : next)
+  if (next !== configured)
+    return `Sidebar title ${next ? "pinned" : "unpinned"} until opencode exits: tui.json sets sidebar.pin_title`
+}
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -29,7 +50,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     return project.workspace.get(workspaceID)
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
-  const pinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
+  const pinned = () => sidebarTitlePinned(tuiConfig, kv)
   const showSessionID = () =>
     TuiLayout.sidebarShowsSessionId({
       kv: kv.get("sidebar_session_id"),
