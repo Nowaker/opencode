@@ -10,6 +10,7 @@ import {
   createSlots,
   moveSidebarSection,
   placeSidebarSection,
+  resetSidebarOrder,
   SIDEBAR_ORDER_KEY,
   sidebarSectionName,
 } from "../../src/plugin/slots"
@@ -126,9 +127,10 @@ test("dragging a section moves it to the drop target's place", () => {
 // Two sections shaped like the built-in ones: an unselectable name with selectable data after
 // it, then a row whose gap after the bullet is not text.
 //   y0 "Context 12 tokens", y1 "• row", y3 "MCP •3", y4 "• row"
-async function renderDraggableSidebar() {
+async function renderDraggableSidebar(sidebar?: TuiConfig.Sidebar, saved?: string[]) {
   const slots = createSlots()
   const base = createTuiPluginApi()
+  if (saved) base.kv.set(SIDEBAR_ORDER_KEY, saved)
   const section = (title: string, data: string) => () => (
     <box>
       <box flexDirection="row" gap={1}>
@@ -142,7 +144,7 @@ async function renderDraggableSidebar() {
     </box>
   )
   const App = () => {
-    const host = slots.setup({ ...base, renderer: useRenderer() } satisfies TuiPluginApi)
+    const host = slots.setup({ ...base, renderer: useRenderer() } satisfies TuiPluginApi, sidebar)
     host.register({
       id: "internal:sidebar-context",
       order: 100,
@@ -157,8 +159,27 @@ async function renderDraggableSidebar() {
   }
   const app = await testRender(() => <App />, { width: 30, height: 8 })
   await app.renderOnce()
-  return { app, order: () => base.kv.get(SIDEBAR_ORDER_KEY) }
+  return { app, kv: base.kv, order: () => base.kv.get(SIDEBAR_ORDER_KEY) }
 }
+
+test("sidebar.order in tui.json beats a remembered drag, and a drag then lasts until exit", async () => {
+  const sidebar = await renderDraggableSidebar({ order: ["context", "mcp"] }, ["mcp", "context"])
+  const row = (name: string) =>
+    sidebar.app
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => line.includes(name))
+  try {
+    expect(row("Context")).toBeLessThan(row("MCP"))
+    await sidebar.app.mockMouse.drag(0, row("MCP"), 0, 0)
+    await sidebar.app.renderOnce()
+    expect(row("MCP")).toBeLessThan(row("Context"))
+    expect(sidebar.order()).toEqual(["mcp", "context"])
+  } finally {
+    resetSidebarOrder(sidebar.kv)
+    sidebar.app.renderer.destroy()
+  }
+})
 
 test("a section drags by its header", async () => {
   const sidebar = await renderDraggableSidebar()

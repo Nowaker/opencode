@@ -78,6 +78,21 @@ export function placeSidebarSection<
 
 export const SIDEBAR_ORDER_KEY = "sidebar_order"
 
+// `sidebar.order` set in tui.json decides on every start and a dragged order then lasts until
+// opencode exits; unset, the dragged order is remembered in kv.json.
+const [draggedOrder, setDraggedOrder] = createSignal<string[]>()
+
+type OrderKV = Pick<TuiPluginApi["kv"], "get" | "set">
+
+export function sidebarOrderChanged(kv: OrderKV) {
+  return draggedOrder() !== undefined || kv.get(SIDEBAR_ORDER_KEY) !== undefined
+}
+
+export function resetSidebarOrder(kv: OrderKV) {
+  setDraggedOrder(undefined)
+  kv.set(SIDEBAR_ORDER_KEY, undefined)
+}
+
 export function moveSidebarSection(names: readonly string[], from: string, to: string) {
   const next = names.filter((name) => name !== from)
   next.splice(names.indexOf(to), 0, from)
@@ -110,11 +125,12 @@ export function createSlots() {
       const slot = createSlot<RuntimeSlotMap, TuiSlotContext>(registry)
       setView(() => (props: TuiSlotProps<string>) => slot(props))
 
-      // A drag-and-drop order is saved in kv and wins over `sidebar.order` until reset.
       const sections = new Map<string, { name: string; pluginID: string; fallback?: number }>()
       const savedOrder = () => {
+        const dragged = draggedOrder() ?? sidebar?.order
+        if (dragged) return dragged
         const saved: unknown = api.kv.get(SIDEBAR_ORDER_KEY)
-        if (!Array.isArray(saved)) return sidebar?.order
+        if (!Array.isArray(saved)) return undefined
         return saved.filter((item): item is string => typeof item === "string")
       }
       const rank = (section: { name: string; pluginID: string; fallback?: number }, order = savedOrder()) =>
@@ -132,7 +148,15 @@ export function createSlots() {
       let pressed: string | undefined
       const move = (from: string, to: string) => {
         const names = [...sections.values()].toSorted((a, b) => rank(a) - rank(b)).map((section) => section.name)
-        api.kv.set(SIDEBAR_ORDER_KEY, moveSidebarSection(names, from, to))
+        const next = moveSidebarSection(names, from, to)
+        if (!sidebar?.order) return api.kv.set(SIDEBAR_ORDER_KEY, next)
+        const first = draggedOrder() === undefined
+        setDraggedOrder(next)
+        if (first)
+          api.ui.toast({
+            message: "Sidebar order kept until opencode exits: tui.json sets sidebar.order",
+            variant: "info",
+          })
       }
 
       const release = () =>
