@@ -114,8 +114,8 @@ function promptGeometry(input: Input, promptWidth: number, space: number) {
   const status = statusRow(input, promptWidth)
   const chrome = TuiLayout.promptChromeRows(status.rows)
   const rows = TuiLayout.promptRows({
-    min: input.config.promptMinHeight,
-    max: input.config.promptMaxHeight,
+    min: (input.session ? undefined : input.config.homePromptMinHeight) ?? input.config.promptMinHeight,
+    max: (input.session ? undefined : input.config.homePromptMaxHeight) ?? input.config.promptMaxHeight,
     terminalHeight: input.height,
     space: space - chrome,
   })
@@ -160,11 +160,11 @@ export function layout(input: Input) {
     footer: { lines: footerLines, label: footerLabel, y: homeHeight + H.footerPaddingY, height: footerHeight },
     version: { x: input.width - H.footerPaddingX - versionWidth },
     logo: logoHeight
-      ? { x: Math.round(H.paddingX + (inner - logoWidth) / 2), y: Math.round(stack.spacer + stack.gapAbove) }
+      ? { x: Math.round(H.paddingX + (inner - logoWidth) / 2), y: Math.round(stack.logoTop) }
       : undefined,
     prompt: {
       x: promptX,
-      y: Math.round(stack.spacer + stack.gapAbove + logoHeight + stack.gapBelow + H.promptPaddingTop),
+      y: Math.round(stack.promptTop + H.promptPaddingTop),
       width: promptWidth,
       textX: promptX + P.borderWidth + P.paddingX,
       ...geometry,

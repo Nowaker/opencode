@@ -508,7 +508,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `datetime_format` - How times and dates are written. See [Date and time format](#date-and-time-format).
 - `tool_output.collapse` - How much of a tool's output shows before **Click to expand**. See [Tool output](#tool-output).
 - `prompt.min_height`, `prompt.max_height`, `prompt.max_width` - How tall the prompt starts, how tall it grows before it scrolls, and how wide the home screen prompt is. See [Prompt size](#prompt-size).
-- `home.logo`, `home.tips`, `home.prompt_position` - Whether the home screen shows the logo and a tip, and where its prompt sits. See [Home screen](#home-screen).
+- `home.logo`, `home.tips`, `home.prompt_position`, `home.prompt_min_height`, `home.prompt_max_height` - Whether the home screen shows the logo and a tip, where its prompt sits, and how tall that prompt is. See [Home screen](#home-screen).
 - `prompt.paste_summary` - When a paste is replaced by a placeholder such as `[Pasted ~12 lines]`, and what the placeholder says. See [Paste summary](#paste-summary).
 - `prompt.undo_depth` - How many steps of prompt edits undo can take back. Defaults to `500`. See [Undo in the prompt](#undo-in-the-prompt).
 - `model_label` - How message footers and the prompt name a model: `"name"` (default) shows its display name, such as `Claude Sonnet 4.5`; `"id"` shows `providerID/modelID`, such as `anthropic/claude-sonnet-4-5`.
@@ -716,7 +716,7 @@ A command run through `sudo`, `env`, `timeout`, `ssh`, `docker exec` or `kubectl
 
 ### Prompt size
 
-The prompt starts `prompt.min_height` rows tall, grows with what you type up to `prompt.max_height` rows, and scrolls after that. It never grows past the screen: on the home screen the logo keeps one row above it, and in a session the transcript gives up its rows. `prompt.max_width` caps the home screen prompt's width; the session prompt always spans the transcript.
+The prompt starts `prompt.min_height` rows tall, grows with what you type up to `prompt.max_height` rows, and scrolls after that. The home screen prompt uses `home.prompt_min_height` and `home.prompt_max_height` instead where they are set; see [Home screen](#home-screen). It never grows past the screen: on the home screen the logo keeps one row above it, and in a session the transcript gives up its rows. `prompt.max_width` caps the home screen prompt's width; the session prompt always spans the transcript.
 
 ```json title="tui.json"
 {
@@ -741,14 +741,16 @@ Each also takes a percentage from `"1%"` to `"100%"`. A height percentage is of 
   "home": {
     "logo": false,
     "tips": false,
-    "prompt_position": "bottom"
+    "prompt_position": "bottom",
+    "prompt_min_height": "35%"
   }
 }
 ```
 
 - `logo` - Show the OpenCode logo above the prompt. Defaults to `true`.
-- `tips` - Show a tip below the prompt. Defaults to `true`. The **Hide tips** / **Show tips** command is remembered and takes precedence over this setting.
-- `prompt_position` - Where the prompt sits. `"middle"` (default) centers it. `"top"` puts it at the top, so it grows down as you type; `"bottom"` puts it at the bottom, so it grows up. The logo stays directly above the prompt, and the tip directly below it.
+- `tips` - Show a tip on the home screen. Defaults to `true`. Set here, it decides on every start, and the **Hide tips** / **Show tips** command lasts until OpenCode exits. Left unset, that command is remembered.
+- `prompt_min_height`, `prompt_max_height` - How tall the home screen prompt starts and how tall it grows, the same way `prompt.min_height` and `prompt.max_height` size the session prompt. Each defaults to its `prompt.*` counterpart, so set these to give the home screen a taller prompt than a session, such as `"prompt_min_height": "35%"`.
+- `prompt_position` - Where the prompt sits. `"middle"` (default) centers it. `"top"` puts it at the top, so it grows down as you type; `"bottom"` puts it on the footer, so it grows up. The logo stays directly above the prompt. The tip sits below the prompt, except with `"bottom"`, where it moves above the logo so nothing sits between the prompt and the footer.
 
 ### Paste summary
 

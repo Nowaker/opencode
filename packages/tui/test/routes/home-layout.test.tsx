@@ -63,6 +63,8 @@ function instantInput(options: Options): InstantFrame.Input {
     promptMaxWidth: config.prompt?.max_width,
     promptMaxHeight: config.prompt?.max_height,
     promptMinHeight: config.prompt?.min_height,
+    homePromptMinHeight: config.home?.prompt_min_height,
+    homePromptMaxHeight: config.home?.prompt_max_height,
     homeLogo: config.home?.logo,
     homeTips: config.home?.tips,
     homePromptPosition: config.home?.prompt_position,
@@ -137,7 +139,7 @@ describe("home screen layout", () => {
     expect(bottomTall.prompt - bottomTall.logo!).toBe(4 + 1 + 1)
   }, 60_000)
 
-  test("the logo and the tip can be hidden, and the tips toggle wins over home.tips", async () => {
+  test("the logo and the tip can be hidden, and home.tips wins over the remembered tips toggle", async () => {
     const shown = await home({ width: 100, height: 30 })
     expect(shown.logo).toBeDefined()
     expect(shown.tip).toBeGreaterThan(shown.status)
@@ -150,7 +152,52 @@ describe("home screen layout", () => {
       config: { home: { tips: false } },
       kv: { tips_hidden: false },
     })
-    expect(toggled.tip).toBeGreaterThan(toggled.status)
+    expect(toggled.tip).toBe(-1)
+    const remembered = await home({ width: 100, height: 30, kv: { tips_hidden: true } })
+    expect(remembered.tip).toBe(-1)
+  }, 60_000)
+
+  test("at the bottom the prompt sits on the footer, the tip above the logo", async () => {
+    const config: Info = { home: { prompt_position: "bottom" }, prompt: { min_height: 8, max_height: 999 } }
+    const screen = await home({ width: 160, height: 45, config })
+    expect(screen.status).toBe(screen.footer - 2)
+    expect(screen.textRows).toBe(8)
+    expect(screen.tip).toBeGreaterThan(-1)
+    expect(screen.tip).toBeLessThan(screen.logo!)
+    const tall = await home({ width: 160, height: 45, lines: 60, config })
+    expect(tall.status).toBe(tall.footer - 2)
+    expect(tall.logo).toBe(1)
+  }, 60_000)
+
+  test("the reported config: bottom, no logo or tip, min_height 8, max_height 999", async () => {
+    const config: Info = {
+      home: { prompt_position: "bottom", logo: false, tips: false },
+      prompt: { min_height: 8, max_height: 999, max_width: 999 },
+    }
+    for (const [width, height] of [
+      [160, 45],
+      [220, 60],
+    ]) {
+      const screen = await home({ width, height, config, kv: { tips_hidden: false } })
+      expect(screen.status).toBe(screen.footer - 2)
+      expect(screen.textRows).toBe(8)
+      expect(screen.tip).toBe(-1)
+    }
+  }, 60_000)
+
+  test("home.prompt_min_height and home.prompt_max_height size the home prompt alone", async () => {
+    const config: Info = {
+      home: { prompt_position: "bottom", tips: false, logo: false, prompt_min_height: "35%", prompt_max_height: "80%" },
+      prompt: { max_height: 999 },
+    }
+    // 42 rows above the footer, less the padding and 5 rows around the text, leave 36.
+    const start = await home({ width: 160, height: 45, config })
+    expect(start.textRows).toBe(12)
+    expect(start.status).toBe(start.footer - 2)
+    const tall = await home({ width: 160, height: 45, lines: 60, config })
+    expect(tall.textRows).toBe(28)
+    const session = await home({ width: 160, height: 45, config }, "session")
+    expect(session.textRows).toBe(1)
   }, 60_000)
 
   test("min_height starts the prompt taller, and percentages size it from the room it has", async () => {
@@ -185,6 +232,13 @@ describe("home screen layout", () => {
     { width: 80, height: 12, lines: 10, config: { prompt: { max_height: "100%" }, home: { tips: false } } },
     { width: 60, height: 12, lines: 3, config: { home: { tips: false } } },
     { width: 60, height: 13, lines: 3, config: { home: { prompt_position: "top", tips: false } } },
+    { width: 160, height: 45, lines: 2, config: { home: { prompt_position: "bottom" }, prompt: { min_height: 8 } } },
+    {
+      width: 160,
+      height: 45,
+      lines: 2,
+      config: { home: { prompt_position: "bottom", tips: false, prompt_min_height: "35%" }, prompt: { min_height: 8 } },
+    },
   ]
   for (const options of cases)
     test(`the instant screen paints the same layout: ${JSON.stringify(options)}`, async () => {

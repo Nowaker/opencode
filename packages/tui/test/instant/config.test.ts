@@ -12,7 +12,7 @@ const read = async (config: unknown) => {
 test("the instant screen reads prompt sizes, percentages and the home screen layout", async () => {
   const settings = await read({
     prompt: { min_height: "25%", max_height: "100%", max_width: "80%" },
-    home: { logo: false, tips: false, prompt_position: "top" },
+    home: { logo: false, tips: false, prompt_position: "top", prompt_min_height: "35%", prompt_max_height: 12 },
   })
   expect(settings).toMatchObject({
     promptMinHeight: "25%",
@@ -21,6 +21,8 @@ test("the instant screen reads prompt sizes, percentages and the home screen lay
     homeLogo: false,
     homeTips: false,
     homePromptPosition: "top",
+    homePromptMinHeight: "35%",
+    homePromptMaxHeight: 12,
   })
 })
 

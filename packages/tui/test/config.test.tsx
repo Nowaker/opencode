@@ -83,6 +83,10 @@ test("validates config constraints", () => {
     home: { logo: false, tips: false, prompt_position: "bottom" },
   })
   expect(() => decodeInfo({ home: { prompt_position: "left" } })).toThrow()
+  expect(decodeInfo({ home: { prompt_min_height: "35%", prompt_max_height: 20 } })).toEqual({
+    home: { prompt_min_height: "35%", prompt_max_height: 20 },
+  })
+  expect(() => decodeInfo({ home: { prompt_min_height: "0%" } })).toThrow()
   expect(() => decodeInfo({ scroll_speed: 0 })).toThrow()
   expect(() => decodeInfo({ cursor: { style: "beam" } })).toThrow()
   expect(decodeInfo({ sidebar: { pin_title: true } })).toEqual({ sidebar: { pin_title: true } })

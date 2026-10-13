@@ -17,6 +17,8 @@ export type Settings = {
   promptMaxWidth?: TuiLayout.Size | "auto"
   promptMaxHeight?: TuiLayout.Size
   promptMinHeight?: TuiLayout.Size
+  homePromptMinHeight?: TuiLayout.Size
+  homePromptMaxHeight?: TuiLayout.Size
   homeLogo?: boolean
   homeTips?: boolean
   homePromptPosition?: TuiLayout.PromptPosition
@@ -84,6 +86,8 @@ export function read(env: NodeJS.ProcessEnv = process.env): Settings {
     promptMaxWidth: prompt.max_width === "auto" ? "auto" : size(prompt.max_width),
     promptMaxHeight: size(prompt.max_height),
     promptMinHeight: size(prompt.min_height),
+    homePromptMinHeight: size(home.prompt_min_height),
+    homePromptMaxHeight: size(home.prompt_max_height),
     homeLogo: home.logo !== false,
     homeTips: typeof home.tips === "boolean" ? home.tips : undefined,
     homePromptPosition:

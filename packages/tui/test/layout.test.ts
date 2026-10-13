@@ -42,14 +42,23 @@ describe("home stack", () => {
     TuiLayout.homeStack({ height: 27, logo: 4, prompt: 7, bottom: 4, position: "middle", ...input })
 
   test("with room to spare the middle prompt is centered and top/bottom keep one row above the logo", () => {
-    expect(stack({})).toEqual({ spacer: 3.5, gapAbove: 4, gapBelow: 1, bottom: 4 })
-    expect(stack({ position: "top" })).toEqual({ spacer: 0, gapAbove: 1, gapBelow: 1, bottom: 4 })
-    expect(stack({ position: "bottom" })).toEqual({ spacer: 10, gapAbove: 1, gapBelow: 1, bottom: 4 })
+    expect(stack({})).toMatchObject({ spacer: 3.5, gapAbove: 4, gapBelow: 1, bottom: 4, logoTop: 7.5, promptTop: 12.5 })
+    expect(stack({ position: "top" })).toMatchObject({ spacer: 0, gapAbove: 1, gapBelow: 1, bottom: 4, logoTop: 1 })
+    // At the bottom the tips go above the logo, so the prompt ends on the column's last row.
+    expect(stack({ position: "bottom" })).toMatchObject({
+      spacer: 10,
+      gapAbove: 1,
+      gapBelow: 1,
+      bottom: 4,
+      tipsAbove: true,
+      logoTop: 15,
+      promptTop: 20,
+    })
   })
 
   test("a tall prompt shrinks the gaps and tips, the gap above the logo to one row", () => {
-    expect(stack({ prompt: 22 })).toEqual({ spacer: 0, gapAbove: 1, gapBelow: 0, bottom: 0 })
-    expect(stack({ prompt: 16 })).toEqual({ spacer: 0.5, gapAbove: 3, gapBelow: 0, bottom: 3 })
+    expect(stack({ prompt: 22 })).toMatchObject({ spacer: 0, gapAbove: 1, gapBelow: 0, bottom: 0 })
+    expect(stack({ prompt: 16 })).toMatchObject({ spacer: 0.5, gapAbove: 3, gapBelow: 0, bottom: 3 })
     for (const position of ["middle", "top", "bottom"] as const)
       for (let prompt = 7; prompt <= 22; prompt++) {
         const result = stack({ prompt, position })
@@ -59,14 +68,15 @@ describe("home stack", () => {
   })
 
   test("without the logo there are no gaps", () => {
-    expect(stack({ logo: 0, prompt: 20 })).toEqual({ spacer: 1.5, gapAbove: 0, gapBelow: 0, bottom: 4 })
-    expect(stack({ logo: 0, prompt: 27 })).toEqual({ spacer: 0, gapAbove: 0, gapBelow: 0, bottom: 0 })
+    expect(stack({ logo: 0, prompt: 20 })).toMatchObject({ spacer: 1.5, gapAbove: 0, gapBelow: 0, bottom: 4 })
+    expect(stack({ logo: 0, prompt: 27 })).toMatchObject({ spacer: 0, gapAbove: 0, gapBelow: 0, bottom: 0 })
   })
 
-  test("the tips toggle wins over home.tips", () => {
+  test("home.tips wins over the remembered tips toggle, which applies only when it is unset", () => {
     expect(TuiLayout.homeTipsShown({})).toBe(true)
     expect(TuiLayout.homeTipsShown({ configured: false })).toBe(false)
-    expect(TuiLayout.homeTipsShown({ kv: false, configured: false })).toBe(true)
-    expect(TuiLayout.homeTipsShown({ kv: true, configured: true })).toBe(false)
+    expect(TuiLayout.homeTipsShown({ kv: false, configured: false })).toBe(false)
+    expect(TuiLayout.homeTipsShown({ kv: true, configured: true })).toBe(true)
+    expect(TuiLayout.homeTipsShown({ kv: true })).toBe(false)
   })
 })

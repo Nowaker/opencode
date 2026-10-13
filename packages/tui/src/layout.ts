@@ -83,11 +83,13 @@ export function sidebarShowsSessionId(input: { kv?: unknown; configured?: boolea
   return input.configured ?? input.channel !== "latest"
 }
 
-// The tips toggle ("tips_hidden" in kv.json) wins over tui.json's home.tips; with neither the
-// home screen shows a tip.
+// tui.json's home.tips decides on every start when it is set; the tips toggle then lasts until
+// the TUI exits. Unset, the toggle is remembered as "tips_hidden" in kv.json, and with neither the
+// home screen shows a tip. kv.json persists every value read with a default alongside any later
+// write, so letting it win would let a value nobody chose mask the config.
 export function homeTipsShown(input: { kv?: unknown; configured?: boolean }) {
-  if (typeof input.kv === "boolean") return !input.kv
-  return input.configured ?? true
+  if (input.configured !== undefined) return input.configured
+  return typeof input.kv === "boolean" ? !input.kv : true
 }
 
 export const StartupLoading = {
@@ -174,9 +176,11 @@ export function sessionPromptSpace(columnHeight: number) {
 // The rows of the home column from the top: the spacer, the gap above the logo, the gap below it
 // and the home_bottom block (the tips), given the logo's rows (0 when hidden) and the rows of
 // everything from the update notice to the prompt's bottom. The prompt sits in the middle, or at
-// the top or bottom with the logo above it. When the column is too short, the gaps and the tips
-// shrink in proportion to their size, as flexbox would, the gap above the logo no further than
-// Home.logoGapMin. The TUI sets these heights itself: Yoga does not shrink a box with a height.
+// the top or bottom with the logo above it. At the bottom the tips go above the logo instead of
+// below the prompt, so the prompt sits on the footer. When the column is too short, the gaps and
+// the tips shrink in proportion to their size, as flexbox would, the gap above the logo no further
+// than Home.logoGapMin. The TUI sets these heights itself: Yoga does not shrink a box with a height.
+// `logoTop` and `promptTop` are the rows above the logo and above the update notice.
 export function homeStack(input: {
   height: number
   logo: number
@@ -189,7 +193,21 @@ export function homeStack(input: {
   const sizes = shrink([...gaps, input.bottom], mins, input.height - input.logo - input.prompt).map(Math.floor)
   const free = Math.max(0, input.height - input.logo - input.prompt - sizes.reduce((sum, value) => sum + value, 0))
   const spacer = input.position === "middle" ? free / 2 : input.position === "bottom" ? free : 0
-  return { spacer, gapAbove: sizes[0], gapBelow: sizes[1], bottom: sizes[2] }
+  const tipsAbove = homeTipsAbove(input.position)
+  const logoTop = spacer + (tipsAbove ? sizes[2] : 0) + sizes[0]
+  return {
+    spacer,
+    gapAbove: sizes[0],
+    gapBelow: sizes[1],
+    bottom: sizes[2],
+    tipsAbove,
+    logoTop,
+    promptTop: logoTop + input.logo + sizes[1],
+  }
+}
+
+export function homeTipsAbove(position: PromptPosition) {
+  return position === "bottom"
 }
 
 export function homeLogoGapAbove(position: PromptPosition) {

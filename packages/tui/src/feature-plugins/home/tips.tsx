@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
-import { createEffect, createMemo, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { Tips } from "./tips-view"
 import { useBindings } from "../../keymap"
 import { TuiLayout } from "../../layout"
@@ -10,7 +10,7 @@ import { useTuiConfig } from "../../config"
 
 const id = "internal:home-tips"
 
-function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean }) {
+function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean; toggle: () => void }) {
   const paths = useTuiPaths()
   useBindings(() => ({
     commands: [
@@ -20,7 +20,7 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
         category: "System",
         namespace: "palette",
         run() {
-          props.api.kv.set("tips_hidden", !props.hidden)
+          props.toggle()
           props.api.ui.dialog.clear()
         },
       },
@@ -54,14 +54,23 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
 }
 
 const tui: TuiPlugin = async (api) => {
+  // The toggle while tui.json's home.tips decides: it lasts until the TUI exits.
+  const [toggled, setToggled] = createSignal<boolean>()
   api.slots.register({
     order: 100,
     slots: {
       home_bottom() {
         const config = useTuiConfig()
+        const configured = () => config.home?.tips
         const hidden = createMemo(
-          () => !TuiLayout.homeTipsShown({ kv: api.kv.get("tips_hidden"), configured: config.home?.tips }),
+          () => toggled() ?? !TuiLayout.homeTipsShown({ kv: api.kv.get("tips_hidden"), configured: configured() }),
         )
+        const toggle = () => {
+          const next = !hidden()
+          const setting = configured()
+          if (setting === undefined) return api.kv.set("tips_hidden", next)
+          setToggled(next === !setting ? undefined : next)
+        }
         const first = createMemo(() => api.state.session.count() === 0)
         const connected = createMemo(() =>
           api.state.provider.some(
@@ -69,7 +78,7 @@ const tui: TuiPlugin = async (api) => {
           ),
         )
         const show = createMemo(() => (!first() || !connected()) && !hidden())
-        return <View api={api} hidden={hidden()} show={show()} connected={connected()} />
+        return <View api={api} hidden={hidden()} show={show()} connected={connected()} toggle={toggle} />
       },
     },
   })

@@ -1911,10 +1911,11 @@ export function Prompt(props: PromptProps) {
       if (!anchor || !input || anchor.isDestroyed || input.isDestroyed || props.visible === false) return
       setChrome(anchor.height - input.height)
     })
+  // The home prompt (no session) takes the home.prompt_* heights, falling back to prompt.*.
   const rows = createMemo(() =>
     TuiLayout.promptRows({
-      min: tuiConfig.prompt?.min_height,
-      max: tuiConfig.prompt?.max_height,
+      min: (props.sessionID ? undefined : tuiConfig.home?.prompt_min_height) ?? tuiConfig.prompt?.min_height,
+      max: (props.sessionID ? undefined : tuiConfig.home?.prompt_max_height) ?? tuiConfig.prompt?.max_height,
       terminalHeight: dimensions().height,
       space: props.space === undefined ? undefined : props.space - chrome(),
     }),

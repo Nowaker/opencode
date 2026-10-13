@@ -66,6 +66,26 @@ export function Home() {
       notice: notice(),
     })
   })
+  // The tips keep their own height in an absolute box, which is how the stack learns it. Above
+  // the logo it hangs from the bottom, so a squeeze takes the padding above the tip first.
+  const tips = () => (
+    <box width="100%" height={stack().bottom} flexShrink={0} overflow="hidden">
+      <box
+        position="absolute"
+        top={stack().tipsAbove ? undefined : 0}
+        bottom={stack().tipsAbove ? 0 : undefined}
+        left={0}
+        width="100%"
+        alignItems="center"
+        onSizeChange={function () {
+          // An empty box is still a row tall.
+          setBottomHeight(this.getChildren().length ? this.height : 0)
+        }}
+      >
+        <pluginRuntime.Slot name="home_bottom" />
+      </box>
+    </box>
+  )
   let sent = false
 
   onMount(() => {
@@ -110,6 +130,7 @@ export function Home() {
         }}
       >
         <box height={0} flexGrow={position() === "top" ? 0 : 1} />
+        <Show when={stack().tipsAbove}>{tips()}</Show>
         <Show when={showLogo()}>
           <box height={stack().gapAbove} flexShrink={0} />
           <box
@@ -145,22 +166,7 @@ export function Home() {
             />
           </pluginRuntime.Slot>
         </box>
-        {/* The tips keep their own height in an absolute box, which is how the stack learns it. */}
-        <box width="100%" height={stack().bottom} flexShrink={0} overflow="hidden">
-          <box
-            position="absolute"
-            top={0}
-            left={0}
-            width="100%"
-            alignItems="center"
-            onSizeChange={function () {
-              // An empty box is still a row tall.
-              setBottomHeight(this.getChildren().length ? this.height : 0)
-            }}
-          >
-            <pluginRuntime.Slot name="home_bottom" />
-          </box>
-        </box>
+        <Show when={!stack().tipsAbove}>{tips()}</Show>
         <box height={0} flexGrow={position() === "bottom" ? 0 : 1} />
         <Toast />
       </box>

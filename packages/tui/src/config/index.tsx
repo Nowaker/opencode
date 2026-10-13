@@ -479,13 +479,21 @@ export const Home = Schema.Struct({
   }),
   tips: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Show a tip below the home screen prompt (default: true). The 'Show tips' / 'Hide tips' command is remembered and takes precedence",
+      "Show a tip on the home screen (default: true). Set here, it decides on every start and the 'Show tips' / 'Hide tips' command lasts until the TUI exits; unset, that command is remembered",
   }),
   prompt_position: Schema.optional(Schema.Literals(["middle", "top", "bottom"])).annotate({
     description: [
       "Where the home screen prompt sits: 'middle' (default) centers it, 'top' puts it at the top so it grows",
-      "down, 'bottom' at the bottom so it grows up. The logo stays directly above the prompt",
+      "down, 'bottom' on the footer so it grows up, with the tip above the logo. The logo stays directly above the prompt",
     ].join(" "),
+  }),
+  prompt_min_height: Schema.optional(PromptSize).annotate({
+    description:
+      "Rows the home screen prompt starts at, or a percentage of the rows it can have (default: prompt.min_height)",
+  }),
+  prompt_max_height: Schema.optional(PromptSize).annotate({
+    description:
+      "Rows the home screen prompt grows to before it scrolls, or a percentage of the rows it can have (default: prompt.max_height)",
   }),
 }).annotate({ description: "Home screen settings" })
 export type Home = Schema.Schema.Type<typeof Home>
