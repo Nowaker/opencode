@@ -37,10 +37,12 @@ export async function mountSidebar(input: {
   route?: TuiPluginApi["route"]
   width?: number
   height?: number
+  // kv.json as an earlier run left it.
+  kv?: Record<string, unknown>
 }) {
   const statePath = path.join(input.root, "state")
   await mkdir(statePath, { recursive: true })
-  await Bun.write(path.join(statePath, "kv.json"), "{}")
+  await Bun.write(path.join(statePath, "kv.json"), JSON.stringify(input.kv ?? {}))
   const config = createTuiResolvedConfig(input.config ?? {})
   let mounted: Contexts | undefined
 

@@ -82,6 +82,27 @@ test("clicking the Context header switches between expanded and compact and reme
   }
 })
 
+test("sidebar.context in tui.json beats a remembered toggle, and a toggle then lasts until exit", async () => {
+  await using tmp = await tmpdir()
+  const view = await mountSidebar({
+    root: tmp.path,
+    plugins: [SidebarContext],
+    config: { sidebar: { context: "compact" } },
+    state: usage(175_019, 1_000_000, 1215.2),
+    kv: { sidebar_context: "expanded" },
+  })
+  try {
+    expect(view.text()).toEqual(["▶ 175,019 · 18% · $1,215.20"])
+    await view.click(0, 0)
+    expect(view.text()).toHaveLength(4)
+    expect(view.kv().get("sidebar_context")).toBe("expanded")
+    await view.click(0, 0)
+    expect(view.text()).toHaveLength(1)
+  } finally {
+    view.destroy()
+  }
+})
+
 test("the sidebar.context.toggle command switches the Context layout", async () => {
   await using tmp = await tmpdir()
   const view = await context(tmp.path, { sidebar: { context: "compact" } })
