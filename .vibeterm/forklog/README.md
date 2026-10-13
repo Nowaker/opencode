@@ -580,7 +580,7 @@ explicit glob patterns and grep can match hidden files. Directory discovery
 derives parents of discovered files, as the existing ripgrep fallback does.
 
 Worktree evidence from `ses_ecc45c623ffecHtWFB24tFBP1n`, base `a100f85998`,
-branch `container-search` (not installed or integrated by this session):
+branch `container-search`:
 
 - With only search.ts restored byte-identically to `a100f85998`, the final
   eight-case suite in a clean environment has 1 pass, 7 fail (exit 1):
@@ -611,6 +611,32 @@ branch `container-search` (not installed or integrated by this session):
 - Candidate driver also asserts immediate creation, rename, deletion,
   content mutation, directory filtering, scoped glob/grep and empty-query
   listing through the actual service. No customer tree or live tab is used.
+
+Delivery verified by coordinator `ses_eeda1d251ffel81U5Y42j4kb33` on
+2026-10-13:
+
+- Oracle approved exact candidate `169d7a138d` with no blocking findings.
+  Main independently reran the Linux proof: baseline 353 watches,
+  7.93-8.98% churn CPU; candidate zero watches, 0.33% churn CPU.
+  These windows contain no search requests and measure background work,
+  not request latency or a search-performance SLA.
+- Rebased onto local `dev-nowaker` (already current), fast-forward merged,
+  and pushed `169d7a138d` to both fork mirrors; remote tips verified.
+  Normal push hooks passed all 30 workspace typecheck tasks.
+- Desktop built independently from the clean candidate with tracked
+  `.vibeterm/build.sh`. The mandatory v1 migration guard gate passed against
+  built v1, `opencode-ai@1.19.0` and `@opencode/cli@2.0.27`; installed version
+  `1.19.0-vt-275-dfb56f76c7`.
+- An isolated installed-binary HTTP server verified immediate initial
+  discovery, creation, rename, deletion and empty-query listing through
+  `/find/file`. Scratch was outside every repository so upward Git discovery
+  selected the non-repository path. No production state was used.
+- m4max independent build/install/QA remains blocked on an available
+  authorized remote execution transport; question
+  `qst_13411df28001mxjyIukRVnblcv` records the unblock choices.
+- No active DreamHost tab, default Vibeterm server or Meridian was restarted.
+  Existing tabs retain their loaded code until their owners arrange graceful
+  pickup. No live-tree CPU or watch reduction is claimed.
 
 ## Audit and upstream lifecycle
 
