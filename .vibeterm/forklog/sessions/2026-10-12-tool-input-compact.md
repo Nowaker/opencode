@@ -10,7 +10,7 @@
 - Development branch(es): `syntax-integration` (off `dev-nowaker`); upstream `tool-input-block`
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
 - Source result commit(s): `84d27d0f49`; `8e3a183698` (opencode `*.scm` declaration);
-  `0ab6637c9d` (tool output coloring)
+  `0ab6637c9d` (tool output coloring); `4c00002ca0` (held tool response)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -41,7 +41,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
 | `opencode` | `dev-nowaker` | `bfc03b0daf` | `8e3a183698` + this record's second forklog commit | opencode typecheck fix, fast-forward; pushed to both remotes |
 | `opencode` | `file-languages` | `f885d7e3ba` | `d6087eb738` | amended with the same declaration; PR #54706 |
 | `opencode` | `tool-output-syntax` | - | `e9809aa4f3` | new, stacked on `bash-syntax`; issue #54957, PR #54968 |
-| `opencode` | `dev-nowaker` | `c1c1d4fb1a` | `0ab6637c9d` + this record's third forklog commit | feature commit, fast-forward; pushed to both remotes |
+| `opencode` | `dev-nowaker` | `c1c1d4fb1a` | `0ab6637c9d` + forklog `0d814cbaaa` | feature commit, fast-forward; pushed to both remotes |
+| `opencode` | `tool-input-block` | `491363e6cf` | `6164eba109` | amended (held response); PR #54707 body updated |
+| `opencode` | `dev-nowaker` | `602c50dffd` | `4c00002ca0` + this record's fourth forklog commit | fix commit, fast-forward; pushed to both remotes |
 
 ## Features touched
 
@@ -123,6 +125,37 @@ uncolored. User, verbatim:
   `~/.config/opencode/tui.json` on desktop and m4max; backups
   `tui.json.bak-before-syntax-tool-output`.
 
+## Tool response unreachable under the input block
+
+Relayed by the coordinator; the user: "no pplx calls can be expanded to show
+the response". The reported `perplexity_perplexity_search` call (session
+`ses_ee1c6796effed7h7uANcavT8VY`, found on m4max through the indexed
+`part.time_updated` window) is completed with a stored response.
+
+- Cause: m4max has `generic_tool_output_visibility: false` in kv.json. With
+  `syntax.tool_input` on, the input block replaced the inline row, and its
+  hint and click came only from the input's own overflow or from *shown*
+  output that overflowed. A short query fits its one row, so the block had
+  nothing to expand and the response was unreachable. Desktop has the toggle
+  on, so it shows the response there.
+- Fix (`toolOutputReach`): under the input block a response the toggle hides
+  is held; the block shows "Click to expand" and expanding draws it under
+  the input. Without `tool_input` the toggle stays in charge, as upstream
+  draws it: the upstream inline row hides the response the same way, and that
+  is the toggle's documented purpose.
+- Applies to every generic tool (plugin and MCP: perplexity, github_*,
+  context7, browser); they share `GenericTool`.
+- packages/tui: typecheck clean; full suite 623 pass, 1 skip, 0 fail;
+  packages/opencode typecheck 0 errors; `tool-input-block` 119 focused pass.
+- Real PTY (vt-257, toggle off, `tool_input` on): clicking the perplexity
+  block reveals "Found 5 search results" with "Click to collapse" at 40, 80
+  and 160 columns, no row wider than the pane (40 columns needs a pane taller
+  than the expanded response); a one-line context7 input row expands into a
+  block with its response.
+- Installed `1.19.0-vt-257-dfb56f76c7`: desktop inode `49966469`, m4max inode
+  `31433456`; gate PASSED on both; retry marker present;
+  `opencode-serve-tailscale` still PID `4038768`.
+
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
@@ -139,6 +172,7 @@ uncolored. User, verbatim:
 - `84d27d0f49` - show every tool input value on one row, in compact YAML
 - `8e3a183698` - declare .scm imports for the opencode typecheck
 - `0ab6637c9d` - color plugin and MCP tool output by language
+- `4c00002ca0` - keep a hidden tool response one click away under the input block
 - Required trailer: `AI-Session-ID: ses_ed1e2b932ffe6tTqhsOiGuYXRE`
 
 ```sh
