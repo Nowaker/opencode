@@ -70,6 +70,11 @@ const tui: TuiPlugin = async (api) => {
           const setting = configured()
           if (setting === undefined) return api.kv.set("tips_hidden", next)
           setToggled(next === !setting ? undefined : next)
+          if (next !== !setting)
+            api.ui.toast({
+              message: `Tips ${next ? "hidden" : "shown"} until opencode exits: tui.json sets home.tips`,
+              variant: "info",
+            })
         }
         const first = createMemo(() => api.state.session.count() === 0)
         const connected = createMemo(() =>
