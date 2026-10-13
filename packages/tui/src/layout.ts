@@ -75,12 +75,13 @@ export function sessionContentWidth(width: number, sidebarVisible: boolean) {
   return width - (sidebarVisible ? Sidebar.width : 0) - 2 * Session.paddingX
 }
 
-// The session ID line under the sidebar title: kv.json's "sidebar_session_id"
-// (the /session-id toggle) wins over tui.json's sidebar.session_id; with
-// neither, development builds show it and release builds do not.
+// The session ID line under the sidebar title: tui.json's sidebar.session_id decides on every start
+// when it is set; unset, the /session-id toggle is remembered as "sidebar_session_id" in kv.json, and
+// with neither, development builds show it and release builds do not.
 export function sidebarShowsSessionId(input: { kv?: unknown; configured?: boolean; channel: string }) {
+  if (input.configured !== undefined) return input.configured
   if (typeof input.kv === "boolean") return input.kv
-  return input.configured ?? input.channel !== "latest"
+  return input.channel !== "latest"
 }
 
 // tui.json's home.tips decides on every start when it is set; the tips toggle then lasts until

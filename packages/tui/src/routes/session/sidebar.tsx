@@ -35,6 +35,30 @@ export function toggleSidebarTitlePin(config: Config, kv: KV) {
     return `Sidebar title ${next ? "pinned" : "unpinned"} until opencode exits: tui.json sets sidebar.pin_title`
 }
 
+// sidebar.session_id set in tui.json decides likewise; /session-id then lasts until opencode exits.
+const [sessionIDToggled, setSessionIDToggled] = createSignal<boolean>()
+
+export function sidebarShowsSessionID(config: Config, kv: KV) {
+  return (
+    sessionIDToggled() ??
+    TuiLayout.sidebarShowsSessionId({
+      kv: kv.get("sidebar_session_id"),
+      configured: config.sidebar?.session_id,
+      channel: InstallationChannel,
+    })
+  )
+}
+
+// Returns the message to show when the toggle lasts only until exit.
+export function toggleSidebarSessionID(config: Config, kv: KV) {
+  const next = !sidebarShowsSessionID(config, kv)
+  const configured = config.sidebar?.session_id
+  if (configured === undefined) return kv.set("sidebar_session_id", next)
+  setSessionIDToggled(next === configured ? undefined : next)
+  if (next !== configured)
+    return `Session ID ${next ? "shown" : "hidden"} until opencode exits: tui.json sets sidebar.session_id`
+}
+
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
   const project = useProject()
@@ -51,12 +75,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const pinned = () => sidebarTitlePinned(tuiConfig, kv)
-  const showSessionID = () =>
-    TuiLayout.sidebarShowsSessionId({
-      kv: kv.get("sidebar_session_id"),
-      configured: tuiConfig.sidebar?.session_id,
-      channel: InstallationChannel,
-    })
+  const showSessionID = () => sidebarShowsSessionID(tuiConfig, kv)
   const title = () => (
     <pluginRuntime.Slot
       name="sidebar_title"

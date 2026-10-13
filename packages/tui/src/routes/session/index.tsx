@@ -68,7 +68,13 @@ import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
-import { Sidebar, sidebarTitlePinned, toggleSidebarTitlePin } from "./sidebar"
+import {
+  Sidebar,
+  sidebarShowsSessionID,
+  sidebarTitlePinned,
+  toggleSidebarSessionID,
+  toggleSidebarTitlePin,
+} from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
@@ -100,7 +106,6 @@ import { formatTranscript } from "../../util/transcript"
 import { sessionEpilogue } from "../../util/presentation"
 import { setPreLayoutSiblingMargin } from "../../util/layout"
 import { TuiConfig, useTuiConfig } from "../../config"
-import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration, keepScrollAnchor } from "../../util/scroll"
@@ -318,8 +323,6 @@ export function Session() {
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
-  const sidebarSessionID = () =>
-    kv.get("sidebar_session_id", tuiConfig.sidebar?.session_id ?? InstallationChannel !== "latest")
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -842,14 +845,15 @@ export function Session() {
       },
     },
     {
-      title: sidebarSessionID() ? "Hide session ID in sidebar" : "Show session ID in sidebar",
+      title: sidebarShowsSessionID(tuiConfig, kv) ? "Hide session ID in sidebar" : "Show session ID in sidebar",
       value: "session.sidebar.session_id",
       category: "Session",
       slash: {
         name: "session-id",
       },
       run: () => {
-        kv.set("sidebar_session_id", !sidebarSessionID())
+        const message = toggleSidebarSessionID(tuiConfig, kv)
+        if (message) toast.show({ message, variant: "info" })
         dialog.clear()
       },
     },
