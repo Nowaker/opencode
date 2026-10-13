@@ -7,7 +7,7 @@ import SidebarLsp from "../../src/feature-plugins/sidebar/lsp"
 import SidebarMcp from "../../src/feature-plugins/sidebar/mcp"
 import SidebarTodo from "../../src/feature-plugins/sidebar/todo"
 import type { Info } from "../../src/config"
-import { SIDEBAR_ORDER_KEY } from "../../src/plugin/slots"
+import { resetSidebarOrder, SIDEBAR_ORDER_KEY, sidebarOrderChanged } from "../../src/plugin/slots"
 import { tmpdir } from "../fixture/fixture"
 import {
   mountSidebar,
@@ -317,6 +317,33 @@ test("clicking a Modified Files row opens the diff viewer at that file, and a dr
       },
     ])
   } finally {
+    view.destroy()
+  }
+})
+
+test("sidebar.order in tui.json beats a remembered drag, and a drag then lasts until exit", async () => {
+  await using tmp = await tmpdir()
+  const view = await mountSidebar({
+    root: tmp.path,
+    plugins: [SidebarContext, SidebarMcp],
+    config: { sidebar: { order: ["context", "mcp"], context: "compact" } },
+    state: { ...usage(175_019, 1_000_000, 1215.2), mcp: () => mcpServers },
+    kv: { [SIDEBAR_ORDER_KEY]: ["mcp", "context"] },
+  })
+  const heading = (name: string) => view.lines().findIndex((line) => line.includes(name))
+  try {
+    expect(heading("Context") === -1 ? heading("175,019") : heading("Context")).toBeLessThan(heading("MCP"))
+    await view.app.mockMouse.drag(0, 0, 0, heading("MCP"))
+    await view.app.renderOnce()
+    expect(heading("MCP")).toBe(0)
+    expect(view.kv().get(SIDEBAR_ORDER_KEY)).toEqual(["mcp", "context"])
+    expect(sidebarOrderChanged(view.kv())).toBe(true)
+    resetSidebarOrder(view.kv())
+    await view.app.renderOnce()
+    expect(heading("MCP")).toBeGreaterThan(0)
+    expect(view.kv().get(SIDEBAR_ORDER_KEY)).toBeUndefined()
+  } finally {
+    resetSidebarOrder(view.kv())
     view.destroy()
   }
 })
