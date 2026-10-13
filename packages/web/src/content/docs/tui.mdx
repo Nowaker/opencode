@@ -514,7 +514,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `model_label` - How message footers and the prompt name a model: `"name"` (default) shows its display name, such as `Claude Sonnet 4.5`; `"id"` shows `providerID/modelID`, such as `anthropic/claude-sonnet-4-5`.
 - `turn_timing`, `footer_variant`, `timestamps` - Older settings that `footer` replaces; they keep working. See [Older footer settings](#older-footer-settings).
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
-- `sidebar.context` - Controls the sidebar Context block. `"expanded"` (default) shows tokens, percent used, and cost on separate lines; `"compact"` fits them on one line, abbreviating as the sidebar narrows. Click the block's arrow or run "Compact sidebar context" from the command palette to switch at runtime; that choice is remembered and overrides this setting.
+- `sidebar.context` - Controls the sidebar Context block. `"expanded"` (default) shows tokens, percent used, and cost on separate lines; `"compact"` fits them on one line, abbreviating as the sidebar narrows. Click the block's arrow or run "Compact sidebar context" from the command palette to switch at runtime. See [Settings with a toggle](#settings-with-a-toggle).
 - `usage.context_color` - Colors the context usage in the sidebar Context block (expanded and compact) and in the prompt footer. `"plain"` (default) keeps the muted text color; `"colored"` colors the token count and percent used by `usage.context_thresholds`.
 - `usage.context_thresholds` - Percent-used thresholds for `"colored"`. Defaults to `[60, 70, 80, 90]`: up to 60% stays muted, above 60% uses the theme's warning color, above 90% its error color, and the thresholds in between blend from warning to error.
 - `usage.cost_thresholds` - Dollar thresholds for the session cost in the sidebar and the prompt footer, colored the same way: above the first uses the warning color, above the last the error color. Unset by default, so cost stays muted. For example, `[5, 20]` shows the cost in the warning color above $5 and in the error color above $20.
@@ -524,9 +524,9 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `sidebar.todo_completed` - What the sidebar Todo section does once every item is completed: `"hide"` (default) removes it, `"collapsed"` keeps the heading and collapses the list (lists of two or fewer items never collapse), `"show"` keeps the list open.
 - `revert.files` - Whether `/undo`, its keybind and the first Revert action in [message actions](#message-actions) also revert the file changes the reverted messages made (default: `false`). The other choice is always one row down in message actions, or `/undo-messages` and `/undo-files`, which you can bind with `messages_undo_keep_files` and `messages_undo_with_files`.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
-- `keep_scroll_on_submit` - Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: `false`). Toggle it at runtime with `/keep-scroll`; the toggle is remembered and takes precedence over this option.
-- `sidebar.pin_title` - Keep the session title at the top of the sidebar while the rest of the sidebar scrolls (default: `false`). The `/pin-title` command toggles it for the current machine.
-- `sidebar.session_id` - Show the session ID on the line below the session title in the sidebar, in the muted text color (default: shown only in development builds). The `/session-id` command toggles it for the current machine; the toggle is remembered and takes precedence over this option.
+- `keep_scroll_on_submit` - Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: `false`). Toggle it at runtime with `/keep-scroll`. See [Settings with a toggle](#settings-with-a-toggle).
+- `sidebar.pin_title` - Keep the session title at the top of the sidebar while the rest of the sidebar scrolls (default: `false`). The `/pin-title` command toggles it. See [Settings with a toggle](#settings-with-a-toggle).
+- `sidebar.session_id` - Show the session ID on the line below the session title in the sidebar, in the muted text color (default: shown only in development builds). The `/session-id` command toggles it. See [Settings with a toggle](#settings-with-a-toggle).
 - `transcript.max_messages` - How many of a session's most recent messages the TUI keeps loaded (default: `100`). Older messages are hidden behind a divider showing how many there are, with actions to load 50 more from either edge of the gap or all of them. The same actions are in the command palette and `/load-hidden` loads all of them.
 - `transcript.keep_first_prompt` - Keep the session's first prompt at the top, above the divider, when older messages are hidden (default: `true`).
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
@@ -534,9 +534,29 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
 - `sidebar.hidden` - Session sidebar sections to hide, using the same names as `sidebar.order`.
 
-You can also drag a sidebar section by its header to a new place with the mouse. That order is saved and takes precedence over `sidebar.order` until you run **Reset sidebar order** from the command palette.
+You can also drag a sidebar section by its header to a new place with the mouse. **Reset sidebar order** in the command palette drops a dragged order. See [Settings with a toggle](#settings-with-a-toggle).
 
 - `startup` - Controls what happens while OpenCode starts. See [Startup](#startup).
+
+### Settings with a toggle
+
+Several settings can also be flipped while OpenCode runs, from the command palette, a slash command, a click or a drag. tui.json and the toggle never fight over the same setting:
+
+- **Set in tui.json**, the setting decides on every start. The toggle lasts until OpenCode exits, and a toast says so. Toggling back to the tui.json value clears it.
+- **Left unset**, the toggle is remembered across restarts, in `kv.json` in OpenCode's state directory.
+
+| Setting | Toggle |
+| --- | --- |
+| `home.tips` | **Show tips** / **Hide tips** |
+| `sidebar.context` | Click the Context arrow, or **Compact sidebar context** / **Expand sidebar context** |
+| `sidebar.pin_title` | `/pin-title` |
+| `sidebar.session_id` | `/session-id` |
+| `sidebar.order` | Drag a section header; **Reset sidebar order** |
+| `keep_scroll_on_submit` | `/keep-scroll` |
+| `footer.time`, `footer.duration`, `timestamps`, `turn_timing` | `/timestamps`, `/turn-times`, `/turn-durations` |
+| `tool_output.collapse.generic` | **Show generic tool output** / **Hide generic tool output** |
+
+A toggle remembered on one run never overrides a value you set in tui.json later.
 
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 
@@ -588,7 +608,7 @@ A prompt's footer sits one blank line below the prompt's text, unless the text a
 }
 ```
 
-The `/timestamps`, `/turn-times` and `/turn-durations` commands flip prompt times, turn times and turn durations. For a key set in `footer`, the change lasts until the TUI exits and tui.json decides again on the next start. For a key left unset, the change is remembered.
+The `/timestamps`, `/turn-times` and `/turn-durations` commands flip prompt times, turn times and turn durations, as described in [Settings with a toggle](#settings-with-a-toggle).
 
 ### Date and time format
 
@@ -658,7 +678,7 @@ Each value is a number of lines or `"never"`:
 - `0` hides the output until clicked. The block is just its title or command, a blank line, and the hint, with the [footer](#footer) on the hint line: `Click to expand · 16:13:02 · 1.5s`.
 - `"never"` always shows all of it, with no hint.
 
-`write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on.
+`write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on, unless `generic` or the tool's own name is set here: then the output shows, collapsed to that limit, on every start. With `generic` set, **Hide generic tool output** lasts until OpenCode exits. See [Settings with a toggle](#settings-with-a-toggle).
 
 ### Syntax highlighting
 
@@ -801,7 +821,7 @@ The history is shared by the prompts in one OpenCode window and holds `prompt.un
 
 These keep working when the matching `footer` key is unset, and `footer` wins when both are set:
 
-- `turn_timing.time: true` is `footer.time: "assistant"`, and `turn_timing.duration: true` adds `assistant` to `footer.duration`. With these, the `/turn-times` and `/turn-durations` toggles are remembered and take precedence.
+- `turn_timing.time: true` is `footer.time: "assistant"`, and `turn_timing.duration: true` adds `assistant` to `footer.duration`. Set, they decide turns on every start and the `/turn-times` and `/turn-durations` toggles last until OpenCode exits.
 - `footer_variant: true` is `footer.variant: "all"`.
 - `timestamps` takes the type list `footer.time` takes, without `"important"`, and overrides `turn_timing.time`. Its `tool` type also adds tool call durations, as `footer.duration: "tool"` does.
 
@@ -845,7 +865,7 @@ The TUI can request attention for questions, permissions, session errors, and co
 
 ## Customization
 
-You can customize various aspects of the TUI view using the command palette (`ctrl+p`). These settings persist across restarts.
+You can customize various aspects of the TUI view using the command palette (`ctrl+p`). These settings persist across restarts, except where tui.json sets them: see [Settings with a toggle](#settings-with-a-toggle).
 
 ---
 

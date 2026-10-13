@@ -79,7 +79,7 @@ export const TurnTiming = Schema.Struct({
 
 export const SidebarContext = Schema.Literals(["expanded", "compact"]).annotate({
   description:
-    "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width",
+    "Sidebar context display: 'expanded' shows one value per line, 'compact' fits them on one line sized to the sidebar width. Set here, it decides on every start and its toggle lasts until the TUI exits; unset, the toggle is remembered",
 })
 export const SidebarMcpSummary = Schema.Literals(["default", "collapsed", "never", "always"]).annotate({
   description:
@@ -103,15 +103,16 @@ export const SidebarTodoCompleted = Schema.Literals(["hide", "collapsed", "show"
 export const Sidebar = Schema.Struct({
   context: Schema.optional(SidebarContext),
   pin_title: Schema.optional(Schema.Boolean).annotate({
-    description: "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content",
+    description:
+      "Keep the session title at the top of the sidebar instead of scrolling it with the sidebar content. Set here, it decides on every start and /pin-title lasts until the TUI exits; unset, /pin-title is remembered",
   }),
   session_id: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Show the session ID below the session title in the sidebar (default: shown only in development builds)",
+      "Show the session ID below the session title in the sidebar (default: shown only in development builds). Set here, it decides on every start and /session-id lasts until the TUI exits; unset, /session-id is remembered",
   }),
   order: Schema.optional(Schema.Array(Schema.String)).annotate({
     description:
-      "Sidebar sections in display order, by name (context, mcp, lsp, todo, files) or plugin id. Sections not listed follow in their default order",
+      "Sidebar sections in display order, by name (context, mcp, lsp, todo, files) or plugin id. Sections not listed follow in their default order. Set here, it decides on every start and a dragged order lasts until the TUI exits; unset, a dragged order is remembered",
   }),
   hidden: Schema.optional(Schema.Array(Schema.String)).annotate({
     description: "Sidebar sections to hide, by name (context, mcp, lsp, todo, files) or plugin id",
@@ -551,7 +552,7 @@ export const Info = Schema.Struct({
   diff_style: Schema.optional(DiffStyle),
   keep_scroll_on_submit: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false)",
+      "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false). Set here, it decides on every start and /keep-scroll lasts until the TUI exits; unset, /keep-scroll is remembered",
   }),
   turn_timing: Schema.optional(TurnTiming),
   model_label: Schema.optional(ModelLabel),
