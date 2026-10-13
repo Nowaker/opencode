@@ -28,25 +28,26 @@ export const ripgrepLayer = Layer.effect(
     const location = yield* Location.Service
     const ripgrep = yield* Ripgrep.Service
     const scope = yield* Scope.Scope
-    const state = {
-      files: [] as string[],
-      directories: [] as string[],
-    }
-    const directories = new Set<string>()
-    yield* ripgrep
-      .find({
-        cwd: location.directory,
-        pattern: "*",
-        limit: location.vcs ? Number.MAX_SAFE_INTEGER : 100_000,
-        onEntry: (entry) =>
-          Effect.sync(() => {
-            state.files.push(entry.path)
-            const parts = entry.path.split("/")
-            parts.slice(0, -1).forEach((_, index) => directories.add(parts.slice(0, index + 1).join("/") + path.sep))
-            state.directories = Array.from(directories)
-          }),
+    const state: { files: string[]; directories: string[] } = { files: [], directories: [] }
+    const scan = (snapshot: typeof state) =>
+      Effect.gen(function* () {
+        const directories = new Set<string>()
+        yield* ripgrep.find({
+          cwd: location.directory,
+          pattern: "*",
+          limit: location.vcs ? Number.MAX_SAFE_INTEGER : 100_000,
+          onEntry: (entry) =>
+            Effect.sync(() => {
+              snapshot.files.push(entry.path)
+              const parts = entry.path.split("/")
+              parts.slice(0, -1).forEach((_, index) => directories.add(parts.slice(0, index + 1).join("/") + path.sep))
+              if (location.vcs) snapshot.directories = Array.from(directories)
+            }),
+        }).pipe(Effect.orDie)
+        snapshot.directories = Array.from(directories)
+        return snapshot
       })
-      .pipe(Effect.orDie, Effect.asVoid, Effect.forkIn(scope))
+    if (location.vcs) yield* scan(state).pipe(Effect.forkIn(scope))
     return Service.of({
       glob: (input) =>
         Effect.gen(function* () {
@@ -101,13 +102,18 @@ export const ripgrepLayer = Layer.effect(
         }),
       find: (input) =>
         Effect.gen(function* () {
+          const snapshot = location.vcs ? state : yield* scan({ files: [], directories: [] })
           const items =
             input.type === "file"
-              ? state.files
+              ? snapshot.files
               : input.type === "directory"
-                ? state.directories
-                : [...state.files, ...state.directories]
-          return fuzzysort.go(input.query, items, { limit: input.limit ?? 50 }).map((item) => {
+                ? snapshot.directories
+                : [...snapshot.files, ...snapshot.directories]
+          const matches = fuzzysort.go(location.vcs ? input.query : input.query.trim(), items, {
+            limit: input.limit ?? 50,
+            all: !location.vcs,
+          })
+          return matches.map((item) => {
             const relative = item.target
             const type = relative.endsWith(path.sep) ? ("directory" as const) : ("file" as const)
             return Entry.make({
@@ -233,7 +239,11 @@ export const fffLayer = Layer.effect(
   }),
 )
 
-const layer = Layer.unwrap(Effect.sync(() => (Flag.OPENCODE_DISABLE_FFF || !Fff.available() ? ripgrepLayer : fffLayer)))
+const layer = Layer.unwrap(
+  Effect.map(Location.Service, (location) =>
+    !location.vcs || Flag.OPENCODE_DISABLE_FFF || !Fff.available() ? ripgrepLayer : fffLayer,
+  ),
+)
 
 export const locationLayer = layer
 
