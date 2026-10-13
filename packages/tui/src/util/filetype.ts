@@ -174,6 +174,8 @@ const EXTENSIONS: Record<string, string> = {
   ".path": "ini",
   ".slice": "ini",
   ".scope": "ini",
+  ".swap": "ini",
+  ".device": "ini",
   ".network": "ini",
   ".netdev": "ini",
   ".link": "ini",
@@ -181,6 +183,8 @@ const EXTENSIONS: Record<string, string> = {
   ".volume": "ini",
   ".pod": "ini",
   ".kube": "ini",
+  ".image": "ini",
+  ".build": "ini",
   ".haml": "haml",
 }
 

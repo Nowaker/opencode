@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender, type JSX } from "@opentui/solid"
 import { CommandSpans } from "../../../src/routes/session"
+import { heredocs } from "../../../src/util/heredoc"
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined
 
@@ -14,9 +15,9 @@ const command =
   "cp ./tmp/op13-keyguard-check.png /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/./tmp/op13-keyguard-check.png /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/opencode/op13-keyguard-check.png 2>&1"
 const text = RGBA.fromHex("#eeeeee")
 
-async function frame(width: number, node: () => JSX.Element) {
+async function frame(width: number, node: () => JSX.Element, height = 12) {
   setup?.renderer.destroy()
-  setup = await testRender(() => <box paddingLeft={3}>{node()}</box>, { width, height: 12 })
+  setup = await testRender(() => <box paddingLeft={3}>{node()}</box>, { width, height })
   await setup.renderOnce()
   return setup.captureCharFrame()
 }
@@ -39,5 +40,50 @@ for (const width of [40, 80, 160]) {
     ))
     expect(colored).toBe(plain)
     expect(plain).toContain("$ cp ./tmp/op13-keyguard-check.png")
+  })
+}
+
+const units = [
+  "mkdir -p templates/linux && cd templates/linux && cat > second-brain-work.slice <<'EOF'",
+  "# Shared CPU budget for Second Brain capture and indexing",
+  "[Unit]",
+  "Description=Shared CPU budget for Second Brain capture and indexing",
+  "",
+  "[Slice]",
+  "CPUQuota=100%",
+  "CPUWeight=10",
+  "EOF",
+  "cat > second-brain-archive.service <<'EOF'",
+  "[Service]",
+  "Slice=second-brain-work.slice",
+  "ExecStart=/usr/bin/second-brain archive --all",
+  "EOF",
+].join("\n")
+
+// The command split where each heredoc body starts and ends, bodies in one color and the rest in
+// another, the way the heredoc highlights land on the command.
+function unitSegments() {
+  const bounds = heredocs(units).flatMap((heredoc) => [heredoc.start, heredoc.end])
+  return [0, ...bounds].map((start, index, all) => ({
+    text: units.slice(start, all[index + 1] ?? units.length),
+    fg: RGBA.fromHex(index % 2 === 1 ? "#fab283" : "#7fd88f"),
+  }))
+}
+
+for (const width of [40, 80, 160]) {
+  test(`a command with two unit heredocs wraps exactly like the plain one at ${width} columns`, async () => {
+    expect(heredocs(units).map((heredoc) => heredoc.language)).toEqual(["ini", "ini"])
+    const plain = await frame(width, () => <text fg={text}>$ {units}</text>, 60)
+    const colored = await frame(
+      width,
+      () => (
+        <text fg={text}>
+          $ <CommandSpans segments={unitSegments()} />
+        </text>
+      ),
+      60,
+    )
+    expect(colored).toBe(plain)
+    expect(plain).toContain("CPUQuota=100%")
   })
 }

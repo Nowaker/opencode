@@ -33,6 +33,31 @@ describe("heredocs", () => {
     expect(heredocs('grep x <<< "$v"\necho $((1 << 2))\necho "a <<b"\nls')).toEqual([])
   })
 
+  test("colors systemd units written by two heredocs in one command", () => {
+    const command = [
+      "mkdir -p templates/linux && cd templates/linux && cat > second-brain-work.slice <<'EOF'",
+      "# Shared CPU budget",
+      "[Unit]",
+      "Description=Shared CPU budget",
+      "",
+      "[Slice]",
+      "CPUQuota=100%",
+      "EOF",
+      "cat > second-brain-archive.service <<'EOF'",
+      "[Service]",
+      "ExecStart=/usr/bin/true",
+      "EOF",
+      "sudo tee /etc/systemd/system/backup.timer <<'EOF'",
+      "[Timer]",
+      "OnCalendar=daily",
+      "EOF",
+    ].join("\n")
+    const found = heredocs(command)
+    expect(found.map((heredoc) => heredoc.language)).toEqual(["ini", "ini", "ini"])
+    expect(command.slice(found[0].start, found[0].end)).toStartWith("# Shared CPU budget\n[Unit]")
+    expect(command.slice(found[1].start, found[1].end)).toBe("[Service]\nExecStart=/usr/bin/true")
+  })
+
   test("leaves an empty body out", () => {
     expect(heredocs("cat <<EOF\nEOF\n")).toEqual([])
   })

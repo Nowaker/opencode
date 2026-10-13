@@ -1,6 +1,6 @@
 import path from "node:path"
 import type { SimpleHighlight } from "@opentui/core"
-import { filetype } from "./filetype"
+import { detectFiletype } from "./filetype"
 
 export type Heredoc = {
   // The body, between the line holding `<<DELIM` and the closing DELIM line, as string offsets.
@@ -174,8 +174,9 @@ function redirectTarget(segment: string) {
   return target?.startsWith("/dev/") ? undefined : target
 }
 
+// The file tools' detection, so `cat > x.service` colors its body as the file itself would be.
 function fileLanguage(file: string) {
-  const language = filetype(file)
+  const language = detectFiletype(file)
   return language === "none" ? undefined : language
 }
 
