@@ -53,9 +53,13 @@ async function wait(fn: () => boolean, timeout = 5000) {
   }
 }
 
-async function submitWhileScrolledUp(config: Info, before?: (api: TuiPluginApi) => void) {
+async function submitWhileScrolledUp(
+  config: Info,
+  before?: (api: TuiPluginApi) => void,
+  kv: Record<string, unknown> = {},
+) {
   await using tmp = await tmpdir()
-  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  await Bun.write(`${tmp.path}/kv.json`, JSON.stringify(kv))
   const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
@@ -192,6 +196,14 @@ test("the keep-scroll toggle leaves a scrolled-up session where it is", async ()
   const view = await submitWhileScrolledUp({}, (api) =>
     api.keymap.dispatchCommand("session.toggle.keep_scroll_on_submit"),
   )
+
+  expect(transcriptLines(view.after)).toEqual(transcriptLines(view.scrolledUp))
+})
+
+test("keep_scroll_on_submit in tui.json beats a remembered /keep-scroll", async () => {
+  const view = await submitWhileScrolledUp({ keep_scroll_on_submit: true }, undefined, {
+    keep_scroll_on_submit: false,
+  })
 
   expect(transcriptLines(view.after)).toEqual(transcriptLines(view.scrolledUp))
 })

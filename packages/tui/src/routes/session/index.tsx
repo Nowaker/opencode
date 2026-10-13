@@ -216,6 +216,10 @@ const sessionGlobalBindingCommands = [
 
 const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] as const
 
+// keep_scroll_on_submit set in tui.json decides on every start and /keep-scroll then lasts until
+// opencode exits, across sessions; unset, /keep-scroll is remembered in kv.json.
+const [keepScrollToggled, setKeepScrollToggled] = createSignal<boolean>()
+
 const context = createContext<{
   width: number
   sessionID: string
@@ -345,8 +349,8 @@ export function Session() {
   )
   // Read without kv.signal: its in-memory default would be persisted by the next
   // unrelated kv.set and then shadow later tui.json edits.
-  const keepScrollOnSubmit = createMemo<boolean>(() =>
-    kv.get("keep_scroll_on_submit", tuiConfig.keep_scroll_on_submit ?? false),
+  const keepScrollOnSubmit = createMemo<boolean>(
+    () => keepScrollToggled() ?? tuiConfig.keep_scroll_on_submit ?? kv.get("keep_scroll_on_submit", false),
   )
   // An element set in tui.json (`footer`, or the legacy `timestamps` list for time) decides on every
   // start and its toggle lasts until exit: kv.json usually already holds a "timestamps" value, persisted
@@ -897,8 +901,16 @@ export function Session() {
         name: "keep-scroll",
       },
       run: () => {
-        kv.set("keep_scroll_on_submit", !keepScrollOnSubmit())
         dialog.clear()
+        const next = !keepScrollOnSubmit()
+        const configured = tuiConfig.keep_scroll_on_submit
+        if (configured === undefined) return kv.set("keep_scroll_on_submit", next)
+        setKeepScrollToggled(next === configured ? undefined : next)
+        if (next !== configured)
+          toast.show({
+            message: `${next ? "Keeping" : "Not keeping"} the scroll position on submit until opencode exits: tui.json sets keep_scroll_on_submit`,
+            variant: "info",
+          })
       },
     },
     {
