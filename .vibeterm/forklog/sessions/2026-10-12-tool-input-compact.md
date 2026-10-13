@@ -10,7 +10,7 @@
 - Development branch(es): `syntax-integration` (off `dev-nowaker`); upstream `tool-input-block`
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
 - Source result commit(s): `84d27d0f49`; `8e3a183698` (opencode `*.scm` declaration);
-  `0ab6637c9d` (tool output coloring); `4c00002ca0` (held tool response)
+  `0ab6637c9d` (tool output coloring); `4c00002ca0` (held tool response); `246c6c10f2` (systemd units in heredocs)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -43,7 +43,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` after a collapsed
 | `opencode` | `tool-output-syntax` | - | `e9809aa4f3` | new, stacked on `bash-syntax`; issue #54957, PR #54968 |
 | `opencode` | `dev-nowaker` | `c1c1d4fb1a` | `0ab6637c9d` + forklog `0d814cbaaa` | feature commit, fast-forward; pushed to both remotes |
 | `opencode` | `tool-input-block` | `491363e6cf` | `6164eba109` | amended (held response); PR #54707 body updated |
-| `opencode` | `dev-nowaker` | `602c50dffd` | `4c00002ca0` + this record's fourth forklog commit | fix commit, fast-forward; pushed to both remotes |
+| `opencode` | `dev-nowaker` | `602c50dffd` | `4c00002ca0` + forklog `1547dbbd02` | fix commit, fast-forward; pushed to both remotes |
+| `opencode` | `heredoc-syntax` | `bf7cffb240` | `c36c6697a3` | amended (two-heredoc test); PR #54705 body notes the detectFiletype wiring |
+| `opencode` | `file-languages` | `d6087eb738` | `e6978e6c42` | amended (`.swap`, `.device`, `.image`, `.build`); PR #54706 body lists the extensions |
+| `opencode` | `dev-nowaker` | `1547dbbd02` | `246c6c10f2` + this record's fifth forklog commit | fix commit, fast-forward; pushed to both remotes |
 
 ## Features touched
 
@@ -156,6 +159,36 @@ the response". The reported `perplexity_perplexity_search` call (session
   `31433456`; gate PASSED on both; retry marker present;
   `opencode-serve-tailscale` still PID `4038768`.
 
+## systemd units in heredocs
+
+Relayed by the coordinator: a bash call writing a `.slice` and a `.service`
+with two heredocs drew both bodies as one shell string. User, verbatim:
+"support for systemd units coloring? (are they ini files?)"
+
+- Cause: `heredocLanguage` took a `cat > file` / `tee file` target's language
+  from the extension-only `filetype()`, which knows no unit extensions; the
+  file tools already used `detectFiletype`, which maps units to ini. Both
+  bodies were found; neither had a language.
+- Grammar: the bundled tree-sitter-ini (justinmk, already shipped for the file
+  tools). systemd units are ini-style (sections, `Key=value`, `#`/`;`
+  comments); no systemd tree-sitter grammar is published.
+- Fix: heredoc targets go through `detectFiletype`; added `.swap`, `.device`
+  units and quadlet `.image`, `.build`. Covered: `.service .socket .timer
+  .target .slice .scope .mount .automount .swap .path .device`, `.network
+  .netdev .link`, `.container .volume .pod .kube .image .build`, `*.conf`
+  (so `*.d/` drop-ins), `.ini .cfg .desktop .properties`.
+- packages/tui: typecheck clean; full suite 643 pass, 1 skip, 0 fail;
+  packages/opencode typecheck 0 errors. Upstream: `file-languages` 153,
+  `heredoc-syntax` 47 heredoc tests pass.
+- Real PTY (vt-259 scratch, the user's two-heredoc command) at 80 and 160
+  columns: both bodies colored (sections type color, keys peach, `=`
+  operator, comment grey), no red; screen text identical with
+  `syntax.heredoc` on and off.
+- Installed `1.19.0-vt-259-dfb56f76c7`: desktop inode `49959249`, m4max inode
+  `31436020`; gate PASSED on both; retry marker present; retry patch
+  reverse-applied on both. Desktop `opencode-serve-tailscale` is PID `5053`,
+  started 2026-10-12 19:44:02 CDT by the host reboot, not by this session.
+
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
@@ -173,6 +206,7 @@ the response". The reported `perplexity_perplexity_search` call (session
 - `8e3a183698` - declare .scm imports for the opencode typecheck
 - `0ab6637c9d` - color plugin and MCP tool output by language
 - `4c00002ca0` - keep a hidden tool response one click away under the input block
+- `246c6c10f2` - color systemd units written by heredocs as ini
 - Required trailer: `AI-Session-ID: ses_ed1e2b932ffe6tTqhsOiGuYXRE`
 
 ```sh

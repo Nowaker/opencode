@@ -6,12 +6,12 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `syntax-integration` (worktree off `dev-nowaker`);
   upstream branches `bash-syntax` (`b0d93392c2`), `heredoc-syntax`
-  (`bf7cffb240`, stacked on `bash-syntax`), `file-languages` (`d6087eb738`),
+  (`c36c6697a3`, stacked on `bash-syntax`), `file-languages` (`e6978e6c42`),
   `tool-input-block` (`6164eba109`), all off `github/v1` `dfb56f76c7`;
   `tool-output-syntax` (`e9809aa4f3`, stacked on `bash-syntax`)
 - First local commit: `dfbf7f6836`
 - Current local commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`,
-  `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`, `0ab6637c9d`, `4c00002ca0`
+  `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`, `0ab6637c9d`, `4c00002ca0`, `246c6c10f2`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
 - Upstream: issues #54700-#54703, #54957; PRs
@@ -72,6 +72,7 @@ approved "Build all four". The user's words on defaults:
 | `b23685155c` | 2026-10-11 | bash command as one `<text>` of spans (layout identical to plain); non-red `toolSyntax` for command and heredocs | `ShellCommand`, `CommandSpans`, `shellHighlights` in `routes/session/index.tsx`; `theme/tool-code.ts` `toolCodeTheme`; `toolSyntax` in `context/theme.tsx`; `highlightCached`; `test/cli/tui/shell-command.test.tsx`, `test/tool-code-theme.test.ts` |
 | `91e33c557e` | 2026-10-11 | tool input keys and values from `toolCodeTheme` | `code` memo in `GenericTool` |
 | `8e3a183698` | 2026-10-12 | opencode typecheck: declare `*.scm` imports | `packages/opencode/src/audio.d.ts` |
+| `246c6c10f2` | 2026-10-12 | heredoc targets detected like the file tools (`cat > x.slice` colored as ini); `.swap`, `.device`, `.image`, `.build` -> ini | `fileLanguage` in `util/heredoc.ts` calls `detectFiletype`; `EXTENSIONS` in `util/filetype.ts` |
 | `4c00002ca0` | 2026-10-12 | under the tool input block a response hidden by the generic output toggle is held: "Click to expand" reveals it | `toolOutputReach` in `util/tool-input.ts`; `GenericTool` |
 | `0ab6637c9d` | 2026-10-12 | generic tool output colored by `syntax.tool_output` (tool name or glob -> language, `auto`, `none`; unset = plain); JSON sniff for `auto`; collapsed preview takes the whole output's highlights | `outputLanguage`, `detectOutputLanguage`, `previewHighlights` in `util/tool-output.ts`; `ToolOutputText`, `StyledOutput` in `routes/session/index.tsx`; `test/cli/tui/tool-output.test.tsx`, `test/util/tool-output.test.ts` |
 | `84d27d0f49` | 2026-10-12 | collapsed tool input: one row per value cut to the measured width; compact YAML lists | `formatToolInput(input, width)` in `util/tool-input.ts`; `inputWidth`/`onWidth` in `GenericTool`/`ToolInput`; `test/cli/tui/tool-input.test.tsx` |
@@ -108,6 +109,10 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   user report: Perplexity calls could not be expanded. With `tool_input` on and
   the generic output toggle off, the input block offered no hint or click.
   Fixed; PR #54707 amended. Evidence: `4c00002ca0`; PTY click at 40/80/160.
+- 2026-10-12 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-12-tool-input-compact.md) -
+  user question "support for systemd units coloring?": heredoc bodies written to
+  unit files were a shell string; now ini. PRs #54705 and #54706 amended.
+  Evidence: `246c6c10f2`; two-heredoc frames at 40/80/160; PTY at 80/160.
 
 ## Future ideas
 
@@ -125,5 +130,8 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   `tool-input-block`, so the two upstream branches merge cleanly.
 - write, edit and apply_patch still use the regular `syntax()` palette, so a
   builtin type in a diff (SQL `TEXT`) draws in the error color.
+- Upstream, `util/heredoc.ts` (#54705) still maps targets through `filetype`;
+  `detectFiletype` is in #54706. Whichever lands second switches
+  `fileLanguage` to `detectFiletype` (noted in #54705's body).
 - On an opentui bump, re-check `treeSitterToTextChunks` and that `<diff>`
   accepts `filetype` for the new parsers.
