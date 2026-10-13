@@ -187,6 +187,9 @@ On 2026-10-11, looking at `Click to expand · 22:01:28 · 464ms`:
   updated; installed on desktop and m4max.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-footer-elements` proved on `v1.19.0` (`footer-message-id`); v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `footerConfigured` answers per element and entry type, so legacy `turn_timing` claims turn toggles; footer toggles toast and outlive a session switch.
+  Evidence: `e64c11cd60`; branch `tui-footer-elements` `18bd0ca06f`.
 
 ## Current maintenance notes
 

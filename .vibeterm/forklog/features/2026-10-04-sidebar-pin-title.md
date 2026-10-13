@@ -84,6 +84,9 @@ quoting the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-sidebar-pin-title` applies and passes its tests on `v1.19.0`; superseded on v2, which draws the title above the sidebar scroll box. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.pin_title` set in tui.json decides; `/pin-title` lasts until exit and toasts.
+  Evidence: `27d0b208a1`; branch `tui-sidebar-pin-title` `af843baee3`.
 
 ## Current maintenance notes
 

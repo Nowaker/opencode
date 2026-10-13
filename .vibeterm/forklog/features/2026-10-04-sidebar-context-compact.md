@@ -117,6 +117,9 @@ quoting the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-context-display` proved on `v1.19.0` (`sidebar-context-compact`); ported to v2 as `v2-context-compact` (`session.context`), proved, PR #54966. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.context` set in tui.json decides on every start; the header toggle lasts until exit and toasts.
+  Evidence: `2bee88edd6`; branch `tui-context-display` `a7b4222d4e`.
 
 ## Current maintenance notes
 

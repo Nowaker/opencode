@@ -76,6 +76,9 @@ the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `sidebar-session-id` proved on `v1.19.0`; ported to v2 as `v2-sidebar-id` (`session.sidebar_id`, without `/session-id`), proved, PR #54964. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.session_id` set in tui.json decides, the instant session screen included; `/session-id` lasts until exit and toasts.
+  Evidence: `e3d680468f`; branch `sidebar-session-id` `ba05d50d96`.
 
 ## Current maintenance notes
 

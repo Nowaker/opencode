@@ -105,6 +105,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34:
   prompt and the footer. Fixed in `f77943745f`, with the per-screen home prompt
   heights; PR #54949 amended to `115c96ec28`. Evidence: that session's
   "Regressions on vt-252".
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): the tips toggle toasts when `home.tips` makes it last only until exit.
+  Evidence: `d6e2c3dff0`; branch `home-layout-options` `ef4c5a02cf` (PR #54949).
 
 ## Current maintenance notes
 

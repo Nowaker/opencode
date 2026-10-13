@@ -89,6 +89,9 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   Evidence: `84d27d0f49`.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-tool-collapse` proved on `v1.19.0` (`tool-output-collapse`); v2 port cost M. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `tool_output.collapse` naming `generic` or a tool shows that output, collapsed, whatever **Show/Hide generic tool output** remembered.
+  Evidence: `084beaa663`; branch `tui-tool-collapse` restacked on the updated `tui-footer-elements`, `0bea99ea61`.
 
 ## Current maintenance notes
 

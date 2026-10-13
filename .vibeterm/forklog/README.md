@@ -98,8 +98,16 @@ carries every feature forward unchanged. That commit includes the full
 - [Syntax coloring in tool calls: bash, heredocs, file languages, tool input](./features/2026-10-11-tool-syntax-coloring.md)
 - [Prompt start height, percentage sizes and home screen layout](./features/2026-10-12-home-screen-layout.md)
 - [Answer a failed TUI worker request instead of hanging](./features/2026-10-12-tui-worker-error-reply.md)
+- [tui.json decides over remembered runtime toggles](./features/2026-10-12-tui-config-toggle-precedence.md)
 
 ## Session records
+
+- [2026-10-12 `ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](./sessions/2026-10-12-tui-config-precedence.md)
+  - Audit every fork tui.json key against kv.json toggles: a set key now
+    decides over a remembered toggle (sidebar context, pin title, session ID,
+    keep scroll, turn timing, sidebar order), `tool_output.collapse` shows
+    generic output, toggles toast; carried onto nine owning branches;
+    opencode-tools `KV_TOGGLES`; build and install on both hosts.
 
 - [2026-10-12 `ses_ece4671adffe4Y4d8Yv35NSjXh`](./sessions/2026-10-12-v1-v2-patch-rig.md)
   - opencode-tools `opencode-patch-rig.ts` tests every TUI patch on v1 and v2
@@ -432,6 +440,18 @@ carries every feature forward unchanged. That commit includes the full
 
 Historical session evidence remains in each feature timeline. A historical
 session does not get a fabricated file when its full narrative was not found.
+
+## tui.json settings and runtime toggles
+
+Rule for every tui.json key that also has a runtime toggle (palette command,
+slash command, click or drag): **set in tui.json, it decides on every start
+and the toggle lasts until opencode exits, with a toast saying so; unset, the
+toggle is remembered in `kv.json`.** A new key must not duplicate an upstream
+kv toggle; give that toggle a tui.json default under this rule instead. Read
+such a key as `sessionOverride() ?? config ?? kv.get(key, default)`, never
+`kv.get(key, config)`. List it in tui.mdx "Settings with a toggle" and in
+opencode-tools `KV_TOGGLES`. Inventory and history:
+[feature record](./features/2026-10-12-tui-config-toggle-precedence.md).
 
 ## TUI patches on v1 and v2
 

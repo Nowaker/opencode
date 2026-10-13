@@ -75,6 +75,9 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-submit-scroll` proved on `v1.19.0` (`keep-scroll-on-submit`); ported to v2 as `v2-keep-scroll` (`session.keep_scroll_on_submit`), proved, PR #54963. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `keep_scroll_on_submit` set in tui.json decides; `/keep-scroll` lasts until exit and toasts.
+  Evidence: `8137a56479`; branch `tui-submit-scroll` `1c8ca3dbf7`.
 
 ## Current maintenance notes
 

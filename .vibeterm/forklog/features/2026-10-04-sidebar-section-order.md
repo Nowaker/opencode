@@ -112,6 +112,9 @@ quoting the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-sidebar-order` proved on `v1.19.0` (`sidebar-hidden`), `tui-sidebar-drag` applies; v2 port cost L (plugin slot host rewritten). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.order` set in tui.json decides; a drag lasts until exit and toasts once; **Reset sidebar order** drops it.
+  Evidence: `267cb17a0e`; branch `tui-sidebar-drag` `93af7f8caf`.
 
 ## Current maintenance notes
 

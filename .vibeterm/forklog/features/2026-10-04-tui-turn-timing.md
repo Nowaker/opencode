@@ -123,6 +123,9 @@ quoting the user:
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-turn-timing` proved on `v1.19.0` (`turn-timing`); v2 port cost M (v2 shows duration only). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
+  [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `turn_timing` set in tui.json decides turns; `/turn-times` and `/turn-durations` last until exit and toast.
+  Evidence: `e64c11cd60`; branch `tui-turn-timing` `d5287cc85e`.
 
 ## Current maintenance notes
 
