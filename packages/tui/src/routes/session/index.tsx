@@ -52,7 +52,7 @@ import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
-import { Sidebar } from "./sidebar"
+import { Sidebar, sidebarTitlePinned, toggleSidebarTitlePin } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -256,7 +256,6 @@ export function Session() {
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
-  const sidebarTitlePinned = () => kv.get("sidebar_pin_title", tuiConfig.sidebar?.pin_title ?? false)
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -685,14 +684,15 @@ export function Session() {
       },
     },
     {
-      title: sidebarTitlePinned() ? "Unpin sidebar title" : "Pin sidebar title",
+      title: sidebarTitlePinned(tuiConfig, kv) ? "Unpin sidebar title" : "Pin sidebar title",
       value: "session.sidebar.pin_title",
       category: "Session",
       slash: {
         name: "pin-title",
       },
       run: () => {
-        kv.set("sidebar_pin_title", !sidebarTitlePinned())
+        const message = toggleSidebarTitlePin(tuiConfig, kv)
+        if (message) toast.show({ message, variant: "info" })
         dialog.clear()
       },
     },
