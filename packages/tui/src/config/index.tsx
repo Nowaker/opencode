@@ -290,11 +290,29 @@ export const ToolOutput = Schema.Struct({
       "'write', 'edit', 'apply_patch' (default 'never').",
       "A tool name, such as 'vibeterm_prompt_session', overrides its group.",
       "A number of lines; 0 hides the output entirely until clicked; 'never' always shows all of it.",
+      "Setting 'generic' or a plugin or MCP tool's name also shows that output on every start, collapsed to",
+      "its limit, whatever 'Show/Hide generic tool output' last remembered; that command then lasts until the TUI exits.",
       "Long lines count too: the preview is capped at that many lines' worth of characters.",
     ].join(" "),
   }),
 }).annotate({ description: "Tool output in the session transcript" })
 export type ToolOutput = Schema.Schema.Type<typeof ToolOutput>
+
+// Whether a plugin or MCP tool's output shows. `tool_output.collapse` naming the tool or 'generic'
+// decides on every start, showing it collapsed to its limit, and the "Show/Hide generic tool output"
+// command (`toggled`) then lasts until exit; otherwise that command's remembered choice (`saved`).
+export function genericToolOutputShown(input: {
+  config: ToolOutput | undefined
+  tool?: string
+  saved: boolean
+  toggled?: boolean
+}) {
+  if (input.toggled !== undefined) return input.toggled
+  const collapse = input.config?.collapse
+  if (collapse?.generic !== undefined) return true
+  if (input.tool !== undefined && collapse?.[input.tool] !== undefined) return true
+  return input.saved
+}
 
 // Lines of output a tool block shows while collapsed; undefined when it never collapses.
 export function toolOutputLimit(config: ToolOutput | undefined, tool: string, group: ToolOutputGroup) {

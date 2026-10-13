@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import {
   AttentionSoundName,
   footerConfigured,
+  genericToolOutputShown,
   footerSelections,
   footerSelects,
   footerShows,
@@ -322,4 +323,17 @@ test("provides resolved config through Solid context", async () => {
 
 test("requires the config provider", () => {
   expect(() => useTuiConfig()).toThrow("TuiConfigProvider is missing")
+})
+
+test("tool_output.collapse naming a tool or 'generic' shows its output over a remembered hide", () => {
+  expect(genericToolOutputShown({ config: undefined, tool: "browser", saved: false })).toBe(false)
+  expect(genericToolOutputShown({ config: undefined, tool: "browser", saved: true })).toBe(true)
+  expect(genericToolOutputShown({ config: { collapse: { generic: 0 } }, tool: "browser", saved: false })).toBe(true)
+  expect(genericToolOutputShown({ config: { collapse: { browser: 5 } }, tool: "browser", saved: false })).toBe(true)
+  expect(genericToolOutputShown({ config: { collapse: { browser: 5 } }, tool: "github", saved: false })).toBe(false)
+  expect(genericToolOutputShown({ config: { collapse: { bash: 5 } }, tool: "browser", saved: false })).toBe(false)
+  // The command's session-only choice wins until exit.
+  expect(
+    genericToolOutputShown({ config: { collapse: { generic: 0 } }, tool: "browser", saved: true, toggled: false }),
+  ).toBe(false)
 })

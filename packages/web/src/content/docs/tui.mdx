@@ -543,7 +543,7 @@ Each value is a number of lines or `"never"`:
 - `0` hides the output until clicked. The block is just its title or command, a blank line, and the hint, with the [footer](#footer) on the hint line: `Click to expand · 16:13:02 · 1.5s`.
 - `"never"` always shows all of it, with no hint.
 
-`write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on.
+`write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on, unless `generic` or the tool's own name is set here: then the output shows, collapsed to that limit, on every start. With `generic` set, **Hide generic tool output** lasts until OpenCode exits.
 
 ### Older footer settings
 
