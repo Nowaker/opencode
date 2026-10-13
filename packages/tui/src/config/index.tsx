@@ -53,7 +53,7 @@ export const TurnTiming = Schema.Struct({
   }),
 }).annotate({
   description:
-    "Legacy default per-turn timing in assistant message footers, used while footer.time and footer.duration are unset; toggle at runtime with /turn-times and /turn-durations",
+    "Legacy per-turn timing in assistant message footers, used while footer.time and footer.duration are unset. Set here, it decides on every start and /turn-times and /turn-durations last until the TUI exits; unset, those toggles are remembered",
 })
 
 export const TimestampType = Schema.Literals(["user", "assistant", "text", "reasoning", "tool", "error", "compaction"])
@@ -77,7 +77,7 @@ export const Timestamps = Schema.Union([
     "'compaction' - when compaction started, in its divider.",
     "Times from today show the time of day; older ones show the date, then the time.",
     "Unset (the default): only 'user' and 'assistant' can show times, through /timestamps, /turn-times and",
-    "turn_timing.time, and those toggles persist.",
+    "turn_timing.time; turn_timing.time set decides turns on each start, and otherwise those toggles persist.",
     "Set: this list decides every type on each start, overriding turn_timing.time,",
     "and /timestamps and /turn-times last until the TUI exits.",
     "Legacy: footer.time takes the same list and wins when set; 'tool' here also shows tool call durations.",
@@ -196,15 +196,23 @@ export function toolFooterShowsMessageID(shows: (type: "tool" | "assistant") => 
   return shows("tool") && !shows("assistant")
 }
 
-// Whether the runtime toggles for an element are session-only because tui.json decides it.
-export function footerConfigured(config: Pick<Info, "footer" | "timestamps">, element: FooterElement) {
+// Whether the runtime toggle for an element on one entry type lasts only until exit because tui.json
+// decides it: `footer`, the legacy `timestamps` list for time, or legacy `turn_timing` for turns.
+export function footerConfigured(
+  config: Pick<Info, "footer" | "timestamps" | "turn_timing">,
+  element: FooterElement,
+  type: TimestampType,
+) {
   if (config.footer?.[element] !== undefined) return true
-  return element === "time" && config.timestamps !== undefined
+  if (element === "time" && config.timestamps !== undefined) return true
+  if (type !== "assistant") return false
+  if (element === "time") return config.turn_timing?.time !== undefined
+  return element === "duration" && config.turn_timing?.duration !== undefined
 }
 
 // What each footer element selects before runtime overrides. `footer` wins; unset elements keep
-// the behavior of the legacy keys (timestamps, turn_timing, footer_variant) and of the persisted
-// /timestamps, /turn-times and /turn-durations toggles passed in `saved`.
+// the behavior of the legacy keys (timestamps, turn_timing, footer_variant), which in turn win over
+// the persisted /timestamps, /turn-times and /turn-durations toggles passed in `saved`.
 export function footerSelections(
   config: Pick<Info, "footer" | "timestamps" | "turn_timing" | "footer_variant">,
   saved: { timestamps?: boolean; turnTime?: boolean; turnDuration?: boolean },
@@ -228,14 +236,14 @@ export function footerSelections(
         ? { important: false, types: legacy }
         : pick([
             saved.timestamps === true && "user",
-            (saved.turnTime ?? config.turn_timing?.time) === true && "assistant",
+            (config.turn_timing?.time ?? saved.turnTime) === true && "assistant",
           ]),
     ),
     duration: element(
       "duration",
       pick([
         "reasoning",
-        (saved.turnDuration ?? config.turn_timing?.duration) === true && "assistant",
+        (config.turn_timing?.duration ?? saved.turnDuration) === true && "assistant",
         legacy?.has("tool") === true && "tool",
       ]),
     ),

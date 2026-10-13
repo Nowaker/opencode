@@ -161,6 +161,9 @@ const sessionGlobalBindingCommands = [
 
 const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] as const
 
+// Footer toggles over elements tui.json decides, by "element.type"; they last until opencode exits.
+const [footerOverrides, setFooterOverrides] = createSignal<Record<string, boolean>>({})
+
 const context = createContext<{
   width: number
   sessionID: string
@@ -281,7 +284,8 @@ export function Session() {
     if (sidebar() === "auto" && wide()) return true
     return false
   })
-  // An element set in tui.json (`footer`, or the legacy `timestamps` list for time) decides on every
+  // An element set in tui.json (`footer`, the legacy `timestamps` list for time, or legacy `turn_timing`
+  // for turns) decides on every
   // start and its toggle lasts until exit: kv.json usually already holds a "timestamps" value, persisted
   // alongside any other kv write, which would mask the config. Unset, the toggles persist in kv.
   const footerSelections = createMemo(() =>
@@ -291,7 +295,6 @@ export function Session() {
       turnDuration: kv.get("turn_timing_duration"),
     }),
   )
-  const [footerOverrides, setFooterOverrides] = createSignal<Record<string, boolean>>({})
   const footerToggled = (element: TuiConfig.FooterElement, type: TuiConfig.TimestampType) =>
     footerOverrides()[`${element}.${type}`] ?? TuiConfig.footerSelects(footerSelections()[element], type)
   const toggleFooter = (
@@ -300,7 +303,7 @@ export function Session() {
     persist: (show: boolean) => void,
   ) => {
     const show = !footerToggled(element, type)
-    if (!TuiConfig.footerConfigured(tuiConfig, element)) return persist(show)
+    if (!TuiConfig.footerConfigured(tuiConfig, element, type)) return persist(show)
     // Toggling back to what tui.json selects restores it exactly, 'important' included.
     const configured = TuiConfig.footerSelects(footerSelections()[element], type)
     setFooterOverrides((overrides) => {
@@ -308,6 +311,11 @@ export function Session() {
       if (show === configured) delete next[`${element}.${type}`]
       return next
     })
+    if (show !== configured)
+      toast.show({
+        message: `${show ? "Showing" : "Hiding"} ${type === "user" ? "prompt" : "turn"} ${element === "time" ? "times" : "durations"} until opencode exits: tui.json decides them`,
+        variant: "info",
+      })
   }
   const landmarks = createMemo(() =>
     Object.values(footerSelections()).some((selection) => selection.important)

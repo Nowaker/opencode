@@ -472,7 +472,7 @@ A prompt's footer sits one blank line below the prompt's text, unless the text a
 }
 ```
 
-The `/timestamps`, `/turn-times` and `/turn-durations` commands flip prompt times, turn times and turn durations. For a key set in `footer`, the change lasts until the TUI exits and tui.json decides again on the next start. For a key left unset, the change is remembered.
+The `/timestamps`, `/turn-times` and `/turn-durations` commands flip prompt times, turn times and turn durations. For a key set in `footer` (or the older `timestamps` and `turn_timing`), the change lasts until the TUI exits and tui.json decides again on the next start. For a key left unset, the change is remembered.
 
 ### Date and time format
 
@@ -514,7 +514,7 @@ Uppercase `MM` is always the month and lowercase `mm` the minute. Each part acce
 
 These keep working when the matching `footer` key is unset, and `footer` wins when both are set:
 
-- `turn_timing.time: true` is `footer.time: "assistant"`, and `turn_timing.duration: true` adds `assistant` to `footer.duration`. With these, the `/turn-times` and `/turn-durations` toggles are remembered and take precedence.
+- `turn_timing.time: true` is `footer.time: "assistant"`, and `turn_timing.duration: true` adds `assistant` to `footer.duration`. Set, they decide turns on every start and the `/turn-times` and `/turn-durations` toggles last until OpenCode exits.
 - `footer_variant: true` is `footer.variant: "all"`.
 - `timestamps` takes the type list `footer.time` takes, without `"important"`, and overrides `turn_timing.time`. Its `tool` type also adds tool call durations, as `footer.duration: "tool"` does.
 
