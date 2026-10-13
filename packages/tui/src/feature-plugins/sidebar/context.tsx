@@ -23,14 +23,32 @@ const shortNumber = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 })
 
-function View(props: { api: TuiPluginApi; session_id: string }) {
+type Mode = "expanded" | "compact"
+
+function View(props: {
+  api: TuiPluginApi
+  session_id: string
+  toggled: () => Mode | undefined
+  setToggled: (mode: Mode | undefined) => void
+}) {
   const theme = () => props.api.theme.current
   const tuiConfig = useTuiConfig()
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => session()?.cost ?? 0)
-  const mode = createMemo(() => props.api.kv.get("sidebar_context", tuiConfig.sidebar?.context ?? "expanded"))
-  const toggle = () => props.api.kv.set("sidebar_context", mode() === "compact" ? "expanded" : "compact")
+  // sidebar.context set in tui.json decides on every start and a toggle lasts until exit; unset,
+  // the toggle is remembered in kv.json.
+  const mode = createMemo(
+    () => props.toggled() ?? tuiConfig.sidebar?.context ?? props.api.kv.get<Mode>("sidebar_context", "expanded"),
+  )
+  const toggle = () => {
+    const next = mode() === "compact" ? "expanded" : "compact"
+    const configured = tuiConfig.sidebar?.context
+    if (configured === undefined) return props.api.kv.set("sidebar_context", next)
+    props.setToggled(next === configured ? undefined : next)
+    if (next !== configured)
+      props.api.ui.toast({ message: `Sidebar context ${next} until opencode exits: tui.json sets sidebar.context` })
+  }
   const [width, setWidth] = createSignal(0)
 
   useBindings(() => ({
@@ -111,11 +129,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 }
 
 const tui: TuiPlugin = async (api) => {
+  const [toggled, setToggled] = createSignal<Mode>()
   api.slots.register({
     order: 100,
     slots: {
       sidebar_content(_ctx, props) {
-        return <View api={api} session_id={props.session_id} />
+        return <View api={api} session_id={props.session_id} toggled={toggled} setToggled={setToggled} />
       },
     },
   })
