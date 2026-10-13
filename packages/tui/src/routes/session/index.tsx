@@ -219,6 +219,8 @@ const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] 
 // keep_scroll_on_submit set in tui.json decides on every start and /keep-scroll then lasts until
 // opencode exits, across sessions; unset, /keep-scroll is remembered in kv.json.
 const [keepScrollToggled, setKeepScrollToggled] = createSignal<boolean>()
+// "Show/Hide generic tool output" while tui.json's tool_output.collapse decides; lasts until exit.
+const [genericOutputToggled, setGenericOutputToggled] = createSignal<boolean>()
 // Footer toggles over elements tui.json decides, by "element.type"; they last until opencode exits.
 const [footerOverrides, setFooterOverrides] = createSignal<Record<string, boolean>>({})
 
@@ -230,7 +232,7 @@ const context = createContext<{
   showThinking: () => boolean
   footer: (element: TuiConfig.FooterElement, type: TuiConfig.TimestampType, id: string, partID?: string) => boolean
   showDetails: () => boolean
-  showGenericToolOutput: () => boolean
+  showGenericToolOutput: (tool?: string) => boolean
   diffWrapMode: () => "word" | "none"
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
@@ -338,7 +340,14 @@ export function Session() {
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
-  const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
+  const [savedGenericToolOutput, setSavedGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
+  const showGenericToolOutput = (tool?: string) =>
+    TuiConfig.genericToolOutputShown({
+      config: tuiConfig.tool_output,
+      tool,
+      saved: savedGenericToolOutput(),
+      toggled: genericOutputToggled(),
+    })
 
   const wide = createMemo(() => dimensions().width > TuiLayout.Session.wideWidth)
   const sidebarVisible = createMemo(() =>
@@ -984,8 +993,15 @@ export function Session() {
       value: "session.toggle.generic_tool_output",
       category: "Session",
       run: () => {
-        setShowGenericToolOutput((prev) => !prev)
         dialog.clear()
+        const next = !showGenericToolOutput()
+        if (tuiConfig.tool_output?.collapse?.generic === undefined) return setSavedGenericToolOutput(() => next)
+        setGenericOutputToggled(next ? undefined : false)
+        if (!next)
+          toast.show({
+            message: "Generic tool output hidden until opencode exits: tui.json sets tool_output.collapse.generic",
+            variant: "info",
+          })
       },
     },
     {
@@ -2291,11 +2307,11 @@ function GenericTool(props: ToolProps) {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
   })
-  const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput()))
+  const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput(props.tool)))
   const reach = createMemo(() =>
     toolOutputReach({
       output: Boolean(props.output),
-      toggle: ctx.showGenericToolOutput(),
+      toggle: ctx.showGenericToolOutput(props.tool),
       toolInput: ctx.tui.syntax?.tool_input === true,
       expanded: expanded(),
     }),
