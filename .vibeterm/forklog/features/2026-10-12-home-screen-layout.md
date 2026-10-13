@@ -8,7 +8,7 @@
   `prompt-fit-screen` (PR #54948) and `home-layout-options` (PR #54949,
   stacked on #54948), both off `github/v1`
 - First local commit: `7a377b7324`
-- Current local commit(s): `7a377b7324`
+- Current local commit(s): `7a377b7324`, `f77943745f`
 - Upstream base when introduced: `dfb56f76c7` (`v1.19.0`)
 - Last checked against upstream: `dfb56f76c7` (`v1.19.0`)
 
@@ -43,8 +43,12 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34:
   `"1%"`-`"100%"` of the room the prompt has after every other element's
   guaranteed rows (or of the home column's width).
 - The gap above the logo shrinks to one row, never stays at four.
-- `home.logo`, `home.tips` (kv toggle wins), `home.prompt_position`
-  (`middle` default, `top` grows down, `bottom` grows up, logo above).
+- `home.logo`, `home.tips`, `home.prompt_position` (`middle` default, `top`
+  grows down, `bottom` grows up on the footer, logo above, tip above the logo).
+- A set `home.tips` decides on every start; the Show/Hide tips command then
+  lasts until exit. Unset, the command is remembered in kv.json.
+- `home.prompt_min_height` / `home.prompt_max_height` size the home prompt
+  apart from the session prompt, each falling back to `prompt.*`.
 - Defaults match upstream; Vibeterm's defaults (tips and logo hidden) are
   written by opencode-tools, not by this fork.
 
@@ -73,6 +77,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `7a377b7324` | 2026-10-12 | Prompt `space`, clamp, `min_height`, percentages, home stack, logo gap 1, logo gives way on a tiny terminal, `home.logo`/`tips`/`prompt_position`, instant parity, docs | `TuiLayout.size`/`promptRows`/`promptChromeRows`/`homePromptSpace`/`homeLogoFits`/`sessionPromptSpace`/`homeStack`/`homeTipsShown` in `packages/tui/src/layout.ts`; `PromptProps.space` and `measureChrome` in `component/prompt/index.tsx`; `routes/home.tsx`; column `onSizeChange` and `promptSpace` in `routes/session/index.tsx`; `feature-plugins/home/tips.tsx`; `Prompt`/`Home` in `config/index.tsx`; `instant/config.ts`, `instant/frame.ts` (`promptGeometry(..., space)`, `layout`), `instant/index.ts` (`tips`); `test/layout.test.ts`, `test/routes/home-layout.test.tsx`, `test/instant/config.test.ts` |
+| `f77943745f` | 2026-10-12 | `home.tips` wins over kv `tips_hidden`; bottom puts the tips above the logo so the prompt sits on the footer; `home.prompt_min_height`/`prompt_max_height` | `TuiLayout.homeTipsShown`, `homeStack` (`tipsAbove`, `logoTop`, `promptTop`) in `layout.ts`; `toggle` in `feature-plugins/home/tips.tsx`; `tips()` in `routes/home.tsx`; `rows` in `component/prompt/index.tsx`; `homePromptMinHeight`/`MaxHeight` in `instant/config.ts` and `promptGeometry` in `instant/frame.ts`; `Home` in `config/index.tsx` |
 
 ## Verification
 
@@ -94,6 +99,12 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34:
   initial build. Evidence: `7a377b7324`, that session's Verification.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `prompt-fit-screen` and `home-layout-options` proved on `v1.19.0` (`prompt-fits-screen`, `home-prompt-top`); prompt fit superseded on v2, layout options cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-12 [`ses_ece469f46ffeIkbDfxO1jJY6D6`](../sessions/2026-10-12-home-screen-layout.md) -
+  vt-252 regressions: a leftover kv `tips_hidden: false` beat `home.tips: false`,
+  and at `bottom` the tips block (3 padding rows and the tip) sat between the
+  prompt and the footer. Fixed in `f77943745f`, with the per-screen home prompt
+  heights; PR #54949 amended to `115c96ec28`. Evidence: that session's
+  "Regressions on vt-252".
 
 ## Current maintenance notes
 

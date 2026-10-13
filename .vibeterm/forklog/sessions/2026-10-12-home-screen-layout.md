@@ -10,7 +10,7 @@
 - Development branch(es): `home-layout` (off `dev-nowaker`); upstream
   `prompt-fit-screen` and `home-layout-options` (off `github/v1`)
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`); unchanged
-- Source result commit(s): `7a377b7324`
+- Source result commit(s): `7a377b7324`, `f77943745f`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -39,6 +39,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34; quoted in
 | `opencode` | `prompt-fit-screen` | - | `2e01aa0916` | new, off `github/v1`; PR #54948 (issue #54946) |
 | `opencode` | `home-layout-options` | - | `bb8d1d9987` | new, stacked on `prompt-fit-screen`; PR #54949 (issue #54947) |
 | `opencode-tools` | `master` | `e42fcbd` | `1cb6027` | Vibeterm tui.json defaults; fast-forward, pushed |
+| `opencode-tools` | `master` | `1cb6027` | `a2851e7` | loader draft follows the fork's home layout; fast-forward, pushed |
+| `opencode` | `dev-nowaker` | `246c6c10f2` | `f77943745f` + this record's second forklog commit | regression fix, fast-forward; pushed to both remotes |
+| `opencode` | `home-layout-options` | `bb8d1d9987` | `115c96ec28` | amended, force-pushed with lease; PR #54949 body updated |
+| `opencode-tools` | `master` | `d612f5b` | `892927e` | tips precedence, bottom draft, home prompt heights; fast-forward, pushed |
 
 ## Features touched
 
@@ -79,9 +83,40 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` as item 34; quoted in
 - Running services: desktop `opencode-serve-tailscale` PID `4038768`, started
   2026-10-12 03:45:55 CDT, unchanged.
 
+## Regressions on vt-252
+
+Reported by the coordinator for the user on desktop: "bottom alignment leaves a
+lot of space between, plus tips are actually showing despite being off by
+default in vt", and then, verbatim: "we should have a separate tui config for
+minimum height of prompt window on new session screen, and in session view
+screen. [...] in new session, it can take all. here, nah, i want 35% for me
+here."
+
+- Tips cause: `homeTipsShown` let any boolean `tips_hidden` in kv.json win, and
+  desktop's kv.json held `tips_hidden: false` from an earlier toggle. Now a set
+  `home.tips` decides on every start and the toggle lasts until exit; unset, the
+  toggle is remembered. Same rule as `footer`; item 36 adopts it for every
+  tui.json/kv overlap. `home.logo` has no runtime toggle.
+- Gap cause: at `bottom` the tips block (`paddingTop` 3 plus the tip) stayed
+  below the prompt, between it and the footer. The tips now go above the logo
+  at `bottom`; with tips hidden the prompt was already flush.
+- Per-screen heights: `home.prompt_min_height` / `home.prompt_max_height`, each
+  falling back to `prompt.*`, so nothing changes until they are set.
+  `prompt.max_width` stays shared: it only ever applied to the home prompt.
+- Verification: packages/tui typecheck clean, full suite 628 pass, 0 fail;
+  `home-layout-options` 214 pass. Real PTY at 160x45 with the user's config and
+  `tips_hidden: false`: no tip, status row on the footer, 12-row start (35%),
+  grows to row 1. Installed binaries checked the same way on desktop and m4max.
+- Migration: desktop and m4max `tui.json` gained `home.prompt_min_height: "35%"`
+  and lost `prompt.min_height: 8`; backups `tui.json.bak-before-home-prompt-split`.
+- Build: desktop `1.19.0-vt-260-dfb56f76c7` (inode `49959250`), m4max
+  `1.19.0-vt-261-dfb56f76c7` (inode `31438362`); v2 gate PASSED on both, retry
+  marker present; desktop `opencode-serve-tailscale` PID `5053` untouched.
+
 ## Commit provenance
 
 - `7a377b7324` - size the prompt from the room it has and lay out the home screen
+- `f77943745f` - let home.tips decide, keep a bottom prompt on the footer, size the home prompt apart
 - Required trailer: `AI-Session-ID: ses_ece469f46ffeIkbDfxO1jJY6D6`
 
 ```sh
