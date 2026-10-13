@@ -155,6 +155,11 @@ const sessionGlobalBindingCommands = [
 
 const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] as const
 
+// turn_timing set in tui.json decides on every start and /turn-times and /turn-durations then last
+// until opencode exits, across sessions; unset, those toggles are remembered in kv.json.
+const [turnTimeToggled, setTurnTimeToggled] = createSignal<boolean>()
+const [turnDurationToggled, setTurnDurationToggled] = createSignal<boolean>()
+
 const context = createContext<{
   width: number
   sessionID: string
@@ -279,11 +284,26 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  // tui.json supplies the default; a palette toggle persists its own choice in kv.
-  const showTurnTime = createMemo(() => kv.get("turn_timing_time", tuiConfig.turn_timing?.time ?? false) === true)
-  const showTurnDuration = createMemo(
-    () => kv.get("turn_timing_duration", tuiConfig.turn_timing?.duration ?? false) === true,
+  const showTurnTime = createMemo(
+    () => (turnTimeToggled() ?? tuiConfig.turn_timing?.time ?? kv.get("turn_timing_time", false)) === true,
   )
+  const showTurnDuration = createMemo(
+    () => (turnDurationToggled() ?? tuiConfig.turn_timing?.duration ?? kv.get("turn_timing_duration", false)) === true,
+  )
+  const toggleTurnTiming = (
+    key: "time" | "duration",
+    next: boolean,
+    set: (value: boolean | undefined) => void,
+  ) => {
+    const configured = tuiConfig.turn_timing?.[key]
+    if (configured === undefined) return kv.set(`turn_timing_${key}`, next)
+    set(next === configured ? undefined : next)
+    if (next !== configured)
+      toast.show({
+        message: `${next ? "Showing" : "Hiding"} turn ${key === "time" ? "times" : "durations"} until opencode exits: tui.json sets turn_timing.${key}`,
+        variant: "info",
+      })
+  }
   const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
@@ -721,7 +741,7 @@ export function Session() {
         name: "turn-times",
       },
       run: () => {
-        kv.set("turn_timing_time", !showTurnTime())
+        toggleTurnTiming("time", !showTurnTime(), setTurnTimeToggled)
         dialog.clear()
       },
     },
@@ -733,7 +753,7 @@ export function Session() {
         name: "turn-durations",
       },
       run: () => {
-        kv.set("turn_timing_duration", !showTurnDuration())
+        toggleTurnTiming("duration", !showTurnDuration(), setTurnDurationToggled)
         dialog.clear()
       },
     },
