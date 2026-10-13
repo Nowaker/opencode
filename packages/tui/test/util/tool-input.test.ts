@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { fitsInline, formatToolInput, inlineToolInput, type ToolInputRow } from "../../src/util/tool-input"
+import {
+  fitsInline,
+  formatToolInput,
+  inlineToolInput,
+  toolOutputReach,
+  type ToolInputRow,
+} from "../../src/util/tool-input"
 
 const whole = (output: string) => ({ output, overflow: false })
 const text = (rows: ToolInputRow[]) => rows.map((row) => row.map((segment) => segment.text).join(""))
@@ -125,5 +131,28 @@ describe("formatToolInput", () => {
   test("collapsed, cuts by display width, not by characters", () => {
     const { rows } = formatToolInput({ k: "日本語のテキスト" }, 10)
     expect(text(rows)).toEqual(["k: 日本語…"])
+  })
+})
+
+describe("toolOutputReach", () => {
+  const base = { output: true, toggle: false, toolInput: true, expanded: false }
+
+  test("holds a response the toggle hides when the input is a block, and draws it once expanded", () => {
+    expect(toolOutputReach(base)).toEqual({ held: true, shown: false })
+    expect(toolOutputReach({ ...base, expanded: true })).toEqual({ held: true, shown: true })
+  })
+
+  test("draws a response whenever the toggle shows output", () => {
+    expect(toolOutputReach({ ...base, toggle: true })).toEqual({ held: false, shown: true })
+    expect(toolOutputReach({ ...base, toggle: true, toolInput: false })).toEqual({ held: false, shown: true })
+  })
+
+  test("leaves the toggle in charge without the input block, as upstream does", () => {
+    expect(toolOutputReach({ ...base, toolInput: false, expanded: true })).toEqual({ held: false, shown: false })
+  })
+
+  test("has nothing to hold or draw without a response", () => {
+    expect(toolOutputReach({ ...base, output: false, expanded: true })).toEqual({ held: false, shown: false })
+    expect(toolOutputReach({ ...base, output: false, toggle: true })).toEqual({ held: false, shown: false })
   })
 })

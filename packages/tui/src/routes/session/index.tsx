@@ -80,6 +80,7 @@ import {
   fitsInline,
   formatToolInput,
   inlineToolInput,
+  toolOutputReach,
   type ToolInputKind,
   type ToolInputRow,
 } from "../../util/tool-input"
@@ -2268,9 +2269,19 @@ function GenericTool(props: ToolProps) {
     return collapsed().output
   })
   const showOutput = createMemo(() => Boolean(props.output && ctx.showGenericToolOutput()))
+  const reach = createMemo(() =>
+    toolOutputReach({
+      output: Boolean(props.output),
+      toggle: ctx.showGenericToolOutput(),
+      toolInput: ctx.tui.syntax?.tool_input === true,
+      expanded: expanded(),
+    }),
+  )
+  const heldOutput = () => reach().held
+  const outputShown = () => reach().shown
   // Only output that is shown is sniffed or colored.
   const language = createMemo(() =>
-    showOutput() ? outputLanguage(ctx.tui.syntax?.tool_output, props.tool, output()) : undefined,
+    outputShown() ? outputLanguage(ctx.tui.syntax?.tool_output, props.tool, output()) : undefined,
   )
   // The block's measured width, reported on layout and on resize only; until then an estimate.
   const [inputWidth, setInputWidth] = createSignal<number>()
@@ -2279,7 +2290,10 @@ function GenericTool(props: ToolProps) {
     const whole = expanded() || limit() === undefined
     return formatToolInput(props.input, whole ? undefined : (inputWidth() ?? Math.max(20, ctx.width - 6)))
   })
-  const overflow = createMemo(() => Boolean(inputBlock()?.overflow || (showOutput() && collapsed().overflow)))
+  const overflow = createMemo(() =>
+    Boolean(inputBlock()?.overflow || (showOutput() && collapsed().overflow) || heldOutput()),
+  )
+  const outputOverflow = createMemo(() => collapsed().overflow || heldOutput())
 
   return (
     <Switch>
@@ -2305,7 +2319,7 @@ function GenericTool(props: ToolProps) {
                 fold: code().textMuted,
               }}
             />
-            <Show when={showOutput() && limited()}>
+            <Show when={outputShown() && limited()}>
               <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
                 {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
               </Show>
@@ -2313,13 +2327,14 @@ function GenericTool(props: ToolProps) {
           </BlockTool>
         )}
       </Match>
-      <Match when={!showOutput()}>
+      <Match when={!outputShown()}>
         <InlineTool
           icon="⚙"
           pending="Writing command…"
           complete={true}
           part={props.part}
           footerBelow={input(props.input).includes("\n")}
+          onClick={heldOutput() ? () => setExpanded(true) : undefined}
         >
           {props.tool} {input(props.input)}
         </InlineTool>
@@ -2328,8 +2343,8 @@ function GenericTool(props: ToolProps) {
         <BlockTool
           title={`# ${props.tool} ${input(props.input)}`}
           part={props.part}
-          hint={expandHint(collapsed().overflow, expanded())}
-          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
+          hint={expandHint(outputOverflow(), expanded())}
+          onClick={outputOverflow() ? () => setExpanded((prev) => !prev) : undefined}
         >
           <Show when={!collapsed().overflow || expanded() || limited()}>
             <box gap={1}>

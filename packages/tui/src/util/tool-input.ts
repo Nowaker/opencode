@@ -135,3 +135,11 @@ function scalar(value: unknown): ToolInputSegment {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
+
+// Whether a plugin or MCP tool's response is drawn. The generic output toggle decides by default.
+// With the input shown as a block (`toolInput`), a response the toggle hides is held instead of
+// lost: the call offers to expand, and expanding draws it.
+export function toolOutputReach(state: { output: boolean; toggle: boolean; toolInput: boolean; expanded: boolean }) {
+  const held = state.output && !state.toggle && state.toolInput
+  return { held, shown: (state.output && state.toggle) || (held && state.expanded) }
+}
