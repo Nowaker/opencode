@@ -200,7 +200,11 @@ describe("footer elements", () => {
       time: ["user", "assistant"],
     })
     expect(types(footerSelections({ turn_timing: { time: true, duration: true } }, { turnTime: false, turnDuration: false })))
-      .toMatchObject({ time: [], duration: ["reasoning"] })
+      .toMatchObject({ time: ["assistant"], duration: ["assistant", "reasoning"] })
+    expect(types(footerSelections({}, { turnTime: true, turnDuration: true }))).toMatchObject({
+      time: ["assistant"],
+      duration: ["assistant", "reasoning"],
+    })
   })
 
   test("footer wins over the legacy keys", () => {
@@ -237,10 +241,14 @@ describe("footer elements", () => {
   })
 
   test("toggles are session-only for elements tui.json decides", () => {
-    expect(footerConfigured({}, "time")).toBe(false)
-    expect(footerConfigured({ timestamps: "none" }, "time")).toBe(true)
-    expect(footerConfigured({ timestamps: "none" }, "duration")).toBe(false)
-    expect(footerConfigured({ footer: { duration: false } }, "duration")).toBe(true)
+    expect(footerConfigured({}, "time", "user")).toBe(false)
+    expect(footerConfigured({ timestamps: "none" }, "time", "user")).toBe(true)
+    expect(footerConfigured({ timestamps: "none" }, "duration", "assistant")).toBe(false)
+    expect(footerConfigured({ footer: { duration: false } }, "duration", "assistant")).toBe(true)
+    expect(footerConfigured({ turn_timing: { time: false } }, "time", "assistant")).toBe(true)
+    expect(footerConfigured({ turn_timing: { time: false } }, "time", "user")).toBe(false)
+    expect(footerConfigured({ turn_timing: { time: false } }, "duration", "assistant")).toBe(false)
+    expect(footerConfigured({ turn_timing: { duration: true } }, "duration", "assistant")).toBe(true)
   })
 
   test("important shows only on landmarks, and asks only when the type list does not decide", () => {
