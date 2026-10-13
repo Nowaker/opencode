@@ -26,6 +26,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [On-demand search outside repositories](#on-demand-search-outside-repositories)
+
 - [Cooperative owner retirement](./features/2026-10-11-owner-retirement.md)
 
 - [SQLite admission recovery and safe diagnosis](./features/sqlite-admission.md)
@@ -561,6 +563,54 @@ never set `OPENCODE_SKIP_V2_GUARD_GATE` to get past it.
 
 Work continuing after midnight belongs to the evening's workday. A feature
 starts on its first user workday; a session record uses that session's workday.
+
+## On-demand search outside repositories
+
+Source: `packages/core/src/filesystem/search.ts`. A Location without `vcs`
+uses ripgrep rather than creating fff's permanent recursive watcher. Its
+`find` waits for a fresh scan per request, keeping the existing 100,000-file
+scan bound, fuzzy matching, directory path suffixes and default 50-result
+limit. Empty/whitespace queries list entries. Git roots and Git worktrees
+keep the existing fff path, including the explicit disable/unavailable
+fallback. No extra Git probe or timer is added.
+
+`glob` and `grep` retain the existing on-demand ripgrep adapter, including
+scoped paths, limits and nested ignore rules. Discovery skips hidden files;
+explicit glob patterns and grep can match hidden files. Directory discovery
+derives parents of discovered files, as the existing ripgrep fallback does.
+
+Worktree evidence from `ses_ecc45c623ffecHtWFB24tFBP1n`, base `a100f85998`,
+branch `container-search` (not installed or integrated by this session):
+
+- With only search.ts restored byte-identically to `a100f85998`, the final
+  eight-case suite in a clean environment has 1 pass, 7 fail (exit 1):
+  first results, creation/rename/directory freshness, scoped grep, empty
+  query and ignored-tree discovery. Restoring the committed fix gives
+  8 pass, 0 fail. Empty-query listing also has its own pre-fix failure.
+- After changes: filesystem, location-filesystem, location and location-layer
+  tests 54 pass, 0 fail;
+  `bun typecheck` in `packages/core` exits 0.
+- Retained Linux driver: `packages/core/script/search-watch-proof.ts`;
+  worker: `packages/core/script/search-watch-worker.ts`. Run from
+  `packages/core` with a clean environment and an empty scratch HOME:
+  `env -i PATH="$PATH" HOME="$scratch" bun script/search-watch-proof.ts "$output"`.
+  The JSON output retains each measured thread's CPU and watch counts;
+  stdout reports aggregates only. The driver isolates child HOME, XDG and
+  tool/plugin stores, kills only its children and removes only its fixture.
+- Three repeats, 16 nested Git repositories, 20 directories per each of
+  `src`, ignored `build` and ignored `node_modules`; 352 churn files,
+  approximately 25 ms between batches, 3 s idle then 3 s churn per process.
+- Watched non-repository baseline: 353 watches, 11.31-11.99% of one core
+  during churn, busiest thread 9.98-10.66%. Candidate: zero watches,
+  0-0.33% total/thread CPU. Repository control: 355 watches, 12.31-14.29%
+  total CPU. This is a small synthetic mechanism proof, not a measurement
+  of the reported customer tree or its 48,000-watch processes.
+- Startup samples include module initialization, searches and the explicit
+  one-second settling period. Candidate readiness additionally includes
+  mutation assertions; these samples are not a startup-speed comparison.
+- Candidate driver also asserts immediate creation, rename, deletion,
+  content mutation, directory filtering, scoped glob/grep and empty-query
+  listing through the actual service. No customer tree or live tab is used.
 
 ## Audit and upstream lifecycle
 
