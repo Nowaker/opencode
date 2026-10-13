@@ -95,7 +95,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
-  rig run: `fix-scroll-follow` applies and passes its tests on `v1.19.0`; v2 TBD (own scroll anchor). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+  rig run: `fix-scroll-follow` applies and passes its tests on `v1.19.0`; v2 likely superseded: `routes/session/index.tsx` on `github/dev` pins its mounted span when the reader leaves the bottom. Not yet shown by a scenario (needs a 100+ message session). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

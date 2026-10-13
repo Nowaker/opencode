@@ -83,7 +83,7 @@ Session [`ses_ed759a0b4ffeCubC9xxc8hYgHY`](../sessions/2026-10-10-revert-unqueue
   rebased unchanged onto upstream `v1` `dfb56f76c7` (`v1.19.0`).
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
-  rig run: `v1-unqueue-prompt` applies on `v1.19.0`; v2 TBD (pending-prompt actions exist). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+  rig run: `v1-unqueue-prompt` applies on `v1.19.0`; v2 superseded: the Queued prompts dialog on `github/dev` has "undo" (`queued_prompt.undo`), which cancels the prompt and returns it to the prompt box. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
 
 ## Current maintenance notes
 

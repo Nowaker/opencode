@@ -446,7 +446,7 @@ the stack applies, typechecks and its own tests pass.
 
 v2 cost: `ported` (PR open), `S`/`M`/`L` (estimated port size; M and L wait
 for a decision), `not applicable` (v2 has no such surface), `superseded` (v2
-already behaves so), `TBD` (v2 has its own mechanism; prove the defect first).
+already behaves so).
 
 Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 [session record](./sessions/2026-10-12-v1-v2-patch-rig.md).
@@ -460,7 +460,7 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `tui-sidebar-order` | #53201 | proved | L: v2 rewrote the plugin slot host | - |
 | `tui-context-display` | #53205 | proved | ported `v2-context-compact` (`session.context`), proved | [#54966](https://github.com/anomalyco/opencode/pull/54966) |
 | `tui-sidebar-drag` | #53217 | pass | L, after sidebar order | - |
-| `fix-scroll-follow` | #53219 | pass | TBD: v2 has its own scroll anchor | - |
+| `fix-scroll-follow` | #53219 | pass | likely superseded: v2 pins its mounted span when the reader leaves the bottom (`routes/session/index.tsx`); no scenario yet | - |
 | `tui-todo-summary` | #53259 | pass | not applicable: v2 sidebar has no Todo section | - |
 | `tui-mcp-summary` | #53261 | proved | ported `v2-mcp-summary` (`session.mcp_summary`), proved | [#54960](https://github.com/anomalyco/opencode/pull/54960) |
 | `tui-context-colors` | #53264 | proved | ported `v2-context-colors` (`usage`), proved, stacked on #54966 | [#54978](https://github.com/anomalyco/opencode/pull/54978) |
@@ -474,14 +474,14 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `abort-keybind-feedback` | #53656 | proved | M: command, keybind and Escape-burst resolver in v2's keymap | - |
 | `tui-history-crop` | #53660 | proved | L: needs v2 server paging and sync | - |
 | `sidebar-session-id` | #53663 | proved | ported `v2-sidebar-id` (`session.sidebar_id`, no `/session-id`), proved | [#54964](https://github.com/anomalyco/opencode/pull/54964) |
-| `tui-lazy-provider-list` | #53680 | pass | TBD: v2 loads catalogs per location; measure first | - |
+| `tui-lazy-provider-list` | #53680 | pass | superseded: v2 starts the location catalog load without awaiting it (`context/location.tsx`); only `--prompt` auto-submit waits for it | - |
 | `provisional-prompt` | #53698 | conflict: PR head predates `v1.19.0` (`dev-nowaker` carries it rebased) | L: v2 plan phase 2 | - |
 | `tui-footer-variant` | #53848 | proved | ported `v2-footer-variant` (`session.variant`), proved | [#54958](https://github.com/anomalyco/opencode/pull/54958) |
 | `tui-click-controls-pr` | #53871 | conflict: PR head predates `v1.19.0` | L: 15 files | - |
 | `tui-footer-elements` | #53877 | proved | L: v2 footer rewritten | - |
 | `tui-tool-collapse` | #54039 | proved | M: v2 tool views and verbosity differ | - |
 | `v1-revert-messages` | #54436 | pass | L: v2 revert is server-side and different | - |
-| `v1-unqueue-prompt` | #54437 | pass | TBD: v2 already has pending-prompt actions | - |
+| `v1-unqueue-prompt` | #54437 | pass | superseded: v2's Queued prompts dialog has "undo" (`queued_prompt.undo`), which cancels the prompt and puts it back in the prompt box | - |
 | `paste-placeholder-delete` | #54457 | proved | M: the `@opentui/core` 0.4.5 patch needs redoing for 0.5.17 | - |
 | `paste-summary-config` | #54458 | proved | ported `v2-paste-summary` (`prompt.paste_summary`), proved | [#54959](https://github.com/anomalyco/opencode/pull/54959) |
 | `paste-raw-key` | #54459 | proved | M | - |
