@@ -99,7 +99,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Machine provenance on messages and session execution](./features/2026-10-10-machine-provenance.md)
 - [Syntax coloring in tool calls: bash, heredocs, file languages, tool input](./features/2026-10-11-tool-syntax-coloring.md)
 - [Prompt start height, percentage sizes and home screen layout](./features/2026-10-12-home-screen-layout.md)
-- [Answer a failed TUI worker request instead of hanging](./features/2026-10-12-tui-worker-error-reply.md)
+- [Deliver and settle TUI worker requests without startup races](./features/2026-10-12-tui-worker-error-reply.md)
 - [tui.json decides over remembered runtime toggles](./features/2026-10-12-tui-config-toggle-precedence.md)
 
 ## Session records
@@ -108,6 +108,13 @@ carries every feature forward unchanged. That commit includes the full
   - `prompt_async` acknowledges durable admission, returns a marked
     `PromptAdmissionError` for confirmed rejection, and stops rejected
     concurrent duplicates; real HTTP regressions and desktop installed proof.
+
+- [2026-10-13 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-13-tui-spawn-hang.md)
+  - A spawned new-session tab stayed blank because Bun 1.4.x drops worker
+    messages sent during the worker's top-level awaits; red/green on the
+    installed binaries for `95113b27bc`'s `rpc.ready` handshake, pushed with
+    m4max's forklog to both remotes; no upstream PR (upstream builds with Bun
+    1.3.14).
 
 - [2026-10-12 `ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](./sessions/2026-10-12-tui-config-precedence.md)
   - Audit every fork tui.json key against kv.json toggles: a set key now

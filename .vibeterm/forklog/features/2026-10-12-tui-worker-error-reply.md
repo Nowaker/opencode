@@ -9,7 +9,7 @@
 - Current local commit(s): `c50b7366df`, `95113b27bc`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
-- Upstream: issue [#54934](https://github.com/anomalyco/opencode/issues/54934), PR [#54936](https://github.com/anomalyco/opencode/pull/54936) against `v1`
+- Upstream: issue [#54934](https://github.com/anomalyco/opencode/issues/54934) (closed as not planned by the upstream bot on 2026-10-13: `v1` takes critical fixes only), PR [#54936](https://github.com/anomalyco/opencode/pull/54936) against `v1` (open). The readiness part, `95113b27bc`, is fork-only: upstream's release builds use Bun 1.3.14, which does not lose these requests.
 
 ## Original request
 
@@ -56,6 +56,15 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 - The reply carries the message as a string and the client rejects with
   `new Error(message)`, so the failure reaches the TUI's existing error
   handling, which prints it and exits 1.
+- A request can also be lost before the worker answers anything. The
+  worker's static module graph awaits at top level (the data directory
+  `mkdir` in `packages/core/src/global.ts`, the migrations' `import()`s,
+  `@ff-labs/fff-bun`). Bun 1.4.2 and 1.4.3 dispatch a message that arrives
+  during such an await before `Rpc.listen` installs `onmessage`, and drop
+  it; Bun 1.3.14 delivers it. Fork builds compile with the system Bun (1.4.2
+  since 2026-09-29), so under slow disk or heavy load a spawned new session
+  stayed blank and `-s` stayed on "Loading session…". The `rpc.ready`
+  handshake makes delivery independent of the Bun version.
 
 ## Changes
 
@@ -80,6 +89,12 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
   maintenance's 60 s retry window, three `opencode -s` exit 1 with
   `Error: Failed to execute statement` instead of staying on
   "Loading session…"; see the session record.
+- Readiness: installed binaries with the data directory's `mkdir` delayed
+  3 s, a spawned new session stays blank on `vt-275` 3/3 and draws on
+  `vt-285` 3/3; with 100-300 ms, `opencode -s` stays on "Loading session…"
+  on `vt-275` 6/6 and loads on `vt-285`. Isolated Bun probes and the live
+  specimens are in the
+  [2026-10-13 session record](../sessions/2026-10-13-tui-spawn-hang.md).
 
 ## Timeline
 
@@ -98,6 +113,14 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
   completed its normal staged handoff into pane `%19109` with its real `OC |`
   title. The installed build contains no temporary startup instrumentation.
 
+- 2026-10-13 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-13-tui-spawn-hang.md) -
+  traced the spawned new-session hang (blank tab, `vt-275`) to requests
+  lost by Bun 1.4.x during the worker's top-level awaits; Bun 1.3.14 loses
+  none. Red/green on the installed binaries under injected `mkdir` latency;
+  integrated m4max's `ed5f43340c` and pushed `95113b27bc`/`ed5f43340c` to
+  both remotes. No upstream PR for the readiness part: upstream builds with
+  Bun 1.3.14.
+
 - 2026-10-12 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-12-tui-worker-hang.md) -
   introduce; upstream issue #54934 and PR #54936 against `v1`; build and
   install on desktop and m4max (`1.19.0-vt-248-dfb56f76c7`).
@@ -106,6 +129,9 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 
 - Drop the fork commit once PR #54936, or an equivalent, is in the upstream
   `v1` the fork is based on.
+- Keep `95113b27bc` while the fork builds with a Bun that drops messages
+  reaching a worker during a top-level await (1.4.2 and 1.4.3 do; 1.3.14
+  does not). `tmp/spawn-hang/bunq/early-main.ts` checks a Bun version.
 - A failed SQL statement reaches the user as the `SqlError`'s generic
   `Failed to execute statement`; its cause, such as `database is locked`, is
   not sent.
