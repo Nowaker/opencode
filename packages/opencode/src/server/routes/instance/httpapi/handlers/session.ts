@@ -17,7 +17,7 @@ import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
-import { Cause, Effect, Option, Schema, Scope } from "effect"
+import { Cause, Deferred, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -37,7 +37,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { notFound, PermissionNotFoundError, PromptNotQueuedError } from "../errors"
+import { notFound, PermissionNotFoundError, PromptAdmissionError, PromptNotQueuedError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -338,7 +338,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+      const admission = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+      yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }, admission).pipe(
+        Effect.onError((cause) => Deferred.failCause(admission, Cause.die(Cause.squash(cause)))),
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
             yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
@@ -349,6 +351,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           }),
         ),
         (work) => OwnerQuiescence.fork(work, scope, true),
+      )
+      yield* Deferred.await(admission).pipe(
+        Effect.catchTag("PromptAdmissionRejected", (error) =>
+          Effect.fail(new PromptAdmissionError({ name: "PromptAdmissionError", data: { message: error.message } })),
+        ),
       )
       return HttpApiSchema.NoContent.make()
     })

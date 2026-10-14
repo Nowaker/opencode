@@ -1,5 +1,13 @@
 import { Schema } from "effect"
 
+export class PromptAdmissionError extends Schema.ErrorClass<PromptAdmissionError>("PromptAdmissionError")(
+  {
+    name: Schema.Literal("PromptAdmissionError"),
+    data: Schema.Struct({ message: Schema.String }),
+  },
+  { httpApiStatus: 400 },
+) {}
+
 export class OwnerSealedError extends Schema.TaggedErrorClass<OwnerSealedError>()(
   "OwnerSealed",
   { generation: Schema.Finite },

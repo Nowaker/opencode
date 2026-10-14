@@ -20,7 +20,14 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, PromptNotQueuedError, SessionBusyError, OwnerSealedError } from "../errors"
+import {
+  ApiNotFoundError,
+  PermissionNotFoundError,
+  PromptAdmissionError,
+  PromptNotQueuedError,
+  SessionBusyError,
+  OwnerSealedError,
+} from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -340,13 +347,13 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: PromptPayload,
           success: described(HttpApiSchema.NoContent, "Prompt accepted"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError],
+          error: [HttpApiError.BadRequest, PromptAdmissionError, ApiNotFoundError, OwnerSealedError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.prompt_async",
             summary: "Send async message",
             description:
-              "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+              "Return after the user message is durably admitted, without waiting for the AI response. Admission rejection returns PromptAdmissionError; later failures are reported as session events.",
           }),
         ),
         HttpApiEndpoint.post("command", SessionPaths.command, {
