@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `footer-elements` (worktree off `dev-nowaker`); upstream branch `tui-tool-collapse` (`50803d8078`, stacked on `tui-footer-elements` `09ff703f7a`)
 - First local commit: `9799e18401`
-- Current local commit(s): `9799e18401`, `c946d6626d`
+- Current local commit(s): `9799e18401`, `c946d6626d`, `c1bda8483f`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54039](https://github.com/anomalyco/opencode/pull/54039), closed by opencode-agent[bot] (v1 takes critical fixes only); kept current for others. Comments on [#40096](https://github.com/anomalyco/opencode/issues/40096#issuecomment-6071873304), [#45538](https://github.com/anomalyco/opencode/issues/45538#issuecomment-6071873910), [#51229](https://github.com/anomalyco/opencode/issues/51229#issuecomment-6071874402). **Needs a v2 port later.**
@@ -54,6 +54,7 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
 |---|---|---|---|
 | `9799e18401` | 2026-10-08 | `tool_output.collapse`; `0` case; write/edit/apply_patch toggles; tui.mdx `Tool output` section | `ToolOutput`, `ToolOutputCollapseDefaults`, `toolOutputLimit` in `packages/tui/src/config/index.tsx`; `collapseToolOutput` `maxLines === 0` in `util/collapse-tool-output.ts`; `collapseOutput`, `useBlockCollapse`, `ClippedRows` and their use in `GenericTool`, `Shell`, `Write`, `Edit`, `ApplyPatch` in `routes/session/index.tsx`; `test/config.test.tsx`, `test/cli/tui/inline-tool-wrap-snapshot.test.tsx` |
 | `c946d6626d` | 2026-10-14 | `tool_input.collapse` cuts the bash command after N rendered rows (default `"never"`); `tool_output.tail` shows the last lines under `(N earlier lines)` (default off); tui.mdx `Tool input` section | `ToolInput`, `toolInputLimit`, `toolOutputTail` in `config/index.tsx`; `collapseTail` in `util/collapse-tool-output.ts`; `collapseOutput(..., tail)` and `ClippedRows` around the command in `Shell`; `test/util/collapse-tail.test.ts`, `test/cli/tui/shell-command.test.tsx` |
+| `c1bda8483f` | 2026-10-14 | `tool_output.head` keeps the first lines above a `(N more lines)` marker while `tail` is on; `tool_output.collapse` names its groups as schema properties; tui.mdx head paragraph and the `0` interaction | `toolOutputHead`, `HeadLines` and the `collapse` group properties in `config/index.tsx`; `collapseHeadTail` in `util/collapse-tool-output.ts`; `collapseOutput(..., tail, head)` in `GenericTool` and `Shell`; `test/util/collapse-tail.test.ts`, `test/config.test.tsx` |
 
 ## Verification
 
@@ -97,6 +98,10 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   `c946d6626d`: `tool_input.collapse` and `tool_output.tail`; v1 PR [#55421](https://github.com/anomalyco/opencode/pull/55421)
   (`tui-command-collapse`, issue #55420), v2 PR [#55444](https://github.com/anomalyco/opencode/pull/55444);
   installed `vt-288` on desktop and m4max.
+- 2026-10-14 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-14-shell-command-collapse.md) -
+  `c1bda8483f`: `tool_output.head` (2 first lines, `(N more lines)`, 2 last
+  lines at `collapse` 5); PR #55421 amended to `e8abdfb98b`; installed
+  `vt-298` on desktop and m4max.
 
 ## Current maintenance notes
 
@@ -106,13 +111,16 @@ The user's setting: `bash: 0, generic: 0, write: 0, edit: 0, apply_patch: 0`.
   tail - then we can't delete it"). v2 already collapses the command to 2 rows
   and tails output with a shared 10-line budget; PR #55444 makes both limits
   configurable there.
-- Host setting: `opencodeTui.tool_input.collapse.bash` enforced `5` through
-  Vibeterm settings on desktop and m4max (never edit tui.json directly).
+- `collapseHeadTail` is the fork's extension and falls back to `collapseTail`
+  for a head of 0 or output with no whole line to hide; a v2 port adds it on
+  top of v2's own `collapseTail`.
+- Host settings, through Vibeterm settings only (never edit tui.json
+  directly): `opencodeTui.tool_input.collapse.bash` `5`,
+  `opencodeTui.tool_output.collapse.bash` `5`, `opencodeTui.tool_output.tail.bash`
+  `true`, `opencodeTui.tool_output.head.bash` `2` enforced; the other
+  `tool_output.collapse` groups stay `0` in both hosts' `tui.json`.
 - Port to v2 once Vibeterm core runs on v2. Keep PR #54039's branch and body
   current when this feature changes (force-with-lease both remotes).
-- Host setting: `"tool_output": {"collapse": {"bash": 0, "generic": 0,
-  "write": 0, "edit": 0, "apply_patch": 0}}` in `~/.config/opencode/tui.json`
-  on desktop and m4max.
 
 ### Upstream integration checklist
 

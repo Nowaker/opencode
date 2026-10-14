@@ -107,7 +107,8 @@ carries every feature forward unchanged. That commit includes the full
 
 - [2026-10-14 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-14-shell-command-collapse.md)
   - `tool_input.collapse` cuts long bash commands, `tool_output.tail` shows
-    output's last lines with v2's `collapseTail`; v1 PR #55421, v2 PR #55444;
+    output's last lines with v2's `collapseTail`, and `tool_output.head` keeps
+    first lines above a `(N more lines)` marker; v1 PR #55421, v2 PR #55444;
     opencode-tools `a42e4c6` stops a new TUI knob dropping the shared layer.
 
 - [2026-10-14 `ses_ec57be11affe3kxXJ4WyM3OwOY`](./sessions/2026-10-14-user-message-markdown.md)
@@ -533,7 +534,7 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `tui-click-controls-pr` | #53871 | conflict: PR head predates `v1.19.0` | L: 15 files | - |
 | `tui-footer-elements` | #53877 | proved | L: v2 footer rewritten | - |
 | `tui-tool-collapse` | #54039 | proved | M: v2 tool views and verbosity differ | - |
-| `tui-command-collapse` | #55421 | not in the rig yet | v2 already cuts the command to 2 rows and tails output; `v2-shell-collapse` makes both limits configurable (`session.shell_lines`, `session.shell_command_lines`) | [#55444](https://github.com/anomalyco/opencode/pull/55444) |
+| `tui-command-collapse` | #55421 | not in the rig yet | v2 already cuts the command to 2 rows and tails output; `v2-shell-collapse` makes both limits configurable (`session.shell_lines`, `session.shell_command_lines`); `tool_output.head` needs porting (S) | [#55444](https://github.com/anomalyco/opencode/pull/55444) |
 | `v1-revert-messages` | #54436 | pass | L: v2 revert is server-side and different | - |
 | `v1-unqueue-prompt` | #54437 | pass | superseded: v2's Queued prompts dialog has "undo" (`queued_prompt.undo`), which cancels the prompt and puts it back in the prompt box | - |
 | `paste-placeholder-delete` | #54457 | proved | M: the `@opentui/core` 0.4.5 patch needs redoing for 0.5.17 | - |
