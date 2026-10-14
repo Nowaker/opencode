@@ -104,6 +104,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-14 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-14-instant-drag-copy.md)
+  - A drag anywhere on opencode's instant home and "Loading session…" screens
+    copies the drawn text (OSC 52 plus native clipboard), not only inside the
+    prompt; PTY drags in both startup phases; build and install on both hosts.
+
 - [2026-10-14 `ses_ec549ca11ffeaEknagLhxmfpFp`](./sessions/native-fork-lineage.md) - Exact native-fork source lineage in the initial creation event; isolated native runtime and installed desktop/m4max HTTP proof, with both migration guard gates passing.
 
 - [2026-10-14 `ses_ec6f8faa7ffeQU4hWGG3qv7cSp`](./sessions/2026-10-14-prompt-admission.md)

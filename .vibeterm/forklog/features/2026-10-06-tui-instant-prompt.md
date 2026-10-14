@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `provisional-prompt` (also the upstream PR head: `8b7f258af6` stage 1, `f829a6a3f7` stage 2, each including its part of the startup fix); landing branch `provisional-prompt-land`
 - First local commit: `b12845f999` (cherry-pick of `0dae58048c`, the first version of stage 1)
-- Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`), `12a11e65f1` (startup fix: the diff from `620cd1e333` to `f829a6a3f7`)
+- Current local commit(s): `b12845f999` (home), `5621b2c706` (session, cherry-pick of `620cd1e333`), `12a11e65f1` (startup fix: the diff from `620cd1e333` to `f829a6a3f7`), `8f0ab48c4b` (drag-to-copy anywhere, fork-only)
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `provisional-prompt`); `dev-nowaker` stays on `907b3bc518`
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53696](https://github.com/anomalyco/opencode/issues/53696), PR [#53698](https://github.com/anomalyco/opencode/pull/53698)
@@ -53,6 +53,10 @@ white "still loading" / red "changed" notices for Enter during loading.
   prompt at the bottom with the session's cached selection, a "Loading
   session…" spinner in the transcript, and the sidebar at its real width
   (cached title or the ID, the ID line, a spinner, footer path and version).
+- A drag anywhere on either screen (logo, transcript, footer, sidebar) marks
+  the drawn text in inverse and copies it on release through OSC 52 and the
+  native clipboard, like the loaded TUI; a drag inside the prompt copies its
+  selection.
 
 ## Non-goals
 
@@ -83,6 +87,7 @@ white "still loading" / red "changed" notices for Enter during loading.
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `8f0ab48c4b` | 2026-10-14 | A drag anywhere on the instant screens marks the drawn cells and copies them on release; a prompt drag copies its selection; a key clears the mark | `pointer()` and the `host.copy` parameter of `create()` in `packages/tui/src/instant/session.ts`; `Mark`, `markedText` and the inverse overlay in `render()` in `instant/frame.ts`; the copy hosts in `instant/worker.ts` (OSC 52 through the locked `write()`) and `instant/index.ts` (`Clipboard.write`); `osc52`/`copyNative` in `packages/tui/src/clipboard.ts`; the drag tests in `test/instant/session.test.ts` |
 | `12a11e65f1` | 2026-10-06 | A damaged startup cache or a small pane no longer breaks startup: `read()` keeps only fields of the expected type, `boot.ts` starts without the instant prompt if starting it throws, and a spinner off the pane's grid is not animated | `read()` and its field readers in `packages/tui/src/instant/cache.ts` (`THEME_KEYS`, `Data.theme: Partial<Theme>`); the `InstantPrompt.start()` guard in `packages/opencode/src/boot.ts`; canvas `spin()` in `instant/frame.ts`; `test/instant/cache.test.ts` and the pane-size sweep in `test/instant/session.test.ts` |
 | `5621b2c706` | 2026-10-06 | Session screen for `-s`/`-c`; per-session cache entries; sidebar rule and session/sidebar padding in `layout.ts` | `classify()` `session` mode and `readKv()` in `packages/tui/src/instant/index.ts`; `sessionLayout`/`paintSession` in `instant/frame.ts`; `TuiLayout.Session`, `Sidebar`, `sessionSidebarVisible`, `sessionContentWidth`, `sidebarShowsSessionId` in `layout.ts`, read by `routes/session/index.tsx`, `routes/session/sidebar.tsx` and `feature-plugins/sidebar/footer.tsx`; `sessions` in `instant/cache.ts`; session branch of the startup-notice effect in `component/prompt/index.tsx`; `test/instant/classify.test.ts` |
 | `b12845f999` | 2026-10-06 | Instant home prompt, early input, startup cache, `startup.*` settings | `packages/opencode/src/boot.ts` and `script/build.ts` entrypoints (`OPENCODE_INSTANT_WORKER_PATH`); `packages/tui/src/instant/*`; `InstantPrompt.handover()` before `createCliRenderer` in `packages/tui/src/app.tsx` and `src/cli/cmd/run/runtime.lifecycle.ts`; `InstantPrompt.claim()` in `Prompt` `onMount` and `footer.prompt.tsx` `bind`; `component/instant-screen.ts`; `packages/tui/src/layout.ts`; `config/keybind-definitions.ts`; `core/src/global-path.ts`; `core/src/database/location.ts`; `Startup` in `config/index.tsx`; `test/instant/*` |
@@ -188,6 +193,11 @@ white "still loading" / red "changed" notices for Enter during loading.
   the TUI/frame parity cases in `test/routes/home-layout.test.tsx`.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: PR head `provisional-prompt` conflicts on `v1.19.0` (predates it; `dev-nowaker` carries the rebased commits); v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+- 2026-10-14 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-14-instant-drag-copy.md) -
+  `8f0ab48c4b`: drag-to-copy anywhere on the instant screens, not only in the
+  prompt (fork-only; not part of PR #53698). Evidence: drag tests in
+  `test/instant/session.test.ts` red/green, PTY drags in the worker phase and
+  the renderer gap; build and install on desktop and m4max.
 
 ## Current maintenance notes
 
