@@ -4,9 +4,10 @@ import type { Theme } from "./index"
 type Slot = keyof Theme
 
 // In the transcript red means a failed or rejected tool call, so code shown inside a tool call
-// (a bash command, a heredoc body, a tool's input) must not draw a token in red. Each slot the
-// syntax rules read that comes out red, or in the theme's error color, takes the first of its
-// alternatives that does not; `text` is never red in a built-in theme and ends every list.
+// (a bash command, a heredoc body, a tool's input) or a user message must not draw a token in
+// red. Each slot the syntax rules read that comes out red, or in the theme's error color, takes
+// the first of its alternatives that does not; `text` is never red in a built-in theme and ends
+// every list.
 const ALTERNATIVES: Partial<Record<Slot, Slot[]>> = {
   error: ["syntaxFunction", "syntaxType", "text"],
   syntaxVariable: ["syntaxFunction", "syntaxType", "text"],
@@ -20,6 +21,13 @@ const ALTERNATIVES: Partial<Record<Slot, Slot[]>> = {
   syntaxComment: ["textMuted", "text"],
   markdownLink: ["syntaxString", "syntaxType", "text"],
   markdownLinkText: ["syntaxString", "syntaxType", "text"],
+  markdownHeading: ["syntaxKeyword", "syntaxType", "text"],
+  markdownCode: ["syntaxString", "success", "text"],
+  markdownBlockQuote: ["syntaxType", "textMuted", "text"],
+  markdownEmph: ["syntaxType", "text"],
+  markdownStrong: ["text"],
+  markdownListItem: ["syntaxType", "syntaxFunction", "text"],
+  markdownListEnumeration: ["syntaxType", "syntaxFunction", "text"],
   warning: ["syntaxType", "text"],
 }
 

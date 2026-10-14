@@ -15,6 +15,13 @@ const slots = [
   "syntaxPunctuation",
   "markdownLink",
   "markdownLinkText",
+  "markdownHeading",
+  "markdownCode",
+  "markdownBlockQuote",
+  "markdownEmph",
+  "markdownStrong",
+  "markdownListItem",
+  "markdownListEnumeration",
   "warning",
 ] as const
 

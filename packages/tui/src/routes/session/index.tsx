@@ -78,6 +78,7 @@ import {
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
+import { forgivingMarkdown, USER_MARKDOWN_LIMIT } from "../../util/user-markdown"
 import { outputLanguage, previewHighlights } from "../../util/tool-output"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
@@ -1824,7 +1825,7 @@ function UserMessage(props: {
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
-            <text fg={theme.text}>{text()}</text>
+            <UserText text={text()} />
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>
@@ -2461,6 +2462,28 @@ function ToolOutputText(props: { output: string; shown: string; language: string
     )
   })
   return <StyledOutput content={props.shown} chunks={chunks()} fg={theme.text} />
+}
+
+// What the user wrote, with `syntax.user_messages` colored as markdown in the same non-red palette
+// as tool code. The colors land on the typed characters, so the text wraps as it does plain.
+function UserText(props: { text: string }) {
+  const ctx = use()
+  const { theme, toolSyntax } = useTheme()
+  const enabled = createMemo(() => ctx.tui.syntax?.user_messages === true && props.text.length <= USER_MARKDOWN_LIMIT)
+  const [highlighted, setHighlighted] = createSignal<{ text: string; highlights: SimpleHighlight[] }>()
+  createEffect(() => {
+    const text = props.text
+    if (!enabled()) return
+    highlightCached(text, "markdown")
+      .then((result) => setHighlighted({ text, highlights: forgivingMarkdown(text, result.highlights ?? []) }))
+      .catch(() => setHighlighted(undefined))
+  })
+  const chunks = createMemo(() => {
+    const result = highlighted()
+    if (!enabled() || !result || result.text !== props.text || result.highlights.length === 0) return
+    return treeSitterToTextChunks(props.text, result.highlights, toolSyntax(), { enabled: false })
+  })
+  return <StyledOutput content={props.text} chunks={chunks()} fg={theme.text} />
 }
 
 // One text renderable whose content is the plain text, or the same text as colored chunks, so the
