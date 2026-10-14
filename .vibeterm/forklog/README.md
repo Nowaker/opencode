@@ -104,6 +104,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-14 `ses_ec6f8faa7ffeQU4hWGG3qv7cSp`](./sessions/2026-10-14-prompt-admission.md)
+  - `prompt_async` acknowledges durable admission, returns a marked
+    `PromptAdmissionError` for confirmed rejection, and stops rejected
+    concurrent duplicates; real HTTP regressions and desktop installed proof.
+
 - [2026-10-12 `ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](./sessions/2026-10-12-tui-config-precedence.md)
   - Audit every fork tui.json key against kv.json toggles: a set key now
     decides over a remembered toggle (sidebar context, pin title, session ID,

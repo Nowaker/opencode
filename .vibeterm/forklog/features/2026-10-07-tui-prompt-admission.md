@@ -4,9 +4,10 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `submit-retain-draft`
+- Development branch(es): `submit-retain-draft`, `prompt-admission`
 - First local commit: `777a8045b8`
-- Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`, `38a64a3d4a`
+- Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`, `38a64a3d4a`,
+  `c8356e7900`, `a27f434803`, `423914987f`, `78f558ead8`, `313bc88cfe`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
@@ -41,7 +42,8 @@ text vanished from the composer and was retyped.
 
 - No whole-prompt blanket retry and no extra database-acquisition wrapper;
   `BEGIN IMMEDIATE` retry (60s budget) already lives in the server.
-- No server API change: `messageID` and part `id` were already accepted and
+- The initial TUI work did not change the server API: `messageID` and part `id`
+  were already accepted and
   upserted by ID. The server's handling of a known `messageID` did change
   (`9612d23d3e`): it never starts a second run for it.
 - Shell (`!`) and slash-command submissions keep their existing paths.
@@ -74,6 +76,7 @@ text vanished from the composer and was retyped.
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `c8356e7900`, `a27f434803`, `423914987f`, `78f558ead8`, `313bc88cfe` | 2026-10-14 | Async HTTP acknowledgement waits for durable admission; confirmed rejection returns the original cause and `possiblyAccepted: false`; rejected concurrent duplicates stop rather than silently retrying | `SessionPrompt.prompt` admission Deferred; `promptAsync` handler; `PromptAdmissionError`; `test/server/prompt-admission.test.ts` |
 | `38a64a3d4a` | 2026-10-08 | The send notice sits after `esc interrupt` (or `esc again to interrupt`, `aborting…`), two spaces apart, instead of replacing or hiding behind the running row | `admissionNotice`/`admissionShown` in the prompt component; `test/component/prompt-footer.test.tsx` |
 | `9612d23d3e` | 2026-10-07 | A known message ID joins the admission in flight or returns the stored reply; never a second run | `SessionPrompt.prompt` (`admitting`, `reply`, `admit`) in `packages/opencode/src/session/prompt.ts`; "same message ID" tests in `test/session/prompt.test.ts` |
 | `c55ad9c400` | 2026-10-07 | A rejected draft goes above text typed meanwhile (`--` separator, caret kept, unchanged if already contained) instead of the stash | `mergeFailedPrompt` in `packages/tui/src/prompt/merge.ts`; `giveBack` in the prompt component |
@@ -140,6 +143,10 @@ text vanished from the composer and was retyped.
 
 ## Timeline
 
+- 2026-10-14 [`ses_ec6f8faa7ffeQU4hWGG3qv7cSp`](../sessions/2026-10-14-prompt-admission.md) -
+  async endpoint admission contract and concurrent rejection proof, generated
+  SDK, Oracle-reviewed candidate `313bc88cfe`, desktop install
+  `1.19.0-vt-282-dfb56f76c7`. Evidence: linked session.
 - 2026-10-07 [`ses_ee74c94dfffe71uYsYScadAio7`](../sessions/2026-10-07-tui-prompt-admission.md) -
   initial build on `dev-nowaker` above `691eb77ded`; desktop and m4max
   installs. Evidence: `777a8045b8`, linked session.
@@ -161,6 +168,15 @@ text vanished from the composer and was retyped.
 
 ## Current maintenance notes
 
+- `POST /session/:id/prompt_async` returns 204 after admission, not after the
+  assistant turn. Confirmed absence on admission failure returns 400
+  `{name: "PromptAdmissionError", data: {message, possiblyAccepted: false}}`.
+  A partial user/part save returns 204 plus a session error event, never a
+  safe-to-retry rejection; an unreadable persistence outcome remains a server
+  error. Message and part persistence is not atomic.
+- Async same-ID duplicates forward successful admission while joining the
+  original turn. They terminate on shared rejection. Later explicit retries
+  remain possible; synchronous callers keep their existing completion behavior.
 - Upstream `v2` (`c28e9ec311`) already admits optimistically and restores the
   draft (`packages/tui/src/component/prompt/index.tsx:1174-1199`), but drops a
   failed prompt when anything was typed meanwhile (line 1187), treats every
