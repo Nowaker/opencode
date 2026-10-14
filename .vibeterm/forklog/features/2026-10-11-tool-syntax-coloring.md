@@ -113,6 +113,11 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   user question "support for systemd units coloring?": heredoc bodies written to
   unit files were a shell string; now ini. PRs #54705 and #54706 amended.
   Evidence: `246c6c10f2`; two-heredoc frames at 40/80/160; PTY at 80/160.
+- 2026-10-14 [`ses_ec57be11affe3kxXJ4WyM3OwOY`](../sessions/2026-10-14-user-message-markdown.md) -
+  `toolCodeTheme` gains the markdown slots for colored user messages, and the
+  tool input block's colors become `toolInputColors`, shared with YAML message
+  blocks. See [markdown in user messages](./2026-10-14-user-message-markdown.md).
+  Evidence: `5e5994b93a`, `748601cc2b`; `tool-code-theme.test.ts`.
 
 ## Future ideas
 

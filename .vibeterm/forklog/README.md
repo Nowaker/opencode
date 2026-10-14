@@ -101,8 +101,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Prompt start height, percentage sizes and home screen layout](./features/2026-10-12-home-screen-layout.md)
 - [Deliver and settle TUI worker requests without startup races](./features/2026-10-12-tui-worker-error-reply.md)
 - [tui.json decides over remembered runtime toggles](./features/2026-10-12-tui-config-toggle-precedence.md)
+- [Markdown in submitted user messages and plugin-defined message blocks](./features/2026-10-14-user-message-markdown.md)
 
 ## Session records
+
+- [2026-10-14 `ses_ec57be11affe3kxXJ4WyM3OwOY`](./sessions/2026-10-14-user-message-markdown.md)
+  - `syntax.user_messages` colors markdown in submitted messages; `syntax.blocks`
+    and `api.blocks.register` draw delimited blocks, `[vibeterm_*]` as YAML via
+    the route plugin; issues #55439/#55440, PRs #55441/#55442; vt-292 on both
+    hosts, enforced on both.
 
 - [2026-10-14 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-14-instant-drag-copy.md)
   - A drag anywhere on opencode's instant home and "Loading session…" screens
