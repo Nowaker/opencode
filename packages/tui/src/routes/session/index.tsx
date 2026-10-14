@@ -35,6 +35,7 @@ import {
   TextRenderable,
   treeSitterToTextChunks,
   type SimpleHighlight,
+  type SyntaxStyle,
   type TextChunk,
 } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -69,8 +70,11 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
 import { forgivingMarkdown, USER_MARKDOWN_LIMIT } from "../../util/user-markdown"
+import { messageSegments, yamlSegments, type MessageSegment } from "../../util/message-blocks"
 import { outputLanguage, previewHighlights } from "../../util/tool-output"
 import { narrowBashHighlights } from "../../util/bash-highlight"
+import { yamlColors } from "../../theme/tool-code"
+import type { Theme } from "../../theme"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
@@ -1891,26 +1895,74 @@ function ToolOutputText(props: { output: string; shown: string; language: string
   return <StyledOutput content={props.shown} chunks={chunks()} fg={theme.text} />
 }
 
-// What the user wrote, with `syntax.user_messages` colored as markdown in the same non-red palette
-// as tool code. The colors land on the typed characters, so the text wraps as it does plain.
+// What the user wrote, with `syntax.user_messages` colored as markdown and the blocks of
+// `syntax.blocks` and plugins drawn by their formatter, in the same non-red palette as tool code.
+// The colors land on the typed characters, so the text wraps as it does plain.
 function UserText(props: { text: string }) {
   const ctx = use()
   const { theme, toolSyntax } = useTheme()
-  const enabled = createMemo(() => ctx.tui.syntax?.user_messages === true && props.text.length <= USER_MARKDOWN_LIMIT)
-  const [highlighted, setHighlighted] = createSignal<{ text: string; highlights: SimpleHighlight[] }>()
+  const pluginRuntime = usePluginRuntime()
+  const markdown = createMemo(() => ctx.tui.syntax?.user_messages === true)
+  const segments = createMemo(() => {
+    if (props.text.length > USER_MARKDOWN_LIMIT) return []
+    return messageSegments(props.text, [...(ctx.tui.syntax?.blocks ?? []), ...pluginRuntime.blocks()])
+  })
+  const [highlighted, setHighlighted] = createSignal<{
+    segments: MessageSegment[]
+    highlights: (SimpleHighlight[] | undefined)[]
+  }>()
   createEffect(() => {
     const text = props.text
-    if (!enabled()) return
-    highlightCached(text, "markdown")
-      .then((result) => setHighlighted({ text, highlights: forgivingMarkdown(text, result.highlights ?? []) }))
+    const list = segments()
+    const colorMarkdown = markdown()
+    if (!colorMarkdown && !list.some((segment) => segment.kind === "block")) return setHighlighted(undefined)
+    Promise.all(
+      list.map((segment) => {
+        if (segment.kind === "text") {
+          const part = text.slice(segment.start, segment.end)
+          if (!colorMarkdown) return undefined
+          return highlightCached(part, "markdown").then((result) => forgivingMarkdown(part, result.highlights ?? []))
+        }
+        if (segment.format === "yaml") return undefined
+        return highlightCached(text.slice(segment.body.start, segment.body.end), segment.format).then(
+          (result) => result.highlights ?? [],
+        )
+      }),
+    )
+      .then((highlights) => setHighlighted({ segments: list, highlights }))
       .catch(() => setHighlighted(undefined))
   })
   const chunks = createMemo(() => {
     const result = highlighted()
-    if (!enabled() || !result || result.text !== props.text || result.highlights.length === 0) return
-    return treeSitterToTextChunks(props.text, result.highlights, toolSyntax(), { enabled: false })
+    if (!result || result.segments !== segments()) return
+    return messageChunks(props.text, result.segments, result.highlights, theme, toolSyntax())
   })
   return <StyledOutput content={props.text} chunks={chunks()} fg={theme.text} />
+}
+
+// A user message as colored chunks: each text segment by its markdown highlights, each block's
+// opening and closing lines muted and its body by its format. `highlights` holds one entry per
+// segment; a segment without any is plain.
+export function messageChunks(
+  text: string,
+  segments: MessageSegment[],
+  highlights: (SimpleHighlight[] | undefined)[],
+  theme: Theme,
+  syntax: SyntaxStyle,
+) {
+  const colors = yamlColors(theme)
+  const plain = (part: string, fg = theme.text): TextChunk[] => (part ? [{ __isChunk: true, text: part, fg }] : [])
+  const highlight = (part: string, found: SimpleHighlight[] | undefined) =>
+    found?.length ? treeSitterToTextChunks(part, found, syntax, { enabled: false }) : plain(part)
+  const slice = (range: { start: number; end: number }) => text.slice(range.start, range.end)
+  return segments.flatMap((segment, index) => {
+    if (segment.kind === "text") return highlight(slice(segment), highlights[index])
+    const body =
+      segment.format === "yaml"
+        ? yamlSegments(slice(segment.body)).flatMap((part) => plain(part.text, colors[part.kind]))
+        : highlight(slice(segment.body), highlights[index])
+    return [...plain(slice(segment.open), colors.fold), ...body, ...plain(slice(segment.close), colors.fold)]
+  })
 }
 
 // One text renderable whose content is the plain text, or the same text as colored chunks, so the
