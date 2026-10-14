@@ -354,7 +354,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       )
       yield* Deferred.await(admission).pipe(
         Effect.catchTag("PromptAdmissionRejected", (error) =>
-          Effect.fail(new PromptAdmissionError({ name: "PromptAdmissionError", data: { message: error.message } })),
+          Effect.fail(new PromptAdmissionError({
+            name: "PromptAdmissionError",
+            data: { message: error.message, possiblyAccepted: false },
+          })),
         ),
       )
       return HttpApiSchema.NoContent.make()

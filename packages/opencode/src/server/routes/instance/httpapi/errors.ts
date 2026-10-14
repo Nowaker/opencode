@@ -3,7 +3,7 @@ import { Schema } from "effect"
 export class PromptAdmissionError extends Schema.ErrorClass<PromptAdmissionError>("PromptAdmissionError")(
   {
     name: Schema.Literal("PromptAdmissionError"),
-    data: Schema.Struct({ message: Schema.String }),
+    data: Schema.Struct({ message: Schema.String, possiblyAccepted: Schema.Literal(false) }),
   },
   { httpApiStatus: 400 },
 ) {}

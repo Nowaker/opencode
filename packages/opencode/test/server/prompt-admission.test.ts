@@ -133,7 +133,7 @@ test("async prompt rejects a throwing chat.message hook before durable admission
   expect(response.status).toBe(400)
   expect(await response.json()).toEqual({
     name: "PromptAdmissionError",
-    data: { message: "Admission fixture rejected the selected profile" },
+    data: { message: "Admission fixture rejected the selected profile", possiblyAccepted: false },
   })
   expect(await (await server.request("/message")).json()).toEqual([])
 }, 60_000)

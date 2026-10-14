@@ -2650,6 +2650,7 @@ export type PromptAdmissionError = {
   name: "PromptAdmissionError"
   data: {
     message: string
+    possiblyAccepted: false
   }
 }
 
