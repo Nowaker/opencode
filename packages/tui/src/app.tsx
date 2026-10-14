@@ -414,9 +414,9 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
   const clipboard = useClipboard()
   const update = useUpdateNotification()
   const ids = createIdClick()
-  // A click on a session or message ID outside a dialog is copied. One in
-  // what the AI or a tool wrote goes to the plugins that asked for it first;
-  // one drawn as this session's own footer or sidebar ID is always copied.
+  // A click on an ID outside a dialog is copied. One in what the AI or a tool
+  // wrote goes to the plugins that asked for it first; one drawn as this
+  // session's own footer or sidebar ID is always copied.
   const idClick = onClick((evt: MouseEvent) => {
     if (dialog.stack.length > 0) return false
     const found = idUnder(renderer.currentRenderBuffer, evt)
@@ -424,7 +424,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
     const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
     const ours =
       found.value === sessionID || (sessionID && sync.data.message[sessionID]?.some((x) => x.id === found.value))
-    const target = { kind: found.kind, value: found.value }
+    const target = { kind: found.kind, value: found.value, ...("before" in found ? { before: found.before } : {}) }
     if ((found.own && ours) || !ids.run({ target, context: { sessionID } }))
       copyText(clipboard, toast.show, found.value)
     return true

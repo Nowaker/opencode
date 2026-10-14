@@ -606,8 +606,11 @@ export type TuiWorkspace = {
 /** A session (`ses_`) or message (`msg_`) ID the user clicked. */
 export type TuiClickEvent = {
   target: {
-    kind: "session" | "message"
+    /** `id` is any other prefixed ID, or a provider call ID after a `callID:` label. */
+    kind: "session" | "message" | "id"
     value: string
+    /** For `id`: what the row shows left of the ID, which says what an unprefixed one is. */
+    before?: string
   }
   context: {
     /** The session on screen; undefined outside a session. */
@@ -621,7 +624,7 @@ export type TuiClickHandler = (event: TuiClickEvent) => boolean | void
 export type TuiClick = {
   /**
    * Called for a plain click (press and release on one cell, nothing selected)
-   * on a session or message ID in message text, reasoning or tool calls, most
+   * on an ID in message text, reasoning or tool calls, most
    * recently added first, until a handler returns true. IDs opencode draws
    * about the open session itself (message footers, the sidebar) are always
    * copied and never reach handlers. A drag over an ID still selects and copies it. Handlers run

@@ -33,6 +33,19 @@ describe("ui.id-click", () => {
     expect(idAt(cells, 50, 0)).toBeUndefined()
   })
 
+  test("finds any other prefixed ID with the text before it on its row, but not a snake_case word", () => {
+    const part = "prt_13b3002ef001ioi4WZ80sx8d6t"
+    const cells = frame(`part ${part} tool_name`)
+    expect(idAt(cells, 6, 0)).toEqual({ kind: "id", value: part, before: "part " })
+    expect(idAt(cells, part.length + 8, 0)).toBeUndefined()
+  })
+
+  test("finds a provider call ID only after a label naming it", () => {
+    const call = "toolu_01AbCdEfGhIjKl"
+    expect(idAt(frame(`callID: "${call}"`), 10, 0)).toEqual({ kind: "id", value: call, before: 'callID: "' })
+    expect(idAt(frame(`see ${call}`), 6, 0)).toBeUndefined()
+  })
+
   test("reads only inside the clicked renderable, so a neighbouring column does not join the ID", () => {
     const cells = frame(`${SES}abc`)
     expect(idAt(cells, 3, 0)?.value).toBe(`${SES}abc`)

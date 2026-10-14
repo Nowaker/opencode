@@ -104,7 +104,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 | Session title | Top of the session sidebar | Renames the session (`/rename`) |
 | Session ID | Below the session title in the sidebar | Copies the ID |
 | Message ID (`msg_...`) | Message footers, when [`footer.message_id`](#footer) shows them | Copies the ID |
-| Session or message ID in the transcript | Text the agent or a tool wrote | Copies the ID, unless a plugin handles it (see below) |
+| An ID in the transcript | Text the agent or a tool wrote: a session or message ID, any other prefixed ID such as `prt_...`, or a tool call ID after a `callID:` label | Copies the ID, unless a plugin handles it (see below) |
 | An MCP server | MCP section of the session sidebar | Connects or disconnects that server, as `/mcps` does, without opening the dialog. The dot shows `⋯` until the server answers. |
 | A modified file | Modified Files section of the session sidebar | Opens the diff viewer (`/diff`) at that file |
 | A todo | Todo section of the session sidebar | Copies the todo and adds it to the end of the prompt |
@@ -113,7 +113,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 
 A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere, and nothing happens on hover. A click on an ID inside a message, tool call or footer acts on the ID, not on the message or tool around it.
 
-A TUI plugin can take clicks on session and message IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message", value }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. IDs in message footers and the sidebar always copy.
+A TUI plugin can take clicks on IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message" | "id", value, before }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. `id` is any other prefixed ID whose body starts with a hex timestamp, as every ID opencode mints does, or a tool call ID after a `callID:` label; `before` is the text left of it on its row. IDs in message footers and the sidebar always copy.
 
 ---
 
