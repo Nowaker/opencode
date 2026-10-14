@@ -22,21 +22,47 @@ export function listen(rpc: Definition) {
       )
     postMessage(JSON.stringify(reply))
   }
+  postMessage(JSON.stringify({ type: "rpc.ready" }))
 }
 
 export function emit(event: string, data: unknown) {
   postMessage(JSON.stringify({ type: "rpc.event", event, data }))
 }
 
-export function client<T extends Definition>(target: {
-  postMessage: (data: string) => void | null
-  onmessage: ((this: Worker, ev: MessageEvent<any>) => any) | null
-}) {
+export function client<T extends Definition>(
+  target: Pick<Worker, "postMessage" | "onmessage" | "addEventListener">,
+) {
   const pending = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void }>()
   const listeners = new Map<string, Set<(data: any) => void>>()
+  // Async worker imports can dispatch requests before Rpc.listen is installed.
+  const queued: string[] = []
+  let ready = false
+  let failure: Error | undefined
   let id = 0
+  function fail(error: Error) {
+    failure ??= error
+    queued.length = 0
+    for (const request of pending.values()) request.reject(failure)
+    pending.clear()
+  }
+  function send(data: string) {
+    try {
+      target.postMessage(data)
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+  target.addEventListener("error", (event) => fail(new Error(event.message || "RPC worker failed")))
+  target.addEventListener("close", () => fail(new Error("RPC worker closed before replying")))
   target.onmessage = async (evt) => {
     const parsed = JSON.parse(evt.data)
+    if (parsed.type === "rpc.ready" && !failure && !ready) {
+      ready = true
+      for (const data of queued.splice(0)) {
+        if (failure) break
+        send(data)
+      }
+    }
     if (parsed.type === "rpc.result") {
       const request = pending.get(parsed.id)
       if (request) {
@@ -56,10 +82,13 @@ export function client<T extends Definition>(target: {
   }
   return {
     call<Method extends keyof T>(method: Method, input: Parameters<T[Method]>[0]): Promise<ReturnType<T[Method]>> {
+      if (failure) return Promise.reject(failure)
       const requestId = id++
       return new Promise((resolve, reject) => {
+        const data = JSON.stringify({ type: "rpc.request", method, input, id: requestId })
         pending.set(requestId, { resolve, reject })
-        target.postMessage(JSON.stringify({ type: "rpc.request", method, input, id: requestId }))
+        if (ready) send(data)
+        else queued.push(data)
       })
     },
     on<Data>(event: string, handler: (data: Data) => void) {

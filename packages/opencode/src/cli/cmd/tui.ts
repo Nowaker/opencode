@@ -263,6 +263,7 @@ export const TuiThreadCommand = cmd({
         await withTimeout(client.call("shutdown", undefined), 5000).catch(() => {})
         worker.terminate()
       }
+      await using _workerLifetime = { [Symbol.asyncDispose]: stop }
 
       const prompt = await input(args.prompt)
       const config = await TuiConfig.get()
@@ -301,39 +302,35 @@ export const TuiThreadCommand = cmd({
 
       const updater = createUpdater(async () => await client.call("checkUpgrade", { directory: cwd }))
 
-      try {
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
-        await Effect.runPromise(
-          run({
-            url: transport.url,
-            async onSnapshot() {
-              const tui = writeHeapSnapshot("tui.heapsnapshot")
-              const server = await client.call("snapshot", undefined)
-              return [tui, server]
-            },
-            config,
-            pluginHost: createLegacyTuiPluginHost(),
-            directory: cwd,
-            fetch: transport.fetch,
-            headers: transport.headers,
-            events: transport.events,
-            updater,
-            args: {
-              continue: args.continue,
-              sessionID: args.session,
-              agent: args.agent,
-              model: args.model,
-              prompt,
-              fork: args.fork,
-              auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
-            },
-          }),
-        )
-      } finally {
-        await stop()
-      }
+      const { Effect } = await import("effect")
+      const { run } = await import("../tui/layer")
+      const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+      await Effect.runPromise(
+        run({
+          url: transport.url,
+          async onSnapshot() {
+            const tui = writeHeapSnapshot("tui.heapsnapshot")
+            const server = await client.call("snapshot", undefined)
+            return [tui, server]
+          },
+          config,
+          pluginHost: createLegacyTuiPluginHost(),
+          directory: cwd,
+          fetch: transport.fetch,
+          headers: transport.headers,
+          events: transport.events,
+          updater,
+          args: {
+            continue: args.continue,
+            sessionID: args.session,
+            agent: args.agent,
+            model: args.model,
+            prompt,
+            fork: args.fork,
+            auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
+          },
+        }),
+      )
     } finally {
       try {
         unguard?.()
