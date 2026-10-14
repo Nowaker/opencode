@@ -1808,6 +1808,55 @@ it.instance("a prompt sent again with the same message ID while its first send i
   }),
 )
 
+it.instance("async admission signals a same message ID retry before the original reply completes", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const id = MessageID.ascending()
+    yield* llm.hold("once", deferredAsPromise(gate))
+    const a = yield* prompt.prompt(sameIDPrompt(chat.id, id)).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+
+    const b = yield* prompt.prompt(sameIDPrompt(chat.id, id), admitted).pipe(Effect.forkChild)
+    yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
+
+    expect(a.pollUnsafe()).toBeUndefined()
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+    yield* Deferred.succeed(gate, undefined)
+    yield* Effect.all([Fiber.join(a), Fiber.join(b)])
+    expect(yield* llm.calls).toBe(1)
+  }),
+)
+
+it.instance("async admission stores a different prompt while the session is busy", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.hold("first", deferredAsPromise(gate))
+    yield* llm.text("second")
+    const first = yield* prompt.prompt(sameIDPrompt(chat.id, MessageID.ascending())).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const id = MessageID.ascending()
+    const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+
+    const queued = yield* prompt.prompt(sameIDPrompt(chat.id, id), admitted).pipe(Effect.forkChild)
+    yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
+
+    expect(first.pollUnsafe()).toBeUndefined()
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 0 })
+    yield* Deferred.succeed(gate, undefined)
+    yield* Effect.all([Fiber.join(first), Fiber.join(queued)])
+    expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+  }),
+)
+
 // Unqueue
 
 const queuedPrompt = (sessionID: SessionID, messageID: MessageID, text: string) => ({

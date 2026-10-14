@@ -46,7 +46,7 @@ import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
-import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import { Cause, Deferred, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -55,8 +55,8 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { eq } from "drizzle-orm"
-import { SessionTable } from "@opencode-ai/core/session/sql"
+import { and, eq } from "drizzle-orm"
+import { MessageTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { NotFoundError } from "@/storage/storage"
 import { SessionTools } from "./tools"
@@ -130,7 +130,10 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
-  readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
+  readonly prompt: (
+    input: PromptInput,
+    admission?: Deferred.Deferred<void, AdmissionRejected>,
+  ) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
@@ -152,6 +155,10 @@ export class NotQueuedError extends Schema.TaggedErrorClass<NotQueuedError>()("S
 }) {}
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
+
+export class AdmissionRejected extends Schema.TaggedErrorClass<AdmissionRejected>()("PromptAdmissionRejected", {
+  message: Schema.String,
+}) {}
 
 const layer = Layer.effect(
   Service,
@@ -1100,7 +1107,7 @@ const layer = Layer.effect(
      * second one waits for it; afterwards a stored reply is returned as it is. A message stored without a
      * reply - an admission that failed before its run started - is admitted again, which completes it.
      */
-    const admitting = new Map<string, Latch.Latch>()
+    const admitting = new Map<string, { done: Latch.Latch; admission: Deferred.Deferred<void, AdmissionRejected> }>()
 
     // The running loop of each session, with the prompts it has read and the ones unqueued before it read them.
     // `pickUp` and `unqueue` each check and update these without yielding in between, so a prompt is either read
@@ -1142,24 +1149,58 @@ const layer = Layer.effect(
       return message
     })
 
-    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
-      "SessionPrompt.prompt",
-    )(function* (input: PromptInput) {
-      const messageID = input.messageID
-      if (!messageID) return yield* admit(input)
+    const prompt: Interface["prompt"] = Effect.fn("SessionPrompt.prompt")(function* (
+      input: PromptInput,
+      admission?: Deferred.Deferred<void, AdmissionRejected>,
+    ) {
+      const messageID = input.messageID ?? MessageID.ascending()
       const key = `${input.sessionID}/${messageID}`
       const pending = admitting.get(key)
       if (pending) {
-        yield* pending.await
-        return yield* prompt(input)
+        if (admission) yield* Deferred.done(admission, yield* Effect.exit(Deferred.await(pending.admission)))
+        yield* pending.done.await
+        return yield* prompt(input, admission)
       }
       const done = Latch.makeUnsafe(false)
-      admitting.set(key, done)
+      const accepted = admission ?? (yield* Deferred.make<void, AdmissionRejected>())
+      admitting.set(key, { done, admission: accepted })
       return yield* Effect.gen(function* () {
-        const replied = yield* reply(input.sessionID, messageID)
-        if (Option.isSome(replied)) return replied.value
-        return yield* admit(input)
+        const replied = input.messageID ? yield* reply(input.sessionID, messageID) : Option.none<SessionV1.WithParts>()
+        if (Option.isSome(replied)) {
+          yield* Deferred.succeed(accepted, undefined)
+          return replied.value
+        }
+        return yield* admit({ ...input, messageID }, accepted)
       }).pipe(
+        Effect.onExit((exit) =>
+          Effect.gen(function* () {
+            if (yield* Deferred.isDone(accepted)) return
+            if (Exit.isSuccess(exit)) {
+              yield* Deferred.succeed(accepted, undefined)
+              return
+            }
+            // Event projection can commit before publication/readback fails. Only a confirmed absence is rejection.
+            const stored = yield* db
+              .select({ data: MessageTable.data })
+              .from(MessageTable)
+              .where(and(eq(MessageTable.id, messageID), eq(MessageTable.session_id, input.sessionID)))
+              .get()
+              .pipe(Effect.exit)
+            if (Exit.isFailure(stored)) {
+              yield* Deferred.failCause(accepted, Cause.die(Cause.squash(stored.cause)))
+              return
+            }
+            if (stored.value?.data.role === "user") {
+              yield* Deferred.succeed(accepted, undefined)
+              return
+            }
+            const error = Cause.squash(exit.cause)
+            yield* Deferred.fail(
+              accepted,
+              new AdmissionRejected({ message: error instanceof Error ? error.message : Cause.pretty(exit.cause) }),
+            )
+          }),
+        ),
         Effect.ensuring(
           Effect.suspend(() => {
             admitting.delete(key)
@@ -1180,10 +1221,11 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    const admit = Effect.fnUntraced(function* (input: PromptInput) {
+    const admit = Effect.fnUntraced(function* (input: PromptInput, admission: Deferred.Deferred<void, AdmissionRejected>) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
+      yield* Deferred.succeed(admission, undefined)
       yield* sessions.touch(input.sessionID)
 
       const permissions: PermissionV1.Rule[] = []
@@ -1848,7 +1890,7 @@ const layer = Layer.effect(
 
     return Service.of({
       cancel,
-      prompt: (input) => OwnerQuiescence.activity(prompt(input)),
+      prompt: (input, admission) => OwnerQuiescence.activity(prompt(input, admission)),
       loop: (input) => OwnerQuiescence.activity(loop(input)),
       shell: (input) => OwnerQuiescence.activity(shell(input)),
       command: (input) => OwnerQuiescence.activity(command(input)),
