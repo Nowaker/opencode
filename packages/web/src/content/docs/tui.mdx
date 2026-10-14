@@ -880,6 +880,8 @@ The agent, model, variant and colors come from the previous run in the same dire
 
 Clicking the agent, model, variant, `tab agents` or `ctrl+p commands` below the prompt, or the session title in the sidebar, before OpenCode has loaded shows the clicked text highlighted, and runs its [action](#clickable-elements) once loading finishes. Only the latest click is kept; Escape cancels it.
 
+Dragging across any text on these screens, such as the version, the directory or the sidebar, highlights it and copies it to the clipboard when you release the mouse button, as in the loaded TUI. A drag inside the prompt selects and copies the prompt's text. Any key clears the highlight.
+
 - `instant_prompt` - Show the home screen and prompt while OpenCode starts. Defaults to `true`.
 - `early_input` - When `instant_prompt` is off, or with `--mini`, keep the keys you type while OpenCode starts and place them in the prompt when it appears. Enter pressed during startup is dropped. Defaults to `true`.
 
