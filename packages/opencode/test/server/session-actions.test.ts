@@ -56,7 +56,10 @@ describe("session action routes", () => {
         expect(forked.status).toBe(200)
 
         const fork = (yield* forked.json) as SessionNs.Info
-        expect(fork.metadata).toEqual(next.metadata)
+        expect(fork.metadata).toEqual({
+          ...next.metadata,
+          vibeterm: { lineage: { sessionId: fork.id, kind: "native-fork", originalObjectId: session.id } },
+        })
 
         const reset = yield* requestInDirectory(`/session/${session.id}`, test.directory, {
           method: "PATCH",

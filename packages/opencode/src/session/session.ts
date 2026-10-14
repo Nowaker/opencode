@@ -171,9 +171,21 @@ function getForkedTitle(title: string): string {
   return `${title} (fork #1)`
 }
 
-function forkMetadata(metadata: Info["metadata"]) {
-  const result = structuredClone(metadata)
-  if (result?.vibeterm) delete result.vibeterm.lastExecution
+function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFrom: SessionID) {
+  const result = structuredClone(metadata) ?? {}
+  const lineage: unknown = result.vibeterm?.lineage
+  result.vibeterm = {
+    ...result.vibeterm,
+    lineage: {
+      sessionId,
+      kind: "native-fork",
+      originalObjectId: forkedFrom,
+      ...(typeof lineage === "object" && lineage !== null && "sessionId" in lineage && lineage.sessionId === forkedFrom
+        ? { sourceLineage: lineage }
+        : {}),
+    },
+  }
+  delete result.vibeterm.lastExecution
   return result
 }
 
@@ -519,11 +531,13 @@ const layer: Layer.Layer<
       directory: string
       path?: string
       metadata?: typeof Metadata.Type
+      forkedFrom?: SessionID
       permission?: PermissionV1.Ruleset
     }) {
       const ctx = yield* InstanceState.context
+      const id = SessionID.descending(input.id)
       const result: Info = {
-        id: SessionID.descending(input.id),
+        id,
         slug: Slug.create(),
         version: InstallationVersion,
         projectID: ctx.project.id,
@@ -534,7 +548,7 @@ const layer: Layer.Layer<
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
         model: input.model,
-        metadata: input.metadata,
+        metadata: input.forkedFrom ? forkMetadata(input.metadata, id, input.forkedFrom) : input.metadata,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
         tokens: EmptyTokens,
@@ -719,7 +733,8 @@ const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
-        metadata: forkMetadata(original.metadata),
+        metadata: original.metadata,
+        forkedFrom: input.sessionID,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()

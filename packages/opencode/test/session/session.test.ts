@@ -233,7 +233,10 @@ describe("Session", () => {
       )
 
       expect(saved.metadata).toEqual(meta)
-      expect(fork.metadata).toEqual(meta)
+      expect(fork.metadata).toEqual({
+        ...meta,
+        vibeterm: { lineage: { sessionId: fork.id, kind: "native-fork", originalObjectId: created.id } },
+      })
       expect(fork.metadata).not.toBe(meta)
     }),
   )
