@@ -640,6 +640,39 @@ Delivery verified by coordinator `ses_eeda1d251ffel81U5Y42j4kb33` on
 
 ## Audit and upstream lifecycle
 
+Weekly audit by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-14:
+
+- The [canonical PR ledger](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#upstream-pr-ledger)
+  supersedes the older open-PR snapshot. All 19 previously inventoried PRs
+  are closed unmerged at the 01:28:31Z-01:29:12Z REST check; 16 closed on
+  October 10. Separate references #41247/#53303 remain closed unmerged;
+  #46449 remains merged into upstream `v2`, not `dev`.
+- Expanded author search at 01:45:27Z returned 62 unique PRs on one complete
+  page: 27 open, 35 closed, none merged. All 43 additions have individual
+  REST detail evidence; 17 target `v1`, 26 target `dev`. The canonical ledger
+  now includes the new home/syntax/paste/runtime and v2 TUI contributions.
+  This supersedes the old 19-PR scope, not the closed status of its members.
+- Fetched upstream snapshots: `dev` `89e043b6813c` and v1 `dfb56f76c763`.
+  No complete behavior equivalence was established for the old 19 PRs by
+  bounded source review; newer PRs received state/merge checks, not a full
+  behavior-equivalence audit;
+  no carried patch was removed. Changed source paths and PR closure alone
+  do not establish that a local behavior is redundant.
+- Integration source at capture was `193f0da1da`; `e6abfddbcc..dev-nowaker`
+  has 320 commits, 276 not reachable from current upstream v1, and upstream
+  v1 has zero commits absent from integration. These are commit-set counts
+  across rebased history, not counts of new features. The canonical inventory
+  reconciles representative behavior groups with session provenance.
+- Named recent local branches were checked by ancestry. Known ACP and
+  plugin-error prototypes keep their owner-controlled unlanded/local-only
+  dispositions. Upstream-specific home, provisional-prompt and click-control
+  branch revisions are not classified as lost fork behavior or proven exact
+  equivalents. The historical 420-commit appendix was not rewritten.
+- This audit changes records only. No runtime patch, build, installed binary,
+  active DreamHost tab, default Vibeterm server or Meridian was changed.
+  Existing policy questions and the m4max container-search transport blocker
+  remain open. The existing weekly snooze is retained without a duplicate.
+
 - Record every fork-only source commit, including work on retired
   `master-nowaker`, and classify documentation/build/integration commits
   separately from behavior changes.
