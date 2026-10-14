@@ -1,4 +1,4 @@
-# Answer a failed TUI worker request instead of hanging
+# Deliver and settle TUI worker requests without startup races
 
 ## Identity
 
@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `rpc-error-reply` (off upstream `v1` `dfb56f76c7`; also the upstream PR head `2cef65ac7a`)
 - First local commit: `c50b7366df` (cherry-pick of `2cef65ac7a`)
-- Current local commit(s): `c50b7366df`
+- Current local commit(s): `c50b7366df`, `95113b27bc`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
 - Upstream: issue [#54934](https://github.com/anomalyco/opencode/issues/54934), PR [#54936](https://github.com/anomalyco/opencode/pull/54936) against `v1`
@@ -37,10 +37,10 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 
 ## Non-goals
 
-- A worker that dies with calls pending (upstream #34981, #42885) is not
-  handled.
 - RPC calls get no timeout: a handler that never settles still leaves its
   caller waiting.
+- A worker that remains alive but never finishes module initialization is not
+  recovered by receiver readiness.
 
 ## Rationale and constraints
 
@@ -62,6 +62,7 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `c50b7366df` | 2026-10-12 | `Rpc.listen` answers a failed request with `error` (its message, or the cause's when it has none); `Rpc.client` rejects the pending call with it | `listen` and `client` in `packages/opencode/src/util/rpc.ts`; `test/util/rpc.test.ts` with `test/fixture/rpc-worker.ts` |
+| `95113b27bc` | 2026-10-14 | Queue requests until the worker installs its receiver and announces `rpc.ready`; reject outstanding calls on error/closure; clean up workers on all TUI startup exits | `Rpc.listen`/`Rpc.client`; `TuiThreadCommand`; static-import bootstrap regression |
 
 ## Verification
 
@@ -81,6 +82,21 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
   "Loading session…"; see the session record.
 
 ## Timeline
+
+- 2026-10-14 `ses_ec6ba061bffesQBkvfMn0aKona`: reproduced lost requests during
+  asynchronous static-import initialization. The early request got no reply
+  while a later request to the same worker succeeded; the readiness-gated
+  transport preserves FIFO single delivery without a timeout. RPC and TUI
+  thread tests: 17 passed; package typecheck and canonical build/guard passed.
+  Rebased build `1.19.0-vt-285-dfb56f76c7` loaded a scratch resumed session with
+  `session_attached=0`. The live desktop PID 160876 stayed stalled after reveal;
+  its four-second strace showed idle parent/server threads and instant-screen
+  repainting. That is compatible with request loss, not proof of the exact
+  incident's cause. No Vibeterm handoff-timeout change was delivered.
+  Canonical builds installed `vt-285` on m4max and desktop. Managed restart of
+  `ses_ef8235798ffejGr4sa22eXmVNv` replaced PID 160876; the session loaded and
+  completed its normal staged handoff into pane `%19109` with its real `OC |`
+  title. The installed build contains no temporary startup instrumentation.
 
 - 2026-10-12 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-12-tui-worker-hang.md) -
   introduce; upstream issue #54934 and PR #54936 against `v1`; build and
