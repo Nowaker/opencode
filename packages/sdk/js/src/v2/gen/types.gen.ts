@@ -2646,6 +2646,13 @@ export type SubtaskPartInput = {
   command?: string
 }
 
+export type PromptAdmissionError = {
+  name: "PromptAdmissionError"
+  data: {
+    message: string
+  }
+}
+
 export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
@@ -10386,9 +10393,9 @@ export type SessionPromptAsyncData = {
 
 export type SessionPromptAsyncErrors = {
   /**
-   * BadRequest | InvalidRequestError
+   * BadRequest | PromptAdmissionError | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequest | PromptAdmissionError | InvalidRequestError
   /**
    * NotFoundError
    */

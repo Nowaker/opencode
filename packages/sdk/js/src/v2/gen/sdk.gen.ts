@@ -4172,7 +4172,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Send async message
    *
-   * Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.
+   * Return after the user message is durably admitted, without waiting for the AI response. Admission rejection returns PromptAdmissionError; later failures are reported as session events.
    */
   public promptAsync<ThrowOnError extends boolean = false>(
     parameters: {
