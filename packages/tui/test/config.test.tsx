@@ -13,6 +13,7 @@ import {
   toolFooterShowsMessageID,
   toolOutputLimit,
   toolOutputTail,
+  toolOutputHead,
   toolInputLimit,
   LeaderTimeoutDefault,
   PluginSpec,
@@ -311,6 +312,17 @@ test("tool_output.tail is off by default and a tool name overrides its group", (
   expect(toolOutputTail(config, "context7_query", "generic")).toBe(true)
   expect(toolOutputTail(config, "browser", "generic")).toBe(false)
   expect(() => decodeInfo({ tool_output: { tail: { bash: 1 } } })).toThrow()
+})
+
+test("tool_output.head is 0 by default and a tool name overrides its group", () => {
+  expect(toolOutputHead(undefined, "bash", "bash")).toBe(0)
+  const config = decodeInfo({ tool_output: { head: { bash: 2, generic: 1, browser: 0 } } }).tool_output
+  expect(toolOutputHead(config, "bash", "bash")).toBe(2)
+  expect(toolOutputHead(config, "context7_query", "generic")).toBe(1)
+  expect(toolOutputHead(config, "browser", "generic")).toBe(0)
+  expect(() => decodeInfo({ tool_output: { head: { bash: -1 } } })).toThrow()
+  expect(() => decodeInfo({ tool_output: { head: { bash: 1.5 } } })).toThrow()
+  expect(() => decodeInfo({ tool_output: { head: { bash: true } } })).toThrow()
 })
 
 test("prompt.paste_summary takes thresholds, a format and an excerpt length", () => {

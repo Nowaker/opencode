@@ -122,7 +122,7 @@ import {
   type NavigationScope,
   type ScrollReturn,
 } from "./navigation"
-import { collapseTail, collapseToolOutput } from "../../util/collapse-tool-output"
+import { collapseHeadTail, collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { resetSidebarOrder, sidebarOrderChanged } from "../../plugin/slots"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -2307,7 +2307,13 @@ function GenericTool(props: ToolProps) {
   const [expanded, setExpanded] = createSignal(false)
   const limit = createMemo(() => TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"))
   const collapsed = createMemo(() =>
-    collapseOutput(output(), limit(), ctx.width, TuiConfig.toolOutputTail(ctx.tui.tool_output, props.tool, "generic")),
+    collapseOutput(
+      output(),
+      limit(),
+      ctx.width,
+      TuiConfig.toolOutputTail(ctx.tui.tool_output, props.tool, "generic"),
+      TuiConfig.toolOutputHead(ctx.tui.tool_output, props.tool, "generic"),
+    ),
   )
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
@@ -2821,6 +2827,7 @@ function Shell(props: ToolProps) {
       TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "bash"),
       ctx.width,
       TuiConfig.toolOutputTail(ctx.tui.tool_output, props.tool, "bash"),
+      TuiConfig.toolOutputHead(ctx.tui.tool_output, props.tool, "bash"),
     ),
   )
   const limited = createMemo(() => {
@@ -3180,12 +3187,12 @@ function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
 }
 
 // A tool's text output cut to `limit` lines and that many lines' worth of characters; undefined never cuts.
-export function collapseOutput(output: string, limit: number | undefined, width: number, tail = false) {
+export function collapseOutput(output: string, limit: number | undefined, width: number, tail = false, head = 0) {
   if (limit === undefined) return { output, overflow: false }
   const chars = limit * Math.max(20, width - 6)
   const collapsed = collapseToolOutput(output, limit, chars)
   if (!tail || limit === 0 || !collapsed.overflow) return collapsed
-  return { output: collapseTail(output, limit, chars), overflow: true }
+  return { output: collapseHeadTail(output, head, limit, chars), overflow: true }
 }
 
 // Collapsing for a tool block drawn by a component (code, diff) rather than as text: shows the
