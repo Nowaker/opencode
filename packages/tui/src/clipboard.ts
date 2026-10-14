@@ -20,11 +20,16 @@ function command(command: string, args: string[] = [], input?: string) {
   })
 }
 
-function writeOsc52(text: string) {
-  if (!process.stdout.isTTY) return
+// The OSC 52 copy sequence, wrapped for tmux or screen when running inside one.
+export function osc52(text: string) {
   const sequence = `\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`
   const passthrough = `\x1bPtmux;\x1b${sequence}\x1b\\`
-  process.stdout.write(process.env.TMUX ? sequence + passthrough : process.env.STY ? passthrough : sequence)
+  return process.env.TMUX ? sequence + passthrough : process.env.STY ? passthrough : sequence
+}
+
+function writeOsc52(text: string) {
+  if (!process.stdout.isTTY) return
+  process.stdout.write(osc52(text))
 }
 
 export async function read() {
@@ -118,8 +123,15 @@ function getCopyMethod() {
   })())
 }
 
-export async function write(text: string) {
-  writeOsc52(text)
+// The system clipboard alone, for a caller that writes the OSC 52 sequence itself.
+export async function copyNative(text: string) {
   const method = await getCopyMethod()
   await method(text)
 }
+
+export async function write(text: string) {
+  writeOsc52(text)
+  await copyNative(text)
+}
+
+export * as Clipboard from "./clipboard"

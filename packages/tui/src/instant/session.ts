@@ -57,10 +57,14 @@ export function enter(init: Init) {
   return "\x1b[?1049h" + KEYS_ON + (init.config.mouse ? MOUSE_ON : "") + shape + color
 }
 
+const samePoint = (a: InstantFrame.Point, b: InstantFrame.Point) => a.x === b.x && a.y === b.y
+
 export const modesOff = () => MOUSE_OFF + KEYS_OFF
 export const leave = () => MOUSE_OFF + KEYS_OFF + "\x1b[0 q\x1b]112\x07\x1b[?1049l\x1b[?25h"
 
-export function create(init: Init, state?: State) {
+// `copy` puts the text a drag selected on the clipboard; the caller owns the
+// terminal and the clipboard tools, so it decides how.
+export function create(init: Init, state?: State, host: { copy?: (text: string) => void } = {}) {
   const editor = InstantEditor.create({ text: state?.text, caret: state?.caret, anchor: state?.anchor })
   const bindings = InstantEditor.bindings(init.config.keybinds)
   let parser = InstantKeys.createParser()
@@ -70,6 +74,7 @@ export function create(init: Init, state?: State) {
   let clicked = state?.action
   let press: number | undefined
   let down: { x: number; y: number } | undefined
+  let mark: InstantFrame.Mark | undefined
   let frame: InstantFrame.Output | undefined
 
   // The session's own prompt when it is cached, else the directory's.
@@ -113,6 +118,7 @@ export function create(init: Init, state?: State) {
       scroll,
       queued: !!queued,
       action: clicked,
+      mark: mark && !samePoint(mark.from, mark.to) ? mark : undefined,
       spinner,
     })
     const caretRow = next.cursor.y - next.text.y
@@ -128,6 +134,7 @@ export function create(init: Init, state?: State) {
   function handle(event: InstantKeys.Event, backlog: boolean): "quit" | undefined {
     dirty = true
     const width = frame?.text.width ?? 80
+    if (event.type !== "mouse") mark = undefined
     if (event.type === "text") return void editor.insert(event.text)
     if (event.type === "paste") return void editor.insert(event.text.replace(/\r\n?/g, "\n"))
     if (event.type === "mouse") return void pointer(event)
@@ -153,34 +160,62 @@ export function create(init: Init, state?: State) {
     editor.apply(action, width)
   }
 
+  // A drag inside the prompt selects its text; a drag anywhere else marks the
+  // screen's cells. Either way the release copies what was selected, as a drag
+  // does once the TUI has loaded. A marked area stays shown until the next
+  // press or key.
   function pointer(event: Mouse) {
     dirty = true
     const text = frame?.text
     if (!frame || !text || event.button !== 0) return
+    const at = { x: event.x, y: event.y }
     if (event.action === "release") {
       // A press and release on the same cell of an agent, model, variant, hint
       // or session title queues the command the TUI runs for that click, the
       // way an early Enter queues the submit; the latest click wins.
-      const command =
-        down?.x === event.x && down.y === event.y ? InstantFrame.targetAt(frame, event.x, event.y) : undefined
+      const moved = !!down && !samePoint(down, at)
+      const command = down && !moved ? InstantFrame.targetAt(frame, event.x, event.y) : undefined
       if (command) clicked = command
+      if (mark && moved) {
+        mark.to = at
+        copy(InstantFrame.markedText(frame.grid, mark))
+      }
+      if (!moved) mark = undefined
+      const range = editor.selection()
+      if (press !== undefined && moved && range) copy(editor.text.slice(range.start, range.end))
       press = undefined
       down = undefined
       return
     }
-    if (event.action === "press") down = { x: event.x, y: event.y }
+    if (event.action === "press") {
+      down = at
+      mark = undefined
+      press = undefined
+    }
     // Keys earlier in the same read may have changed the text since the last
     // frame, so the click is mapped onto the text as it is now.
     const lines = InstantEditor.layout(editor.text, text.width)
     const row = event.y - text.y + text.scroll
     const col = Math.max(0, event.x - text.x)
     if (event.action === "press") {
-      if (event.y < text.y || event.y >= text.y + text.rows) return
+      const pad = TuiLayout.Prompt.borderWidth + TuiLayout.Prompt.paddingX
+      const inPrompt =
+        event.y >= text.y &&
+        event.y < text.y + text.rows &&
+        event.x >= text.x - pad &&
+        event.x < text.x + text.width + TuiLayout.Prompt.paddingX
+      if (!inPrompt) return void (mark = { from: at, to: at })
       editor.click(lines, row, col)
       press = editor.caret
       return
     }
-    if (event.action === "drag" && press !== undefined) editor.select(press, InstantEditor.offsetAt(lines, row, col))
+    if (event.action !== "drag") return
+    if (press !== undefined) editor.select(press, InstantEditor.offsetAt(lines, row, col))
+    if (mark) mark.to = at
+  }
+
+  function copy(text: string) {
+    if (text.trim()) host.copy?.(text)
   }
 
   return {

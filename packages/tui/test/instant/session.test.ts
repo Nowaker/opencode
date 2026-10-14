@@ -119,6 +119,58 @@ describe("instant session", () => {
     expect(session.action).toBeUndefined()
   })
 
+  test("a drag anywhere outside the prompt marks the cells and copies their text on release", () => {
+    const copied: string[] = []
+    const home = InstantSession.create(create().init, undefined, { copy: (text) => copied.push(text) })
+    const grid = home.compute(120, 40).grid
+    const y = grid.findIndex((row) => row.map((cell) => cell.ch).join("").includes("1.0.0"))
+    const x = grid[y].map((cell) => cell.ch).join("").indexOf("1.0.0")
+    home.input(bytes(`\x1b[<0;${x + 1};${y + 1}M\x1b[<32;${x + 5};${y + 1}M`))
+    const marked = home.compute(120, 40).grid[y]
+    expect(marked.slice(x, x + 5).every((cell) => cell.inverse)).toBe(true)
+    expect(marked[x + 5].inverse).toBeFalsy()
+    expect(copied).toEqual([])
+    home.input(bytes(`\x1b[<0;${x + 5};${y + 1}m`))
+    expect(copied).toEqual(["1.0.0"])
+    expect(home.action).toBeUndefined()
+    // The mark stays shown until the next key.
+    expect(home.compute(120, 40).grid[y][x].inverse).toBe(true)
+    home.input(bytes("a"))
+    expect(home.compute(120, 40).grid[y][x].inverse).toBeFalsy()
+  })
+
+  test("a drag across rows of the session screen copies them in reading order, a backward drag too", () => {
+    const copied: string[] = []
+    const session = InstantSession.create(createSession().init, undefined, { copy: (text) => copied.push(text) })
+    const grid = session.compute(160, 40).grid
+    const line = (y: number) => grid[y].map((cell) => cell.ch).join("")
+    const titleY = grid.findIndex((_, y) => line(y).includes("Fix the build"))
+    const titleX = line(titleY).indexOf("Fix the build")
+    const idX = line(titleY + 1).indexOf("ses_a")
+    const drag = (from: [number, number], to: [number, number]) =>
+      session.input(
+        bytes(`\x1b[<0;${from[0] + 1};${from[1] + 1}M\x1b[<32;${to[0] + 1};${to[1] + 1}M\x1b[<0;${to[0] + 1};${to[1] + 1}m`),
+      )
+    drag([titleX, titleY], [idX + 4, titleY + 1])
+    drag([idX + 4, titleY + 1], [titleX, titleY])
+    expect(copied).toHaveLength(2)
+    expect(copied[0]).toBe(copied[1])
+    expect(copied[0].split("\n").map((row) => row.trim())).toEqual(["Fix the build", "ses_a"])
+  })
+
+  test("a drag inside the prompt selects its text and copies it; a click copies nothing", () => {
+    const copied: string[] = []
+    const home = InstantSession.create(create().init, undefined, { copy: (text) => copied.push(text) })
+    home.input(bytes("hello world"))
+    const text = home.compute(120, 40).text
+    const row = text.y + 1
+    home.input(bytes(`\x1b[<0;${text.x + 1};${row}M\x1b[<0;${text.x + 1};${row}m`))
+    expect(copied).toEqual([])
+    home.input(bytes(`\x1b[<0;${text.x + 1};${row}M\x1b[<32;${text.x + 6};${row}M\x1b[<0;${text.x + 6};${row}m`))
+    expect(copied).toEqual(["hello"])
+    expect(home.editor.selection()).toEqual({ start: 0, end: 5 })
+  })
+
   test("state carries over to a new session", () => {
     const first = create()
     first.input(bytes("hello\x1b[1;2D\x1b[1;2D"))

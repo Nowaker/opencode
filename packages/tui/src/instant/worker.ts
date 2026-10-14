@@ -1,4 +1,5 @@
 import fs from "fs"
+import { Clipboard } from "../clipboard"
 import { TuiLayout } from "../layout"
 import { InstantSession } from "./session"
 
@@ -76,7 +77,12 @@ self.onmessage = (event) => {
   if (message.type === "init") {
     flags = new Int32Array(message.flags)
     size = message.size
-    session = InstantSession.create(message.init)
+    session = InstantSession.create(message.init, undefined, {
+      copy: (text) => {
+        write(Clipboard.osc52(text))
+        void Clipboard.copyNative(text)
+      },
+    })
     process.stdin.on("data", read)
     process.stdin.resume()
     if (!session.init.screen) return

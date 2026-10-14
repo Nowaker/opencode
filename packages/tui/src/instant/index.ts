@@ -5,6 +5,7 @@ import os from "os"
 import path from "path"
 import { GlobalPath } from "@opencode-ai/core/global-path"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { Clipboard } from "../clipboard"
 import { TuiLayout } from "../layout"
 import { InstantCache } from "./cache"
 import { InstantConfig } from "./config"
@@ -139,6 +140,10 @@ const write = (text: string) => {
 
 const size = () => ({ width: process.stdout.columns || 80, height: process.stdout.rows || 24 })
 
+// On this thread the terminal is ours or the renderer's, and either way the
+// TUI's own clipboard path (OSC 52 plus the system clipboard) can write to it.
+const host = { copy: (text: string) => void Clipboard.write(text).catch(() => {}) }
+
 function workerPath() {
   if (typeof OPENCODE_INSTANT_WORKER_PATH !== "undefined") return OPENCODE_INSTANT_WORKER_PATH
   return new URL("./worker.ts", import.meta.url).href
@@ -181,7 +186,7 @@ export function start(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = pro
   }
   const self: Session = {
     init,
-    core: InstantSession.create(init),
+    core: InstantSession.create(init, undefined, host),
     phase: "worker",
     flags: new Int32Array(new SharedArrayBuffer(8)),
     backlog: true,
@@ -369,7 +374,7 @@ function fromWorker(self: Session) {
         finish("")
         return quit(self)
       }
-      self.core = InstantSession.create(self.init, event.data.state)
+      self.core = InstantSession.create(self.init, event.data.state, host)
       finish(event.data.pending)
     }
     worker.onerror = () => finish("")

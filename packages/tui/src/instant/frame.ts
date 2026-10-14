@@ -44,8 +44,13 @@ export type Input = {
   queued: boolean
   // The command a click queued, shown pressed until the TUI runs it.
   action?: string
+  // Cells a drag outside the prompt selected, from the press to where it is now.
+  mark?: Mark
   spinner: number
 }
+
+export type Point = { x: number; y: number }
+export type Mark = { from: Point; to: Point }
 
 export type Output = {
   grid: Cell[][]
@@ -441,12 +446,45 @@ export function render(input: Input): Output {
       const cell = c.grid[at.y]?.[x]
       if (cell) cell.inverse = true
     }
+  if (input.mark) for (const [y, first, last] of markedRows(c.grid, input.mark))
+    for (let x = first; x <= last; x++) c.grid[y][x].inverse = true
   return { grid: c.grid, spinner: c.spinner, targets: c.targets, ...result }
 }
 
 // The command at a cell, if a click there runs one.
 export function targetAt(output: Output, x: number, y: number) {
   return output.targets.find((at) => at.y === y && x >= at.x && x < at.x + at.width)?.command
+}
+
+// The text of the marked cells as drawn, one line per row, the way a terminal
+// copies a selection: rows run in reading order, wide characters count once and
+// trailing blanks are dropped.
+export function markedText(grid: Cell[][], mark: Mark) {
+  return markedRows(grid, mark)
+    .map(([y, first, last]) =>
+      grid[y]
+        .slice(first, last + 1)
+        .map((cell) => cell.ch)
+        .join("")
+        .trimEnd(),
+    )
+    .join("\n")
+}
+
+// [row, first column, last column] of every row the mark covers, in reading
+// order: the start row from the start column, the end row up to the end
+// column, and the rows between them whole.
+function markedRows(grid: Cell[][], mark: Mark): [number, number, number][] {
+  const forward = mark.from.y < mark.to.y || (mark.from.y === mark.to.y && mark.from.x <= mark.to.x)
+  const [start, end] = forward ? [mark.from, mark.to] : [mark.to, mark.from]
+  const rows: [number, number, number][] = []
+  for (let y = Math.max(0, start.y); y <= Math.min(grid.length - 1, end.y); y++) {
+    const width = grid[y].length
+    const first = y === start.y ? Math.max(0, start.x) : 0
+    const last = y === end.y ? Math.min(width - 1, end.x) : width - 1
+    if (first <= last) rows.push([y, first, last])
+  }
+  return rows
 }
 
 function sgr(cell: Cell) {
