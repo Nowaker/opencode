@@ -277,11 +277,34 @@ export const ToolOutputCollapseDefaults: Record<ToolOutputGroup, number | "never
   edit: "never",
   apply_patch: "never",
 }
+const CollapseLimit = Schema.Union([Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), Schema.Literal("never")])
+const HeadLines = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const ToolOutput = Schema.Struct({
   collapse: Schema.optional(
-    Schema.Record(
-      Schema.String,
-      Schema.Union([Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), Schema.Literal("never")]),
+    Schema.StructWithRest(
+      Schema.Struct({
+        bash: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Lines of a bash command's output shown before 'Click to expand': a number of lines, 0 to hide it until clicked, or 'never' to always show all of it (default: 10)",
+        }),
+        generic: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Lines of output of plugin, MCP and other tools without their own view shown before 'Click to expand': a number of lines, 0 to hide it until clicked, or 'never' to always show all of it. Set, it also shows that output on every start, whatever 'Show/Hide generic tool output' remembered (default: 3)",
+        }),
+        write: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rendered rows of a written file shown before 'Click to expand': a number of rows, 0 to hide it until clicked, or 'never' to always show all of it (default: never)",
+        }),
+        edit: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rendered rows of an edited file's diff shown before 'Click to expand': a number of rows, 0 to hide it until clicked, or 'never' to always show all of it (default: never)",
+        }),
+        apply_patch: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rendered rows of each patched file's diff shown before 'Click to expand': a number of rows, 0 to hide it until clicked, or 'never' to always show all of it (default: never)",
+        }),
+      }),
+      [Schema.Record(Schema.String, CollapseLimit)],
     ),
   ).annotate({
     description: [
@@ -289,14 +312,92 @@ export const ToolOutput = Schema.Struct({
       "Groups: 'bash' (default 10), 'generic' - plugin, MCP and other tools without their own view (default 3),",
       "'write', 'edit', 'apply_patch' (default 'never').",
       "A tool name, such as 'vibeterm_prompt_session', overrides its group.",
-      "A number of lines; 0 hides the output entirely until clicked; 'never' always shows all of it.",
+      "A number of lines; 0 hides the output entirely until clicked, whatever tail and head say; 'never' always shows all of it.",
       "Setting 'generic' or a plugin or MCP tool's name also shows that output on every start, collapsed to",
       "its limit, whatever 'Show/Hide generic tool output' last remembered; that command then lasts until the TUI exits.",
       "Long lines count too: the preview is capped at that many lines' worth of characters.",
     ].join(" "),
   }),
+  tail: Schema.optional(
+    Schema.StructWithRest(
+      Schema.Struct({
+        bash: Schema.optional(Schema.Boolean).annotate({
+          description:
+            "Collapsed bash output shows its last lines under '(N earlier lines)' instead of its first (default: false)",
+        }),
+        generic: Schema.optional(Schema.Boolean).annotate({
+          description:
+            "Collapsed output of plugin, MCP and other tools without their own view shows its last lines under '(N earlier lines)' instead of its first (default: false)",
+        }),
+      }),
+      [Schema.Record(Schema.String, Schema.Boolean)],
+    ),
+  ).annotate({
+    description:
+      "Which collapsed tool output shows its last lines, under '(N earlier lines)', instead of its first, per group ('bash', 'generic') or tool name; a tool name overrides its group (default: false)",
+  }),
+  head: Schema.optional(
+    Schema.StructWithRest(
+      Schema.Struct({
+        bash: Schema.optional(HeadLines).annotate({
+          description:
+            "With tail on, the first lines of collapsed bash output kept above '(N more lines)'; the last lines fill the rest of the collapse limit (default: 0)",
+        }),
+        generic: Schema.optional(HeadLines).annotate({
+          description:
+            "With tail on, the first lines of collapsed output of plugin, MCP and other tools without their own view kept above '(N more lines)' (default: 0)",
+        }),
+      }),
+      [Schema.Record(Schema.String, HeadLines)],
+    ),
+  ).annotate({
+    description: [
+      "With tail on, how many first lines of collapsed tool output stay above a '(N more lines)' marker, per group",
+      "('bash', 'generic') or tool name; a tool name overrides its group. The last lines fill the rest of the",
+      "collapse limit, so collapse 5 with head 2 shows 2 first lines, the marker and 2 last lines. At most the",
+      "collapse limit minus 2, so a last line always shows. No effect with tail off (default: 0)",
+    ].join(" "),
+  }),
 }).annotate({ description: "Tool output in the session transcript" })
 export type ToolOutput = Schema.Schema.Type<typeof ToolOutput>
+
+// Whether a tool's collapsed output shows its last lines rather than its first.
+export function toolOutputTail(config: ToolOutput | undefined, tool: string, group: "bash" | "generic") {
+  return config?.tail?.[tool] ?? config?.tail?.[group] ?? false
+}
+
+// First lines a tail preview keeps above its `(N more lines)` marker.
+export function toolOutputHead(config: ToolOutput | undefined, tool: string, group: "bash" | "generic") {
+  return config?.head?.[tool] ?? config?.head?.[group] ?? 0
+}
+
+export const ToolInput = Schema.Struct({
+  collapse: Schema.optional(
+    Schema.StructWithRest(
+      Schema.Struct({
+        bash: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rendered rows of a bash command shown before 'Click to expand': a number of rows, 0 to hide the command until clicked, or 'never' to always show all of it (default: never)",
+        }),
+      }),
+      [Schema.Record(Schema.String, CollapseLimit)],
+    ),
+  ).annotate({
+    description: [
+      "How many rendered rows of a tool call's input show before 'Click to expand', per group or tool name.",
+      "Group: 'bash', the shell command (default 'never'). A tool name overrides its group.",
+      "The command keeps its wrapping and is cut after that many rows; one click expands the command and",
+      "its output together, while tool_output.collapse still decides the output's lines.",
+    ].join(" "),
+  }),
+}).annotate({ description: "Tool input in the session transcript" })
+export type ToolInput = Schema.Schema.Type<typeof ToolInput>
+
+// Rendered rows of a tool's input shown while collapsed; undefined when it never collapses.
+export function toolInputLimit(config: ToolInput | undefined, tool: string, group: "bash") {
+  const value = config?.collapse?.[tool] ?? config?.collapse?.[group] ?? "never"
+  return value === "never" ? undefined : value
+}
 
 // Whether a plugin or MCP tool's output shows. `tool_output.collapse` naming the tool or 'generic'
 // decides on every start, showing it collapsed to its limit, and the "Show/Hide generic tool output"
@@ -361,6 +462,7 @@ export const Info = Schema.Struct({
   footer: Schema.optional(Footer),
   datetime_format: Schema.optional(DateTimeFormat),
   tool_output: Schema.optional(ToolOutput),
+  tool_input: Schema.optional(ToolInput),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
 })

@@ -540,10 +540,68 @@ Uppercase `MM` is always the month and lowercase `mm` the minute. Each part acce
 Each value is a number of lines or `"never"`:
 
 - A number shows that many lines, then `…` and the hint. A long line counts as more than one: the preview is capped at that many lines' worth of characters.
-- `0` hides the output until clicked. The block is just its title or command, a blank line, and the hint, with the [footer](#footer) on the hint line: `Click to expand · 16:13:02 · 1.5s`.
+- `0` hides the output until clicked, even with `tail` and `head` (below) set. The block is just its title or command, a blank line, and the hint, with the [footer](#footer) on the hint line: `Click to expand · 16:13:02 · 1.5s`.
 - `"never"` always shows all of it, with no hint.
 
 `write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on, unless `generic` or the tool's own name is set here: then the output shows, collapsed to that limit, on every start. With `generic` set, **Hide generic tool output** lasts until OpenCode exits.
+
+`tool_output.tail` shows the **last** lines of collapsed output instead of the first, under `(N earlier lines)`, per group (`bash`, `generic`) or tool name. A tool name overrides its group. It is off by default.
+
+```json title="tui.json"
+{
+  "tool_output": {
+    "collapse": { "bash": 10 },
+    "tail": { "bash": true, "browser": false }
+  }
+}
+```
+
+With `bash` at 10, a 40-line output collapses to `(31 earlier lines)` and lines 32 to 40.
+
+`tool_output.head` keeps the **first** lines as well: with `tail` on, that many first lines stay above a `(N more lines)` marker, and the last lines fill the rest of the `collapse` limit. It is set per group (`bash`, `generic`) or tool name, a tool name overrides its group, and it is `0` by default. To see the first 2 and the last 2 lines of bash output:
+
+```json title="tui.json"
+{
+  "tool_output": {
+    "collapse": { "bash": 5 },
+    "tail": { "bash": true },
+    "head": { "bash": 2 }
+  }
+}
+```
+
+A 40-line output then collapses to:
+
+```
+output line 1
+output line 2
+(36 more lines)
+output line 39
+output line 40
+```
+
+- The `collapse` limit counts every row, the marker included: `5` is 2 first lines, the marker and 2 last lines.
+- `head` is at most the limit minus 2, so at least one last line shows. It does nothing while `tail` is off.
+- `collapse` at `0` keeps the output hidden until clicked whatever `tail` and `head` say. For a head and a tail, set the limit to `head` + 1 + the number of last lines.
+
+### Tool input
+
+`tool_input.collapse` sets how many rendered rows of a tool call's input show before **Click to expand**. It takes the same values as `tool_output.collapse`, per group or tool name:
+
+```json title="tui.json"
+{
+  "tool_input": {
+    "collapse": { "bash": 5 }
+  }
+}
+```
+
+| Key         | Covers                               | Default   |
+| ----------- | ------------------------------------ | --------- |
+| `bash`      | The shell command, heredocs included | `"never"` |
+| a tool name | That tool only, overriding its group | its group |
+
+The command keeps its wrapping and is cut after that many rows; `0` hides it until clicked. The command and its output keep separate limits: `tool_output.collapse` still decides the output's lines. One click expands both, and the hint and [footer](#footer) are the same as for output.
 
 ### Older footer settings
 

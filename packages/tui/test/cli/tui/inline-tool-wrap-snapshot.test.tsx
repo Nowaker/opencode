@@ -326,6 +326,36 @@ describe("TUI inline tool wrapping", () => {
     expect(hidden).toBe("after")
   })
 
+  for (const width of [40, 80, 160]) {
+    test(`a command clipped to 2 rows shows the first 2 rows it wraps to at ${width} columns`, async () => {
+      const command =
+        "$ cp ./tmp/op13-keyguard-check.png /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/./tmp/op13-keyguard-check.png /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/opencode/op13-keyguard-check.png 2>&1 && ls -la /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/opencode /home/nowaker/projekty/modern/worldmodern/.vibeterm/tmp/opencode/op13-keyguard-check.png"
+      const rows = (frame: string) =>
+        frame
+          .split("\n")
+          .map((line) => line.trimEnd())
+          .filter(Boolean)
+      const full = rows(await renderFrame(() => <text>{command}</text>, { width, height: 20 }))
+      expect(full.length).toBeGreaterThan(2)
+      let clipped = false
+      const cut = rows(
+        await renderFrame(
+          () => (
+            <box>
+              <ClippedRows limit={2} expanded={false} onClip={(value) => (clipped = value)}>
+                <text>{command}</text>
+              </ClippedRows>
+              <text>after</text>
+            </box>
+          ),
+          { width, height: 20 },
+        ),
+      )
+      expect(cut).toEqual([...full.slice(0, 2), "after"])
+      expect(clipped).toBe(true)
+    })
+  }
+
   test("formats a running tool call's start time and whole-second stopwatch", () => {
     const start = new Date()
     start.setHours(16, 25, 29, 0)

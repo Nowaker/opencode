@@ -75,7 +75,7 @@ import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { isLandmark, navigationTargets, pickNavigationTarget, type NavigationScope } from "./navigation"
-import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { collapseHeadTail, collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
@@ -1966,7 +1966,13 @@ function GenericTool(props: ToolProps) {
   const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
   const collapsed = createMemo(() =>
-    collapseOutput(output(), TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"), ctx.width),
+    collapseOutput(
+      output(),
+      TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "generic"),
+      ctx.width,
+      TuiConfig.toolOutputTail(ctx.tui.tool_output, props.tool, "generic"),
+      TuiConfig.toolOutputHead(ctx.tui.tool_output, props.tool, "generic"),
+    ),
   )
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
@@ -2266,12 +2272,26 @@ function Shell(props: ToolProps) {
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output)?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
   const collapsed = createMemo(() =>
-    collapseOutput(output(), TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "bash"), ctx.width),
+    collapseOutput(
+      output(),
+      TuiConfig.toolOutputLimit(ctx.tui.tool_output, props.tool, "bash"),
+      ctx.width,
+      TuiConfig.toolOutputTail(ctx.tui.tool_output, props.tool, "bash"),
+      TuiConfig.toolOutputHead(ctx.tui.tool_output, props.tool, "bash"),
+    ),
   )
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
   })
+  // The command is cut after `tool_input.collapse` rendered rows, apart from the output's own limit;
+  // one click expands both.
+  const command = createMemo(() => stringValue(props.input.command) ?? "")
+  const commandLimit = createMemo(() => TuiConfig.toolInputLimit(ctx.tui.tool_input, props.tool, "bash"))
+  const [commandClipped, setCommandClipped] = createSignal(false)
+  const overflow = createMemo(
+    () => collapsed().overflow || (commandLimit() === 0 ? command().length > 0 : commandClipped()),
+  )
 
   const workdirDisplay = createMemo(() => {
     const workdir = stringValue(props.input.workdir)
@@ -2293,13 +2313,15 @@ function Shell(props: ToolProps) {
         <BlockTool
           title={title()}
           part={props.part}
-          hint={expandHint(collapsed().overflow, expanded())}
-          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
+          hint={expandHint(overflow(), expanded())}
+          onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
-            <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
-              <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
-            </Show>
+            <ClippedRows limit={commandLimit()} expanded={expanded()} onClip={setCommandClipped}>
+              <Show when={isRunning()} fallback={<text fg={theme.text}>$ {command()}</text>}>
+                <Spinner color={theme.text}>{command()}</Spinner>
+              </Show>
+            </ClippedRows>
             <Show when={limited()}>
               <text fg={theme.text}>{limited()}</text>
             </Show>
@@ -2552,9 +2574,12 @@ function toolFooter(ctx: ReturnType<typeof use>, part: ToolPart) {
 }
 
 // A tool's text output cut to `limit` lines and that many lines' worth of characters; undefined never cuts.
-export function collapseOutput(output: string, limit: number | undefined, width: number) {
+export function collapseOutput(output: string, limit: number | undefined, width: number, tail = false, head = 0) {
   if (limit === undefined) return { output, overflow: false }
-  return collapseToolOutput(output, limit, limit * Math.max(20, width - 6))
+  const chars = limit * Math.max(20, width - 6)
+  const collapsed = collapseToolOutput(output, limit, chars)
+  if (!tail || limit === 0 || !collapsed.overflow) return collapsed
+  return { output: collapseHeadTail(output, head, limit, chars), overflow: true }
 }
 
 // Collapsing for a tool block drawn by a component (code, diff) rather than as text: shows the
