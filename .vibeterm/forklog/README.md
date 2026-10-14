@@ -104,6 +104,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-14 `ses_ec549ca11ffeaEknagLhxmfpFp`](./sessions/native-fork-lineage.md) - Exact native-fork source lineage in the initial creation event; isolated native runtime and installed desktop/m4max HTTP proof, with both migration guard gates passing.
+
 - [2026-10-14 `ses_ec6f8faa7ffeQU4hWGG3qv7cSp`](./sessions/2026-10-14-prompt-admission.md)
   - `prompt_async` acknowledges durable admission, returns a marked
     `PromptAdmissionError` for confirmed rejection, and stops rejected

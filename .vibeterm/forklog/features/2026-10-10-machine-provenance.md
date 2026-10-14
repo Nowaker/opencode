@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `TBD`
 - First local commit: `20670c19cd`
-- Current local commit(s): `20670c19cd`, `a963ef5224`
+- Current local commit(s): `20670c19cd`, `a963ef5224`, `b0ebca176f`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`), per the commit's `AI-Tool` trailer
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: none (fork-only)
@@ -25,7 +25,8 @@ commit message and the fork's README section.
   creator and remap `objectId`.
 - Admitted prompt loops and shell runs record
   `session.metadata.vibeterm.lastExecution`; a fork does not inherit it.
-- Without the ID, nothing is stamped.
+- Without the ID, machine provenance is not stamped. Native forks still record exact session lineage independently of machine identity.
+- Every native fork publishes `metadata.vibeterm.lineage = { sessionId: newSessionID, kind: "native-fork", originalObjectId: input.sessionID }` in its initial `Session.Created` event. `sourceLineage` preserves the source's prior lineage only when its `sessionId` equals the actual input session ID; creator and origin records are not used to infer that source.
 
 ## Non-goals
 
@@ -46,15 +47,18 @@ commit message and the fork's README section.
 |---|---|---|---|
 | `20670c19cd` | 2026-10-10 | creator stamps, `lastExecution`, projection merge | `MachineProvenance.mergeMetadata` / `latest` in `packages/schema/src/machine-provenance.ts`; `Session.Updated`/`Created` projection in `packages/core/src/session/projector.ts`; `createMessage` / `recordExecution` / `fromRow` / `forkMetadata` in `packages/opencode/src/session/session.ts`; `test/session/machine-provenance.test.ts` |
 | `a963ef5224` | 2026-10-11 | merge only the `vibeterm` subtree; `recordExecution` keeps the other keys | `mergeMetadata`, `recordExecution`; `test/server/session-actions.test.ts` "expose metadata" |
+| `b0ebca176f` | 2026-10-14 | exact source-bound native fork lineage before creation, including metadata-empty and historical sources | private `createNext.forkedFrom` / `forkMetadata` in `packages/opencode/src/session/session.ts`; `test/session/fork-lineage.test.ts` |
 
 ## Verification
 
+- 2026-10-14 [`ses_ec549ca11ffeaEknagLhxmfpFp`](../sessions/native-fork-lineage.md): empty-source regression fails before the change; 81 focused tests and package typecheck pass. Compiled native HTTP/SSE and durable creation-event sequence 0 checks pass before global installation and on both installed hosts at `1.19.0-vt-289-dfb56f76c7`; both mandatory v2 migration guards pass.
 - 2026-10-11 [`ses_ed2434bbbffelX96qcp5XqFLNw`](../sessions/2026-10-11-fork-test-regressions.md):
   `session-actions` "expose metadata" passes at `20670c19cd^`, fails at
   `20670c19cd`, passes with `a963ef5224`; `machine-provenance.test.ts` passes.
 
 ## Timeline
 
+- 2026-10-14 [`ses_ec549ca11ffeaEknagLhxmfpFp`](../sessions/native-fork-lineage.md) - `b0ebca176f`: native forks expose the actual current fork source at birth without requiring source creator/origin metadata.
 - 2026-10-10 `ses_ede14eb59ffe4qffBGjJtqvQIZ` - `20670c19cd`: introduce.
   Evidence: commit trailer; no session record exists.
 - 2026-10-11 [`ses_ed5f9f826ffeno6fI51rL96d5Q`](../sessions/2026-10-11-upstream-v1-19.md) -
@@ -65,13 +69,12 @@ commit message and the fork's README section.
 
 ## Current maintenance notes
 
-- Run `test/session/machine-provenance.test.ts` and
-  `test/server/session-actions.test.ts` in `packages/opencode` on every bump.
+- Run `test/session/machine-provenance.test.ts`, `test/session/fork-lineage.test.ts` and `test/server/session-actions.test.ts` in `packages/opencode` on every bump.
 
 ### Upstream integration checklist
 
 - Locate each stable seam in the new upstream tree.
-- Run the two tests above and `bun typecheck` in `packages/schema`,
+- Run the three tests above and `bun typecheck` in `packages/schema`,
   `packages/core` and `packages/opencode`.
 - Link a new timeline row to the current session record.
 - Update `Last checked against upstream`.
