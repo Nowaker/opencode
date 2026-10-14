@@ -12,6 +12,8 @@ import {
   Info,
   toolFooterShowsMessageID,
   toolOutputLimit,
+  toolOutputTail,
+  toolInputLimit,
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
@@ -288,6 +290,27 @@ test("tool_output.collapse takes lines or never, a tool name over its group, and
   expect(() => decodeInfo({ tool_output: { collapse: { bash: -1 } } })).toThrow()
   expect(() => decodeInfo({ tool_output: { collapse: { bash: 1.5 } } })).toThrow()
   expect(() => decodeInfo({ tool_output: { collapse: { bash: "always" } } })).toThrow()
+})
+
+test("tool_input.collapse takes rows or never per group or tool, and defaults to never", () => {
+  expect(toolInputLimit(undefined, "bash", "bash")).toBeUndefined()
+  const config = decodeInfo({ tool_input: { collapse: { bash: 5, my_shell: 0 } } }).tool_input
+  expect(toolInputLimit(config, "bash", "bash")).toBe(5)
+  expect(toolInputLimit(config, "my_shell", "bash")).toBe(0)
+  expect(
+    toolInputLimit(decodeInfo({ tool_input: { collapse: { bash: "never" } } }).tool_input, "bash", "bash"),
+  ).toBeUndefined()
+  expect(() => decodeInfo({ tool_input: { collapse: { bash: -1 } } })).toThrow()
+  expect(() => decodeInfo({ tool_input: { collapse: { bash: "always" } } })).toThrow()
+})
+
+test("tool_output.tail is off by default and a tool name overrides its group", () => {
+  expect(toolOutputTail(undefined, "bash", "bash")).toBe(false)
+  const config = decodeInfo({ tool_output: { tail: { bash: true, generic: true, browser: false } } }).tool_output
+  expect(toolOutputTail(config, "bash", "bash")).toBe(true)
+  expect(toolOutputTail(config, "context7_query", "generic")).toBe(true)
+  expect(toolOutputTail(config, "browser", "generic")).toBe(false)
+  expect(() => decodeInfo({ tool_output: { tail: { bash: 1 } } })).toThrow()
 })
 
 test("prompt.paste_summary takes thresholds, a format and an excerpt length", () => {

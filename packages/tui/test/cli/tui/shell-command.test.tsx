@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender, type JSX } from "@opentui/solid"
-import { CommandSpans } from "../../../src/routes/session"
+import { ClippedRows, CommandSpans } from "../../../src/routes/session"
 import { heredocs } from "../../../src/util/heredoc"
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined
@@ -85,5 +85,39 @@ for (const width of [40, 80, 160]) {
     )
     expect(colored).toBe(plain)
     expect(plain).toContain("CPUQuota=100%")
+  })
+}
+
+for (const width of [40, 80, 160]) {
+  test(`a command clipped to 2 rows shows the first 2 rows it wraps to at ${width} columns`, async () => {
+    const whole = () => (
+      <text fg={text}>
+        $ <CommandSpans segments={unitSegments()} />
+      </text>
+    )
+    const full = (await frame(width, whole, 60))
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+    let clipped = false
+    const cut = (
+      await frame(
+        width,
+        () => (
+          <box>
+            <ClippedRows limit={2} expanded={false} onClip={(value) => (clipped = value)}>
+              {whole()}
+            </ClippedRows>
+            <text>after</text>
+          </box>
+        ),
+        60,
+      )
+    )
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+    expect(cut).toEqual([...full.slice(0, 2), "   after"])
+    expect(clipped).toBe(true)
   })
 }

@@ -680,6 +680,38 @@ Each value is a number of lines or `"never"`:
 
 `write`, `edit` and `apply_patch` count rendered rows of the file or diff, so a side-by-side diff collapses to that many rows. A deleted file in a patch is a single line and never collapses. Generic tools show their output only while **Show generic tool output** is on, unless `generic` or the tool's own name is set here: then the output shows, collapsed to that limit, on every start. With `generic` set, **Hide generic tool output** lasts until OpenCode exits. See [Settings with a toggle](#settings-with-a-toggle).
 
+`tool_output.tail` shows the **last** lines of collapsed output instead of the first, under `(N earlier lines)`, per group (`bash`, `generic`) or tool name. A tool name overrides its group. It is off by default.
+
+```json title="tui.json"
+{
+  "tool_output": {
+    "collapse": { "bash": 10 },
+    "tail": { "bash": true, "browser": false }
+  }
+}
+```
+
+With `bash` at 10, a 40-line output collapses to `(31 earlier lines)` and lines 32 to 40.
+
+### Tool input
+
+`tool_input.collapse` sets how many rendered rows of a tool call's input show before **Click to expand**. It takes the same values as `tool_output.collapse`, per group or tool name:
+
+```json title="tui.json"
+{
+  "tool_input": {
+    "collapse": { "bash": 5 }
+  }
+}
+```
+
+| Key         | Covers                               | Default   |
+| ----------- | ------------------------------------ | --------- |
+| `bash`      | The shell command, heredocs included | `"never"` |
+| a tool name | That tool only, overriding its group | its group |
+
+The command keeps its wrapping and colors and is cut after that many rows; `0` hides it until clicked. The command and its output keep separate limits: `tool_output.collapse` still decides the output's lines. One click expands both, and the hint and [footer](#footer) are the same as for output.
+
 ### Syntax highlighting
 
 Tool calls are colored by language. Each part can be turned on or off under `syntax`:

@@ -18,3 +18,19 @@ export function collapseToolOutput(output: string, maxLines: number, maxChars: n
 
   return { output: [...lines.slice(0, maxLines), "…"].join("\n"), overflow: true }
 }
+
+// opencode v2's tail preview (packages/tui/src/util/collapse-tool-output.ts on `dev`), kept as v2 has
+// it: a `(N earlier lines)` label and the last lines, `maxLines` rows in all.
+export function collapseTail(output: string, maxLines: number, maxChars: number) {
+  const lines = output.split("\n")
+  if (lines.length <= maxLines && Array.from(output).length <= maxChars) return output
+
+  const count = Math.max(1, lines.length - Math.max(0, maxLines - 1))
+  const label = `(${count} earlier ${count === 1 ? "line" : "lines"})`
+  if (maxLines <= 1) return label
+
+  const preview = Array.from(lines.slice(-(maxLines - 1)).join("\n"))
+  const available = maxChars - Array.from(label).length - 1
+  if (available <= 0) return label
+  return `${label}\n${preview.slice(-available).join("")}`
+}
