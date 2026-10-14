@@ -42,6 +42,7 @@ type Input = {
   composerSeal?: ComposerSeal
   Slot: TuiPluginApi["ui"]["Slot"]
   click: TuiPluginApi["click"]
+  blocks: TuiPluginApi["blocks"]
 }
 
 function routeNavigate(route: ReturnType<typeof useRoute>, name: string, params?: Record<string, unknown>) {
@@ -192,6 +193,7 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
     // Keep deprecated `api.command` working for v1 plugins; remove in v2.
     command: createCommandShim(input.keymap, input.dialog, input.tuiConfig.keybinds),
     click: input.click,
+    blocks: input.blocks,
     keys: {
       formatSequence(parts) {
         return Keymap.formatKeySequence(parts, input.tuiConfig)

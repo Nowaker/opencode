@@ -222,6 +222,9 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     click: {
       on: () => () => {},
     },
+    blocks: {
+      register: () => () => {},
+    },
     keys: {
       formatSequence: () => "",
       formatBindings: () => undefined,

@@ -630,6 +630,24 @@ export type TuiClick = {
   on: (handler: TuiClickHandler) => () => void
 }
 
+/**
+ * A block of submitted message text, from an opening line to a closing line, drawn by a
+ * formatter instead of as markdown. Only colors change: the text shows as written.
+ */
+export type TuiMessageBlock = {
+  /** The opening line, matched whole. `*` matches a run of non-space characters: `[vibeterm_*]`. */
+  open: string
+  /** The closing line, matched whole. Each `*` stands for what the opening line's `*` matched: `[/vibeterm_*]`. */
+  close: string
+  /** `yaml` colors `key: value` lines like a tool input block; any other language id is colored by its grammar. */
+  format: string
+}
+
+export type TuiMessageBlocks = {
+  /** Draw matching blocks with `format`. Blocks from `syntax.blocks` in tui.json come first. */
+  register: (block: TuiMessageBlock) => () => void
+}
+
 export type TuiPluginApi = {
   /**
    * Active host-registered composer, independent of slot providers. Always
@@ -647,6 +665,7 @@ export type TuiPluginApi = {
    */
   command?: TuiCommandApi
   click: TuiClick
+  blocks: TuiMessageBlocks
   keys: TuiKeys
   keymap: TuiKeymap
   mode: TuiModeApi

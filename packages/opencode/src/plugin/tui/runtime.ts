@@ -620,6 +620,11 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
         return scope.track(api.click.on(handler))
       },
     },
+    blocks: {
+      register(block) {
+        return scope.track(api.blocks.register(block))
+      },
+    },
     keys: api.keys,
     keymap,
     mode: createScopedMode(api.mode, scope),

@@ -452,6 +452,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
       composerSeal,
       Slot: pluginRuntime.Slot,
       click: { on: ids.on },
+      blocks: { register: pluginRuntime.registerBlock },
     }),
     (seal) => {
       if (!composerSeal?.commit(seal)) return { status: "stale" }

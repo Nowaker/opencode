@@ -1,5 +1,6 @@
 import type { RGBA } from "@opentui/core"
 import type { Theme } from "./index"
+import type { ToolInputKind } from "../util/tool-input"
 
 type Slot = keyof Theme
 
@@ -42,6 +43,21 @@ export function toolCodeTheme(theme: Theme): Theme {
     }),
   )
   return { ...theme, ...replaced }
+}
+
+// The colors of a tool input block's segments, also used for `yaml` message blocks.
+export function toolInputColors(theme: Theme): Record<ToolInputKind, RGBA> {
+  const code = toolCodeTheme(theme)
+  return {
+    indent: code.text,
+    key: code.syntaxVariable,
+    punctuation: code.syntaxPunctuation,
+    string: code.syntaxString,
+    number: code.syntaxNumber,
+    boolean: code.syntaxKeyword,
+    null: code.syntaxKeyword,
+    fold: code.textMuted,
+  }
 }
 
 // A hue within 20 degrees of pure red, saturated and neither near black nor near white.
