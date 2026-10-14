@@ -105,6 +105,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-14 `ses_ee6a1ab65ffeoR9UKM5RnpfCzC`](./sessions/2026-10-14-click-any-id.md)
+  - A click on any other ID in the transcript (`prt_`, a plugin's `sch_`, a
+    `callID:` value) is handed to `api.click.on` as kind `id` with the text
+    before it, else copied; build and install on both hosts.
+
 - [2026-10-14 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-14-shell-command-collapse.md)
   - `tool_input.collapse` cuts long bash commands, `tool_output.tail` shows
     output's last lines with v2's `collapseTail`, and `tool_output.head` keeps
