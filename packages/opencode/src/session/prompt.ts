@@ -1157,7 +1157,11 @@ const layer = Layer.effect(
       const key = `${input.sessionID}/${messageID}`
       const pending = admitting.get(key)
       if (pending) {
-        if (admission) yield* Deferred.done(admission, yield* Effect.exit(Deferred.await(pending.admission)))
+        if (admission) {
+          const outcome = yield* Effect.exit(Deferred.await(pending.admission))
+          yield* Deferred.done(admission, outcome)
+          if (Exit.isFailure(outcome)) return yield* Effect.die(Cause.squash(outcome.cause))
+        }
         yield* pending.done.await
         return yield* prompt(input, admission)
       }

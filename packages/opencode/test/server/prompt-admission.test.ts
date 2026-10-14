@@ -9,18 +9,26 @@ import { MessageID } from "../../src/session/schema"
 async function fixture() {
   const tmp = await tmpdir({ git: true })
   const plugin = path.join(tmp.path, "admission.js")
-  await Bun.write(plugin, `export default async () => ({
+  await Bun.write(plugin, `export default async () => {
+    let attempts = 0
+    return {
     "chat.message": async (input, output) => {
       if (output.parts.some(part => part.text === "reject"))
         throw new Error("Admission fixture rejected the selected profile")
       if (output.parts.some(part => part.text === "partial"))
         output.parts[0].messageID = "msg_admission_missing"
+      if (output.parts.some(part => part.text === "reject-once") && attempts++ === 0) {
+        await Bun.write(${JSON.stringify(path.join(tmp.path, "ready"))}, "")
+        while (!(await Bun.file(${JSON.stringify(path.join(tmp.path, "release"))}).exists())) await Bun.sleep(10)
+        throw new Error("Admission fixture rejected once")
+      }
       if (output.parts.some(part => part.text === "hold")) {
         await Bun.write(${JSON.stringify(path.join(tmp.path, "ready"))}, "")
         while (!(await Bun.file(${JSON.stringify(path.join(tmp.path, "release"))}).exists())) await Bun.sleep(10)
       }
     }
-  })`)
+    }
+  }`)
   await Bun.write(
     path.join(tmp.path, "opencode.json"),
     JSON.stringify({
@@ -59,6 +67,7 @@ async function fixture() {
         OPENCODE_PLUGINS_DATA_DIR: path.join(tmp.path, "plugins"),
         OPENCODE_CONFIG: path.join(tmp.path, "opencode.json"),
         OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+        OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
         OPENCODE_TEST_HOME: tmp.path,
         OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(tmp.path, "managed"),
         OPENCODE_DISABLE_MODELS_FETCH: "1",
@@ -81,6 +90,9 @@ async function fixture() {
         if (match?.[1]) return match[1]
       }
     })()
+    void (async () => {
+      while (!(await reader.read()).done) {}
+    })()
     const request = (pathname: string, body?: unknown) =>
       fetch(new URL(pathname, baseURL), {
         method: body === undefined ? "GET" : "POST",
@@ -94,6 +106,7 @@ async function fixture() {
     return {
       directory: tmp.path,
       request: (suffix: string, body?: unknown) => request(`/session/${session.id}${suffix}`, body),
+      quiescence: () => request("/global/quiescence"),
       async [Symbol.asyncDispose]() {
         await Bun.write(path.join(tmp.path, "release"), "")
         child.kill("SIGTERM")
@@ -122,6 +135,34 @@ test("async prompt rejects a throwing chat.message hook before durable admission
     name: "PromptAdmissionError",
     data: { message: "Admission fixture rejected the selected profile" },
   })
+  expect(await (await server.request("/message")).json()).toEqual([])
+}, 60_000)
+
+test("concurrent duplicate rejection never retries the rejected admission in the background", async () => {
+  await using server = await fixture()
+  const input = {
+    messageID: MessageID.ascending(),
+    parts: [{ type: "text", text: "reject-once" }],
+    noReply: true,
+  }
+  const first = server.request("/prompt_async", input)
+  const deadline = Date.now() + 20_000
+  while (!(await Bun.file(path.join(server.directory, "ready")).exists())) {
+    if (Date.now() > deadline) throw new Error("admission hook never started")
+    await Bun.sleep(10)
+  }
+  const second = server.request("/prompt_async", input)
+  while ((await (await server.quiescence()).json()).active < 4) {
+    if (Date.now() > deadline) throw new Error("duplicate admission worker never started")
+    await Bun.sleep(10)
+  }
+  await Bun.write(path.join(server.directory, "release"), "")
+  const responses = await Promise.all([first, second])
+  expect(responses.map((response) => response.status)).toEqual([400, 400])
+  while ((await (await server.quiescence()).json()).active !== 0) {
+    if (Date.now() > deadline) throw new Error("admission workers never settled")
+    await Bun.sleep(10)
+  }
   expect(await (await server.request("/message")).json()).toEqual([])
 }, 60_000)
 
