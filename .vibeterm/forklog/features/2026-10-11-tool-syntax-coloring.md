@@ -11,7 +11,8 @@
   `tool-output-syntax` (`e9809aa4f3`, stacked on `bash-syntax`)
 - First local commit: `dfbf7f6836`
 - Current local commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`,
-  `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`, `0ab6637c9d`, `4c00002ca0`, `246c6c10f2`
+  `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`, `0ab6637c9d`, `4c00002ca0`, `246c6c10f2`,
+  `215ff73874`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
 - Upstream: issues #54700-#54703, #54957; PRs
@@ -76,6 +77,7 @@ approved "Build all four". The user's words on defaults:
 | `4c00002ca0` | 2026-10-12 | under the tool input block a response hidden by the generic output toggle is held: "Click to expand" reveals it | `toolOutputReach` in `util/tool-input.ts`; `GenericTool` |
 | `0ab6637c9d` | 2026-10-12 | generic tool output colored by `syntax.tool_output` (tool name or glob -> language, `auto`, `none`; unset = plain); JSON sniff for `auto`; collapsed preview takes the whole output's highlights | `outputLanguage`, `detectOutputLanguage`, `previewHighlights` in `util/tool-output.ts`; `ToolOutputText`, `StyledOutput` in `routes/session/index.tsx`; `test/cli/tui/tool-output.test.tsx`, `test/util/tool-output.test.ts` |
 | `84d27d0f49` | 2026-10-12 | collapsed tool input: one row per value cut to the measured width; compact YAML lists | `formatToolInput(input, width)` in `util/tool-input.ts`; `inputWidth`/`onWidth` in `GenericTool`/`ToolInput`; `test/cli/tui/tool-input.test.tsx` |
+| `215ff73874` | 2026-10-14 | `tool_input.collapse` for plugin/MCP tools (always a block, row cap); `syntax.tool_output` `json-as-yaml` and `tool_output.collapse_yaml`; an expanded block keeps its hint | `toolInputSetting`, `toolOutputYamlLimit`, `collapse_yaml` in `config/index.tsx`; `formatToolInput(value, width, maxRows)` on any JSON value; `JSON_AS_YAML`, `parseOutputJson` in `util/tool-output.ts`; `inputCollapsed`, `yamlOutput`, `outputView` in `GenericTool` |
 
 Docs: `Syntax highlighting` section in `packages/web/src/content/docs/tui.mdx`.
 
@@ -118,6 +120,10 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   tool input block's colors become `toolInputColors`, shared with YAML message
   blocks. See [markdown in user messages](./2026-10-14-user-message-markdown.md).
   Evidence: `5e5994b93a`, `748601cc2b`; `tool-code-theme.test.ts`.
+- 2026-10-14 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-14-shell-command-collapse.md) -
+  `browser` calls: input capped to 4 one-row values, JSON output as 5 YAML
+  rows, text output 3 lines; installed `vt-302` on both hosts. Fork-only.
+  Evidence: `215ff73874`; frames at 40/80/160; PTY at 80/160 with a real click.
 
 ## Future ideas
 
@@ -130,6 +136,12 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
 ## Current maintenance notes
 
 - The four upstream branches carry no AI trailers; the fork commits do.
+- `215ff73874` (plugin input cap, `json-as-yaml`) is fork-only: it spans the
+  #55421, #54968 and #54707 stacks. Host settings, through Vibeterm settings
+  only: `opencodeTui.tool_input.collapse.browser` `4`,
+  `opencodeTui.tool_output.collapse.browser` `3`,
+  `opencodeTui.tool_output.collapse_yaml.browser` `5`,
+  `opencodeTui.syntax.tool_output.browser` `json-as-yaml`.
 - Bundled grammar rebuild: `packages/tui/src/parsers/README.md`.
 - `theme/tool-code.ts` is byte-identical on `bash-syntax` and
   `tool-input-block`, so the two upstream branches merge cleanly.

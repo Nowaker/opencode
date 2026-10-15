@@ -115,6 +115,9 @@ carries every feature forward unchanged. That commit includes the full
     output's last lines with v2's `collapseTail`, and `tool_output.head` keeps
     first lines above a `(N more lines)` marker; v1 PR #55421, v2 PR #55444;
     opencode-tools `a42e4c6` stops a new TUI knob dropping the shared layer.
+  - `browser` calls: plugin input capped per tool, JSON output drawn as YAML
+    rows (`json-as-yaml`, `tool_output.collapse_yaml`); opencode-tools
+    `bb40e38`/`591ade8` make per-tool tui.json values Vibeterm knobs.
 
 - [2026-10-14 `ses_ec57be11affe3kxXJ4WyM3OwOY`](./sessions/2026-10-14-user-message-markdown.md)
   - `syntax.user_messages` colors markdown in submitted messages; `syntax.blocks`
