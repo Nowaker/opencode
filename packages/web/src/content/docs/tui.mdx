@@ -731,12 +731,26 @@ output line 40
 }
 ```
 
-| Key         | Covers                               | Default   |
-| ----------- | ------------------------------------ | --------- |
-| `bash`      | The shell command, heredocs included | `"never"` |
-| a tool name | That tool only, overriding its group | its group |
+| Key         | Covers                                            | Default                      |
+| ----------- | ------------------------------------------------- | ---------------------------- |
+| `bash`      | The shell command, heredocs included              | `"never"`                    |
+| `generic`   | The input block of plugin, MCP and other tools    | one row per value, see below |
+| a tool name | That tool only, overriding its group: `"browser"` | its group                    |
 
 The command keeps its wrapping and colors and is cut after that many rows; `0` hides it until clicked. The command and its output keep separate limits: `tool_output.collapse` still decides the output's lines. One click expands both, and the hint and [footer](#footer) are the same as for output.
+
+For `generic` or a plugin or MCP tool's name, the input shows as a block, one key per row, even with `syntax.tool_input` off or when it would fit on the title line. While collapsed every value takes exactly one row, cut with `…` at the end, and at most that many rows show; expanded, every value shows whole, a multi-line string on its own lines. A `browser` call with `action`, `name`, `timeout` and a long `code` script, at `"browser": 4`:
+
+```
+# browser
+
+action: run
+name: main
+timeout: 30
+code: const rows = [...document.querySelectorAll('table.identifiers tr')]…
+```
+
+Unset, plugin and MCP input follows `syntax.tool_input`: one row per value with no row limit, and whole when `tool_output.collapse` is `"never"` for the tool.
 
 ### Syntax highlighting
 
@@ -758,7 +772,7 @@ Tool calls are colored by language, and your own messages can be colored as mark
 - `heredoc` - Color each heredoc in a bash command in the language of the command that reads it. Defaults to `true`.
 - `files` - Detect the language of written, edited and patched files beyond their extension, so these are colored too: SQL, Dockerfiles (`Dockerfile`, `Containerfile`, `*.dockerfile`), ini-style config and systemd units (`.ini`, `.cfg`, `.conf`, `.service`, `.timer` and the other unit types), dotenv files, shell scripts, ERB, HAML, file names such as `Makefile`, `Gemfile` and `PKGBUILD`, and a `#!` line on a file with no known extension. Defaults to `true`. When `false`, only the file extension decides.
 - `tool_input` - Show a plugin or MCP tool's input as a block, one key per line. Defaults to `false`, which shows only the input's text, number and boolean values, as `[key=value, ...]` on the tool's line. With `true`, input that is all such values and fits in 80 characters stays on that line; anything longer, multi-line or nested becomes a block: keys and values in different colors, values colored by type, text unquoted with its newlines, tabs and quotes shown as themselves, nested objects indented beneath their key, and lists laid out as YAML writes them, `- ` items at their key's indent. Until you click the block, every value takes one row, cut with `…` where it no longer fits; clicking shows it whole. With `tool_output.collapse` set to `"never"` for the tool, values always show whole.
-- `tool_output` - Color plugin and MCP tool output, by tool name. Keys are tool names or globs (`*` matches any run of characters, `?` one); values are a language id such as `json`, `yaml` or `markdown`, `auto`, or `none`. An exact name wins over any glob, and the glob with the most literal characters wins over the others. `auto` colors output that is a JSON object or array and leaves anything else plain. Output over 100,000 characters stays plain. Unset by default, which leaves all output plain. Colored output wraps exactly as the plain text does.
+- `tool_output` - Color plugin and MCP tool output, by tool name. Keys are tool names or globs (`*` matches any run of characters, `?` one); values are a language id such as `json`, `yaml` or `markdown`, `auto`, `json-as-yaml`, or `none`. An exact name wins over any glob, and the glob with the most literal characters wins over the others. `auto` colors output that is a JSON object or array and leaves anything else plain. `json-as-yaml` recognizes JSON the same way and draws it as YAML rows, in the same layout and colors as a tool's input block; other output stays plain text. See [JSON output as YAML](#json-output-as-yaml). Output over 100,000 characters stays plain. Unset by default, which leaves all output plain. Colored output wraps exactly as the plain text does.
 - `user_messages` - Color the markdown in the messages you submitted: headings of every level, numbered and bulleted lists, `` `inline code` ``, fenced code blocks in their language, bold, italics, links, `>` quotes and tables. Defaults to `false`. Only colors change: every character shows as you typed it, markers such as `#` and backticks are dimmed rather than hidden, and the message wraps exactly as it does plain. Markdown that people usually write by accident stays plain: a line followed by `---` or `===` is not a heading, four leading spaces are not a code block, a quote covers only the lines that start with `>`, and `*` inside a word, as in `2*3*4`, is not emphasis. Messages over 100,000 characters stay plain.
 - `blocks` - Draw blocks in your submitted messages with a formatter instead of as markdown. Each entry has an `open` and a `close` line and a `format`. A block runs from a line that is exactly `open` to the next line that is exactly `close`, surrounding spaces aside; an `open` line with no `close` after it is ordinary text. In `open`, `*` matches a run of non-space characters, and each `*` in `close` stands for what it matched, so one rule covers a family of blocks that each close by name. `format` is `yaml`, which colors `key: value` lines the way a tool input block is colored (keys, values by type, `#` comments and the `open` and `close` lines muted), or any other language id, such as `json` or `sql`, colored by that grammar. Blocks are drawn whether or not `user_messages` is on, and like it they change only colors. Unset by default. A TUI plugin adds blocks with `api.blocks.register({ open, close, format })`; the ones in `tui.json` are tried first.
 
@@ -775,6 +789,34 @@ With `tool_output`, for example:
   }
 }
 ```
+
+#### JSON output as YAML
+
+With `"browser": "json-as-yaml"`, a `browser` call that returns a JSON object shows it the way its input shows: one key per row, nested values indented, strings unquoted. While collapsed every value takes one row, cut with `…` at its end, and `tool_output.collapse_yaml` sets how many rows show before **Click to expand**, per group (`generic`) or tool name; unset, the tool's `tool_output.collapse` applies. Expanded, the whole output shows and a multi-line string is on its own lines. Output that is not JSON stays plain text and keeps `tool_output.collapse`, so text and JSON from the same tool can have different limits:
+
+```json title="tui.json"
+{
+  "syntax": {
+    "tool_output": { "browser": "json-as-yaml" }
+  },
+  "tool_output": {
+    "collapse": { "browser": 3 },
+    "collapse_yaml": { "browser": 5 }
+  }
+}
+```
+
+A JSON result then collapses to 5 rows:
+
+```
+url: /account/resources/identifiers/list/bundleId/add/bundle-with-a-very-lo…
+els:
+- - checkbox "App Attest" [checked] [ref=e12]
+- - checkbox "Push Notifications" [] [ref=e13]
+- - checkbox "Sign in with Apple" [checked] [ref=e14]
+```
+
+and a text result to its first 3 lines and `…`. `0` hides the output until clicked, and `"never"` always shows all of it.
 
 With `blocks`, for example, every `[name_*]` ... `[/name_*]` block a tool wraps around its metadata is drawn as YAML:
 

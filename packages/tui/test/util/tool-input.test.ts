@@ -134,6 +134,42 @@ describe("formatToolInput", () => {
   })
 })
 
+describe("formatToolInput on any JSON value, with a row cap", () => {
+  test("lays out a top-level list as dash items", () => {
+    expect(text(formatToolInput([{ a: 1, b: "x" }, "two", []]).rows)).toEqual(["- a: 1", "  b: x", "- two", "- []"])
+    expect(text(formatToolInput([]).rows)).toEqual(["[]"])
+    expect(text(formatToolInput({}).rows)).toEqual(["{}"])
+  })
+
+  test("keeps at most maxRows rows and reports the rest hidden", () => {
+    const value = { url: "/a", els: ["one", "two", "three"], ok: true }
+    expect(formatToolInput(value, 40, 3)).toEqual({
+      rows: formatToolInput(value, 40).rows.slice(0, 3),
+      overflow: true,
+    })
+    expect(text(formatToolInput(value, 40, 3).rows)).toEqual(["url: /a", "els:", "- one"])
+    expect(formatToolInput(value, 40, 6).overflow).toBe(false)
+    expect(formatToolInput(value, 40, 0)).toEqual({ rows: [], overflow: true })
+  })
+
+  test("cuts a 4-key browser call to one row per key, the code included", () => {
+    const input = {
+      action: "run",
+      name: "main",
+      timeout: 30,
+      code: "const rows = [...document.querySelectorAll('tr')].map((row) => row.innerText.trim());\nreturn { url: location.pathname, rows }",
+    }
+    const { rows, overflow } = formatToolInput(input, 50, 4)
+    expect(overflow).toBe(true)
+    expect(text(rows)).toEqual([
+      "action: run",
+      "name: main",
+      "timeout: 30",
+      "code: const rows = [...document.querySelectorAll(…",
+    ])
+  })
+})
+
 describe("toolOutputReach", () => {
   const base = { output: true, toggle: false, toolInput: true, expanded: false }
 

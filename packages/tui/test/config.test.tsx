@@ -15,6 +15,8 @@ import {
   toolOutputTail,
   toolOutputHead,
   toolInputLimit,
+  toolInputSetting,
+  toolOutputYamlLimit,
   LeaderTimeoutDefault,
   PluginSpec,
   resolve,
@@ -323,6 +325,29 @@ test("tool_output.head is 0 by default and a tool name overrides its group", () 
   expect(() => decodeInfo({ tool_output: { head: { bash: -1 } } })).toThrow()
   expect(() => decodeInfo({ tool_output: { head: { bash: 1.5 } } })).toThrow()
   expect(() => decodeInfo({ tool_output: { head: { bash: true } } })).toThrow()
+})
+
+test("tool_input.collapse names generic tools by name or 'generic', unset by default", () => {
+  expect(toolInputSetting(undefined, "browser", "generic")).toBeUndefined()
+  const config = decodeInfo({ tool_input: { collapse: { bash: 5, generic: "never", browser: 4 } } }).tool_input
+  expect(toolInputSetting(config, "browser", "generic")).toBe(4)
+  expect(toolInputSetting(config, "github_create_issue", "generic")).toBe("never")
+  expect(toolInputSetting(config, "bash", "bash")).toBe(5)
+})
+
+test("tool_output.collapse_yaml takes rows per tool or 'generic' and falls back to tool_output.collapse", () => {
+  expect(toolOutputYamlLimit(undefined, "browser")).toBe(3)
+  const config = decodeInfo({
+    tool_output: { collapse: { generic: 0, browser: 3 }, collapse_yaml: { browser: 5, github: "never" } },
+  }).tool_output
+  expect(toolOutputYamlLimit(config, "browser")).toBe(5)
+  expect(toolOutputYamlLimit(config, "github")).toBeUndefined()
+  expect(toolOutputYamlLimit(config, "context7_query")).toBe(0)
+  expect(toolOutputYamlLimit(decodeInfo({ tool_output: { collapse_yaml: { generic: 2 } } }).tool_output, "x")).toBe(2)
+  expect(() => decodeInfo({ tool_output: { collapse_yaml: { browser: -1 } } })).toThrow()
+  expect(
+    genericToolOutputShown({ config: { collapse_yaml: { browser: 5 } }, tool: "browser", saved: false }),
+  ).toBe(true)
 })
 
 test("prompt.paste_summary takes thresholds, a format and an excerpt length", () => {

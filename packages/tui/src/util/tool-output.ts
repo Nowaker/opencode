@@ -9,12 +9,23 @@ export const OUTPUT_LANGUAGE_LIMIT = 100_000
 // a glob over tool names (`*` any run of characters, `?` one) to a language id, `auto` or `none`.
 // An exact name wins over any glob; among globs the one with the most literal characters wins.
 // `auto` sniffs the output and colors only what it recognizes; unset or `none` leaves it plain.
+// `json-as-yaml` sniffs the same way and answers `JSON_AS_YAML` for JSON, which is drawn as YAML
+// rows rather than colored; other output stays plain.
 export function outputLanguage(settings: Record<string, string> | undefined, tool: string, output: string) {
   if (!settings || output.length > OUTPUT_LANGUAGE_LIMIT) return
   const value = settings[tool] ?? bestGlob(settings, tool)
   if (!value || value === "none") return
   if (value === "auto") return detectOutputLanguage(output)
+  if (value === JSON_AS_YAML) return detectOutputLanguage(output) === "json" ? JSON_AS_YAML : undefined
   return value
+}
+
+export const JSON_AS_YAML = "json-as-yaml"
+
+// Output already recognized as JSON, parsed; undefined when it does not parse after all.
+export function parseOutputJson(output: string) {
+  const decoded = decodeJson(output.trim())
+  return decoded._tag === "Some" ? decoded.value : undefined
 }
 
 function bestGlob(settings: Record<string, string>, tool: string) {

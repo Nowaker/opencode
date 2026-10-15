@@ -1,9 +1,11 @@
 import type { SimpleHighlight } from "@opentui/core"
 import { describe, expect, test } from "bun:test"
 import {
+  JSON_AS_YAML,
   OUTPUT_LANGUAGE_LIMIT,
   detectOutputLanguage,
   outputLanguage,
+  parseOutputJson,
   previewHighlights,
 } from "../../src/util/tool-output"
 
@@ -35,6 +37,17 @@ describe("outputLanguage", () => {
 
   test("none switches a tool off under a broader glob", () => {
     expect(outputLanguage({ "*": "json", todo: "none" }, "todo", json)).toBeUndefined()
+  })
+
+  test("json-as-yaml answers for output recognized as JSON and leaves the rest plain", () => {
+    expect(outputLanguage({ browser: JSON_AS_YAML }, "browser", json)).toBe(JSON_AS_YAML)
+    expect(outputLanguage({ browser: JSON_AS_YAML }, "browser", "page text\nmore")).toBeUndefined()
+    expect(outputLanguage({ browser: JSON_AS_YAML }, "browser", "{not json}")).toBeUndefined()
+    expect(parseOutputJson(` ${json}\n`)).toEqual({
+      p: "/console/invite",
+      els: ['- textbox "user@example.com" [ref=e174]'],
+    })
+    expect(parseOutputJson("{not json}")).toBeUndefined()
   })
 
   test("auto colors only output recognized as JSON", () => {

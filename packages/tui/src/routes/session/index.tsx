@@ -81,7 +81,7 @@ import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
 import { forgivingMarkdown, USER_MARKDOWN_LIMIT } from "../../util/user-markdown"
 import { messageSegments, yamlSegments, type MessageSegment } from "../../util/message-blocks"
-import { outputLanguage, previewHighlights } from "../../util/tool-output"
+import { JSON_AS_YAML, outputLanguage, parseOutputJson, previewHighlights } from "../../util/tool-output"
 import { narrowBashHighlights } from "../../util/bash-highlight"
 import { highlightHeredocs } from "../../util/heredoc"
 import { toolInputColors } from "../../theme/tool-code"
@@ -2336,15 +2336,57 @@ function GenericTool(props: ToolProps) {
   )
   // The block's measured width, reported on layout and on resize only; until then an estimate.
   const [inputWidth, setInputWidth] = createSignal<number>()
-  const inputBlock = createMemo(() => {
-    if (ctx.tui.syntax?.tool_input !== true || fitsInline(props.input)) return
-    const whole = expanded() || limit() === undefined
-    return formatToolInput(props.input, whole ? undefined : (inputWidth() ?? Math.max(20, ctx.width - 6)))
+  const rowWidth = () => inputWidth() ?? Math.max(20, ctx.width - 6)
+  // `tool_input.collapse` naming the tool or 'generic' always shows the input as a block and caps
+  // its rows; unset, the block shows with syntax.tool_input and is whole when output never collapses.
+  const inputSetting = createMemo(() => TuiConfig.toolInputSetting(ctx.tui.tool_input, props.tool, "generic"))
+  // The collapsed forms decide whether there is anything to expand, expanded or not, so an expanded
+  // block keeps its hint and folds back on a click.
+  const inputCollapsed = createMemo(() => {
+    const setting = inputSetting()
+    if (setting === undefined) {
+      if (ctx.tui.syntax?.tool_input !== true || fitsInline(props.input)) return
+      return formatToolInput(props.input, limit() === undefined ? undefined : rowWidth())
+    }
+    if (setting === "never") return formatToolInput(props.input)
+    return formatToolInput(props.input, rowWidth(), setting)
   })
+  const inputBlock = createMemo(() => {
+    const collapsed = inputCollapsed()
+    if (!collapsed || !expanded()) return collapsed
+    return { rows: formatToolInput(props.input).rows, overflow: collapsed.overflow }
+  })
+  // Output recognized as JSON under syntax.tool_output 'json-as-yaml' is drawn as YAML rows.
+  const yamlValue = createMemo(() => (language() === JSON_AS_YAML ? parseOutputJson(output()) : undefined))
+  const yamlOutput = createMemo(() => {
+    const value = yamlValue()
+    if (value === undefined) return
+    const yamlLimit = TuiConfig.toolOutputYamlLimit(ctx.tui.tool_output, props.tool)
+    const collapsed = yamlLimit === undefined ? formatToolInput(value) : formatToolInput(value, rowWidth(), yamlLimit)
+    if (!expanded()) return collapsed
+    return { rows: formatToolInput(value).rows, overflow: collapsed.overflow }
+  })
+  const outputCollapsed = () => yamlOutput()?.overflow ?? collapsed().overflow
   const overflow = createMemo(() =>
-    Boolean(inputBlock()?.overflow || (showOutput() && collapsed().overflow) || heldOutput()),
+    Boolean(inputBlock()?.overflow || (showOutput() && outputCollapsed()) || heldOutput()),
   )
-  const outputOverflow = createMemo(() => collapsed().overflow || heldOutput())
+  const outputOverflow = createMemo(() => outputCollapsed() || heldOutput())
+  const outputView = () => (
+    <Show
+      when={yamlOutput()}
+      fallback={
+        <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
+          {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
+        </Show>
+      }
+    >
+      {(yaml) => <ToolInput onWidth={setInputWidth} rows={yaml().rows} colors={colors()} />}
+    </Show>
+  )
+  const outputVisible = () => {
+    const yaml = yamlOutput()
+    return yaml ? yaml.rows.length > 0 : Boolean(limited())
+  }
 
   return (
     <Switch>
@@ -2356,16 +2398,10 @@ function GenericTool(props: ToolProps) {
             hint={expandHint(overflow(), expanded())}
             onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
           >
-            <ToolInput
-              onWidth={setInputWidth}
-              rows={block().rows}
-              colors={colors()}
-            />
-            <Show when={outputShown() && limited()}>
-              <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
-                {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
-              </Show>
+            <Show when={block().rows.length > 0}>
+              <ToolInput onWidth={setInputWidth} rows={block().rows} colors={colors()} />
             </Show>
+            <Show when={outputShown() && outputVisible()}>{outputView()}</Show>
           </BlockTool>
         )}
       </Match>
@@ -2388,12 +2424,8 @@ function GenericTool(props: ToolProps) {
           hint={expandHint(outputOverflow(), expanded())}
           onClick={outputOverflow() ? () => setExpanded((prev) => !prev) : undefined}
         >
-          <Show when={!collapsed().overflow || expanded() || limited()}>
-            <box gap={1}>
-              <Show when={language()} fallback={<text fg={theme.text}>{limited()}</text>}>
-                {(language) => <ToolOutputText output={output()} shown={limited()} language={language()} />}
-              </Show>
-            </box>
+          <Show when={!outputCollapsed() || expanded() || outputVisible()}>
+            <box gap={1}>{outputView()}</box>
           </Show>
         </BlockTool>
       </Match>

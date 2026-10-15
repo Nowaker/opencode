@@ -52,7 +52,7 @@ export const Syntax = Schema.Struct({
   }),
   tool_output: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description:
-      "Color plugin and MCP tool output by tool name or glob ('browser', 'github_*', '*'): a language id such as 'json', 'auto' to color output recognized as JSON, or 'none'. An exact name wins over globs, the most specific glob over the rest. Unset leaves output plain (default)",
+      "Color plugin and MCP tool output by tool name or glob ('browser', 'github_*', '*'): a language id such as 'json', 'auto' to color output recognized as JSON, 'json-as-yaml' to draw output recognized as JSON as YAML rows like a tool's input block (one row per value while collapsed, see tool_output.collapse_yaml), or 'none'. An exact name wins over globs, the most specific glob over the rest. Unset leaves output plain (default)",
   }),
   user_messages: Schema.optional(Schema.Boolean).annotate({
     description:
@@ -471,6 +471,24 @@ export const ToolOutput = Schema.Struct({
       "collapse limit minus 2, so a last line always shows. No effect with tail off (default: 0)",
     ].join(" "),
   }),
+  collapse_yaml: Schema.optional(
+    Schema.StructWithRest(
+      Schema.Struct({
+        generic: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rows of plugin, MCP and other tool output drawn as YAML (syntax.tool_output 'json-as-yaml') shown before 'Click to expand', one row per value cut with '…': a number of rows, 0 to hide it until clicked, or 'never' to always show all of it (default: the tool's tool_output.collapse)",
+        }),
+      }),
+      [Schema.Record(Schema.String, CollapseLimit)],
+    ),
+  ).annotate({
+    description: [
+      "How many rows of tool output drawn as YAML (syntax.tool_output 'json-as-yaml') show before 'Click to expand',",
+      "per group ('generic') or tool name; a tool name overrides its group. While collapsed every value takes one row,",
+      "cut with '…' at its end; expanded, the whole output shows, a multi-line string on its own lines.",
+      "Unset follows the tool's tool_output.collapse.",
+    ].join(" "),
+  }),
 }).annotate({ description: "Tool output in the session transcript" })
 export type ToolOutput = Schema.Schema.Type<typeof ToolOutput>
 
@@ -492,27 +510,45 @@ export const ToolInput = Schema.Struct({
           description:
             "Rendered rows of a bash command shown before 'Click to expand': a number of rows, 0 to hide the command until clicked, or 'never' to always show all of it (default: never)",
         }),
+        generic: Schema.optional(CollapseLimit).annotate({
+          description:
+            "Rows of a plugin or MCP tool's input block shown before 'Click to expand', one row per value cut with '…': a number of rows, 0 to hide the input until clicked, or 'never' to always show all of it. Set, the input always shows as a block (default: one row per value, whole when the output never collapses)",
+        }),
       }),
       [Schema.Record(Schema.String, CollapseLimit)],
     ),
   ).annotate({
     description: [
       "How many rendered rows of a tool call's input show before 'Click to expand', per group or tool name.",
-      "Group: 'bash', the shell command (default 'never'). A tool name overrides its group.",
-      "The command keeps its wrapping and colors and is cut after that many rows; one click expands the command and",
-      "its output together, while tool_output.collapse still decides the output's lines.",
+      "Groups: 'bash', the shell command (default 'never'); 'generic', a plugin or MCP tool's input block, one row",
+      "per value cut with '…'. A tool name overrides its group. A bash command keeps its wrapping and colors and",
+      "is cut after that many rows. One click expands the input and its output together, while tool_output.collapse",
+      "still decides the output's lines.",
     ].join(" "),
   }),
 }).annotate({ description: "Tool input in the session transcript" })
 export type ToolInput = Schema.Schema.Type<typeof ToolInput>
 
+// What `tool_input.collapse` says for a tool: its own name, else its group; undefined when unset.
+export function toolInputSetting(config: ToolInput | undefined, tool: string, group: "bash" | "generic") {
+  return config?.collapse?.[tool] ?? config?.collapse?.[group]
+}
+
 // Rendered rows of a tool's input shown while collapsed; undefined when it never collapses.
 export function toolInputLimit(config: ToolInput | undefined, tool: string, group: "bash") {
-  const value = config?.collapse?.[tool] ?? config?.collapse?.[group] ?? "never"
+  const value = toolInputSetting(config, tool, group) ?? "never"
+  return value === "never" ? undefined : value
+}
+
+// Rows of a tool's output drawn as YAML shown while collapsed; undefined when it never collapses.
+export function toolOutputYamlLimit(config: ToolOutput | undefined, tool: string) {
+  const value = config?.collapse_yaml?.[tool] ?? config?.collapse_yaml?.generic
+  if (value === undefined) return toolOutputLimit(config, tool, "generic")
   return value === "never" ? undefined : value
 }
 
 // Whether a plugin or MCP tool's output shows. `tool_output.collapse` naming the tool or 'generic'
+// (or `tool_output.collapse_yaml` naming the tool)
 // decides on every start, showing it collapsed to its limit, and the "Show/Hide generic tool output"
 // command (`toggled`) then lasts until exit; otherwise that command's remembered choice (`saved`).
 export function genericToolOutputShown(input: {
@@ -525,6 +561,7 @@ export function genericToolOutputShown(input: {
   const collapse = input.config?.collapse
   if (collapse?.generic !== undefined) return true
   if (input.tool !== undefined && collapse?.[input.tool] !== undefined) return true
+  if (input.tool !== undefined && input.config?.collapse_yaml?.[input.tool] !== undefined) return true
   return input.saved
 }
 

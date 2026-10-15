@@ -23,15 +23,16 @@ export function fitsInline(input: Record<string, unknown>, width = 80) {
   return inlineToolInput(input).length <= width
 }
 
-// A tool's input as YAML-style rows: one key per row, nested objects and arrays ind// A tool's input as compact YAML rows: one key per row, a nested object indented beneath its key,
-// a list's `- ` items at their key's indent with the item's other keys aligned under its first,
-// strings unquoted with their escapes already decoded (JSON gave us real newlines, tabs and
-// quotes), a multi-line string as its own indented lines.
+// A tool's input, or any JSON value, as compact YAML rows: one key per row, a nested object
+// indented beneath its key, a list's `- ` items at their key's indent with the item's other keys
+// aligned under its first, strings unquoted with their escapes already decoded (JSON gave us real
+// newlines, tabs and quotes), a multi-line string as its own indented lines.
 //
-// Given a `width`, the input is collapsed instead: every value takes exactly one row of that
+// Given a `width`, the value is collapsed instead: every value takes exactly one row of that
 // many columns, a multi-line string joined onto it, and a value too long for the row is cut with
-// `…` at its end. `overflow` reports whether collapsing hid anything.
-export function formatToolInput(input: Record<string, unknown>, width?: number) {
+// `…` at its end. `maxRows` keeps only that many rows. `overflow` reports whether collapsing hid
+// anything.
+export function formatToolInput(input: unknown, width?: number, maxRows?: number) {
   const rows: ToolInputRow[] = []
   let overflow = false
 
@@ -102,8 +103,17 @@ export function formatToolInput(input: Record<string, unknown>, width?: number) 
     row(head, scalar(item))
   }
 
-  object(input, 0)
-  return { rows, overflow }
+  if (isRecord(input) && Object.keys(input).length > 0) object(input, 0)
+  else if (Array.isArray(input) && input.length > 0) {
+    for (const element of input) {
+      if (isRecord(element) && Object.keys(element).length > 0) object(element, 1, dash(0))
+      else entry(dash(0), 0, element)
+    }
+  } else if (isRecord(input)) rows.push([{ text: "{}", kind: "punctuation" }])
+  else if (Array.isArray(input)) rows.push([{ text: "[]", kind: "punctuation" }])
+  else rows.push([scalar(input)])
+  if (maxRows === undefined || rows.length <= maxRows) return { rows, overflow }
+  return { rows: rows.slice(0, maxRows), overflow: true }
 }
 
 // `text` cut to at most `room` columns, its last column a `…` when anything was cut.
