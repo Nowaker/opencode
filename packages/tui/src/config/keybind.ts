@@ -116,6 +116,7 @@ export const CommandMap = {
   session_toggle_turn_time: "session.toggle.turn_time",
   session_toggle_turn_duration: "session.toggle.turn_duration",
   session_toggle_generic_tool_output: "session.toggle.generic_tool_output",
+  session_transcript_filter: "session.transcript_filter",
   session_queued_prompts: "session.queued_prompts",
   session_child_first: "session.child.first",
   session_child_cycle: "session.child.next",

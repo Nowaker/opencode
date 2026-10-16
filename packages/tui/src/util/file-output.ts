@@ -269,6 +269,31 @@ export function commandLanguage(command: string) {
   return languages.size === 1 ? [...languages][0] : undefined
 }
 
+// Whether a bash command only reads or searches files, by the same reading as commandLanguage:
+// every stage a reader or search (or `git show <ref>:<path>`), or a filter of the stage before.
+// One that writes anything, a redirect or `sed -i` included, is neither.
+export function bashFileAction(command: string): "read" | "search" | undefined {
+  let found: "read" | "search" | undefined
+  for (const parts of pipelines(command.replace(/\\\n/g, " "))) {
+    for (const [position, part] of parts.entries()) {
+      const words = commandWords(part)
+      const name = words[0] ? path.basename(words[0]) : undefined
+      if (!name) continue
+      if (words.some((word) => /^\d?>/.test(word))) return
+      if (position === 0 && name === "git" && words[1] === "show") {
+        if (!words.slice(2).some((word) => /^[^-][^:]*:.+/.test(word))) return
+        found ??= "read"
+        continue
+      }
+      if (SILENT.has(name) && position === 0) continue
+      if (!(position > 0 ? FILTERS.has(name) : READERS.has(name) || SEARCHERS.has(name))) return
+      if (name === "sed" && words.some((word) => /^-[a-zA-Z]*i/.test(word) || word.startsWith("--in-place"))) return
+      if (position === 0) found = SEARCHERS.has(name) ? "search" : (found ?? "read")
+    }
+  }
+  return found
+}
+
 // The languages of the files a reader or search command is given, `undefined` for a file whose
 // language is unknown. A directory or a pattern adds nothing.
 function files(name: string, words: string[]) {

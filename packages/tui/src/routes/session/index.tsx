@@ -15,6 +15,7 @@ import {
   untrack,
   useContext,
 } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
@@ -32,7 +33,7 @@ import {
   TextAttributes,
   RGBA,
   type MouseEvent,
-  type Renderable,
+  Renderable,
   StyledText,
   TextRenderable,
   treeSitterToTextChunks,
@@ -151,6 +152,8 @@ import { cellText, idUnder, markOwnIds } from "../../ui/id-click"
 import { secondTicker } from "../../util/ticker"
 import { onClick } from "../../ui/click"
 import { DialogModel } from "../../component/dialog-model"
+import { TranscriptFilter } from "./transcript-filter"
+import { DialogTranscriptFilter } from "./dialog-transcript-filter"
 
 addDefaultParsers(parsers.parsers)
 
@@ -204,6 +207,7 @@ const sessionBindingCommands = [
   "session.toggle.actions",
   "session.toggle.scrollbar",
   "session.toggle.generic_tool_output",
+  "session.transcript_filter",
   "session.first",
   "session.last",
   "session.messages_last_user",
@@ -249,9 +253,8 @@ const context = createContext<{
   sessionID: string
   conceal: () => boolean
   thinkingMode: () => ThinkingMode
-  showThinking: () => boolean
+  filter: () => TranscriptFilter.Selection
   footer: (element: TuiConfig.FooterElement, type: TuiConfig.TimestampType, id: string, partID?: string) => boolean
-  showDetails: () => boolean
   showGenericToolOutput: (tool?: string) => boolean
   diffWrapMode: () => "word" | "none"
   providers: () => ReadonlyMap<string, Provider>
@@ -354,9 +357,14 @@ export function Session() {
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
-  const showThinking = createMemo(() => true)
-  const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
-  const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  // "Show/Hide tool details" and the export's defaults read the transcript filter's own rows. A store
+  // so a toggle reaches only the entries of the kind it changes.
+  const [filterStore, setFilterStore] = createStore(TranscriptFilter.resolve(tuiConfig, kv))
+  createEffect(() => setFilterStore(reconcile(TranscriptFilter.resolve(tuiConfig, kv))))
+  const filter = (): TranscriptFilter.Selection => filterStore
+  const showThinking = () => filter().thinking.shown
+  const showDetails = () => filter().tools.shown
+  const showAssistantMetadata = () => filter().footers.shown
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
@@ -577,7 +585,7 @@ export function Session() {
     const targets = navigationTargets(messages(), (messageID) => sync.data.part[messageID] ?? [], scope)
     const anchor = scroll.y + 1
     const target = pickNavigationTarget(
-      scroll.getChildren().filter((child) => targets.has(child.id)),
+      scroll.getChildren().filter((child) => child.visible && targets.has(child.id)),
       anchor,
       direction,
     )
@@ -991,12 +999,24 @@ export function Session() {
       },
     },
     {
-      title: showDetails() ? "Hide tool details" : "Show tool details",
+      title: showDetails() ? "Hide tool calls" : "Show tool calls",
       value: "session.toggle.actions",
       category: "Session",
       run: () => {
-        setShowDetails((prev) => !prev)
+        const message = TranscriptFilter.toggleKind(tuiConfig, kv, "tools")
+        if (message) toast.show({ message, variant: "info" })
         dialog.clear()
+      },
+    },
+    {
+      title: "Filter transcript",
+      value: "session.transcript_filter",
+      category: "Session",
+      slash: {
+        name: "filter",
+      },
+      run: () => {
+        dialog.replace(() => <DialogTranscriptFilter sessionID={route.sessionID} />)
       },
     },
     {
@@ -1495,6 +1515,13 @@ export function Session() {
     }
   })
 
+  const everythingHidden = createMemo(
+    () =>
+      TranscriptFilter.filtering(filter()) &&
+      messages().length > 0 &&
+      !TranscriptFilter.anyShown(messagesBeforeRevert(), (messageID) => sync.data.part[messageID] ?? [], filter()),
+  )
+
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
@@ -1508,9 +1535,8 @@ export function Session() {
           sessionID: route.sessionID,
           conceal,
           thinkingMode,
-          showThinking,
+          filter,
           footer,
-          showDetails,
           showGenericToolOutput,
           diffWrapMode,
           providers,
@@ -1662,6 +1688,12 @@ export function Session() {
                     </>
                   )}
                 </For>
+                <Show when={everythingHidden()}>
+                  <FilteredNotice
+                    selection={filter()}
+                    onOpen={() => dialog.replace(() => <DialogTranscriptFilter sessionID={route.sessionID} />)}
+                  />
+                </Show>
               </scrollbox>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
@@ -1727,6 +1759,26 @@ export function Session() {
         </box>
       </context.Provider>
     </LocationProvider>
+  )
+}
+
+// One line in place of a transcript the filter hides entirely, naming what it hides; a click
+// opens the filter.
+function FilteredNotice(props: { selection: TranscriptFilter.Selection; onOpen: () => void }) {
+  const { theme } = useTheme()
+  const shortcut = useCommandShortcut("session.transcript_filter")
+  const hidden = createMemo(() =>
+    TranscriptFilter.Kinds.filter((kind) => !props.selection[kind.key].shown)
+      .map((kind) => kind.label.toLowerCase())
+      .join(", "),
+  )
+  return (
+    <box paddingLeft={3} marginTop={1} flexShrink={0} {...onClick(props.onOpen)}>
+      <text fg={theme.textMuted} wrapMode="none">
+        Everything here is hidden by the transcript filter ({hidden()}).{" "}
+        <span style={{ fg: theme.text }}>{shortcut() || "/filter"}</span> changes it
+      </text>
+    </box>
   )
 }
 
@@ -1818,12 +1870,14 @@ function UserMessage(props: {
   const metadataVisible = createMemo(() => queued() || time() || messageID())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
+  const shown = createMemo(() => ctx.filter()[TranscriptFilter.userKind(props.parts)].shown)
 
   return (
     <>
       <Show when={text()}>
         <box
           id={props.message.id}
+          visible={shown()}
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
           border={["left"]}
           borderColor={color()}
@@ -1893,6 +1947,7 @@ function UserMessage(props: {
       </Show>
       <Show when={compaction()}>
         <box
+          visible={ctx.filter().compaction.shown}
           marginTop={1}
           border={["top"]}
           title={
@@ -1920,9 +1975,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     Model.label(ctx.providers(), props.message.providerID, props.message.modelID, ctx.tui.model_label),
   )
 
-  const final = createMemo(() => {
-    return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
-  })
+  const final = createMemo(() => TranscriptFilter.finalAnswer(props.message))
+  // A response still being written and a block still thinking show whatever the filter says.
+  const visible = (part: Part, entry?: TranscriptFilter.Entry) => {
+    const selection = ctx.filter()
+    if (part.type === "tool") return TranscriptFilter.showsTool(selection, part, entry)
+    if (part.type === "reasoning") return part.time.end === undefined || selection.thinking.shown
+    if (part.type === "text") return !props.message.time.completed || selection[final() ? "answers" : "notes"].shown
+    return true
+  }
 
   const duration = createMemo(() => {
     if (!final()) return 0
@@ -1982,20 +2043,30 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       <For each={props.parts}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
+          // Worked out once per call, not on every filter change: a bash command is parsed for it.
+          const entry = createMemo(() => (part.type === "tool" ? TranscriptFilter.toolEntry(part) : undefined))
           return (
             <Show when={component()}>
-              <Dynamic
-                last={index() === props.parts.length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-              />
+              <Filtered visible={visible(part, entry())}>
+                <Dynamic
+                  last={index() === props.parts.length - 1}
+                  component={component()}
+                  part={part as any}
+                  message={props.message}
+                />
+              </Filtered>
             </Show>
           )
         }}
       </For>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
-        <box paddingTop={1} paddingLeft={3}>
+        <box
+          paddingTop={1}
+          paddingLeft={3}
+          visible={props.parts.some(
+            (x) => x.type === "tool" && x.tool === "task" && TranscriptFilter.showsTool(ctx.filter(), x),
+          )}
+        >
           <text fg={theme.text}>
             {childShortcut()}
             <span style={{ fg: theme.textMuted }}> view subagents</span>
@@ -2020,6 +2091,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Show when={props.message.error && props.message.error.name !== "MessageAbortedError"}>
         <box
+          visible={ctx.filter().errors.shown}
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
           border={["left"]}
           paddingTop={1}
@@ -2043,7 +2115,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError" || completed()}>
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
+          <box visible={ctx.filter().footers.shown} ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
             <text ref={markOwnIds} marginTop={1} {...onClick(openModel)}>
               <span
                 style={{
@@ -2071,6 +2143,17 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Switch>
     </>
   )
+}
+
+// A part the transcript filter hides stays mounted and only leaves the layout, so showing it again
+// costs a layout pass rather than a fresh render, and it comes back as it was, expanded or not.
+function Filtered(props: { visible: boolean; children: JSX.Element }) {
+  const nodes = children(() => props.children)
+  createEffect(() => {
+    const visible = props.visible
+    for (const node of nodes.toArray()) if (node instanceof Renderable) node.visible = visible
+  })
+  return <>{nodes()}</>
 }
 
 const PART_MAPPING = {
@@ -2226,15 +2309,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 // Pending messages moved to individual tool pending functions
 
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
-  const ctx = use()
   const display = createMemo(() => toolDisplay(props.part.tool))
-
-  // Hide tool if showDetails is false and tool completed successfully
-  const shouldHide = createMemo(() => {
-    if (ctx.showDetails()) return false
-    if (props.part.state.status !== "completed") return false
-    return true
-  })
 
   const toolprops = {
     get metadata() {
@@ -2255,55 +2330,53 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   }
 
   return (
-    <Show when={!shouldHide()}>
-      <Switch>
-        <Match when={display() === "bash"}>
-          <Shell {...toolprops} />
-        </Match>
-        <Match when={display() === "glob"}>
-          <Glob {...toolprops} />
-        </Match>
-        <Match when={display() === "read"}>
-          <Read {...toolprops} />
-        </Match>
-        <Match when={display() === "grep"}>
-          <Grep {...toolprops} />
-        </Match>
-        <Match when={display() === "webfetch"}>
-          <WebFetch {...toolprops} />
-        </Match>
-        <Match when={display() === "websearch"}>
-          <WebSearch {...toolprops} />
-        </Match>
-        <Match when={display() === "write"}>
-          <Write {...toolprops} />
-        </Match>
-        <Match when={display() === "edit"}>
-          <Edit {...toolprops} />
-        </Match>
-        <Match when={display() === "task"}>
-          <Task {...toolprops} />
-        </Match>
-        <Match when={display() === "execute"}>
-          <Execute {...toolprops} />
-        </Match>
-        <Match when={display() === "apply_patch"}>
-          <ApplyPatch {...toolprops} />
-        </Match>
-        <Match when={display() === "todowrite"}>
-          <TodoWrite {...toolprops} />
-        </Match>
-        <Match when={display() === "question"}>
-          <Question {...toolprops} />
-        </Match>
-        <Match when={display() === "skill"}>
-          <Skill {...toolprops} />
-        </Match>
-        <Match when={true}>
-          <GenericTool {...toolprops} />
-        </Match>
-      </Switch>
-    </Show>
+    <Switch>
+      <Match when={display() === "bash"}>
+        <Shell {...toolprops} />
+      </Match>
+      <Match when={display() === "glob"}>
+        <Glob {...toolprops} />
+      </Match>
+      <Match when={display() === "read"}>
+        <Read {...toolprops} />
+      </Match>
+      <Match when={display() === "grep"}>
+        <Grep {...toolprops} />
+      </Match>
+      <Match when={display() === "webfetch"}>
+        <WebFetch {...toolprops} />
+      </Match>
+      <Match when={display() === "websearch"}>
+        <WebSearch {...toolprops} />
+      </Match>
+      <Match when={display() === "write"}>
+        <Write {...toolprops} />
+      </Match>
+      <Match when={display() === "edit"}>
+        <Edit {...toolprops} />
+      </Match>
+      <Match when={display() === "task"}>
+        <Task {...toolprops} />
+      </Match>
+      <Match when={display() === "execute"}>
+        <Execute {...toolprops} />
+      </Match>
+      <Match when={display() === "apply_patch"}>
+        <ApplyPatch {...toolprops} />
+      </Match>
+      <Match when={display() === "todowrite"}>
+        <TodoWrite {...toolprops} />
+      </Match>
+      <Match when={display() === "question"}>
+        <Question {...toolprops} />
+      </Match>
+      <Match when={display() === "skill"}>
+        <Skill {...toolprops} />
+      </Match>
+      <Match when={true}>
+        <GenericTool {...toolprops} />
+      </Match>
+    </Switch>
   )
 }
 

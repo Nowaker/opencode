@@ -1,4 +1,4 @@
-import type { BaseRenderable, BoxRenderable } from "@opentui/core"
+import { Renderable, type BaseRenderable, type BoxRenderable } from "@opentui/core"
 
 const previousByParent = new WeakMap<
   BaseRenderable,
@@ -17,9 +17,15 @@ export function setPreLayoutSiblingMargin(el: BoxRenderable, margin: (previous?:
   }
 }
 
+// A renderable hidden with `visible` takes no room, so the one before it is the last one shown.
+// Solid's empty placeholders are not Renderables and still count, as they always have.
 function previousSiblings(parent: BaseRenderable, frameID: number) {
   const previous = new WeakMap<BaseRenderable, BaseRenderable | undefined>()
-  parent.getChildren().forEach((child, index, children) => previous.set(child, children[index - 1]))
+  let last: BaseRenderable | undefined
+  for (const child of parent.getChildren()) {
+    previous.set(child, last)
+    if (child.visible || !(child instanceof Renderable)) last = child
+  }
   previousByParent.set(parent, { frameID, previous })
   return previous
 }

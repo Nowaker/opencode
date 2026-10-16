@@ -81,6 +81,7 @@ export const Definitions = {
   session_toggle_turn_time: keybind("none", "Toggle assistant turn completion times"),
   session_toggle_turn_duration: keybind("none", "Toggle assistant turn durations"),
   session_toggle_generic_tool_output: keybind("none", "Toggle generic tool output"),
+  session_transcript_filter: keybind("<leader>f", "Choose what the session transcript shows"),
   session_queued_prompts: keybind("<leader>q", "Manage queued prompts"),
   session_child_first: keybind("<leader>down", "Go to first child session"),
   session_child_cycle: keybind("right", "Go to next child session"),
@@ -150,7 +151,7 @@ export const Definitions = {
   messages_undo_with_files: keybind("none", "Undo message and its file changes"),
   messages_redo: keybind("<leader>r", "Redo message"),
   messages_toggle_conceal: keybind("<leader>h", "Toggle code block concealment in messages"),
-  tool_details: keybind("none", "Toggle tool details visibility"),
+  tool_details: keybind("none", "Show or hide tool calls"),
   display_thinking: keybind("none", "Toggle thinking blocks visibility"),
 
   prompt_submit: keybind("none", "Submit prompt"),

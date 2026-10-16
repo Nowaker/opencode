@@ -575,8 +575,47 @@ export function toolOutputLimit(config: ToolOutput | undefined, tool: string, gr
   return value === "never" ? undefined : value
 }
 
+const showKind = (description: string) =>
+  Schema.optional(Schema.Boolean).annotate({ description: `${description} (default: true)` })
+export const TranscriptShow = Schema.Struct({
+  prompts: showKind("Your prompts"),
+  answers: showKind("Each turn's final response"),
+  questions: showKind("Questions the agent asked, with your answers"),
+  errors: showKind("A failed turn's error box, and failed tool calls whatever their own kind says"),
+  notices: showKind("Messages left for you that the model never sees, such as Vibeterm's user_message"),
+  todos: showKind("Todo list updates"),
+  subagents: showKind("Subagent tasks, and the hint to view them"),
+  notes: showKind("Text the agent writes between tool calls before its final response"),
+  file_actions: Schema.optional(
+    Schema.Union([Schema.Boolean, Schema.Array(Schema.Literals(["edits", "reads", "searches"]))]),
+  ).annotate({
+    description: [
+      "File reads, edits and searches: the read, edit, write, apply_patch, grep, glob and list tools, and bash",
+      "commands that only read or search files (cat, head, tail, sed -n, grep, rg, git show <ref>:<path>).",
+      "true shows them all, false none, or a list of 'edits', 'reads' and 'searches' shows only those (default: true)",
+    ].join(" "),
+  }),
+  tools: Schema.optional(Schema.Union([Schema.Boolean, Schema.Array(Schema.String)])).annotate({
+    description: [
+      "Every other tool call, plugin and MCP tools included: true shows them all, false none, or a list of",
+      "tool names such as ['bash', 'webfetch'] shows only those. Replaces 'Show/Hide tool details' (default: true)",
+    ].join(" "),
+  }),
+  thinking: showKind("Thinking blocks; /thinking still decides whether they are expanded"),
+  compaction: showKind("The divider where the session was compacted"),
+  footers: showKind("The footer under each turn: agent, model and whatever `footer` selects"),
+}).annotate({
+  description: [
+    "What the session transcript shows, by kind of entry, the same choices as the transcript filter dialog",
+    "(ctrl+x f). A finished entry of a hidden kind is left out with no gap; a running tool call or thinking block",
+    "and a response still being written always show. A kind set here decides on every start and its",
+    "dialog toggle lasts until the TUI exits; unset, the dialog's choices are remembered",
+  ].join(" "),
+})
+
 export const TranscriptMaxMessagesDefault = 100
 export const Transcript = Schema.Struct({
+  show: Schema.optional(TranscriptShow),
   max_messages: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))).annotate({
     description:
       "Most recent messages kept loaded per session; older ones are hidden behind a divider that loads them back (default: 100)",

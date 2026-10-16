@@ -155,7 +155,7 @@ Compact the current session. _Alias_: `/summarize`
 
 ### details
 
-Toggle tool execution details.
+Show or hide tool calls: the **Tool calls** row of the [transcript filter](#transcript-filter).
 
 ```bash frame="none"
 /details
@@ -196,6 +196,18 @@ Export current conversation to Markdown and open in your default editor. Uses th
 ```
 
 **Keybind:** `ctrl+x x`
+
+---
+
+### filter
+
+Open the [transcript filter](#transcript-filter), to choose which kinds of entries the session transcript shows.
+
+```bash frame="none"
+/filter
+```
+
+**Keybind:** `ctrl+x f`
 
 ---
 
@@ -532,6 +544,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `sidebar.session_id` - Show the session ID on the line below the session title in the sidebar, in the muted text color (default: shown only in development builds). The `/session-id` command toggles it. See [Settings with a toggle](#settings-with-a-toggle).
 - `transcript.max_messages` - How many of a session's most recent messages the TUI keeps loaded (default: `100`). Older messages are hidden behind a divider showing how many there are, with actions to load 50 more from either edge of the gap or all of them. The same actions are in the command palette and `/load-hidden` loads all of them.
 - `transcript.keep_first_prompt` - Keep the session's first prompt at the top, above the divider, when older messages are hidden (default: `true`).
+- `transcript.show` - Which kinds of entries the session transcript shows, the same choices as the [transcript filter](#transcript-filter) dialog. See [Settings with a toggle](#settings-with-a-toggle).
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
 - `syntax` - Controls syntax highlighting in tool calls. [Learn more](#syntax-highlighting).
 - `sidebar.order` - Session sidebar sections in display order, for example `["todo", "context"]`. Built-in sections are `context`, `mcp`, `lsp`, `todo`, and `files`; plugin sections use their plugin id. Sections you do not list follow in their default order. The session title always stays first.
@@ -558,10 +571,51 @@ Several settings can also be flipped while OpenCode runs, from the command palet
 | `keep_scroll_on_submit` | `/keep-scroll` |
 | `footer.time`, `footer.duration`, `timestamps`, `turn_timing` | `/timestamps`, `/turn-times`, `/turn-durations` |
 | `tool_output.collapse.generic` | **Show generic tool output** / **Hide generic tool output** |
+| `transcript.show` | `/filter`, one kind at a time; **Show tool calls** / **Hide tool calls** for `transcript.show.tools` |
 
 A toggle remembered on one run never overrides a value you set in tui.json later.
 
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
+
+### Transcript filter
+
+`/filter`, `ctrl+x f` or **Filter transcript** in the command palette lists every kind of entry the session transcript draws, most important first, with how many of each are loaded. A ticked kind shows. Up and down move, space or a click toggles, the wheel scrolls, and enter or esc closes. The transcript changes as you toggle, behind the dialog.
+
+| Kind | What it is | `transcript.show` key |
+| --- | --- | --- |
+| Prompts | What you sent | `prompts` |
+| Final answers | Each turn's final response | `answers` |
+| Questions | Questions the agent asked, with your answers | `questions` |
+| Errors | A failed turn's error box, and every failed tool call, whatever its own kind says | `errors` |
+| Notices | Messages left for you that the model never sees, such as Vibeterm's `user_message` | `notices` |
+| Todos | Todo list updates | `todos` |
+| Subagents | Subagent tasks and the hint to view them | `subagents` |
+| Progress notes | Text the agent writes between tool calls, before its final response | `notes` |
+| File actions | The `read`, `edit`, `write`, `apply_patch`, `grep`, `glob` and `list` tools, and bash commands that only read or search files: `cat`, `head`, `tail`, `sed` without `-i`, `grep`, `rg` and `git show <ref>:<path>`, with no redirect | `file_actions` |
+| Tool calls | Every other tool call, plugin and MCP tools included | `tools` |
+| Thinking | Thinking blocks; `/thinking` still expands or collapses them | `thinking` |
+| Compaction markers | The divider where the session was compacted | `compaction` |
+| Turn footers | The line under each turn: agent, model and what [`footer`](#footer) selects | `footers` |
+
+Unticking **Tool calls** opens a second level below it: this session's ten most used tools and **Other tools**, all unticked, so ticking some shows only those. **File actions** works the same way over **Edits, writes and patches**, **Reads** and **Searches**. The counts and the ten tools are worked out once, when the dialog opens.
+
+A hidden entry leaves no gap. A tool call still running, a thinking block still thinking and a response still being written show whatever the filter says, so a working turn is never blank. When everything loaded is hidden, the transcript says so in one line, which opens the dialog when clicked.
+
+In tui.json each key takes `true` or `false`; `tools` also takes a list of tool names, and `file_actions` a list of `"edits"`, `"reads"` and `"searches"`, to show only those:
+
+```json title="tui.json"
+{
+  "transcript": {
+    "show": {
+      "thinking": false,
+      "tools": ["bash", "webfetch"],
+      "file_actions": ["edits"]
+    }
+  }
+}
+```
+
+A key set there decides on every start and the dialog's toggle for that kind lasts until OpenCode exits; unset kinds are remembered in `kv.json`. **Show tool calls** / **Hide tool calls** is the same toggle as the **Tool calls** row, and the export dialog starts from the **Thinking**, **Tool calls** and **Turn footers** rows.
 
 ### Footer
 
