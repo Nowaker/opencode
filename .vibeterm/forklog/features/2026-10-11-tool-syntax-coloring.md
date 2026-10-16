@@ -12,15 +12,16 @@
 - First local commit: `dfbf7f6836`
 - Current local commit(s): `dfbf7f6836`, `65861b2734`, `60edf2a182`, `8a360b4aa0`,
   `b23685155c`, `91e33c557e`, `84d27d0f49`, `8e3a183698`, `0ab6637c9d`, `4c00002ca0`, `246c6c10f2`,
-  `215ff73874`
+  `215ff73874`, `6bea4bf03e`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
-- Upstream: issues #54700-#54703, #54957; PRs
+- Upstream: issues #54700-#54703, #54957, #56006; PRs
   [#54704](https://github.com/anomalyco/opencode/pull/54704) (bash),
   [#54705](https://github.com/anomalyco/opencode/pull/54705) (heredoc, stacked on #54704),
   [#54706](https://github.com/anomalyco/opencode/pull/54706) (file languages),
   [#54707](https://github.com/anomalyco/opencode/pull/54707) (tool input),
-  [#54968](https://github.com/anomalyco/opencode/pull/54968) (tool output, stacked on #54704), all against `v1`.
+  [#54968](https://github.com/anomalyco/opencode/pull/54968) (tool output, stacked on #54704),
+  [#56007](https://github.com/anomalyco/opencode/pull/56007) (file contents in tool output, issue #56006, stacked on #54968), all against `v1`.
   **Needs a v2 port later.**
 
 ## Original request
@@ -78,6 +79,7 @@ approved "Build all four". The user's words on defaults:
 | `0ab6637c9d` | 2026-10-12 | generic tool output colored by `syntax.tool_output` (tool name or glob -> language, `auto`, `none`; unset = plain); JSON sniff for `auto`; collapsed preview takes the whole output's highlights | `outputLanguage`, `detectOutputLanguage`, `previewHighlights` in `util/tool-output.ts`; `ToolOutputText`, `StyledOutput` in `routes/session/index.tsx`; `test/cli/tui/tool-output.test.tsx`, `test/util/tool-output.test.ts` |
 | `84d27d0f49` | 2026-10-12 | collapsed tool input: one row per value cut to the measured width; compact YAML lists | `formatToolInput(input, width)` in `util/tool-input.ts`; `inputWidth`/`onWidth` in `GenericTool`/`ToolInput`; `test/cli/tui/tool-input.test.tsx` |
 | `215ff73874` | 2026-10-14 | `tool_input.collapse` for plugin/MCP tools (always a block, row cap); `syntax.tool_output` `json-as-yaml` and `tool_output.collapse_yaml`; an expanded block keeps its hint | `toolInputSetting`, `toolOutputYamlLimit`, `collapse_yaml` in `config/index.tsx`; `formatToolInput(value, width, maxRows)` on any JSON value; `JSON_AS_YAML`, `parseOutputJson` in `util/tool-output.ts`; `inputCollapsed`, `yamlOutput`, `outputView` in `GenericTool` |
+| `6bea4bf03e` | 2026-10-15 | `syntax.file_output`: read and search output colored by each file's language, prefixes muted, previews like expanded; read and grep rows click open | `util/file-output.ts` (`bashOutputModel`, `readOutputModel`, `grepToolOutputModel`, `genericOutputModel`, `previewLines`); `FileOutputText`, `fileOutputChunks`, `useFoundOutput` in `routes/session/index.tsx`; `toolOutputSetting` in `util/tool-output.ts` |
 
 Docs: `Syntax highlighting` section in `packages/web/src/content/docs/tui.mdx`.
 
@@ -124,6 +126,10 @@ Reported by `ses_ed1e2b932ffe6tTqhsOiGuYXRE`; see its
   `browser` calls: input capped to 4 one-row values, JSON output as 5 YAML
   rows, text output 3 lines; installed `vt-302` on both hosts. Fork-only.
   Evidence: `215ff73874`; frames at 40/80/160; PTY at 80/160 with a real click.
+- 2026-10-15 [`ses_ed1e2b932ffe6tTqhsOiGuYXRE`](../sessions/2026-10-15-file-output-syntax.md) -
+  tool history screened; `syntax.file_output` colors read and search output by
+  file; installed `vt-308` on both hosts; v1 PR [#56007](https://github.com/anomalyco/opencode/pull/56007) on #54968.
+  Evidence: `6bea4bf03e`; frames at 40/80/160; PTY at 80/160 on the installed build.
 
 ## Future ideas
 
