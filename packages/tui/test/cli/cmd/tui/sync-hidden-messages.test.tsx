@@ -137,6 +137,27 @@ test("loading below then above fills the gap from both edges", async () => {
   }
 })
 
+test("a 100-message page loads 100 from the edge it names", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const requests: URL[] = []
+  const { app, sync } = await mount(serve(300, requests), tmp.path, { transcript: { max_messages: 3 } })
+  try {
+    await sync.session.sync(sessionID)
+
+    await sync.session.load(sessionID, "below", 100)
+    expect(requests.at(-1)?.searchParams.get("limit")).toBe("100")
+    expect(ids(sync.data.message[sessionID])).toEqual([0, ...range(197, 300)])
+    expect(sync.session.hidden(sessionID)).toMatchObject({ head: 1, count: 196 })
+
+    await sync.session.load(sessionID, "above", 100)
+    expect(ids(sync.data.message[sessionID])).toEqual([...range(0, 101), ...range(197, 300)])
+    expect(sync.session.hidden(sessionID)).toMatchObject({ head: 101, count: 96 })
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("loading above without a pinned prompt starts from the session's oldest message", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")

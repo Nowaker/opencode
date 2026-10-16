@@ -20,7 +20,8 @@ import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
-import { HIDDEN_PAGE_SIZE, useSync, type HiddenEdge, type HiddenMessages } from "../../context/sync"
+import { useSync, type HiddenEdge } from "../../context/sync"
+import { HiddenMessagesDivider, loadAllNote } from "./hidden-divider"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -212,7 +213,9 @@ const sessionBindingCommands = [
   "session.last",
   "session.messages_last_user",
   "session.hidden.above",
+  "session.hidden.above.100",
   "session.hidden.below",
+  "session.hidden.below.100",
   "session.hidden.all",
   "session.message.next",
   "session.message.previous",
@@ -602,7 +605,7 @@ export function Session() {
   // fixed scrollTop, so the first visible block is put back on the row it was
   // on. The scroll position is set, not adjusted, so another layout listener
   // correcting the same change cannot make it move twice.
-  async function loadHidden(edge: HiddenEdge) {
+  async function loadHidden(edge: HiddenEdge, size?: number) {
     dialog.clear()
     if (!hidden()) return
     const atBottom = scroll.scrollTop >= scroll.scrollHeight - scroll.viewport.height - 1
@@ -611,7 +614,7 @@ export function Session() {
       : scroll.getChildren().find((child) => child.y + child.height > scroll.viewport.y)
     const row = anchor ? anchor.y - scroll.viewport.y : 0
     const before = messages().length
-    await sync.session.load(route.sessionID, edge)
+    await sync.session.load(route.sessionID, edge, size)
     if (!anchor || messages().length === before) return
     renderer.root.once("layout-changed", () => {
       if (scroll.isDestroyed || anchor.isDestroyed) return
@@ -1172,21 +1175,35 @@ export function Session() {
       },
     },
     {
-      title: `Load ${HIDDEN_PAGE_SIZE} hidden messages above the divider`,
+      title: "Load 50 hidden messages above the divider",
       value: "session.hidden.above",
       category: "Session",
-      enabled: hidden() !== undefined,
-      run: () => void loadHidden("above"),
+      enabled: (hidden()?.count ?? 0) > 50,
+      run: () => void loadHidden("above", 50),
     },
     {
-      title: `Load ${HIDDEN_PAGE_SIZE} hidden messages below the divider`,
+      title: "Load 100 hidden messages above the divider",
+      value: "session.hidden.above.100",
+      category: "Session",
+      enabled: (hidden()?.count ?? 0) > 100,
+      run: () => void loadHidden("above", 100),
+    },
+    {
+      title: "Load 50 hidden messages below the divider",
       value: "session.hidden.below",
       category: "Session",
-      enabled: hidden() !== undefined,
-      run: () => void loadHidden("below"),
+      enabled: (hidden()?.count ?? 0) > 50,
+      run: () => void loadHidden("below", 50),
     },
     {
-      title: "Load all hidden messages",
+      title: "Load 100 hidden messages below the divider",
+      value: "session.hidden.below.100",
+      category: "Session",
+      enabled: (hidden()?.count ?? 0) > 100,
+      run: () => void loadHidden("below", 100),
+    },
+    {
+      title: `Load all hidden messages${loadAllNote(hidden()?.count ?? 0)}`,
       value: "session.hidden.all",
       category: "Session",
       enabled: hidden() !== undefined,
@@ -1585,7 +1602,12 @@ export function Session() {
                     <>
                       <Show when={hidden()?.head === index() ? hidden() : undefined}>
                         {(value) => (
-                          <HiddenMessagesDivider hidden={value()} first={index() === 0} onLoad={loadHidden} />
+                          <HiddenMessagesDivider
+                            hidden={value()}
+                            width={contentWidth()}
+                            first={index() === 0}
+                            onLoad={loadHidden}
+                          />
                         )}
                       </Show>
                       <Switch>
@@ -1778,63 +1800,6 @@ function FilteredNotice(props: { selection: TranscriptFilter.Selection; onOpen: 
         Everything here is hidden by the transcript filter ({hidden()}).{" "}
         <span style={{ fg: theme.text }}>{shortcut() || "/filter"}</span> changes it
       </text>
-    </box>
-  )
-}
-
-// Marks where messages are not loaded and offers to load them, centered on a
-// horizontal rule. "above" fills the gap from its older edge, "below" from its
-// newer edge; a gap no bigger than one page only offers to load all of it.
-function HiddenMessagesDivider(props: { hidden: HiddenMessages; first: boolean; onLoad: (edge: HiddenEdge) => void }) {
-  const ctx = use()
-  const { theme } = useTheme()
-  const renderer = useRenderer()
-  const label = createMemo(() => {
-    const count = props.hidden.count
-    return ` ${count.toLocaleString("en-US")} ${count === 1 ? "message" : "messages"} hidden `
-  })
-  const rule = createMemo(() => {
-    const space = Math.max(2, ctx.width - label().length)
-    return ["─".repeat(Math.floor(space / 2)), "─".repeat(space - Math.floor(space / 2))]
-  })
-  const actions = createMemo((): { edge: HiddenEdge; label: string }[] =>
-    props.hidden.count > HIDDEN_PAGE_SIZE
-      ? [
-          { edge: "above", label: `load ${HIDDEN_PAGE_SIZE} above` },
-          { edge: "below", label: `load ${HIDDEN_PAGE_SIZE} below` },
-          { edge: "all", label: "load all" },
-        ]
-      : [{ edge: "all", label: `load all ${props.hidden.count}` }],
-  )
-  return (
-    <box id="hidden-messages" marginTop={props.first ? 0 : 1} flexShrink={0}>
-      <text fg={theme.border} wrapMode="none">
-        {rule()[0]}
-        <span style={{ fg: theme.textMuted }}>{label()}</span>
-        {rule()[1]}
-      </text>
-      <box flexDirection="row" justifyContent="center" gap={3}>
-        <Show when={!props.hidden.loading} fallback={<text fg={theme.textMuted}>loading…</text>}>
-          <For each={actions()}>
-            {(action) => {
-              const [hover, setHover] = createSignal(false)
-              return (
-                <text
-                  fg={hover() ? theme.text : theme.primary}
-                  onMouseOver={() => setHover(true)}
-                  onMouseOut={() => setHover(false)}
-                  onMouseUp={() => {
-                    if (renderer.getSelection()?.getSelectedText()) return
-                    props.onLoad(action.edge)
-                  }}
-                >
-                  {action.label}
-                </text>
-              )
-            }}
-          </For>
-        </Show>
-      </box>
     </box>
   )
 }
