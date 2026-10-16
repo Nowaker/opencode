@@ -41,6 +41,8 @@ import { mergeFailedPrompt } from "../../prompt/merge"
 import { Identifier } from "@opencode-ai/core/id/id"
 import { DialogStash } from "../dialog-stash"
 import { DialogPaste } from "../dialog-paste"
+import { DialogPasteOptions, type PasteOrigin, type PasteResult } from "../dialog-paste-options"
+import { PasteOptionsDefault, PasteOptionsKVKey, readPasteOptions } from "../../prompt/paste-options"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v2"
@@ -176,6 +178,12 @@ let undoDepth = PromptUndoDepthDefault
 // Shared by every prompt so that undo survives the remount after a route change, which is what
 // lets undo after a submit bring back what was sent.
 const promptUndo = createPromptUndo({ depth: () => undoDepth })
+// What each placeholder from the paste dialog came from, by its text, so a click on it reopens the
+// dialog with the same source and options. Shared for the same reason as the undo history.
+const pasteOrigins = new Map<string, PasteOrigin>()
+// The last paste from the paste dialog and the prompt text right after it: undo while the prompt is
+// still that takes the paste back and reopens the dialog with it, without reading the clipboard.
+let lastPaste: { input: string; origin: PasteOrigin } | undefined
 
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
@@ -1191,7 +1199,17 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: inputTarget() !== undefined && !disabled(),
       commands: [
-        { name: "input.undo", title: "Undo in prompt", category: "Prompt", run: () => stepUndo("undo") },
+        {
+          name: "input.undo",
+          title: "Undo in prompt",
+          category: "Prompt",
+          run: () => {
+            const reopen = lastPaste?.input === store.prompt.input ? lastPaste.origin : undefined
+            lastPaste = undefined
+            stepUndo("undo")
+            if (reopen) queueMicrotask(() => openPasteDialog(reopen))
+          },
+        },
         { name: "input.redo", title: "Redo in prompt", category: "Prompt", run: () => stepUndo("redo") },
       ],
     }
@@ -1596,6 +1614,11 @@ export function Prompt(props: PromptProps) {
       }
     }
 
+    if (tuiConfig.prompt?.paste_mode === "dialog") {
+      openPasteDialog({ source: normalizedText, options: readPasteOptions(kv.get(PasteOptionsKVKey)) })
+      return
+    }
+
     const summary = pasteSummary(pastedContent, tuiConfig.prompt?.paste_summary)
     if (summary && kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)) {
       pasteText(pastedContent, summary)
@@ -1679,6 +1702,13 @@ export function Prompt(props: PromptProps) {
     const part = store.prompt.parts[store.extmarkToPartIndex.get(extmark.id)!]
     if (part?.type !== "text") return false
     input.cursorOffset = extmark.end
+    if (tuiConfig.prompt?.paste_mode === "dialog") {
+      openPasteDialog(
+        pasteOrigins.get(part.text) ?? { source: part.text, options: { ...PasteOptionsDefault } },
+        extmark.id,
+      )
+      return true
+    }
     const original = part.text
     let text = original
     let inline = false
@@ -1696,6 +1726,37 @@ export function Prompt(props: PromptProps) {
       },
     )
     return true
+  }
+
+  // The paste dialog, for a new paste or for the placeholder `extmarkId`, which its result replaces.
+  function openPasteDialog(origin: PasteOrigin, extmarkId?: number) {
+    let result: PasteResult | undefined
+    dialog.replace(
+      () => <DialogPasteOptions origin={origin} color={borderHighlight()} onPaste={(value) => (result = value)} />,
+      () => {
+        if (result) placePaste(result, extmarkId)
+      },
+    )
+  }
+
+  function placePaste(result: PasteResult, extmarkId?: number) {
+    if (!input || input.isDestroyed) return
+    const text = normalizeLineEndings(result.text)
+    if (!result.inline && text) pasteOrigins.set(text, result.origin)
+    if (pasteOrigins.size > 100) pasteOrigins.delete(pasteOrigins.keys().next().value!)
+    if (extmarkId !== undefined) return replacePaste(extmarkId, text, result.inline)
+    if (!text) return
+    if (!undoApplying) promptUndo.observe(undoState())
+    promptUndo.split()
+    if (result.inline) insertPastedText(text)
+    else pasteText(text, pasteLabel(text, tuiConfig.prompt?.paste_summary))
+    // After the prompt's own observer has recorded the paste, which it does in a microtask.
+    queueMicrotask(() => {
+      if (!input || input.isDestroyed) return
+      if (!undoApplying) promptUndo.observe(undoState())
+      promptUndo.split()
+      lastPaste = { input: store.prompt.input, origin: result.origin }
+    })
   }
 
   // Writes an edited paste back: its text, and its label when the text changed it. Inline, or an

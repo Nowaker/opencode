@@ -661,6 +661,13 @@ export const Prompt = Schema.Struct({
     ].join(" "),
   }),
   paste_summary: Schema.optional(PasteSummary),
+  paste_mode: Schema.optional(Schema.Literals(["direct", "dialog"])).annotate({
+    description: [
+      "What pasting text into the prompt does: 'direct' (default) puts it in, as a placeholder once it is",
+      "long (paste_summary); 'dialog' opens the paste dialog first, to clean it up, wrap or quote it and",
+      "choose between its text and a placeholder, with the choices remembered for the next paste",
+    ].join(" "),
+  }),
   history_scope: Schema.optional(Schema.Literals(["global", "session"])).annotate({
     description: [
       "Which prompts up and down recall in a session: 'global' (default) walks the prompts submitted anywhere,",
