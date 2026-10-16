@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { Effect, Schema, Scope } from "effect"
 import type { PluginInput } from "@opencode-ai/plugin"
+import { InstanceActivity } from "@/project/instance-activity"
 
 export const Token = Schema.String.pipe(Schema.brand("QuiescenceToken"))
 export type Token = typeof Token.Type
@@ -99,11 +100,13 @@ export const control = {
 
 function enter(cleanup = false) {
   if (held && !(cleanup && committed)) throw new Sealed({ generation })
+  const instance = cleanup ? undefined : InstanceActivity.enter()
   const admission = {}
   active.add(admission)
   return {
     [Symbol.dispose]: () => {
       active.delete(admission)
+      instance?.[Symbol.dispose]()
     },
   }
 }
