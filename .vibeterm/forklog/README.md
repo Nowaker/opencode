@@ -102,8 +102,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Deliver and settle TUI worker requests without startup races](./features/2026-10-12-tui-worker-error-reply.md)
 - [tui.json decides over remembered runtime toggles](./features/2026-10-12-tui-config-toggle-precedence.md)
 - [Markdown in submitted user messages and plugin-defined message blocks](./features/2026-10-14-user-message-markdown.md)
+- [Prompt history scoped to the session](./features/2026-10-15-prompt-history-scope.md)
 
 ## Session records
+
+- [2026-10-15 `ses_ebdf069dbffeooZAqUSORaYd5z`](./sessions/2026-10-15-prompt-history-scope.md)
+  - `prompt.history_scope` (`global` | `session`) scopes up / down to the
+    session's own prompts; v1 PR #55902; vt-304 on both hosts;
+    opencode-tools `7bc57a3d` enforces Vibeterm's tui.json defaults while
+    unset, `session` among them.
 
 - [2026-10-14 `ses_ee6a1ab65ffeoR9UKM5RnpfCzC`](./sessions/2026-10-14-click-any-id.md)
   - A click on any other ID in the transcript (`prt_`, a plugin's `sch_`, a
