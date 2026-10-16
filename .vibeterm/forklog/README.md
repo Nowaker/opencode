@@ -106,8 +106,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Read project config above the git root (v2 backport, fork-only)](./features/2026-10-15-config-walk-root.md)
 - [Prompt history scoped to the session](./features/2026-10-15-prompt-history-scope.md)
 - [ctrl+u deletes back to the line start, or the whole line](./features/2026-10-16-input-line-discard.md)
+- [A paste dialog with cleanup and wrap options on every paste](./features/2026-10-16-paste-dialog-mode.md)
 
 ## Session records
+
+- [2026-10-16 `ses_ed7634c31ffeH84yR0S99Ty8Nd`](./sessions/2026-10-16-paste-dialog-mode.md)
+  - `prompt.paste_mode: "dialog"` opens a paste dialog with remembered
+    options and a live editable preview; v1 PR #56268 on #54463; vt-322 on
+    both hosts; enforced through Vibeterm (opencode-tools `33022c63`).
 
 - [2026-10-16 `ses_eb98d3216ffe2113Brjvcvlgcr`](./sessions/2026-10-16-input-line-discard.md)
   - `input.line_discard` (`bash` | `zsh`) decides ctrl+u in every text field;
@@ -580,6 +586,7 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `paste-raw-key` | #54459 | proved | M | - |
 | `prompt-undo-history` | #54460 | pass | L | - |
 | `paste-edit-dialog` | #54463 | pass | L | - |
+| `paste-dialog-mode` | #56268 | not in the rig yet | L, after `paste-edit-dialog` | - |
 | `bash-syntax` | #54704 | proved | M: v2 tool views rewritten | - |
 | `heredoc-syntax` | #54705 | proved | M, after bash syntax | - |
 | `file-languages` | #54706 | proved | M | - |
