@@ -39,7 +39,7 @@ const emptyConsoleState: ConsoleState = {
   switchableOrgCount: 0,
 }
 
-export const HIDDEN_PAGE_SIZE = 50
+export const HIDDEN_PAGE_SIZES = [50, 100] as const
 
 // Messages a session keeps unloaded. The loaded list is `head` messages (the
 // first prompt, plus any loaded right after it), a gap of `count` hidden
@@ -48,9 +48,10 @@ export type HiddenMessages = {
   head: number
   count: number
   limit: number
-  loading?: HiddenEdge
+  loading?: HiddenLoad
 }
 export type HiddenEdge = "above" | "below" | "all"
+export type HiddenLoad = { edge: HiddenEdge; size?: number }
 
 function search<T>(items: T[], target: string, key: (item: T) => string) {
   let left = 0
@@ -732,21 +733,21 @@ export const {
         },
         // Loads hidden messages into the gap: "above" the oldest ones, right after
         // the head; "below" the newest ones, right before the recent messages.
-        async load(sessionID: string, edge: HiddenEdge) {
+        async load(sessionID: string, edge: HiddenEdge, size: number = HIDDEN_PAGE_SIZES[0]) {
           const hidden = store.hidden[sessionID]
           if (!hidden || hidden.count === 0 || hidden.loading) return
           const messages = store.message[sessionID] ?? []
           const before = messages[hidden.head]?.id
           const after = hidden.head > 0 ? messages[hidden.head - 1]?.id : undefined
-          setStore("hidden", sessionID, "loading", edge)
+          setStore("hidden", sessionID, "loading", edge === "all" ? { edge } : { edge, size })
           const result = await (
             edge === "all"
               ? sdk.client.session.messages({ sessionID })
               : edge === "below"
-                ? sdk.client.session.messages({ sessionID, limit: HIDDEN_PAGE_SIZE, before })
+                ? sdk.client.session.messages({ sessionID, limit: size, before })
                 : after
-                  ? sdk.client.session.messages({ sessionID, limit: HIDDEN_PAGE_SIZE, after })
-                  : sdk.client.session.messages({ sessionID, limit: HIDDEN_PAGE_SIZE, order: "asc" })
+                  ? sdk.client.session.messages({ sessionID, limit: size, after })
+                  : sdk.client.session.messages({ sessionID, limit: size, order: "asc" })
           ).finally(() => setStore("hidden", sessionID, "loading", undefined))
           if (!result.data) return
           const total = Number(result.response?.headers.get("x-total-count") ?? Number.NaN)
