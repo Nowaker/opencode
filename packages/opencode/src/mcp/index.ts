@@ -33,6 +33,7 @@ import { InstanceActivity } from "@/project/instance-activity"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
+import { McpPendingAuth } from "./pending-auth"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { McpBrowser } from "./browser"
 
@@ -109,7 +110,10 @@ export type Status = Schema.Schema.Type<typeof Status>
 
 // Store transports for OAuth servers to allow finishing auth
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
-const pendingOAuthTransports = new Map<string, { transport: TransportWithAuth; provider?: McpOAuthPendingProvider }>()
+const pendingOAuthTransports = new Map<
+  string,
+  { directory: string; transport: TransportWithAuth; provider?: McpOAuthPendingProvider }
+>()
 
 // Prompt cache types
 type PromptInfo = Awaited<ReturnType<MCPClient["listPrompts"]>>["prompts"][number]
@@ -242,6 +246,7 @@ const layer = Layer.effect(
       key: string,
       mcp: ConfigMCPV1.Info & { type: "remote" },
     ) {
+      const directory = yield* InstanceState.directory
       const oauthDisabled = mcp.oauth === false
       const oauthConfig = typeof mcp.oauth === "object" ? mcp.oauth : undefined
       const url = remoteURL(mcp.url)
@@ -314,7 +319,7 @@ const layer = Layer.effect(
                   })
                   .pipe(Effect.ignore, Effect.as(undefined))
               } else {
-                pendingOAuthTransports.set(key, { transport })
+                pendingOAuthTransports.set(key, { directory, transport })
                 lastStatus = { status: "needs_auth" as const }
                 return events
                   .publish(TuiEvent.ToastShow, {
@@ -496,6 +501,7 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("MCP.state")(function* () {
+        const directory = yield* InstanceState.directory
         const cfg = yield* cfgSvc.get()
         const bridge = yield* EffectBridge.make()
         const config = cfg.mcp ?? {}
@@ -556,7 +562,7 @@ const layer = Layer.effect(
                 }),
               { concurrency: "unbounded" },
             )
-            pendingOAuthTransports.clear()
+            yield* Effect.promise(() => McpPendingAuth.releaseDirectory(pendingOAuthTransports, directory))
           }),
         )
 
@@ -878,7 +884,7 @@ const layer = Layer.effect(
       }).pipe(
         Effect.catch((error) => {
           if (error instanceof UnauthorizedError && capturedUrl) {
-            pendingOAuthTransports.set(mcpName, { transport, provider: authProvider })
+            pendingOAuthTransports.set(mcpName, { directory, transport, provider: authProvider })
             return Effect.succeed({ authorizationUrl: capturedUrl.toString(), oauthState } satisfies AuthResult)
           }
           return Effect.die(error)
