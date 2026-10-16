@@ -657,6 +657,12 @@ export const Prompt = Schema.Struct({
     ].join(" "),
   }),
   paste_summary: Schema.optional(PasteSummary),
+  history_scope: Schema.optional(Schema.Literals(["global", "session"])).annotate({
+    description: [
+      "Which prompts up and down recall in a session: 'global' (default) walks the prompts submitted anywhere,",
+      "'session' only the ones submitted in that session. The home screen always walks every session's",
+    ].join(" "),
+  }),
   undo_depth: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))).annotate({
     description:
       "How many steps of prompt edits input_undo can take back (default: 500). Typing is grouped by word, and a paste, a line delete or a submit is one step",

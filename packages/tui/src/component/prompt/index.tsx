@@ -1269,7 +1269,7 @@ export function Prompt(props: PromptProps) {
               return false
             }
 
-            const item = history.move(-1, input.plainText)
+            const item = history.move(-1, input.plainText, props.sessionID)
             if (!item) return false
             input.setText(item.input)
             setStore("prompt", item)
@@ -1305,7 +1305,7 @@ export function Prompt(props: PromptProps) {
               return false
             }
 
-            const item = history.move(1, input.plainText)
+            const item = history.move(1, input.plainText, props.sessionID)
             if (!item) return false
             input.setText(item.input)
             setStore("prompt", item)
@@ -1509,10 +1509,13 @@ export function Prompt(props: PromptProps) {
       if (editorParts.length > 0) editor.markSelectionSent()
     }
     setUnsent(undefined)
-    history.append({
-      ...store.prompt,
-      mode: currentMode,
-    })
+    history.append(
+      {
+        ...store.prompt,
+        mode: currentMode,
+      },
+      sessionID,
+    )
     input.extmarks.clear()
     setStore("prompt", {
       input: "",
@@ -1726,10 +1729,13 @@ export function Prompt(props: PromptProps) {
 
   function clearPrompt() {
     if (store.prompt.input.trim().length >= DRAFT_RETENTION_MIN_CHARS || store.prompt.parts.length > 0) {
-      history.append({
-        ...store.prompt,
-        mode: store.mode,
-      })
+      history.append(
+        {
+          ...store.prompt,
+          mode: store.mode,
+        },
+        props.sessionID,
+      )
     }
     input.clear()
     input.extmarks.clear()

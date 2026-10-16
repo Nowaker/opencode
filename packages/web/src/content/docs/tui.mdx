@@ -511,6 +511,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `home.logo`, `home.tips`, `home.prompt_position`, `home.prompt_min_height`, `home.prompt_max_height` - Whether the home screen shows the logo and a tip, where its prompt sits, and how tall that prompt is. See [Home screen](#home-screen).
 - `prompt.paste_summary` - When a paste is replaced by a placeholder such as `[Pasted ~12 lines]`, and what the placeholder says. See [Paste summary](#paste-summary).
 - `prompt.undo_depth` - How many steps of prompt edits undo can take back. Defaults to `500`. See [Undo in the prompt](#undo-in-the-prompt).
+- `prompt.history_scope` - Which prompts <kbd>up</kbd> and <kbd>down</kbd> recall in a session: `"global"` (default) or `"session"`. See [Prompt history](#prompt-history).
 - `model_label` - How message footers and the prompt name a model: `"name"` (default) shows its display name, such as `Claude Sonnet 4.5`; `"id"` shows `providerID/modelID`, such as `anthropic/claude-sonnet-4-5`.
 - `turn_timing`, `footer_variant`, `timestamps` - Older settings that `footer` replaces; they keep working. See [Older footer settings](#older-footer-settings).
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
@@ -929,6 +930,22 @@ The history is shared by the prompts in one OpenCode window and holds `prompt.un
   }
 }
 ```
+
+### Prompt history
+
+<kbd>up</kbd> on the first line of the prompt recalls the prompt submitted before, and <kbd>down</kbd> on the last line goes forward again. A shell command run with `!` comes back in shell mode, and a draft of 20 characters or more cleared with <kbd>ctrl+c</kbd> is kept as well.
+
+By default the history is global: every session walks the last 50 prompts submitted in any session on this machine, whichever OpenCode window sent them. With `prompt.history_scope` set to `"session"`, a session walks only the prompts submitted in that session, the last 50 of each. The home screen has no session yet, so there <kbd>up</kbd> still walks every session's prompts, and the prompt that starts a session becomes the first one in its history.
+
+```json title="tui.json"
+{
+  "prompt": {
+    "history_scope": "session"
+  }
+}
+```
+
+Prompts submitted with an OpenCode version older than this setting were not recorded with their session, so no session recalls them; the home screen still does. The history lives in `prompt-history.jsonl` in the OpenCode state directory.
 
 ### Older footer settings
 
