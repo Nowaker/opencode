@@ -6,12 +6,12 @@ const plugin = (ms: number | false): ToolTimeout.Limit => ({ ms, source: "tool d
 
 describe("ToolTimeout.resolve", () => {
   test("falls back to 30 minutes", () => {
-    expect(ToolTimeout.resolve({ tool: "read" })).toEqual({ ms: 30 * 60 * 1000, source: "default" })
+    expect(ToolTimeout.resolve({ tool: "webfetch" })).toEqual({ ms: 30 * 60 * 1000, source: "default" })
   })
 
   test("the configured default replaces 30 minutes, higher or lower", () => {
     for (const ms of [60_000, 4 * 3_600_000, false] as const)
-      expect(ToolTimeout.resolve({ tool: "read", config: { default: ms } })).toEqual({
+      expect(ToolTimeout.resolve({ tool: "webfetch", config: { default: ms } })).toEqual({
         ms,
         source: "config: tool_timeout.default",
       })
@@ -42,6 +42,28 @@ describe("ToolTimeout.resolve", () => {
         source: `config: tool_timeout.${tool}`,
       })
     }
+  })
+
+  test("the built-in file tools default to 10 minutes, or a lower tool_timeout.default", () => {
+    for (const tool of ["read", "write", "edit", "grep", "glob"]) {
+      const builtIn = {
+        ms: ToolTimeout.FILE_TOOL_MS,
+        source: `built-in default for ${tool}, set tool_timeout.${tool} to change it`,
+      }
+      expect(ToolTimeout.FILE_TOOL_MS).toBe(10 * 60 * 1000)
+      expect(ToolTimeout.resolve({ tool })).toEqual(builtIn)
+      expect(ToolTimeout.resolve({ tool, config: { default: 3_600_000 } })).toEqual(builtIn)
+      expect(ToolTimeout.resolve({ tool, config: { default: false } })).toEqual(builtIn)
+      expect(ToolTimeout.resolve({ tool, config: { default: 60_000 } })).toEqual({
+        ms: 60_000,
+        source: "config: tool_timeout.default",
+      })
+      expect(ToolTimeout.resolve({ tool, config: { [tool]: 3_600_000 } })).toEqual({
+        ms: 3_600_000,
+        source: `config: tool_timeout.${tool}`,
+      })
+    }
+    expect(ToolTimeout.resolve({ tool: "read", declared: plugin(5000) })).toEqual(plugin(5000))
   })
 
   test("a plugin's own declaration replaces a built-in exemption", () => {
