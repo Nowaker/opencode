@@ -102,9 +102,15 @@ carries every feature forward unchanged. That commit includes the full
 - [Deliver and settle TUI worker requests without startup races](./features/2026-10-12-tui-worker-error-reply.md)
 - [tui.json decides over remembered runtime toggles](./features/2026-10-12-tui-config-toggle-precedence.md)
 - [Markdown in submitted user messages and plugin-defined message blocks](./features/2026-10-14-user-message-markdown.md)
+- [Read project config above the git root (v2 backport, fork-only)](./features/2026-10-15-config-walk-root.md)
 - [Prompt history scoped to the session](./features/2026-10-15-prompt-history-scope.md)
 
 ## Session records
+
+- [2026-10-15 `ses_ebdb29581ffeD6A9dXs1sZAis2`](./sessions/2026-10-15-config-walk-root.md)
+  - Backport of v2: `opencode.json`/`.opencode/` found up to the filesystem
+    root, past the git root, nearest wins, global guards; no upstream PR;
+    vt-305 on both hosts, `debug config` proof.
 
 - [2026-10-15 `ses_ebdf069dbffeooZAqUSORaYd5z`](./sessions/2026-10-15-prompt-history-scope.md)
   - `prompt.history_scope` (`global` | `session`) scopes up / down to the
