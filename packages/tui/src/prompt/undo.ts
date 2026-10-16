@@ -74,6 +74,10 @@ export function createPromptUndo(options?: { depth?: () => number; now?: () => n
     },
     // The prompt as it is now, without recording a change, after it was set by undo or redo.
     sync: restart,
+    // The next edit is a step of its own, however short: a paste from the paste dialog is undone alone.
+    split() {
+      breakNext = true
+    },
     undo(current: PromptUndoState) {
       const target = undoStack.pop()
       if (!target) return

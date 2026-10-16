@@ -83,6 +83,13 @@ export const Prompt = Schema.Struct({
     description: "Home prompt max width: a positive integer for a fixed cap, or 'auto' to scale with terminal width",
   }),
   paste_summary: Schema.optional(PasteSummary),
+  paste_mode: Schema.optional(Schema.Literals(["direct", "dialog"])).annotate({
+    description: [
+      "What pasting text into the prompt does: 'direct' (default) puts it in, as a placeholder once it is",
+      "long (paste_summary); 'dialog' opens the paste dialog first, to clean it up, wrap or quote it and",
+      "choose between its text and a placeholder, with the choices remembered for the next paste",
+    ].join(" "),
+  }),
   undo_depth: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))).annotate({
     description:
       "How many steps of prompt edits input_undo can take back (default: 500). Typing is grouped by word, and a paste, a line delete or a submit is one step",
