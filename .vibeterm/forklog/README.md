@@ -742,6 +742,32 @@ Linux runtime proof, from `packages/opencode`: `bun script/serve-idle-proof.ts <
 
 ## Audit and upstream lifecycle
 
+Serve lifetime delivery by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-16:
+
+- Oracle approved runtime `b1eafad48a` after native code-mode/OAuth cancellation
+  regressions closed its initial finding. Main independently ran 31 focused
+  idle/HTTP/OAuth/config tests and five native-settlement cases; all passed.
+  Package types and all 30 workspace push-hook tasks passed.
+- The runtime was rebased onto local primary, fast-forward integrated and
+  pushed to both mirrors. The tracked builder installed
+  `1.19.0-vt-319-dfb56f76c7`; mandatory v1 guard passed against the built
+  binary, npm `opencode-ai@1.19.3` and `@opencode/cli@2.0.31`.
+- Installed-binary HTTP proof used four synthetic directories and a 1000 ms
+  global idle window: warmed five processes / 665176 KiB aggregate RSS became
+  one server / 538100 KiB after five seconds; MCP descendants went from four
+  / 267876 KiB to zero. Cleanup verified zero owned processes. Independent
+  vt310 baseline retained all four children. Main source-process proof also
+  retained an actual asynchronous turn's MCP pair while another pair expired,
+  then expired that pair after the turn. Server heap RSS is not a cold-start
+  baseline guarantee. Non-secret installed report is in tools scratch
+  `serve-instance-proof/run-gyftn0/result.json`.
+- Expiry applies to enrolled, unpinned HTTP contexts. Explicit persistent
+  `load`/`provide` consumers, including worktree boot and plugin PTY environment
+  helpers, remain pinned; no universal directory-expiry claim is made.
+- Live `opencode-serve-tailscale.service` was not restarted and retains its
+  vt305 inode. The CPU coordinator received installed version and operator
+  restart requirements. No default Vibeterm server or Meridian restart occurred.
+
 Weekly audit by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-14:
 
 - The [canonical PR ledger](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#upstream-pr-ledger)

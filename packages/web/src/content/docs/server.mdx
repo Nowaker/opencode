@@ -73,7 +73,7 @@ Set `server.instanceIdleTimeout` in your global `opencode.json` to change the in
 }
 ```
 
-An instance remains alive while a request, streamed response or WebSocket is open, or while its asynchronous session, tool, permission, question, background or MCP work is active. The full idle interval starts after the last activity settles, including underlying promises whose HTTP caller disconnected. Activity in one directory does not keep other idle directories alive. Ordinary TUI/private instances are not enrolled in this policy. In-process `Server.listen()` callers opt in explicitly with `instanceIdleTimeout`; omitting it preserves their existing lifetime.
+An instance remains alive while a request, streamed response or WebSocket is open, or while its asynchronous session, tool, permission, question, background or MCP work is active. The full idle interval starts after the last activity settles, including underlying promises whose HTTP caller disconnected. Activity in one directory does not keep other idle directories alive. Ordinary TUI/private instances are not enrolled in this policy. Explicit persistent instance loads, including worktree boot and the plugin PTY environment path, also pin their instances even when initiated over HTTP. In-process `Server.listen()` callers opt in explicitly with `instanceIdleTimeout`; omitting it preserves their existing lifetime.
 
 ---
 
