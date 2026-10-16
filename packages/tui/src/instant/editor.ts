@@ -2,6 +2,7 @@ export * as InstantEditor from "./editor"
 
 import { Definitions } from "../config/keybind-definitions"
 import type { InstantKeys } from "./keys"
+import type { LineDiscard } from "../util/line-discard"
 
 // The instant startup prompt's text field: a plain string with a caret and an
 // optional selection anchor, both UTF-16 offsets, edited by the same input_*
@@ -249,7 +250,8 @@ export type Snapshot = { text: string; caret: number; anchor?: number }
 
 const isSeparator = (char: string) => /\s/.test(char) || BREAK_AFTER.has(char)
 
-export function create(input: Partial<Snapshot> = {}) {
+// lineDiscard is tui.json's input.line_discard, as discardLine applies it.
+export function create(input: Partial<Snapshot> = {}, options: { lineDiscard?: LineDiscard } = {}) {
   const state: Snapshot & { goal?: number } = { text: input.text ?? "", caret: input.caret ?? 0, anchor: input.anchor }
   const undo: Snapshot[] = []
   const redo: Snapshot[] = []
@@ -452,10 +454,11 @@ export function create(input: Partial<Snapshot> = {}) {
           return replace(state.caret, end, "")
         }
         case "delete_to_line_start": {
-          const start = lineStart(state.caret)
-          if (start === state.caret) return start > 0 ? replace(start - 1, start, "") : undefined
-          if (state.caret === state.text.length && start > 0) return replace(start - 1, state.caret, "")
-          return replace(start, state.caret, "")
+          const caret = options.lineDiscard === "zsh" ? lineEnd(state.caret) : state.caret
+          const start = lineStart(caret)
+          if (start === caret) return start > 0 ? replace(start - 1, start, "") : undefined
+          if (caret === state.text.length && start > 0) return replace(start - 1, caret, "")
+          return replace(start, caret, "")
         }
         case "backspace":
           return deleteRange(previousBoundary(state.caret), state.caret)

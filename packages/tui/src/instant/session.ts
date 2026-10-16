@@ -65,7 +65,10 @@ export const leave = () => MOUSE_OFF + KEYS_OFF + "\x1b[0 q\x1b]112\x07\x1b[?104
 // `copy` puts the text a drag selected on the clipboard; the caller owns the
 // terminal and the clipboard tools, so it decides how.
 export function create(init: Init, state?: State, host: { copy?: (text: string) => void } = {}) {
-  const editor = InstantEditor.create({ text: state?.text, caret: state?.caret, anchor: state?.anchor })
+  const editor = InstantEditor.create(
+    { text: state?.text, caret: state?.caret, anchor: state?.anchor },
+    { lineDiscard: init.config.lineDiscard },
+  )
   const bindings = InstantEditor.bindings(init.config.keybinds)
   let parser = InstantKeys.createParser()
   let scroll = state?.scroll ?? 0

@@ -2,11 +2,13 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { TextareaRenderable } from "@opentui/core"
 import { InstantEditor } from "../../src/instant/editor"
 import { gotoLineEdge } from "../../src/util/line-edge"
+import { discardLine, type LineDiscard } from "../../src/util/line-discard"
 
 // Runs one editing action through opentui's own textarea and through the
 // instant prompt's editor, from the same text and caret, and reports both.
-// Line start/end go through the TUI's gotoLineEdge, as the keymap runs them.
-export async function createParity(width: number) {
+// Line start/end go through the TUI's gotoLineEdge and delete to line start
+// through its discardLine, as the keymap runs them.
+export async function createParity(width: number, lineDiscard?: LineDiscard) {
   const setup = await createTestRenderer({ width: width + 10, height: 40 })
   const textarea = new TextareaRenderable(setup.renderer, { width, height: 30 })
   setup.renderer.root.add(textarea)
@@ -36,7 +38,7 @@ export async function createParity(width: number) {
     select_buffer_end: () => textarea.gotoBufferEnd({ select: true }),
     delete_line: () => textarea.deleteLine(),
     delete_to_line_end: () => textarea.deleteToLineEnd(),
-    delete_to_line_start: () => textarea.deleteToLineStart(),
+    delete_to_line_start: () => discardLine(textarea, lineDiscard),
     backspace: () => textarea.deleteCharBackward(),
     delete: () => textarea.deleteChar(),
     undo: () => textarea.undo(),
@@ -65,7 +67,7 @@ export async function createParity(width: number) {
         caret: textarea.cursorOffset,
         selection: selection && selection.start !== selection.end ? [selection.start, selection.end] : undefined,
       }
-      const editor = InstantEditor.create({ text, caret })
+      const editor = InstantEditor.create({ text, caret }, { lineDiscard })
       editor.apply(action, width)
       const selected = editor.selection()
       const actual = {

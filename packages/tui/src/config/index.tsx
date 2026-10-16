@@ -673,6 +673,16 @@ export const Prompt = Schema.Struct({
   }),
 }).annotate({ description: "Prompt settings" })
 
+export const Input = Schema.Struct({
+  line_discard: Schema.optional(Schema.Literals(["bash", "zsh"])).annotate({
+    description: [
+      "What input_delete_to_line_start (ctrl+u) deletes in the prompt and every other text field:",
+      "'bash' (default) from the cursor back to the start of its line, 'zsh' that whole line wherever",
+      "the cursor is. In a multi-line prompt only the cursor's line, not the whole prompt",
+    ].join(" "),
+  }),
+}).annotate({ description: "Text field editing settings" })
+
 export const Home = Schema.Struct({
   logo: Schema.optional(Schema.Boolean).annotate({
     description: "Show the OpenCode logo above the home screen prompt (default: true)",
@@ -718,6 +728,7 @@ export const Info = Schema.Struct({
   leader_timeout: Schema.optional(LeaderTimeout),
   attention: Schema.optional(Attention),
   prompt: Schema.optional(Prompt),
+  input: Schema.optional(Input),
   home: Schema.optional(Home),
   startup: Schema.optional(Startup),
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),

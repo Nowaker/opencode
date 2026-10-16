@@ -5,6 +5,7 @@ import path from "path"
 import { parse } from "jsonc-parser"
 import { GlobalPath } from "@opencode-ai/core/global-path"
 import type { TuiLayout } from "../layout"
+import type { LineDiscard } from "../util/line-discard"
 
 // The handful of tui.json settings the instant startup prompt needs, read with
 // plain file I/O from the global config, OPENCODE_TUI_CONFIG and
@@ -24,6 +25,7 @@ export type Settings = {
   homePromptPosition?: TuiLayout.PromptPosition
   sidebarSessionId?: boolean
   keybinds: Record<string, unknown>
+  lineDiscard?: LineDiscard
   mouse: boolean
   cursor?: { style: "block" | "underline" | "line" | "default"; blinking: boolean }
 }
@@ -95,6 +97,7 @@ export function read(env: NodeJS.ProcessEnv = process.env): Settings {
     sidebarSessionId:
       isRecord(raw.sidebar) && typeof raw.sidebar.session_id === "boolean" ? raw.sidebar.session_id : undefined,
     keybinds: isRecord(raw.keybinds) ? raw.keybinds : {},
+    lineDiscard: isRecord(raw.input) && raw.input.line_discard === "zsh" ? "zsh" : undefined,
     mouse: raw.mouse !== false && disableMouse !== "1" && disableMouse !== "true",
     cursor: cursor
       ? {

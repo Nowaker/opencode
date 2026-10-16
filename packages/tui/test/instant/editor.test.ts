@@ -72,6 +72,23 @@ describe("instant editor matches opentui's textarea", () => {
     expect(mismatches).toEqual([])
   })
 
+  test("zsh line discard from every caret position", async () => {
+    const zsh = await createParity(width, "zsh")
+    try {
+      const mismatches: string[] = []
+      for (const text of samples) {
+        for (let caret = 0; caret <= text.length; caret++) {
+          const result = await zsh.run(text, caret, "delete_to_line_start")
+          if (JSON.stringify(result.expected) !== JSON.stringify(result.actual))
+            mismatches.push(`${JSON.stringify(text)}@${caret}: ${JSON.stringify(result)}`)
+        }
+      }
+      expect(mismatches).toEqual([])
+    } finally {
+      zsh.destroy()
+    }
+  })
+
   test("word wrap and caret placement", async () => {
     for (const text of [...samples, "a".repeat(30), "ab  cd  ef  gh  ij"]) {
       const lines = InstantEditor.layout(text, width)
