@@ -105,8 +105,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Markdown in submitted user messages and plugin-defined message blocks](./features/2026-10-14-user-message-markdown.md)
 - [Read project config above the git root (v2 backport, fork-only)](./features/2026-10-15-config-walk-root.md)
 - [Prompt history scoped to the session](./features/2026-10-15-prompt-history-scope.md)
+- [ctrl+u deletes back to the line start, or the whole line](./features/2026-10-16-input-line-discard.md)
 
 ## Session records
+
+- [2026-10-16 `ses_eb98d3216ffe2113Brjvcvlgcr`](./sessions/2026-10-16-input-line-discard.md)
+  - `input.line_discard` (`bash` | `zsh`) decides ctrl+u in every text field;
+    issue #56242, v1 PR #56246; vt-321 on both hosts; opencode-tools
+    `5f9ef2bf` makes Vibeterm's fields follow the same value.
 
 - [2026-10-15 `ses_ebbf8304effeyn1vwapV0HP1Bm`](./sessions/2026-10-15-file-tool-limit.md)
   - read, write, edit, grep and glob end after 10 minutes (a lower
