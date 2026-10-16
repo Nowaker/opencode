@@ -709,6 +709,8 @@ Source work: `ses_eba1f3afeffe4Y0zOhc01XWVQx`, delegated by `ses_eeda1d251ffel81
 
 Source commits: `824049964c` (directory lifecycle and owner reservations), `0f9253818a` (HTTP request-scope leases), `2baaec5ec5` (MCP activity), `4cc239a005` (serve/web setting, schema, SDK and web documentation). The retained proof and this provenance record are committed separately above those source changes.
 
+Attribution correction: `824049964c`, `0f9253818a`, `2baaec5ec5`, `4cc239a005`, `99e5c00a1f` (retained proof) and `72762bc500` (pending OAuth cleanup ownership) mistakenly carry `AI-Harness: Vibeterm cc30ffb3`. The authoritative session context requires `AI-Harness: Vibeterm 606568b7`; that is the correct harness provenance for all six commits. Their human identity, model, tool version, platform and session trailers are unchanged. History is preserved under the assignment's explicit no-amend constraint; this canonical record corrects the attribution without rewriting those commits.
+
 `opencode serve` and `opencode web` read global `server.instanceIdleTimeout` at startup: milliseconds, default `900000` (15 minutes), `0` disables. A directory is disposed after that interval without activity and recreated on its next request. Session/project/message data is retained. TUI/private HTTP handlers do not opt in; an ordinary `InstanceStore.load` pins its entry even if HTTP opened it first. In-process listeners must explicitly pass `instanceIdleTimeout`.
 
 Stable seams:
