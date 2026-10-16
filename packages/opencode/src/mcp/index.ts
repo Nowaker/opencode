@@ -29,6 +29,7 @@ import { TuiEvent } from "@/server/tui-event"
 import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceActivity } from "@/project/instance-activity"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
@@ -227,7 +228,7 @@ const layer = Layer.effect(
           Effect.tryPromise({
             try: () => {
               const client = createClient(directory)
-              return withTimeout(client.connect(t), timeout).then(() => client)
+              return InstanceActivity.runPromise(() => withTimeout(client.connect(t), timeout)).then(() => client)
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),
@@ -466,7 +467,7 @@ const layer = Layer.effect(
       client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
         if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
 
-        const listed = await bridge.promise(McpCatalog.defs(client, timeout))
+        const listed = await bridge.promise(InstanceActivity.activity(McpCatalog.defs(client, timeout)))
         if (!listed) return
         if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
 
@@ -764,7 +765,10 @@ const layer = Layer.effect(
       }
       const cfg = yield* cfgSvc.get()
       return yield* Effect.tryPromise({
-        try: () => fn(client, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
+        try: () =>
+          InstanceActivity.runPromise(() =>
+            fn(client, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
+          ),
         catch: (error) => error,
       }).pipe(
         Effect.tapError((error) =>
@@ -983,25 +987,25 @@ const layer = Layer.effect(
     })
 
     return Service.of({
-      status,
-      clients,
-      instructions,
-      tools,
-      prompts,
-      resources,
-      resourceTemplates,
-      add,
-      connect,
-      disconnect,
-      getPrompt,
-      readResource,
-      startAuth,
-      authenticate,
-      finishAuth,
-      removeAuth,
-      supportsOAuth,
-      hasStoredTokens,
-      getAuthStatus,
+      status: () => InstanceActivity.activity(status()),
+      clients: () => InstanceActivity.activity(clients()),
+      instructions: () => InstanceActivity.activity(instructions()),
+      tools: () => InstanceActivity.activity(tools()),
+      prompts: () => InstanceActivity.activity(prompts()),
+      resources: (...args) => InstanceActivity.activity(resources(...args)),
+      resourceTemplates: (...args) => InstanceActivity.activity(resourceTemplates(...args)),
+      add: (...args) => InstanceActivity.activity(add(...args)),
+      connect: (...args) => InstanceActivity.activity(connect(...args)),
+      disconnect: (...args) => InstanceActivity.activity(disconnect(...args)),
+      getPrompt: (...args) => InstanceActivity.activity(getPrompt(...args)),
+      readResource: (...args) => InstanceActivity.activity(readResource(...args)),
+      startAuth: (...args) => InstanceActivity.activity(startAuth(...args)),
+      authenticate: (...args) => InstanceActivity.activity(authenticate(...args)),
+      finishAuth: (...args) => InstanceActivity.activity(finishAuth(...args)),
+      removeAuth: (...args) => InstanceActivity.activity(removeAuth(...args)),
+      supportsOAuth: (...args) => InstanceActivity.activity(supportsOAuth(...args)),
+      hasStoredTokens: (...args) => InstanceActivity.activity(hasStoredTokens(...args)),
+      getAuthStatus: (...args) => InstanceActivity.activity(getAuthStatus(...args)),
     })
   }),
 )

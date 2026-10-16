@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { dynamicTool, jsonSchema, type JSONSchema7, type Tool } from "ai"
 import { Effect } from "effect"
+import { InstanceActivity } from "@/project/instance-activity"
 
 const DEFAULT_TIMEOUT = 30_000
 const MAX_LIST_PAGES = 1_000
@@ -51,19 +52,21 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(inputSchema),
     execute: async (args: unknown, options) => {
-      const result = await client.callTool(
-        {
-          name: mcpTool.name,
-          arguments: (args || {}) as Record<string, unknown>,
-        },
-        CallToolResultSchema,
-        {
-          resetTimeoutOnProgress: true,
-          signal: options.abortSignal,
-          timeout,
-          // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
-          onprogress: () => {},
-        },
+      const result = await InstanceActivity.runPromise(() =>
+        client.callTool(
+          {
+            name: mcpTool.name,
+            arguments: (args || {}) as Record<string, unknown>,
+          },
+          CallToolResultSchema,
+          {
+            resetTimeoutOnProgress: true,
+            signal: options.abortSignal,
+            timeout,
+            // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
+            onprogress: () => {},
+          },
+        ),
       )
       if (result.isError)
         throw new Error(
@@ -90,7 +93,7 @@ export function fetch<T extends { name: string }>(
   key?: (item: T) => string,
 ) {
   return Effect.tryPromise({
-    try: () => list(client),
+    try: () => InstanceActivity.runPromise(() => list(client)),
     catch: (error) => error,
   }).pipe(
     Effect.tapError((error) =>
@@ -145,17 +148,19 @@ export function resourceTemplates(client: Client, timeout?: number) {
 function listTools(client: Client, timeout: number) {
   return Effect.tryPromise({
     try: () =>
-      paginate(
-        async (cursor) => {
-          const params = cursor === undefined ? undefined : { cursor }
-          try {
-            return await client.listTools(params, { timeout })
-          } catch (error) {
-            if (!(error instanceof Error) || !isOutputSchemaValidationError(error)) throw error
-            return client.request({ method: "tools/list", params }, TolerantListToolsResultSchema, { timeout })
-          }
-        },
-        (result) => result.tools,
+      InstanceActivity.runPromise(() =>
+        paginate(
+          async (cursor) => {
+            const params = cursor === undefined ? undefined : { cursor }
+            try {
+              return await client.listTools(params, { timeout })
+            } catch (error) {
+              if (!(error instanceof Error) || !isOutputSchemaValidationError(error)) throw error
+              return client.request({ method: "tools/list", params }, TolerantListToolsResultSchema, { timeout })
+            }
+          },
+          (result) => result.tools,
+        ),
       ),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
