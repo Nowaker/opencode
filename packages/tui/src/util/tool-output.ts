@@ -22,6 +22,12 @@ export function outputLanguage(settings: Record<string, string> | undefined, too
 
 export const JSON_AS_YAML = "json-as-yaml"
 
+// What `syntax.tool_output` says for a tool: its exact name, else the most specific glob.
+export function toolOutputSetting(settings: Record<string, string> | undefined, tool: string) {
+  if (!settings) return
+  return settings[tool] ?? bestGlob(settings, tool)
+}
+
 // Output already recognized as JSON, parsed; undefined when it does not parse after all.
 export function parseOutputJson(output: string) {
   const decoded = decodeJson(output.trim())

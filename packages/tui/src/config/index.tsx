@@ -54,6 +54,10 @@ export const Syntax = Schema.Struct({
     description:
       "Color plugin and MCP tool output by tool name or glob ('browser', 'github_*', '*'): a language id such as 'json', 'auto' to color output recognized as JSON, 'json-as-yaml' to draw output recognized as JSON as YAML rows like a tool's input block (one row per value while collapsed, see tool_output.collapse_yaml), or 'none'. An exact name wins over globs, the most specific glob over the rest. Unset leaves output plain (default)",
   }),
+  file_output: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Color tool output that shows the contents of files in each file's language: bash reads and searches (cat, sed -n, head, tail, grep, rg, git show <ref>:<path>), JSON and diffs, the read and grep tools, GitHub code search snippets and docs with fenced code. A path or line number a line starts with is muted. Read and grep calls can be clicked to show what they found. Output whose language is unclear stays plain, and a tool set to 'none' in tool_output stays plain (default: false)",
+  }),
   user_messages: Schema.optional(Schema.Boolean).annotate({
     description:
       "Color the markdown in your submitted messages: headings, numbered and bulleted lists, `inline code`, fenced code blocks in their language, emphasis, links, quotes and tables. The text is shown exactly as typed and wraps as it does plain (default: false)",

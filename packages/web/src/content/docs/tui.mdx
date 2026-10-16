@@ -764,6 +764,7 @@ Tool calls are colored by language, and your own messages can be colored as mark
     "heredoc": true,
     "files": true,
     "tool_input": false,
+    "file_output": false,
     "user_messages": false
   }
 }
@@ -774,6 +775,7 @@ Tool calls are colored by language, and your own messages can be colored as mark
 - `files` - Detect the language of written, edited and patched files beyond their extension, so these are colored too: SQL, Dockerfiles (`Dockerfile`, `Containerfile`, `*.dockerfile`), ini-style config and systemd units (`.ini`, `.cfg`, `.conf`, `.service`, `.timer` and the other unit types), dotenv files, shell scripts, ERB, HAML, file names such as `Makefile`, `Gemfile` and `PKGBUILD`, and a `#!` line on a file with no known extension. Defaults to `true`. When `false`, only the file extension decides.
 - `tool_input` - Show a plugin or MCP tool's input as a block, one key per line. Defaults to `false`, which shows only the input's text, number and boolean values, as `[key=value, ...]` on the tool's line. With `true`, input that is all such values and fits in 80 characters stays on that line; anything longer, multi-line or nested becomes a block: keys and values in different colors, values colored by type, text unquoted with its newlines, tabs and quotes shown as themselves, nested objects indented beneath their key, and lists laid out as YAML writes them, `- ` items at their key's indent. Until you click the block, every value takes one row, cut with `…` where it no longer fits; clicking shows it whole. With `tool_output.collapse` set to `"never"` for the tool, values always show whole.
 - `tool_output` - Color plugin and MCP tool output, by tool name. Keys are tool names or globs (`*` matches any run of characters, `?` one); values are a language id such as `json`, `yaml` or `markdown`, `auto`, `json-as-yaml`, or `none`. An exact name wins over any glob, and the glob with the most literal characters wins over the others. `auto` colors output that is a JSON object or array and leaves anything else plain. `json-as-yaml` recognizes JSON the same way and draws it as YAML rows, in the same layout and colors as a tool's input block; other output stays plain text. See [JSON output as YAML](#json-output-as-yaml). Output over 100,000 characters stays plain. Unset by default, which leaves all output plain. Colored output wraps exactly as the plain text does.
+- `file_output` - Color tool output that shows the contents of files in each file's language. Defaults to `false`. See [File contents in tool output](#file-contents-in-tool-output).
 - `user_messages` - Color the markdown in the messages you submitted: headings of every level, numbered and bulleted lists, `` `inline code` ``, fenced code blocks in their language, bold, italics, links, `>` quotes and tables. Defaults to `false`. Only colors change: every character shows as you typed it, markers such as `#` and backticks are dimmed rather than hidden, and the message wraps exactly as it does plain. Markdown that people usually write by accident stays plain: a line followed by `---` or `===` is not a heading, four leading spaces are not a code block, a quote covers only the lines that start with `>`, and `*` inside a word, as in `2*3*4`, is not emphasis. Messages over 100,000 characters stay plain.
 - `blocks` - Draw blocks in your submitted messages with a formatter instead of as markdown. Each entry has an `open` and a `close` line and a `format`. A block runs from a line that is exactly `open` to the next line that is exactly `close`, surrounding spaces aside; an `open` line with no `close` after it is ordinary text. In `open`, `*` matches a run of non-space characters, and each `*` in `close` stands for what it matched, so one rule covers a family of blocks that each close by name. `format` is `yaml`, which colors `key: value` lines the way a tool input block is colored (keys, values by type, `#` comments and the `open` and `close` lines muted), or any other language id, such as `json` or `sql`, colored by that grammar. Blocks are drawn whether or not `user_messages` is on, and like it they change only colors. Unset by default. A TUI plugin adds blocks with `api.blocks.register({ open, close, format })`; the ones in `tui.json` are tried first.
 
@@ -790,6 +792,26 @@ With `tool_output`, for example:
   }
 }
 ```
+
+#### File contents in tool output
+
+With `file_output` on, output that shows code from files is colored in each file's language, and a path or line number a line starts with is muted:
+
+| Output                                                                                                                                                                                | Language                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| A bash command reading files: `cat`, `head`, `tail`, `sed -n`, `nl`, `awk`, `bat`, `git show <ref>:<path>`, chained with `;`, `&&` or a pipe through filters such as `head` or `grep` | The files', when they all have one language |
+| `grep -n`, `rg` and other `path:12:code`, `path-12-code` and `path:code` lines                                                                                                        | Each line's file                            |
+| `rg` with headings: a path line, then `12:code` lines                                                                                                                                 | Each heading's file                         |
+| `12:code` or `   12<tab>code` lines from `rg -n` or `cat -n` on files of one language                                                                                                 | The files'                                  |
+| A `--type`, `-t` or `--glob` of one language for `rg` and `grep`                                                                                                                      | That language                               |
+| Any bash output that is a whole JSON document, or starts like a diff (`git diff`, `git show <commit>`)                                                                                | JSON, diff                                  |
+| The read and grep tools                                                                                                                                                               | The file read, each matched file            |
+| GitHub code search results (`Repository:`, `Path:` and `--- Snippet` blocks)                                                                                                          | Each snippet's path                         |
+| Plugin and MCP output with a fenced code block that names its language, such as context7 docs                                                                                         | Markdown, each block in its own language    |
+
+Output whose language is not clear stays plain: files of different languages read by one command, a command that also runs something else (`ls && cat a.ts`), or a pipe through a command that changes the text (`cat a.json | jq`). A plugin or MCP tool's language set in `tool_output` comes first, and one set to `none` stays plain. Collapsed output, its head, tail and markers included, is colored like the expanded output. Output over 100,000 characters stays plain, and only the first 64 files of a search are colored.
+
+The read and grep tools show no output by default, only their row. With `file_output` on, clicking a finished read or grep row shows the file or the matches it found as a block, colored, and clicking the block folds it back.
 
 #### JSON output as YAML
 
