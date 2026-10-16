@@ -27,6 +27,7 @@ carries every feature forward unchanged. That commit includes the full
 ## Active features
 
 - [On-demand search outside repositories](#on-demand-search-outside-repositories)
+- [Inactive HTTP Directory Instances](#inactive-http-directory-instances)
 
 - [Cooperative owner retirement](./features/2026-10-11-owner-retirement.md)
 
@@ -701,6 +702,39 @@ Delivery verified by coordinator `ses_eeda1d251ffel81U5Y42j4kb33` on
 - No active DreamHost tab, default Vibeterm server or Meridian was restarted.
   Existing tabs retain their loaded code until their owners arrange graceful
   pickup. No live-tree CPU or watch reduction is claimed.
+
+## Inactive HTTP Directory Instances
+
+Source work: `ses_eba1f3afeffe4Y0zOhc01XWVQx`, delegated by `ses_eeda1d251ffel81U5Y42j4kb33`, branch `serve-idle-instances`, base `5b0adef4ce`. This is worktree verification, not an installed-binary or live-server claim; integration, mirror pushes and installation belong to the coordinator.
+
+Source commits: `824049964c` (directory lifecycle and owner reservations), `0f9253818a` (HTTP request-scope leases), `2baaec5ec5` (MCP activity), `4cc239a005` (serve/web setting, schema, SDK and web documentation). The retained proof and this provenance record are committed separately above those source changes.
+
+`opencode serve` and `opencode web` read global `server.instanceIdleTimeout` at startup: milliseconds, default `900000` (15 minutes), `0` disables. A directory is disposed after that interval without activity and recreated on its next request. Session/project/message data is retained. TUI/private HTTP handlers do not opt in; an ordinary `InstanceStore.load` pins its entry even if HTTP opened it first. In-process listeners must explicitly pass `instanceIdleTimeout`.
+
+Stable seams:
+
+- `packages/core/src/v1/config/server.ts`: schema, units and default documentation; regenerated SDK `ServerConfig` carries the optional field.
+- `packages/opencode/src/cli/network.ts`, `cli/cmd/serve.ts`, `cli/cmd/web.ts`, `server/server.ts`: global-only configuration and explicit listener opt-in, without changing TUI/ACP/private defaults.
+- `packages/opencode/src/server/routes/instance/httpapi/middleware/instance-context.ts`: scoped HTTP acquisition. Effect's request scope spans the Node response writer and WebSocket handler; its Web handler transfers that scope to streamed body exit. Lease release is not tied to handler-return time.
+- `packages/opencode/src/project/instance-store.ts`: deduplicated boot, per-entry generation identity, admission/disposal barrier and the existing registered finalizers. Disposal commits synchronously only with the same idle revision and zero active holds; new loads wait for finalizers before creating a replacement. A failed boot finalizes partial state before allowing retry.
+- `packages/opencode/src/project/instance-activity.ts`: per-context activity, revision and scoped idle wait, with no process-wide idle scan. Persistent/private entries are outside activity fencing. `owner/quiescence.ts` reuses existing activity/fork/promise reservations, so async session runners, shells, tools, background work and interrupted promise preparation keep their directory alive independently of request completion.
+- `packages/opencode/src/mcp/index.ts` and `mcp/catalog.ts`: actual MCP operations and notification-triggered catalog refreshes hold activity; tracked network promises retain it until settlement. Existing `InstanceState`/`ScopedCache` invalidation closes transports and descendants. No second process killer is added to production.
+
+Retained regressions:
+
+- `test/project/instance-idle.test.ts`: deterministic clock expiry/renewal, overlapping request scopes, detached work and independent idle directories, interrupted promises, both private/HTTP load orders, disposal settlement, pending/failed boot, failed cleanup and explicit reload.
+- `test/server/httpapi-instance-idle.test.ts`: real dynamic-port Node HTTP requests, open responses, complete/cancelled streams, detached work, WebSocket close, failed handlers, absent/disabled policy.
+- `test/cli/serve/instance-idle-timeout.test.ts`: global timeout default, override, disable and rejected invalid values.
+- Original focused HTTP test failed before implementation: `0 pass, 1 fail`, `completed HTTP instance retained past idle timeout`; the implemented lifecycle passes the same case.
+
+Linux runtime proof, from `packages/opencode`: `bun script/serve-idle-proof.ts <report.json>`, with `--retained-control` for the disabled-policy control. `serve-idle-probe.ts` reads only PID/start identity, liveness and RSS, never environment or raw argv. The driver launches the source CLI on a dynamic loopback port with an allowlisted environment, private HOME/XDG/tool stores, two directories with a real stdio MCP and descendant each, and an actual `prompt_async` turn held by a local mock LLM. All owned children are identity-checked and cleaned; scratch is removed.
+
+- Exact base `5b0adef4ce`, archived source plus the same driver and PID/descendant fixture instrumentation only: identical proof fails `idle MCP scope was retained`, `2 !== 0`. After 2.5 seconds the idle pair still consumes `98299904` RSS bytes; the active pair remains alive too. The configured one-second limit is not implemented on that base.
+- Candidate, one-second window: five processes and `823562240` aggregate RSS bytes at load. During the held turn the active MCP pair remains two processes/`100102144` bytes while the idle pair is zero. After the turn settles both MCP pairs are zero, with only the source server left (`699662336` RSS bytes). Another request creates a different MCP PID.
+- Disabled-policy control: both pairs remain alive through the idle window and after turn completion; five total processes remain until driver cleanup. These are small synthetic mechanism measurements, not a projection of the reported 47 live directory sets or a source-server heap bound.
+- Inherited `TMPDIR` on this host points inside another Git repository. Use `env -u TMPDIR bun test ...` for non-Git fixture tests. The existing `httpapi-public-openapi.test.ts` busy-error assertion fails identically on archived base and candidate (`SessionBusyError` expected, empty reference returned); it is unrelated to this change and remains untouched.
+- Final broad run: `env -u TMPDIR bun test --timeout 30000 test/server test/project test/mcp test/session/owner-quiescence.test.ts test/lsp/quiescence.test.ts test/cli/serve`: `497 pass, 3 skip, 1 fail`, with only that baseline-confirmed OpenAPI assertion failing. Session prompt/runner/background regression run: `115 pass, 1 skip, 0 fail`. Core and opencode `bun typecheck` pass; SDK regeneration and its TypeScript build pass; changed TypeScript files have no LSP errors.
+- A repeat of the final source process proof again kept the active pair and expired the idle pair, then expired the completed turn's pair and recreated a different PID on demand. Both candidate runs and the retained-control run report successful owned-process cleanup. No live API, configuration, database, serve unit, TUI, default Vibeterm server or Meridian instance was modified or restarted.
 
 ## Audit and upstream lifecycle
 
