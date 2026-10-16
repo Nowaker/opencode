@@ -59,6 +59,22 @@ This architecture lets opencode support multiple clients and allows you to inter
 You can run `opencode serve` to start a standalone server. If you have the
 opencode TUI running, `opencode serve` will start a new server.
 
+#### Directory instance lifetime
+
+`opencode serve` and `opencode web` release directory instances after 15 minutes without activity. Disposal closes that directory's MCP clients and subprocesses, along with its other instance-scoped services. The next request recreates the instance on demand; persisted projects, sessions and messages are not deleted.
+
+Set `server.instanceIdleTimeout` in your global `opencode.json` to change the interval in milliseconds. `0` disables idle disposal. This setting is read when the server starts, not from individual project configuration.
+
+```json
+{
+  "server": {
+    "instanceIdleTimeout": 900000
+  }
+}
+```
+
+An instance remains alive while a request, streamed response or WebSocket is open, or while its asynchronous session, tool, permission, question, background or MCP work is active. The full idle interval starts after the last activity settles, including underlying promises whose HTTP caller disconnected. Activity in one directory does not keep other idle directories alive. Ordinary TUI/private instances are not enrolled in this policy. In-process `Server.listen()` callers opt in explicitly with `instanceIdleTimeout`; omitting it preserves their existing lifetime.
+
 ---
 
 #### Connect to an existing server

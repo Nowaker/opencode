@@ -59,6 +59,12 @@ export const resolveNetworkOptions = Effect.fn("Cli.resolveNetworkOptions")(func
   return resolveNetworkOptionsNoConfig(args, config)
 })
 
+export const resolveInstanceIdleTimeout = Effect.gen(function* () {
+  const { Config } = yield* Effect.promise(() => import("@/config/config"))
+  const config = yield* Config.Service.use((cfg) => cfg.getGlobal())
+  return config.server?.instanceIdleTimeout ?? 15 * 60_000
+})
+
 export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: ConfigV1.Info) {
   const portExplicitlySet = hasArg("--port")
   const hostnameExplicitlySet = hasArg("--hostname")

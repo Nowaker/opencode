@@ -1678,6 +1678,7 @@ export type ServerConfig = {
   mdns?: boolean
   mdnsDomain?: string
   cors?: Array<string>
+  instanceIdleTimeout?: number
 }
 
 export type PermissionActionConfig = "ask" | "allow" | "deny"

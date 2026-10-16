@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { withNetworkOptions, resolveNetworkOptions, resolveInstanceIdleTimeout } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { openUrl } from "@opencode-ai/core/open"
 import { networkInterfaces } from "os"
@@ -41,7 +41,8 @@ export const WebCommand = effectCmd({
       UI.println(UI.Style.TEXT_WARNING_BOLD + "!  OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
     }
     const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => Server.listen(opts))
+    const instanceIdleTimeout = yield* resolveInstanceIdleTimeout
+    const server = yield* Effect.promise(() => Server.listen({ ...opts, instanceIdleTimeout }))
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
