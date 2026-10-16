@@ -26,13 +26,19 @@ export const CALL_GRACE_MS = 60 * 1000
 // `timeout` replaces them and a user's `tool_timeout.<tool>` beats both.
 const UNLIMITED = new Set(["question", "task", "call_omo_agent"])
 
+/** Limit for built-in file tools, which never legitimately run this long: a call that does is hung on I/O. */
+export const FILE_TOOL_MS = 10 * 60 * 1000
+
+// A lower `tool_timeout.default` still applies to these; a higher one does not lift them.
+const FILE_TOOLS = new Set(["read", "write", "edit", "grep", "glob"])
+
 /**
  * The most specific setting wins; each level is only a default for the one
  * below it:
  *
  * 1. the user's `tool_timeout.<tool>`, higher or lower;
  * 2. the tool provider's default: a plugin tool's `timeout`, an MCP server's
- *    `tool_timeout`, or the built-in exemptions above;
+ *    `tool_timeout`, the built-in exemptions, or the file tools' 10 minutes;
  * 3. the user's `tool_timeout.default`, else 30 minutes.
  *
  * A per-call timeout the tool itself takes (bash's `timeout` argument) raises
@@ -141,7 +147,13 @@ export function format(ms: number) {
 function fallback(input: { tool: string; config?: Readonly<Record<string, Setting>>; declared?: Limit }): Limit {
   if (input.declared) return input.declared
   if (UNLIMITED.has(input.tool)) return { ms: false, source: "built-in default" }
-  if (input.config?.default !== undefined) return { ms: input.config.default, source: "config: tool_timeout.default" }
+  const configured = input.config?.default
+  if (FILE_TOOLS.has(input.tool) && (configured === undefined || configured === false || configured > FILE_TOOL_MS))
+    return {
+      ms: FILE_TOOL_MS,
+      source: `built-in default for ${input.tool}, set tool_timeout.${input.tool} to change it`,
+    }
+  if (configured !== undefined) return { ms: configured, source: "config: tool_timeout.default" }
   return { ms: DEFAULT_MS, source: "default" }
 }
 

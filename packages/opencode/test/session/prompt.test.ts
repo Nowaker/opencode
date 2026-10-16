@@ -8,6 +8,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
+import { closeSync, constants, openSync } from "fs"
 import { fileURLToPath } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -2531,6 +2532,37 @@ unix(
       if (part?.state.status === "completed") expect(part.state.output).toContain("slept")
     }),
   { git: true },
+  30_000,
+)
+
+unix(
+  "a read hung opening a FIFO ends at a lower tool_timeout.default and the turn continues",
+  () =>
+    Effect.gen(function* () {
+      const { directory } = yield* TestInstance
+      const fifo = path.join(directory, "hang.fifo")
+      expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0)
+      // The blocked open holds a filesystem worker thread; opening the write end releases it.
+      yield* Effect.addFinalizer(() =>
+        Effect.try({
+          try: () => closeSync(openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK)),
+          catch: (cause) => cause,
+        }).pipe(Effect.ignore),
+      )
+      const started = Date.now()
+      const { llm, result, part } = yield* runOneTool(
+        (url) => ({ ...providerCfg(url), tool_timeout: { default: 300 } }),
+        "read",
+        { filePath: fifo },
+      )
+
+      expect(part?.state.status).toBe("error")
+      if (part?.state.status === "error")
+        expect(part.state.error).toBe("tool call exceeded its 300ms limit (config: tool_timeout.default)")
+      expect(Date.now() - started).toBeLessThan(10_000)
+      expect(yield* llm.calls).toBe(2)
+      expect(result.parts.some((item) => item.type === "text" && item.text === "after the tool")).toBe(true)
+    }),
   30_000,
 )
 
