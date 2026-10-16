@@ -107,6 +107,11 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-15 `ses_ebbf8304effeyn1vwapV0HP1Bm`](./sessions/2026-10-15-file-tool-limit.md)
+  - read, write, edit, grep and glob end after 10 minutes (a lower
+    `tool_timeout.default` applies); ripgrep aborted with the call; added to
+    PR #54503; installed `vt-310` on both hosts, FIFO-read proof.
+
 - [2026-10-15 `ses_ed1e2b932ffe6tTqhsOiGuYXRE`](./sessions/2026-10-15-file-output-syntax.md)
   - Tool history screened (bash reads/searches, read, grep, grep_app, context7);
     `syntax.file_output` colors file contents in tool output by language; v1 PR

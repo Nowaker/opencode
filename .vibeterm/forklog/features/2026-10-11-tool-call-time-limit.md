@@ -6,11 +6,11 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tool-timeout` (fork), `tool-call-limit` (upstream PR)
 - First local commit: `d107564059`
-- Current local commit(s): `d107564059`
+- Current local commit(s): `d107564059`, `fd28603b98`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7`
 - Upstream PR: [anomalyco/opencode#54503](https://github.com/anomalyco/opencode/pull/54503)
-  (base `v1`, head `Nowaker:tool-call-limit` = `916886e976`); closes #53433
+  (base `v1`, head `Nowaker:tool-call-limit` = `49691d403e`); closes #53433
 
 ## Original request
 
@@ -31,6 +31,8 @@ The full design (resolution levels, built-in exemptions, bash interaction, a
   default (plugin `tool({ timeout })`, MCP `tool_timeout`, built-in
   exemptions), then `tool_timeout.default`, else 30 minutes.
 - `question`, `task` and `call_omo_agent` have no limit unless configured.
+- `read`, `write`, `edit`, `grep` and `glob` default to 10 minutes, or a lower
+  `tool_timeout.default`; a higher default or `false` does not lift them.
 - bash's own `timeout` raises its limit unless `tool_timeout.bash` is set.
 
 ## Non-goals
@@ -61,6 +63,7 @@ The full design (resolution levels, built-in exemptions, bash interaction, a
 | `d107564059` | 2026-10-11 | MCP server `tool_timeout` | `packages/core/src/v1/config/mcp.ts`, `McpTool.toolTimeout`, `ConfigV2Compat` `Server` |
 | `d107564059` | 2026-10-11 | Plugin `tool({ timeout })` | `packages/plugin/src/tool.ts`, `fromPlugin` in `tool/registry.ts` |
 | `d107564059` | 2026-10-11 | bash per-call raise | `Tool.Def.callTimeout`, `ShellTool` |
+| `fd28603b98` | 2026-10-15 | 10-minute built-in default for the file tools, ripgrep aborted with the call | `FILE_TOOL_MS`/`FILE_TOOLS` in `tool/timeout.ts`; `signal: ctx.abort` in `tool/grep.ts`, `tool/glob.ts` |
 | `d107564059` | 2026-10-11 | Docs and SDK | `config.mdx#tool-time-limits`, `custom-tools.mdx#time-limit`, `mcp-servers.mdx`, `plugins.mdx`, `tools.mdx`, v2 `types.gen.ts` |
 
 ## Verification
@@ -74,13 +77,19 @@ The full design (resolution levels, built-in exemptions, bash interaction, a
 
 - 2026-10-11 [`ses_ed5bde150ffepnn3xqxHaucDLN`](../sessions/2026-10-11-tool-call-time-limit.md) -
   initial build, upstream PR #54503, installs on m4max and desktop.
+- 2026-10-15 [`ses_ebbf8304effeyn1vwapV0HP1Bm`](../sessions/2026-10-15-file-tool-limit.md) -
+  10-minute default for read/write/edit/grep/glob, added to PR #54503,
+  installs on desktop and m4max.
 
 ## Current maintenance notes
 
 - On an upstream bump, check that every `execute` in `SessionTools.resolve`
   still goes through `guard` (registry, three MCP resource tools, MCP tools).
 - New built-in tools that legitimately wait on a person or a subagent belong
-  in `UNLIMITED` in `tool/timeout.ts`.
+  in `UNLIMITED` in `tool/timeout.ts`; new built-in file tools belong in
+  `FILE_TOOLS`.
+- The stuck detector's `TOOL_BOUNDS` (opencode-tools
+  `_lib/stuck-detector/thresholds.ts`) mirrors the 10-minute file-tool limit.
 - Regenerate the SDK with `./packages/sdk/js/script/build.ts` after schema
   changes.
 
