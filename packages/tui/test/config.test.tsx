@@ -51,6 +51,8 @@ test("validates config constraints", () => {
     syntax: { tool_output: { browser: "json", "*": "auto" } },
   })
   expect(() => decodeInfo({ syntax: { tool_output: { browser: true } } })).toThrow()
+  expect(decodeInfo({ syntax: { file_output: true } })).toEqual({ syntax: { file_output: true } })
+  expect(() => decodeInfo({ syntax: { file_output: "yes" } })).toThrow()
   expect(decodeInfo({ attention: { sounds: { unknown: "sound.wav" } } })).toEqual({ attention: { sounds: {} } })
 })
 

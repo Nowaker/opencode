@@ -32,6 +32,12 @@ function globToRegExp(pattern: string) {
   return new RegExp(`^${body}$`)
 }
 
+// What `syntax.tool_output` says for a tool: its exact name, else the most specific glob.
+export function toolOutputSetting(settings: Record<string, string> | undefined, tool: string) {
+  if (!settings) return
+  return settings[tool] ?? bestGlob(settings, tool)
+}
+
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 const detected = new Map<string, string | undefined>()
 const DETECTED_ENTRIES = 500
