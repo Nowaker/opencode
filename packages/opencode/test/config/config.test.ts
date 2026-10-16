@@ -676,6 +676,132 @@ it.instance("jsonc overrides json in the same directory", () =>
   }),
 )
 
+// root/opencode.json, root/repo (a git repository) and an isolated global config dir. The instance runs in
+// root/repo, so anything read from root/ was found above the git worktree.
+const withParentOfRepo = <A, E, R>(
+  input: { global?: object; parent?: object; parentLocal?: object; repo?: object; repoLocal?: object },
+  effect: Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const root = yield* tmpdirScoped()
+    const global = yield* tmpdirScoped()
+    const repo = path.join(root, "repo")
+    yield* FSUtil.use.ensureDir(repo)
+    yield* Effect.sync(() => {
+      for (const args of [
+        ["init", "-q"],
+        [
+          "-c",
+          "user.email=test@opencode.test",
+          "-c",
+          "user.name=Test",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "-q",
+          "--allow-empty",
+          "-m",
+          "root",
+        ],
+      ])
+        expect(Bun.spawnSync(["git", ...args], { cwd: repo }).exitCode).toBe(0)
+    })
+    yield* Effect.all(
+      [
+        input.global ? writeConfigEffect(global, schemaConfig(input.global)) : undefined,
+        input.parent ? writeConfigEffect(root, schemaConfig(input.parent)) : undefined,
+        input.parentLocal
+          ? writeConfigEffect(path.join(root, ".opencode"), schemaConfig(input.parentLocal))
+          : undefined,
+        input.repo ? writeConfigEffect(repo, schemaConfig(input.repo)) : undefined,
+        input.repoLocal ? writeConfigEffect(path.join(repo, ".opencode"), schemaConfig(input.repoLocal)) : undefined,
+      ].filter((effect): effect is Effect.Effect<void, FSUtil.Error, FSUtil.Service> => effect !== undefined),
+      { concurrency: "unbounded" },
+    )
+    return yield* withGlobalConfigDir(
+      global,
+      withInstanceDir(
+        repo,
+        Effect.gen(function* () {
+          expect((yield* InstanceRef)?.worktree).toBe(repo)
+          return yield* effect
+        }),
+      ),
+    )
+  })
+
+it.effect("reads project config above the git worktree, nearer file wins", () =>
+  withParentOfRepo(
+    {
+      parent: { model: "parent/model", username: "parent" },
+      repo: { model: "repo/model" },
+    },
+    Effect.gen(function* () {
+      const config = yield* Config.use.get()
+      expect(config.model).toBe("repo/model")
+      expect(config.username).toBe("parent")
+    }),
+  ),
+)
+
+it.effect("global config ranks below project config found above the git worktree", () =>
+  withParentOfRepo(
+    {
+      global: { model: "global/model", username: "global", snapshot: false },
+      parent: { model: "parent/model", username: "parent" },
+      repo: { model: "repo/model" },
+    },
+    Effect.gen(function* () {
+      const config = yield* Config.use.get()
+      expect(config.model).toBe("repo/model")
+      expect(config.username).toBe("parent")
+      expect(config.snapshot).toBe(false)
+    }),
+  ),
+)
+
+it.effect("reads .opencode directories above the git worktree, nearer directory wins", () =>
+  withParentOfRepo(
+    {
+      parentLocal: { model: "parent-local/model", username: "parent-local" },
+      repoLocal: { model: "repo-local/model" },
+    },
+    Effect.gen(function* () {
+      const config = yield* Config.use.get()
+      expect(config.model).toBe("repo-local/model")
+      expect(config.username).toBe("parent-local")
+      const dirs = yield* Config.use.directories()
+      const local = dirs.filter((dir) => dir.endsWith(".opencode"))
+      expect(local.indexOf(path.join(path.dirname((yield* TestInstance).directory), ".opencode"))).toBeLessThan(
+        local.indexOf(path.join((yield* TestInstance).directory, ".opencode")),
+      )
+    }),
+  ),
+)
+
+it.effect("project walk does not re-read the global config file as project config", () =>
+  Effect.gen(function* () {
+    const root = yield* tmpdirScoped()
+    const global = path.join(root, "global")
+    const directory = path.join(global, "project")
+    yield* writeConfigEffect(root, schemaConfig({ model: "parent/model" }))
+    yield* writeConfigEffect(global, schemaConfig({ model: "global/model", username: "global" }))
+    yield* FSUtil.use.ensureDir(directory)
+    yield* withGlobalConfigDir(
+      global,
+      withInstanceDir(
+        directory,
+        Effect.gen(function* () {
+          const config = yield* Config.use.get()
+          // Re-read through the walk, the global file would rank above root/opencode.json.
+          expect(config.model).toBe("parent/model")
+          expect(config.username).toBe("global")
+        }),
+      ),
+    )
+  }),
+)
+
 it.instance("handles environment variable substitution", () =>
   withProcessEnv(
     "TEST_VAR",

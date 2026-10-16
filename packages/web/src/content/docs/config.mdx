@@ -116,7 +116,7 @@ For project-specific TUI settings, add `tui.json` alongside it.
 Place project specific config in the root of your project.
 :::
 
-When OpenCode starts up, it first looks for a config file in the current directory, then traverses up to the nearest Git directory.
+When OpenCode starts up, it looks for `opencode.json`, `opencode.jsonc` and `.opencode` directories in the current directory and in every parent directory up to the filesystem root, past the Git repository root. This matches OpenCode v2. All of them are merged; the nearest one wins on conflicting keys, so a repository's own config overrides one in a directory above it, such as a shared `~/work/opencode.json`. Every `opencode.json` file ranks below every `.opencode` directory. Within one directory, `opencode.jsonc` overrides `opencode.json`. Your global config directory is never read again as project config, even when the walk passes through it. Set `OPENCODE_DISABLE_PROJECT_CONFIG=1` to skip the walk.
 
 This is also safe to be checked into Git and uses the same schema as the global one.
 
