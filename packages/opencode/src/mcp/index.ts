@@ -873,13 +873,13 @@ const layer = Layer.effect(
       const directory = yield* InstanceState.directory
 
       return yield* Effect.tryPromise({
-        try: () => {
-          const client = createClient(directory)
-          return client.connect(transport).then(async () => {
+        try: () =>
+          InstanceActivity.runPromise(async () => {
+            const client = createClient(directory)
+            await client.connect(transport)
             await authProvider.commit()
             return { authorizationUrl: "", oauthState, client } satisfies AuthResult
-          })
-        },
+          }),
         catch: (error) => error,
       }).pipe(
         Effect.catch((error) => {
@@ -943,19 +943,20 @@ const layer = Layer.effect(
       const pending = pendingOAuthTransports.get(mcpName)
       if (!pending) throw new Error(`No pending OAuth flow for MCP server: ${mcpName}`)
 
-      const error = yield* Effect.tryPromise({
-        try: () => pending.transport.finishAuth(authorizationCode),
-        catch: (error) => error,
-      }).pipe(
-        Effect.match({
-          onFailure: (error) => (error instanceof Error ? error.message : String(error)),
-          onSuccess: () => undefined,
+      const error = yield* Effect.promise(() =>
+        InstanceActivity.runPromise(async () => {
+          const error = await pending.transport.finishAuth(authorizationCode).then(
+            () => undefined,
+            (error: unknown) => (error instanceof Error ? error.message : String(error)),
+          )
+          if (error) return error
+          await pending.provider?.commit()
+          return undefined
         }),
       )
 
       if (error) return { status: "failed", error: `OAuth completion failed: ${error}` } satisfies Status
 
-      yield* Effect.promise(() => pending.provider?.commit() ?? Promise.resolve())
       yield* auth.clearCodeVerifier(mcpName)
       pendingOAuthTransports.delete(mcpName)
 
