@@ -9,7 +9,7 @@
 - Current local commit(s): `fcf142f4c4`, `1947fdfb55`, `f25a2b83a7`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, contains `v1.18.34`); landed on `dev-nowaker` above `a04c68d8e2`
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
-- Upstream: issue [#53642](https://github.com/anomalyco/opencode/issues/53642), PR [#53660](https://github.com/anomalyco/opencode/pull/53660)
+- Upstream: v1 issue [#56279](https://github.com/anomalyco/opencode/issues/56279), v1 PR [#56280](https://github.com/anomalyco/opencode/pull/56280) (head `tui-history-crop` `e0991c916e`, base `v1`); earlier issue [#53642](https://github.com/anomalyco/opencode/issues/53642) closed as not planned and PR [#53660](https://github.com/anomalyco/opencode/pull/53660) closed, both against `dev`
 
 ## Original request
 
@@ -141,11 +141,13 @@ Load all grew TUI RSS by 1.3-4.3 GB (median 0.52 MB per hidden message) and took
 - 2026-10-16 [`ses_eec5b71ddffe4A47jCysfkQh6l`](../sessions/2026-10-16-history-bar.md) -
   `f25a2b83a7`: benchmark of ten long sessions; three-row bar with 100-message
   pages and a costed load-all label; `tui-history-crop` at `3f2116de60`; vt-326
-  on desktop and m4max.
+  on desktop and m4max. Then v1 issue #56279 and v1 PR #56280; the branch
+  commit was re-authored without AI trailers as `e0991c916e` (same tree),
+  matching our other v1 PR branches.
 
 ## Current maintenance notes
 
-- Drop the fork commit once the PR (or an equivalent) is in upstream `dev`.
+- Drop the fork commits once PR #56280 (or an equivalent) is in upstream `v1`.
 - No host setting needed: `max_messages` stays at its default and
   `keep_first_prompt` defaults to `true`.
 

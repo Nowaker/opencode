@@ -119,7 +119,8 @@ carries every feature forward unchanged. That commit includes the full
 - [2026-10-16 `ses_eec5b71ddffe4A47jCysfkQh6l`](./sessions/2026-10-16-history-bar.md)
   - Benchmark load all on ten long sessions (+1.3-4.3 GB, 15-164 s); three-row
     hidden-messages bar with 100-message pages and a `load all (slow / memory
-    heavy)` label from measured per-message cost; vt-326 on both hosts.
+    heavy)` label from measured per-message cost; vt-326 on both hosts; v1
+    issue #56279 and PR #56280.
 
 - [2026-10-16 `ses_ed7634c31ffeH84yR0S99Ty8Nd`](./sessions/2026-10-16-paste-dialog-mode.md)
   - `prompt.paste_mode: "dialog"` opens a paste dialog with remembered

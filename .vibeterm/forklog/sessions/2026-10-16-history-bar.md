@@ -70,7 +70,7 @@ Per gap, from 10 ms and 0.5 MB per hidden message: `load all` below 300 hidden, 
 
 | Repository | Branch | Before | After | Action |
 |---|---|---|---|---|
-| `opencode` | `tui-history-crop` | `7661b165d6` | `3f2116de60` | commit on `history-bar`, fast-forward push to `nowaker-github` and `origin` |
+| `opencode` | `tui-history-crop` | `7661b165d6` | `e0991c916e` | commit `3f2116de60` on `history-bar`, fast-forward push to `nowaker-github` and `origin`; then the same tree re-authored without AI trailers and force-pushed with lease to both, for the v1 PR |
 | `opencode` | `dev-nowaker` | `de17779440` | `f25a2b83a7` + this forklog commit | cherry-pick on `history-bar-land`; conflicts with the moved `keybind-definitions.ts` and `FilteredNotice` resolved keeping both; fast-forward; pushed to both remotes |
 
 ## Features touched
@@ -81,7 +81,7 @@ Per gap, from 10 ms and 0.5 MB per hidden message: `load all` below 300 hidden, 
 
 ## Other delivered work
 
-- Upstream: PR #53660 (against `dev`) is closed and no v1 PR exists for this feature, so there was nothing to update; the v1 branch `tui-history-crop` carries both commits.
+- Upstream: PR #53660 (against `dev`) is closed and #53642 was closed as not planned, so a new v1 issue [#56279](https://github.com/anomalyco/opencode/issues/56279) and v1 PR [#56280](https://github.com/anomalyco/opencode/pull/56280) (base `v1`, two commits, benchmark table in the body, v1 note first, attribution last) were opened. Its commits carry no AI trailers, like the branches of our other open v1 PRs (#56246, #56268).
 - Vibeterm: no change. The new keybinds are not catalog knobs and no other `tui.json` key was added.
 
 ## Verification
