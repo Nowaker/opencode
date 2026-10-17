@@ -108,8 +108,14 @@ carries every feature forward unchanged. That commit includes the full
 - [ctrl+u deletes back to the line start, or the whole line](./features/2026-10-16-input-line-discard.md)
 - [A paste dialog with cleanup and wrap options on every paste](./features/2026-10-16-paste-dialog-mode.md)
 - [Transcript filter: choose which kinds of entries the transcript shows](./features/2026-10-16-transcript-filter.md)
+- [Send a turn past the composer from a TUI plugin](./features/2026-10-16-tui-prompt-deliver.md)
 
 ## Session records
+
+- [2026-10-16 `ses_ed24b7cfbffe5YyKo7piBEsLF6`](./sessions/2026-10-16-tui-prompt-deliver.md)
+  - Add `api.prompt.deliver`, so vibeterm deliveries reach a session while a
+    dialog is open over its composer, without closing it or touching the
+    draft; build and install on both hosts.
 
 - [2026-10-16 `ses_eb93ce62fffekug2rIeYIQFnpF`](./sessions/2026-10-16-transcript-filter.md)
   - `/filter` (ctrl+x f) dialog shows or hides 13 entry kinds, with tool calls
