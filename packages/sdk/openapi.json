@@ -272,6 +272,139 @@
         ]
       }
     },
+    "/global/quiescence": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "global.quiescence.status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OwnerQuiescenceStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerQuiescenceStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get owner admission status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.global.quiescence.status({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["global"],
+        "operationId": "global.quiescence.acquire",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OwnerQuiescenceCapability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerQuiescenceCapability"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Seal an idle process owner",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.global.quiescence.acquire({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["global"],
+        "operationId": "global.quiescence.release",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Release an owner seal by capability",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerQuiescenceCapability"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.global.quiescence.release({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/global/health": {
       "get": {
         "tags": ["global"],
@@ -570,6 +703,474 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.global.upgrade({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/global/memory": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "global.memory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Process + JSC memory diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "process": {
+                      "type": "object",
+                      "properties": {
+                        "rss": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "heap_total": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "heap_used": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "external": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "array_buffers": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["rss", "heap_total", "heap_used", "external", "array_buffers"],
+                      "additionalProperties": false
+                    },
+                    "jsc_heap": {
+                      "type": "object",
+                      "properties": {
+                        "heap_size": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "heap_capacity": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "extra_memory_size": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "object_count": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "protected_object_count": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "global_object_count": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "object_type_counts": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "heap_size",
+                        "heap_capacity",
+                        "extra_memory_size",
+                        "object_count",
+                        "protected_object_count",
+                        "global_object_count",
+                        "object_type_counts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "jsc_memory": {
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "peak": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "current_commit": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "peak_commit": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "page_faults": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["current", "peak", "current_commit", "peak_commit", "page_faults"],
+                      "additionalProperties": false
+                    },
+                    "captured_at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["process", "jsc_heap", "jsc_memory", "captured_at"],
+                  "additionalProperties": false,
+                  "description": "Process + JSC memory diagnostics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns process.memoryUsage(), bun:jsc.heapStats(), bun:jsc.memoryUsage(). Use to diagnose RSS bloat by comparing JS heap to RSS - a large gap indicates native (off-heap) memory growth.",
+        "summary": "Get memory diagnostics",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.global.memory({\n  ...\n})"
           }
         ]
       }
@@ -5487,7 +6088,8 @@
                     "additionalProperties": false
                   },
                   "metadata": {
-                    "type": "object"
+                    "type": "object",
+                    "description": "Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId."
                   },
                   "permission": {
                     "$ref": "#/components/schemas/PermissionRuleset"
@@ -5814,7 +6416,8 @@
                     "type": "string"
                   },
                   "metadata": {
-                    "type": "object"
+                    "type": "object",
+                    "description": "Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId."
                   },
                   "permission": {
                     "$ref": "#/components/schemas/PermissionRuleset"
@@ -6133,6 +6736,23 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["asc", "desc"]
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6276,6 +6896,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OwnerSealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSealed"
                 }
               }
             }
@@ -6798,6 +7428,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "OwnerSealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSealed"
+                }
+              }
+            }
           }
         },
         "description": "Analyze the current application and create an AGENTS.md file with project-specific agent configurations.",
@@ -7066,6 +7706,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "OwnerSealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSealed"
+                }
+              }
+            }
           }
         },
         "description": "Generate a concise summary of the session using AI compaction to preserve key information.",
@@ -7136,13 +7786,16 @@
             "description": "Prompt accepted"
           },
           "400": {
-            "description": "BadRequest | InvalidRequestError",
+            "description": "BadRequest | PromptAdmissionError | InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PromptAdmissionError"
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
@@ -7161,9 +7814,19 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "OwnerSealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSealed"
+                }
+              }
+            }
           }
         },
-        "description": "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+        "description": "Return after the user message is durably admitted, without waiting for the AI response. Admission rejection returns PromptAdmissionError; later failures are reported as session events.",
         "summary": "Send async message",
         "requestBody": {
           "content": {
@@ -7320,6 +7983,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OwnerSealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSealed"
                 }
               }
             }
@@ -7481,11 +8154,18 @@
             }
           },
           "409": {
-            "description": "SessionBusyError",
+            "description": "SessionBusyError | OwnerSealed",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionBusyError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionBusyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OwnerSealed"
+                    }
+                  ]
                 }
               }
             }
@@ -7617,7 +8297,7 @@
             }
           }
         },
-        "description": "Revert a specific message in a session, undoing its effects and restoring the previous state.",
+        "description": "Revert a specific message in a session, undoing its effects and restoring the previous state. Pass `files: false` to revert only the messages and leave every file untouched.",
         "summary": "Revert message",
         "requestBody": {
           "content": {
@@ -7632,6 +8312,9 @@
                   "partID": {
                     "type": "string",
                     "pattern": "^prt"
+                  },
+                  "files": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["messageID"],
@@ -7849,6 +8532,119 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.permission.respond({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/message/{messageID}/unqueue": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "session.unqueue",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The removed prompt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "info": {
+                      "$ref": "#/components/schemas/Message"
+                    },
+                    "parts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Part"
+                      }
+                    }
+                  },
+                  "required": ["info", "parts"],
+                  "additionalProperties": false,
+                  "description": "The removed prompt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PromptNotQueuedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptNotQueuedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Remove a prompt waiting behind the running turn before the turn reads it, without interrupting the turn. Fails with 409 when no turn is running or the turn has already read the prompt.",
+        "summary": "Unqueue prompt",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.unqueue({\n  ...\n})"
           }
         ]
       }
@@ -15694,6 +16490,61 @@
         "required": ["name", "data"],
         "additionalProperties": false
       },
+      "OwnerQuiescenceStatus": {
+        "type": "object",
+        "properties": {
+          "ownerID": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "number"
+          },
+          "sealed": {
+            "type": "boolean"
+          },
+          "committed": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "number"
+          }
+        },
+        "required": ["ownerID", "generation", "sealed", "committed", "active"],
+        "additionalProperties": false
+      },
+      "OwnerQuiescenceCapability": {
+        "type": "object",
+        "properties": {
+          "ownerID": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "number"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": ["ownerID", "generation", "token"],
+        "additionalProperties": false
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ConflictError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "SnapshotFileDiff": {
         "type": "object",
         "properties": {
@@ -15957,6 +16808,15 @@
       "UserMessage": {
         "type": "object",
         "properties": {
+          "vibeterm": {
+            "type": "object",
+            "properties": {
+              "creator": {
+                "$ref": "#/components/schemas/VibetermCreator"
+              }
+            },
+            "additionalProperties": false
+          },
           "id": {
             "type": "string",
             "pattern": "^msg"
@@ -16109,6 +16969,18 @@
             "properties": {
               "message": {
                 "type": "string"
+              },
+              "cause": {
+                "type": "string",
+                "enum": ["cancel", "dispose", "killed"]
+              },
+              "dispose": {
+                "type": "string",
+                "enum": ["exit", "reload", "config", "api"]
+              },
+              "requester": {
+                "type": "string",
+                "enum": ["tui", "tui-revert", "api"]
               }
             },
             "required": ["message"],
@@ -16234,6 +17106,15 @@
       "AssistantMessage": {
         "type": "object",
         "properties": {
+          "vibeterm": {
+            "type": "object",
+            "properties": {
+              "creator": {
+                "$ref": "#/components/schemas/VibetermCreator"
+              }
+            },
+            "additionalProperties": false
+          },
           "id": {
             "type": "string",
             "pattern": "^msg"
@@ -20556,6 +21437,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "instanceIdleTimeout": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "additionalProperties": false,
@@ -21011,6 +21896,19 @@
           "timeout": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "tool_timeout": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "boolean",
+                "enum": [false]
+              }
+            ],
+            "description": "Default time limit in ms for each call to this server's tools, or false for none. Replaces tool_timeout.default for these tools; a tool_timeout entry naming the tool replaces this. Unlike timeout, it is not reset by progress notifications."
           }
         },
         "required": ["type", "command"],
@@ -21075,6 +21973,19 @@
           "timeout": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "tool_timeout": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "boolean",
+                "enum": [false]
+              }
+            ],
+            "description": "Default time limit in ms for each call to this server's tools, or false for none. Replaces tool_timeout.default for these tools; a tool_timeout entry naming the tool replaces this. Unlike timeout, it is not reset by progress notifications."
           }
         },
         "required": ["type", "url"],
@@ -21151,6 +22062,9 @@
                   "type": "string"
                 },
                 "subtask": {
+                  "type": "boolean"
+                },
+                "native": {
                   "type": "boolean"
                 }
               },
@@ -21503,6 +22417,21 @@
               }
             },
             "additionalProperties": false
+          },
+          "tool_timeout": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "boolean",
+                  "enum": [false]
+                }
+              ]
+            }
           },
           "compaction": {
             "type": "object",
@@ -22146,7 +23075,8 @@
             "type": "string"
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId."
           },
           "time": {
             "type": "object",
@@ -22499,13 +23429,19 @@
           },
           "source": {
             "type": "string",
-            "enum": ["command", "mcp", "skill"]
+            "enum": ["command", "mcp", "skill", "tool"]
           },
           "template": {
             "type": "string"
           },
           "subtask": {
             "type": "boolean"
+          },
+          "native": {
+            "type": "boolean"
+          },
+          "tool": {
+            "type": "string"
           },
           "hints": {
             "type": "array",
@@ -23092,6 +24028,20 @@
           }
         }
       },
+      "OwnerSealed": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["OwnerSealed"]
+          },
+          "generation": {
+            "type": "number"
+          }
+        },
+        "required": ["_tag", "generation"],
+        "additionalProperties": false
+      },
       "TextPartInput": {
         "type": "object",
         "properties": {
@@ -23237,6 +24187,31 @@
         "required": ["type", "prompt", "description", "agent"],
         "additionalProperties": false
       },
+      "PromptAdmissionError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["PromptAdmissionError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "possiblyAccepted": {
+                "type": "boolean",
+                "enum": [false]
+              }
+            },
+            "required": ["message", "possiblyAccepted"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
+        "additionalProperties": false
+      },
       "SessionBusyError": {
         "type": "object",
         "properties": {
@@ -23252,6 +24227,30 @@
           }
         },
         "required": ["_tag", "sessionID", "message"],
+        "additionalProperties": false
+      },
+      "PromptNotQueuedError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["PromptNotQueuedError"]
+          },
+          "sessionID": {
+            "type": "string"
+          },
+          "messageID": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["idle", "started"]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "sessionID", "messageID", "reason", "message"],
         "additionalProperties": false
       },
       "EventTuiPromptAppend": {
@@ -23590,23 +24589,6 @@
           }
         },
         "required": ["text"],
-        "additionalProperties": false
-      },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ConflictError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "ServiceUnavailableError": {
@@ -24535,6 +25517,52 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "VibetermCreator": {
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string"
+          },
+          "machine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "type": "string"
+          },
+          "at": {
+            "type": "number"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "originalObjectId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["stamped"]
+          }
+        },
+        "required": ["machineId", "machine", "hostname", "platform", "at", "objectId", "source"],
         "additionalProperties": false
       },
       "ModelRef": {
