@@ -65,12 +65,12 @@ export const rpc = {
       Effect.gen(function* () {
         const cfg = yield* Config.Service
         yield* cfg.invalidate()
-        yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true })
+        yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true, reason: "reload" })
       }),
     )
   },
   async shutdown() {
-    await InstanceRuntime.disposeAllInstances()
+    await InstanceRuntime.disposeAllInstances("exit")
     if (server) await server.stop(true)
     process.off("unhandledRejection", onUnhandledRejection)
     process.off("uncaughtException", onUncaughtException)

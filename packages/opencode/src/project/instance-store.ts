@@ -6,6 +6,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
+import type { DisposeReason } from "@/effect/instance-registry"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
@@ -23,9 +24,9 @@ export interface Interface {
   readonly load: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly acquire: (input: LoadInput, idleTimeout: number) => Effect.Effect<InstanceContext, never, Scope.Scope>
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
-  readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
-  readonly disposeDirectory: (directory: string) => Effect.Effect<void>
-  readonly disposeAll: () => Effect.Effect<void>
+  readonly dispose: (ctx: InstanceContext, reason?: DisposeReason) => Effect.Effect<void>
+  readonly disposeDirectory: (directory: string, reason?: DisposeReason) => Effect.Effect<void>
+  readonly disposeAll: (reason?: DisposeReason) => Effect.Effect<void>
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
@@ -98,13 +99,18 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
         }),
       )
 
-    const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
+    const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext, reason?: DisposeReason) {
       yield* Effect.logInfo("disposing instance", { directory: ctx.directory })
-      yield* Effect.promise(() => OwnerQuiescence.cleanupPromise(() => runDisposers(ctx.directory)))
+      yield* Effect.promise(() => OwnerQuiescence.cleanupPromise(() => runDisposers(ctx.directory, reason)))
       yield* emitDisposed({ directory: ctx.directory, project: ctx.project.id })
     })
 
-    const disposeEntry = Effect.fnUntraced(function* (entry: Entry, ctx: InstanceContext, revision?: number) {
+    const disposeEntry = Effect.fnUntraced(function* (
+      entry: Entry,
+      ctx: InstanceContext,
+      revision?: number,
+      reason?: DisposeReason,
+    ) {
       const directory = ctx.directory
       if (cache.get(directory) !== entry) return false
       if (entry.disposing) return yield* Deferred.await(entry.disposing).pipe(Effect.as(false))
@@ -117,7 +123,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       entry.disposing = done
       entry.activity.retired = true
       InstanceActivity.notify(entry.activity)
-      return yield* disposeContext(ctx).pipe(
+      return yield* disposeContext(ctx, reason).pipe(
         Effect.andThen(removeEntry(directory, entry)),
         Effect.onExit((exit) =>
           Effect.gen(function* () {
@@ -217,7 +223,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
                 yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
                 previous.activity.retired = true
                 InstanceActivity.notify(previous.activity)
-                yield* Effect.promise(() => OwnerQuiescence.cleanupPromise(() => runDisposers(directory)))
+                yield* Effect.promise(() => OwnerQuiescence.cleanupPromise(() => runDisposers(directory, "reload")))
                 yield* emitDisposed({ directory, project: input.project?.id })
               }
               yield* completeLoad(directory, input, entry)
@@ -231,26 +237,30 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       ).pipe(Effect.withSpan("InstanceStore.reload"))
     }
 
-    const dispose = Effect.fn("InstanceStore.dispose")(function* (ctx: InstanceContext) {
+    const dispose = Effect.fn("InstanceStore.dispose")(function* (ctx: InstanceContext, reason?: DisposeReason) {
       const entry = cache.get(ctx.directory)
-      if (!entry) return yield* disposeContext(ctx)
+      if (!entry) return yield* disposeContext(ctx, reason)
 
       const exit = yield* Deferred.await(entry.deferred).pipe(Effect.exit)
       if (Exit.isFailure(exit)) return yield* removeEntry(ctx.directory, entry).pipe(Effect.asVoid)
       if (exit.value !== ctx) return
-      yield* disposeEntry(entry, ctx).pipe(Effect.asVoid)
+      yield* disposeEntry(entry, ctx, undefined, reason).pipe(Effect.asVoid)
     })
 
-    const disposeDirectory = Effect.fn("InstanceStore.disposeDirectory")(function* (input: string) {
+    const disposeDirectory = Effect.fn("InstanceStore.disposeDirectory")(function* (input: string, reason?: DisposeReason) {
       const directory = FSUtil.resolve(input)
       const entry = cache.get(directory)
       if (!entry) return
       const exit = yield* Deferred.await(entry.deferred).pipe(Effect.exit)
       if (Exit.isFailure(exit)) return yield* removeEntry(directory, entry).pipe(Effect.asVoid)
-      yield* disposeEntry(entry, exit.value).pipe(Effect.asVoid)
+      yield* disposeEntry(entry, exit.value, undefined, reason).pipe(Effect.asVoid)
     })
 
+    const disposalReason = Context.Reference<DisposeReason | undefined>("~opencode/InstanceStore/DisposeReason", {
+      defaultValue: () => undefined,
+    })
     const disposeAllOnce = Effect.fnUntraced(function* () {
+      const reason = yield* disposalReason
       yield* Effect.logInfo("disposing all instances")
       yield* Effect.forEach(
         [...cache.entries()],
@@ -262,15 +272,15 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
               yield* removeEntry(item[0], item[1])
               return
             }
-            yield* disposeEntry(item[1], exit.value)
+            yield* disposeEntry(item[1], exit.value, undefined, reason)
           }),
         { discard: true },
       )
     })
 
     const cachedDisposeAll = yield* Effect.cachedWithTTL(disposeAllOnce(), Duration.zero)
-    const disposeAll = Effect.fn("InstanceStore.disposeAll")(function* () {
-      return yield* cachedDisposeAll
+    const disposeAll = Effect.fn("InstanceStore.disposeAll")(function* (reason?: DisposeReason) {
+      return yield* cachedDisposeAll.pipe(Effect.provideService(disposalReason, reason))
     })
 
     const provide = <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
@@ -282,9 +292,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       load: (input) => load(input),
       acquire,
       reload,
-      dispose: (ctx) => OwnerQuiescence.cleanup(dispose(ctx).pipe(Effect.uninterruptible)),
-      disposeDirectory: (directory) => OwnerQuiescence.cleanup(disposeDirectory(directory).pipe(Effect.uninterruptible)),
-      disposeAll: () => OwnerQuiescence.cleanup(disposeAll().pipe(Effect.uninterruptible)),
+      dispose: (ctx, reason) => OwnerQuiescence.cleanup(dispose(ctx, reason).pipe(Effect.uninterruptible)),
+      disposeDirectory: (directory, reason) =>
+        OwnerQuiescence.cleanup(disposeDirectory(directory, reason).pipe(Effect.uninterruptible)),
+      disposeAll: (reason) => OwnerQuiescence.cleanup(disposeAll(reason).pipe(Effect.uninterruptible)),
       provide,
     })
   }),

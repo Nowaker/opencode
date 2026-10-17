@@ -3,7 +3,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
-import { registerDisposer } from "../../src/effect/instance-registry"
+import { observeDisposal, registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { tmpdirScoped } from "../fixture/fixture"
@@ -39,6 +39,27 @@ const registerDisposerScoped = (disposer: (directory: string) => Promise<void>) 
   )
 
 describe("InstanceStore", () => {
+  it.live("publishes disposal reasons before cleanup and resets the reason after reload", () =>
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      const seen: string[] = []
+      const off = observeDisposal((disposed, reason) => {
+        if (disposed === directory) seen.push(reason ?? "unspecified")
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(off))
+      yield* registerDisposerScoped(async (disposed) => {
+        if (disposed === directory) seen.push("cleanup")
+      })
+      yield* store.load({ directory })
+      yield* store.reload({ directory })
+      yield* store.disposeAll("config")
+      yield* store.load({ directory })
+      yield* store.disposeAll()
+      expect(seen).toEqual(["reload", "cleanup", "config", "cleanup", "unspecified", "cleanup"])
+    }),
+  )
+
   it.live("loads instance context", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })

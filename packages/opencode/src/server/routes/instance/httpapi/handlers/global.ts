@@ -79,12 +79,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
-      if (result.changed) yield* OwnerQuiescence.fork(disposeAllInstancesAndEmitGlobalDisposed(), scope)
+      if (result.changed) yield* OwnerQuiescence.fork(disposeAllInstancesAndEmitGlobalDisposed({ reason: "config" }), scope)
       return result.info
     }, Effect.uninterruptible, OwnerQuiescence.activity)
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
-      yield* disposeAllInstancesAndEmitGlobalDisposed()
+      yield* disposeAllInstancesAndEmitGlobalDisposed({ reason: "api" })
       return true
     })
 

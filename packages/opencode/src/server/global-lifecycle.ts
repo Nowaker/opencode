@@ -2,6 +2,7 @@ import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
 import { Effect } from "effect"
 import { Event } from "./event"
+import type { DisposeReason } from "@/effect/instance-registry"
 
 export const emitGlobalDisposed = Effect.sync(() =>
   GlobalBus.emit("event", {
@@ -14,10 +15,10 @@ export const emitGlobalDisposed = Effect.sync(() =>
 )
 
 export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.disposeAllInstancesAndEmitGlobalDisposed")(
-  function* (options?: { swallowErrors?: boolean }) {
+  function* (options?: { swallowErrors?: boolean; reason?: DisposeReason }) {
     const store = yield* InstanceStore.Service
     yield* Effect.gen(function* () {
-      yield* store.disposeAll()
+      yield* store.disposeAll(options?.reason)
       yield* emitGlobalDisposed
     }).pipe(
       Effect.uninterruptible,
