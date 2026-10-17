@@ -311,6 +311,9 @@ export type MessageAbortedError = {
   name: "MessageAbortedError"
   data: {
     message: string
+    cause?: "cancel" | "dispose" | "killed"
+    dispose?: "exit" | "reload" | "config" | "api"
+    requester?: "tui" | "tui-revert" | "api"
   }
 }
 

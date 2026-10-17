@@ -41,7 +41,15 @@ export const AuthError = namedError("ProviderAuthError", {
   message: Schema.String,
 })
 
-export const AbortedError = namedError("MessageAbortedError", { message: Schema.String })
+export const AbortCause = Schema.Literals(["cancel", "dispose", "killed"])
+export const AbortDisposal = Schema.Literals(["exit", "reload", "config", "api"])
+export const AbortRequester = Schema.Literals(["tui", "tui-revert", "api"])
+export const AbortedError = namedError("MessageAbortedError", {
+  message: Schema.String,
+  cause: optional(AbortCause),
+  dispose: optional(AbortDisposal),
+  requester: optional(AbortRequester),
+})
 export const StructuredOutputError = namedError("StructuredOutputError", {
   message: Schema.String,
   retries: NonNegativeInt,

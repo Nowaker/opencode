@@ -3,8 +3,12 @@ export * as SessionV1 from "./session"
 import { Schema } from "effect"
 import { NonNegativeInt } from "../schema"
 import { NamedError } from "../util/error"
+import { SessionV1 } from "@opencode-ai/schema/session-v1"
 
 export {
+  AbortCause,
+  AbortDisposal,
+  AbortRequester,
   AgentPart,
   AgentPartInput,
   Assistant,
@@ -47,7 +51,7 @@ export {
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", {})
 export const AuthError = NamedError.create("ProviderAuthError", { providerID: Schema.String, message: Schema.String })
-export const AbortedError = NamedError.create("MessageAbortedError", { message: Schema.String })
+export const AbortedError = NamedError.create("MessageAbortedError", SessionV1.AbortedError.Schema.fields.data.fields)
 export const StructuredOutputError = NamedError.create("StructuredOutputError", {
   message: Schema.String,
   retries: NonNegativeInt,
