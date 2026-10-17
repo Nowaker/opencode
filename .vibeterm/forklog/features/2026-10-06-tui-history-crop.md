@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-history-crop` (also the upstream PR head)
 - First local commit: `fcf142f4c4`
-- Current local commit(s): `fcf142f4c4`, `1947fdfb55`
+- Current local commit(s): `fcf142f4c4`, `1947fdfb55`, `f25a2b83a7`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, contains `v1.18.34`); landed on `dev-nowaker` above `a04c68d8e2`
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: issue [#53642](https://github.com/anomalyco/opencode/issues/53642), PR [#53660](https://github.com/anomalyco/opencode/pull/53660)
@@ -79,6 +79,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `fcf142f4c4` | 2026-10-06 | settings, gap store, divider, load commands, paged-route directions | `HiddenMessages` / `hidden` / `session.load` / `session.hidden` in `packages/tui/src/context/sync.tsx`; `HiddenMessagesDivider`, `loadHidden` and `session.hidden.*` commands in `packages/tui/src/routes/session/index.tsx`; `Transcript` in `packages/tui/src/config/index.tsx`; `messages_hidden_*` in `packages/tui/src/config/keybind.ts`; `MessageV2.page` / `MessageV2.total` in `packages/opencode/src/session/message-v2.ts`; `MessagesQuery` and the `messages` handler in `packages/opencode/src/server/routes/instance/httpapi/` |
+| `f25a2b83a7` | 2026-10-16 | Three-row bar: `load 50 above   load 100 above`, the rule with `N messages hidden:  load all <label>`, `load 50 below   load 100 below`; pages only while smaller than the gap; `load all` on its own row when it does not fit the rule; label `(slow)` from 300 hidden, `(slow / memory heavy)` from 500 | `hiddenDivider` / `loadAllNote` / `HiddenMessagesDivider` in `packages/tui/src/routes/session/hidden-divider.tsx`; `HIDDEN_PAGE_SIZES` and `session.load(sessionID, edge, size)` in `packages/tui/src/context/sync.tsx`; `session.hidden.{above,below}.100` in `packages/tui/src/routes/session/index.tsx`; `messages_hidden_{above,below}_100` in `packages/tui/src/config/keybind-definitions.ts` |
 | `1947fdfb55` | 2026-10-11 | The unpaged `GET /session/:id/message` returns its items through the success schema again and adds `X-Total-Count` in a pre-response handler, so a stored part that no longer encodes is a 400, not a 200 with `null` | `messages` handler in `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`; `test/server/httpapi-schema-error-body.test.ts` "corrupted stored row" |
 
 ## Measurements
@@ -93,6 +94,10 @@ One real session of 7,152 messages (part JSON for the newest 50 / 100 / 200 mess
 | branch | 200 | 737 MB | 658 MB | 1.95% |
 
 Halving the limit saves about 40 MB of settled RSS on this session; doubling it costs about 50 MB. Idle CPU does not depend on the limit: an idle TUI showing the session spends about 2% of a core whatever the limit. At the default the PR settles at the same RSS as upstream `dev` (610 vs 614 MB). Its after-load figure is higher, by the pinned first prompt (here a 300+ line prompt) and run-to-run noise.
+
+### Load all on ten long sessions (2026-10-16)
+
+Load all grew TUI RSS by 1.3-4.3 GB (median 0.52 MB per hidden message) and took 15-164 s before the transcript showed (median 9.3 ms per message); half the window (50) against the default (100) was within noise. Full table and method: [session record](../sessions/2026-10-16-history-bar.md#benchmark).
 
 ## Verification
 
@@ -132,6 +137,11 @@ Halving the limit saves about 40 MB of settled RSS on this session; doubling it 
   `7661b165d6` (both remotes).
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `tui-history-crop` proved on `v1.19.0` (`history-crop`); v2 port cost L (server paging and sync). See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+
+- 2026-10-16 [`ses_eec5b71ddffe4A47jCysfkQh6l`](../sessions/2026-10-16-history-bar.md) -
+  `f25a2b83a7`: benchmark of ten long sessions; three-row bar with 100-message
+  pages and a costed load-all label; `tui-history-crop` at `3f2116de60`; vt-326
+  on desktop and m4max.
 
 ## Current maintenance notes
 
