@@ -508,7 +508,8 @@ export function Session() {
 
   const undo = async (files: boolean) => {
     const status = sync.data.session_status?.[route.sessionID]
-    if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
+    if (status?.type !== "idle")
+      await sdk.client.session.abort({ sessionID: route.sessionID, requester: "tui-revert" }).catch(() => {})
     const message = messagesBeforeRevert().findLast((item) => item.role === "user")
     if (!message) return
     void revertSession({ sync, sdk, toast, sessionID: route.sessionID, messageID: message.id, files }).then(() =>

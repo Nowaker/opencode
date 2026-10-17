@@ -397,7 +397,7 @@ export function Prompt(props: PromptProps) {
         variant: "warning",
       })
     }, ABORT_TIMEOUT_MS)
-    void sdk.client.session.abort({ sessionID }, { throwOnError: true }).catch((error) => {
+    void sdk.client.session.abort({ sessionID, requester: "tui" }, { throwOnError: true }).catch((error) => {
       if (store.aborting !== sessionID) return
       clearTimeout(abortTimeout)
       setStore("aborting", undefined)
