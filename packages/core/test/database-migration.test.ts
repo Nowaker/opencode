@@ -115,26 +115,11 @@ describe("DatabaseMigration", () => {
   })
   test("initializes one fresh database from concurrent processes", async () => {
     await using tmp = await tmpdir()
+    const deadline = Date.now() + 80_000
     for (const round of [1, 2, 3, 4, 5]) {
       const filename = path.join(tmp.path, `fresh-${round}.sqlite`)
-      const children = Array.from({ length: 4 }, () =>
-        Bun.spawn([process.execPath, path.join(import.meta.dir, "fixture", "database-open.ts"), filename], {
-          stdin: "pipe",
-          stdout: "pipe",
-          stderr: "pipe",
-        }),
-      )
-      const readers = children.map((child) => child.stdout.getReader())
-      expect(
-        (await Promise.all(readers.map((reader) => reader.read()))).map((chunk) => new TextDecoder().decode(chunk.value)),
-      ).toEqual(children.map(() => "ready\n"))
-      readers.forEach((reader) => reader.releaseLock())
-      children.forEach((child) => child.stdin.end())
-
-      const results = await Promise.all(
-        children.map(async (child) => ({ exit: await child.exited, stderr: await new Response(child.stderr).text() })),
-      )
-      expect(results, `round ${round}`).toEqual(children.map(() => ({ exit: 0, stderr: "" })))
+      const results = await openConcurrently(filename, ["open", "open", "open", "open"], deadline)
+      expect(results, `round ${round}`).toEqual(results.map(() => ({ exit: 0, stderr: "" })))
       await Effect.runPromise(
         Effect.gen(function* () {
           const { db } = yield* Database.Service
@@ -143,6 +128,30 @@ describe("DatabaseMigration", () => {
       )
     }
   }, 90_000)
+
+  test("concurrent-open harness reaps every child when one exits before readiness", async () => {
+    await using tmp = await tmpdir()
+    const owned: Bun.Subprocess[] = []
+    await expect(
+      openConcurrently(
+        path.join(tmp.path, "early.sqlite"),
+        ["exit-before-ready", "open", "open", "open"],
+        Date.now() + 20_000,
+        owned,
+      ),
+    ).rejects.toThrow("exited before readiness")
+    expectReaped(owned)
+  }, 30_000)
+
+  test("concurrent-open harness reaps a child that never finishes", async () => {
+    await using tmp = await tmpdir()
+    const owned: Bun.Subprocess[] = []
+    await expect(
+      openConcurrently(path.join(tmp.path, "stall.sqlite"), ["stall", "open", "open", "open"], Date.now() + 15_000, owned),
+    ).rejects.toThrow("did not finish before the deadline")
+    expectReaped(owned)
+    expect(owned[0]?.signalCode).toBe("SIGKILL")
+  }, 30_000)
 
   if (process.platform === "linux") {
     test("declared schema has no ungenerated migrations", async () => {
@@ -736,3 +745,75 @@ describe("DatabaseMigration", () => {
     )
   })
 })
+
+const spawnOpen = (filename: string, mode: string) =>
+  Bun.spawn([process.execPath, path.join(import.meta.dir, "fixture", "database-open.ts"), filename, mode], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+
+const readerOf = (child: ReturnType<typeof spawnOpen>) => child.stdout.getReader()
+
+// Spawns one fixture child per mode against one fresh file, releases them all at
+// once when every child is ready, and returns each exit code and stderr. A child
+// is owned from the moment it is spawned: on success, failure or deadline the
+// finally block cancels the readers, kills survivors and waits for every child,
+// so none outlives the call or the caller's scratch directory.
+async function openConcurrently(
+  filename: string,
+  modes: string[],
+  deadline: number,
+  owned: ReturnType<typeof spawnOpen>[] = [],
+) {
+  const children: ReturnType<typeof spawnOpen>[] = []
+  const readers: ReturnType<typeof readerOf>[] = []
+  try {
+    for (const mode of modes) {
+      const child = spawnOpen(filename, mode)
+      children.push(child)
+      owned.push(child)
+      readers.push(readerOf(child))
+    }
+    const ready = await beforeDeadline(
+      Promise.all(readers.map((reader) => reader.read())),
+      deadline,
+      "children did not signal readiness before the deadline",
+    )
+    ready.forEach((chunk, index) => {
+      if (new TextDecoder().decode(chunk.value) !== "ready\n") throw new Error(`child ${index} exited before readiness`)
+    })
+    children.forEach((child) => child.stdin.end())
+    return await beforeDeadline(
+      Promise.all(
+        children.map(async (child) => ({ exit: await child.exited, stderr: await new Response(child.stderr).text() })),
+      ),
+      deadline,
+      "children did not finish before the deadline",
+    )
+  } finally {
+    await Promise.allSettled(readers.map((reader) => reader.cancel()))
+    children
+      .filter((child) => child.exitCode === null && child.signalCode === null)
+      .forEach((child) => child.kill("SIGKILL"))
+    await Promise.all(children.map((child) => child.exited))
+  }
+}
+
+function beforeDeadline<A>(promise: Promise<A>, deadline: number, message: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), Math.max(0, deadline - Date.now()))
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
+function expectReaped(children: ReturnType<typeof spawnOpen>[]) {
+  expect(children).toHaveLength(4)
+  children.forEach((child) => {
+    expect(child.exitCode !== null || child.signalCode !== null).toBe(true)
+    expect(() => process.kill(child.pid, 0)).toThrow()
+  })
+}
