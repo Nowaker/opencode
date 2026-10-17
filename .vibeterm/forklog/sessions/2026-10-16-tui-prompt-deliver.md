@@ -62,7 +62,8 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 ## Build and install
 
 - Build command: `VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard .vibeterm/build.sh`
-- Installed artifact: TBD - recorded after install.
+- Installed artifact: `1.19.0-vt-332-dfb56f76c7` on desktop (`~/projekty/webapps/opencode-build/bin/opencode`) and m4max (`/Volumes/projects/webapps/opencode-build/bin/opencode`); v2 guard gate passed on both.
+- Real surface: opencode-tools `modal-delivery.e2e.test.ts` (2 pass) and `unsent-paste.e2e.test.ts` (3 pass) against the installed desktop binary.
 
 ## Commit provenance
 
