@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Workdays: 2026-10-06 through 2026-10-08 (America/Chicago)
+- Workdays: 2026-10-06 through 2026-10-16 (America/Chicago)
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
@@ -315,3 +315,12 @@
   model `openai/gpt-6.1-sol`, tool `opencode 1.18.34-vt-153-907b3bc518`,
   platform `linux` and session/parent IDs were accurate. This correction
   preserves already-pushed protected history rather than force-rewriting it.
+
+## Abort provenance delivery, 2026-10-16
+
+- Request: distinguish explicit cancellation from instance teardown on the aborted assistant row; preserve legacy name/message and decoding, and reserve `killed` for Vibeterm. The agreed server/TUI contract, stable seams and exact enum values are in the [feature record](../README.md#per-run-abort-provenance).
+- Implementation worker `ses_eb88b23e0ffel0OTb0SfRWcxFq` produced `2755c68f92` on `abort-cause` from `931f3a854a`; Oracle `ses_eb857fecfffePYcIRK3Ddw47ht` approved that exact candidate. Main reviewed all source/test changes, independently passed 31 runner/race/HTTP tests, 86 prompt tests with one skip, and OpenCode typechecking. Source diagnostics returned clean; pre-existing broad-suite failures are disclosed in the feature record.
+- No rebase delta was needed; main fast-forward merged and pushed the same five dependency-ordered commits to both mirrors, independently checking matching remote tips. The generated OpenAPI refresh was kept as a separate mechanical commit rather than hand-trimmed.
+- Desktop built the clean candidate worktree; m4max pulled the same pushed commit and built its own checkout. Both installed `1.19.0-vt-340-dfb56f76c7` through the tracked builder and mandatory guard. m4max's disk-reserve policy used cached npm comparison releases; the feature record records the exact versions and limit.
+- Main installed-binary HTTP proof passed on both hosts: cancel, instance/global API disposal, global config disposal and cancel again on one session, with exact persisted metadata and no stale fields. Reports: desktop `abort-installed-qa/run-vDx099/result.json`, m4max `abort-installed-qa/run-ssK9hc/result.json` beneath each host's tools scratch. Search freshness and idle MCP release/recreation passed too; m4max's previous delivery blocker is closed.
+- No live process was restarted. Existing `.gitignore` and retry divergence remained untouched on both hosts. TUI requester route/default and caller wiring remain owned by `ses_ef8235798ffejGr4sa22eXmVNv`, unblocked after the server merge.

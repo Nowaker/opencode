@@ -26,6 +26,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Per-run abort provenance](#per-run-abort-provenance)
 - [On-demand search outside repositories](#on-demand-search-outside-repositories)
 - [Inactive HTTP Directory Instances](#inactive-http-directory-instances)
 
@@ -734,6 +735,22 @@ Delivery verified by coordinator `ses_eeda1d251ffel81U5Y42j4kb33` on
 - No active DreamHost tab, default Vibeterm server or Meridian was restarted.
   Existing tabs retain their loaded code until their owners arrange graceful
   pickup. No live-tree CPU or watch reduction is claimed.
+
+## Per-run abort provenance
+
+Requested by `ses_ebc7292d6ffe0m5W6cH7M4vIPv`, coordinated with TUI owner `ses_ef8235798ffejGr4sa22eXmVNv`; server delivery owned by `ses_eeda1d251ffel81U5Y42j4kb33`. Implementation session `ses_eb88b23e0ffel0OTb0SfRWcxFq`, branch `abort-cause`, base `931f3a854a`, upstream v1 base `dfb56f76c7`. Existing assistant errors could not distinguish explicit cancellation from instance teardown. Server commits `b3b8e00fe1`, `ae7260485d`, `d96ede7572` and `17dd5f13b8` add optional metadata without changing `error.name = "MessageAbortedError"` or `error.data.message`; `2755c68f92` mechanically refreshes the previously stale OpenAPI snapshot, including existing non-abort contracts.
+
+- `error.data.cause`: `cancel` for explicit cancellation, `dispose` for instance teardown. Schemas also accept `killed` for Vibeterm-written rows; OpenCode does not emit it. Legacy rows may omit all new fields.
+- `error.data.dispose`: optional `exit`, `reload`, `config` or `api`, only with `cause = "dispose"` when the caller knows the source. Other teardown omits the detail.
+- `error.data.requester`: optional `tui`, `tui-revert` or `api`, only with `cause = "cancel"` when supplied. Server plumbing accepts `SessionPrompt.cancel(sessionID, { requester })`; HTTP input/defaulting and SDK/TUI callers are the TUI owner's separate follow-on, not part of this server delivery.
+- Stable seams: canonical `packages/schema/src/v1/session.ts` AbortedError fields, Core's shared schema fields, `Runner.make` admission `prepare` and serialized `cancelWith`, `SessionAbort.Current`, `SessionRunState` disposal observer, both processor and prompt interruption finalizers, and the worker/global/API disposal call sites. Metadata belongs to one admitted run; the first cancellation/disposal claim wins and replacement work gets a fresh cell.
+- Generated artifacts: `packages/sdk/js/src/v2/gen/types.gen.ts` and `packages/sdk/openapi.json`; `packages/client` generation produced no changes. Regenerate rather than hand-edit them on future schema changes.
+
+Oracle `ses_eb857fecfffePYcIRK3Ddw47ht` approved exact candidate `2755c68f9299884bfaa8910f5968e18ac4d30c67`. Main independently ran 31 runner/run-state/real-HTTP tests and 86 prompt tests (one existing skip), plus package typechecking. The initial prompt run exceeded a 180-second outer command limit; its complete rerun passed in 169 seconds. Known baseline broad-suite `OwnerBusy`, event-manifest and public OpenAPI `SessionBusyError | OwnerSealed` assertion failures are not claimed fixed. Source tests cover supplied requesters, early interruption, cancel/dispose races, legacy and reserved `killed` decoding; actual worker exit/reload was source-reviewed, not interactively exercised.
+
+Source was fast-forward integrated and pushed to both fork mirrors at `2755c68f92`. Both hosts' own tracked builders installed `1.19.0-vt-340-dfb56f76c7`. Mandatory v1 migration guard passed: desktop tested npm v1 `1.19.3` and v2 `2.0.32`; m4max used sanctioned cached v1 `1.19.0` and v2 `2.0.29` because its disk-reserve policy refused fresh downloads. No guard was skipped. The Mac build emitted pre-existing shell-completion warnings but installed successfully.
+
+Main exercised both installed binaries through isolated loopback HTTP with synthetic LLM/MCP and scratch HOME/XDG/tool/plugin stores. Five successive turns on one session persisted `cancel`, `dispose/api` via instance disposal, `dispose/api` via global disposal, `dispose/config`, then `cancel` with no stale disposal/requester fields. Initial/create/rename/delete/empty-query search and idle MCP release/recreation also passed. Reports: desktop tool scratch `abort-installed-qa/run-vDx099/result.json`; m4max `abort-installed-qa/run-ssK9hc/result.json`. The earlier m4max container-search proof passed on installed vt333 (`run-3ynfZG/result.json`), closing its historical transport blocker. No live TUI, serve unit, default Vibeterm server or Meridian was restarted; running processes need owner-arranged pickup.
 
 ## Inactive HTTP Directory Instances
 
