@@ -77,6 +77,7 @@ const transcript = [
       tool("msg_0002", 3, "bash", { command: "bun test" }, { output: "3 pass" }),
       tool("msg_0002", 4, "webfetch", { url: "https://example.com/fetched" }),
       tool("msg_0002", 5, "todowrite", { todos }, { todos }),
+      tool("msg_0002", 6, "io_github_example_devtools-mcp_take_screenshot", {}),
     ],
   },
   {
@@ -248,7 +249,7 @@ for (const width of [40, 80, 160]) {
         expect(frame.split("\n").every((line) => line.length <= width)).toBe(true)
         expect(frame).toContain("space show/hide")
       },
-      { width },
+      { width, height: 60 },
     )
   })
 }
@@ -279,6 +280,22 @@ test("unticking thinking, keeping only bash and hiding file actions update the t
       expect(frame).toContain("All done final answer")
     },
     { width: 160 },
+  )
+})
+
+test("a long tool name is cut in the middle, so tools sharing a prefix stay apart", async () => {
+  await withSession(
+    async (rig) => {
+      rig.api.keymap.dispatchCommand("session.toggle.actions")
+      await openFilter(rig)
+      const row = rig
+        .frame()
+        .split("\n")
+        .find((line) => line.includes("take_screenshot"))
+      expect(row).toContain("io_github_")
+      expect(row).toContain("…")
+    },
+    { width: 80 },
   )
 })
 

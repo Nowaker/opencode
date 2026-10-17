@@ -10,6 +10,7 @@ import { useDialog } from "../../ui/dialog"
 import { useToast } from "../../ui/toast"
 import { onClick } from "../../ui/click"
 import { getScrollAcceleration } from "../../util/scroll"
+import { Locale } from "../../util/locale"
 import { TranscriptFilter } from "./transcript-filter"
 
 // Second-level rows offered for tool calls: the session's most used tools, then "Other tools".
@@ -43,6 +44,8 @@ export function DialogTranscriptFilter(props: { sessionID: string }) {
   const otherTools = counts.tools.slice(TOP_TOOLS).reduce((sum, tool) => sum + tool.count, 0)
   const selection = createMemo(() => TranscriptFilter.resolve(tuiConfig, kv))
   const [selected, setSelected] = createSignal(0)
+  // The list's measured width, so a long name is cut in the middle: MCP tools share long prefixes.
+  const [listWidth, setListWidth] = createSignal(56)
   let scroll: ScrollBoxRenderable | undefined
 
   const rows = createMemo(() =>
@@ -175,10 +178,17 @@ export function DialogTranscriptFilter(props: { sessionID: string }) {
         ref={(value: ScrollBoxRenderable) => (scroll = value)}
         height={height()}
         scrollAcceleration={scrollAcceleration()}
+        onSizeChange={function () {
+          setListWidth(this.width)
+        }}
       >
         <For each={rows()}>
           {(row, index) => {
             const current = () => selected() === index()
+            const count = row.count > 0 ? row.count.toLocaleString("en-US") : ""
+            // Indent, right padding, the checkbox and the count with its gap.
+            const label = () =>
+              Locale.truncateMiddle(row.label, listWidth() - (2 + row.depth * 4) - 4 - (count ? count.length + 1 : 0))
             return (
               <box
                 flexDirection="row"
@@ -198,11 +208,11 @@ export function DialogTranscriptFilter(props: { sessionID: string }) {
                   fg={current() ? theme.selectedListItemText : row.count === 0 ? theme.textMuted : theme.text}
                 >
                   {checked(row) ? "[x] " : "[ ] "}
-                  {row.label}
+                  {label()}
                 </text>
-                <Show when={row.count > 0}>
+                <Show when={count}>
                   <text flexShrink={0} fg={current() ? theme.selectedListItemText : theme.textMuted}>
-                    {row.count.toLocaleString("en-US")}
+                    {count}
                   </text>
                 </Show>
               </box>
