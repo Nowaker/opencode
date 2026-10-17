@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `paste-modal-mode` (fork); `paste-dialog-mode` (upstream PR head `69e754e993`, stacked on `paste-edit-dialog`)
+- Development branch(es): `paste-modal-mode` (fork); `paste-dialog-mode` (upstream PR head `90be91461d`, stacked on `paste-edit-dialog`)
 - First local commit: `070fe4290b`
-- Current local commit(s): `070fe4290b`
+- Current local commit(s): `070fe4290b`, `4d3f094277` (toggles undo themselves, right arrow)
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#56268](https://github.com/anomalyco/opencode/pull/56268) against `v1`, stacked on #54463. **Needs a v2 port later.**
@@ -62,6 +62,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `070fe4290b` | 2026-10-16 | `prompt.paste_mode` and the paste dialog | `PasteOptionList`, `applyPasteOptions`, `cleanPaste`, `wrapPaste`, `unwrapPaste`, `PasteOptionsKVKey` in `packages/tui/src/prompt/paste-options.ts`; `DialogPasteOptions` in `component/dialog-paste-options.tsx`; `openPasteDialog`, `placePaste`, `pasteOrigins`, `lastPaste`, the `input.undo` command and the `paste_mode` branches of `pasteInputText` and `openPaste` in `component/prompt/index.tsx`; `split()` in `prompt/undo.ts`; `Prompt.paste_mode` in `config/index.tsx`; `test/prompt/paste-options.test.ts`, `test/component/prompt-paste-dialog.test.tsx`; tui.mdx "Paste dialog" |
+| `4d3f094277` | 2026-10-16 | options undo themselves until a real edit (OpenTUI reports textarea changes a microtask late); right from the options into the editor, tab back | `adoptEdit` comparing `textarea.plainText` with `text()` and the `right` binding in `dialog-paste-options.tsx`; reversibility and focus tests in `prompt-paste-dialog.test.tsx` |
 
 ## Verification
 
@@ -75,3 +76,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 ## Current maintenance notes
 
 - Vibeterm enforces `opencodeTui.prompt.paste_mode` = `dialog` (opencode-tools `33022c63` decides the knob global-only and regenerates the catalog).
+- 2026-10-16 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-16-paste-dialog-mode.md) -
+  unticking an option did not restore its change (user report on vt-322+); fixed in
+  `4d3f094277` with right arrow into the editor, installed as vt-333 on desktop and m4max.
+  Evidence: that session's "toggles undo themselves" section.

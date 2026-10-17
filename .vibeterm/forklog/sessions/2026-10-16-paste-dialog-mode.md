@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `paste-modal-mode` (worktree `.vibeterm/worktrees/paste-modal-mode`, cut from `dev-nowaker` `e0a1cc32e9`); `paste-dialog-mode` (upstream PR #56268, cut from `paste-edit-dialog` `36e8da9a5c`); opencode-tools `paste-mode-knob`
 - Upstream base: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
-- Source result commit(s): `070fe4290b` on `dev-nowaker`; `69e754e993` on `paste-dialog-mode`; opencode-tools `33022c63` on `master`
+- Source result commit(s): `070fe4290b`, `4d3f094277` on `dev-nowaker`; `69e754e993`, `90be91461d` on `paste-dialog-mode`; opencode-tools `33022c63` on `master`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -31,6 +31,8 @@ See [the feature's original request](../features/2026-10-16-paste-dialog-mode.md
 |---|---|---|---|---|
 | opencode | `dev-nowaker` | `e0a1cc32e9` | `070fe4290b` | ff of `paste-modal-mode` |
 | opencode | `paste-dialog-mode` | `36e8da9a5c` | `69e754e993` | cherry-pick, no `TuiLayout` (literal `gap={2}`), fixture gains `config`/`kv`, tests on submitted text |
+| opencode | `dev-nowaker` | `1e394255b4` | `4d3f094277` | toggle-undo and keys follow-up (worktree `paste-toggle-undo`), rebased over the prompt-deliver session's push |
+| opencode | `paste-dialog-mode` | `69e754e993` | `90be91461d` | same follow-up, clean cherry-pick |
 | opencode-tools | `master` | `5f9ef2bf` | `33022c63` | `prompt.paste_mode` policy + catalog (84 knobs @ `070fe4290b`), rebased over the line-discard session's `5f9ef2bf` |
 
 ## Features touched
@@ -65,12 +67,45 @@ See [the feature's original request](../features/2026-10-16-paste-dialog-mode.md
 
 - `070fe4290b` - feat(tui): prompt.paste_mode 'dialog' opens a paste dialog with options
 - opencode-tools `33022c63` - settings: decide the opencode TUI prompt.paste_mode knob
+- `4d3f094277` - fix(tui): paste dialog options undo themselves until a real edit
 - Required trailer: `AI-Session-ID: ses_ed7634c31ffeH84yR0S99Ty8Nd`
 
 ```sh
 git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
   .vibeterm/forklog/sessions/2026-10-16-paste-dialog-mode.md
 ```
+
+## Follow-up: toggles undo themselves, right arrow into the editor
+
+Relayed by the coordinator after the user tried vt-322+:
+
+> paste box. right arrow from checkboxes to jump to the right. but tab to go back.
+>
+> after stripping whitespace, unchckecking strip should return back what was stripped.
+> i didn't make any of my own mods in the text box. the actions togglable should undo its changes.
+
+- Reproduced on installed vt-327 in a real PTY: normalize indents on then off left the text
+  dedented; trim the same.
+- Root cause: OpenTUI dispatches native edit-buffer events in a `queueMicrotask`
+  (`@opentui/core` `chunk-bun-t2myhmwd.js`, the native event callback), so the textarea's
+  `onContentChange` for the dialog's own `setText` - each toggle and the initial value - ran after
+  the synchronous `applying` flag was cleared. `adoptEdit` took it for a hand edit, set `edited`
+  and froze the cleaned text as `body`, so unticking had nothing to restore. The wraps and quote
+  still undid themselves through `unwrapPaste`.
+- Fix `4d3f094277`: `adoptEdit` counts a change as an edit only when `textarea.plainText` differs
+  from the text the dialog last showed; the `applying` flag is gone. Right in the options focuses
+  the editor (right stays a caret move there), tab in the editor goes back; hint row
+  `→/tab edit` / `tab options`; tui.mdx "Paste dialog" updated. PR branch `90be91461d`.
+- Verification: `prompt-paste-dialog.test.tsx` 18 pass, 7 of the new ones fail on the old dialog
+  (trim, dedent, collapse, ANSI each on/off; all on then off in reverse and a fixed shuffle; right
+  in and caret moves not edits; right as a caret move in the editor); full `packages/tui` 790 pass,
+  0 fail; PR branch 285 pass, 0 fail.
+- Real PTY on installed vt-333: a paste with two leading blank lines and trailing spaces; trim on
+  dropped the blank lines and End on `beta` put the caret at column 46; trim off brought the blank
+  lines back and End put it at 48 (the two trailing spaces); right showed `tab options`, tab showed
+  `→/tab edit`; insert inline pasted the text exactly as it came.
+- Installed: desktop and m4max `1.19.0-vt-333-dfb56f76c7` (desktop inode 49958254), v2 gate PASSED
+  on both; the `To the editor` binding and the retry marker present in both binaries. No restarts.
 
 ## Historical evidence carried forward
 
