@@ -111,6 +111,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Transcript filter: choose which kinds of entries the transcript shows](./features/2026-10-16-transcript-filter.md)
 - [Send a turn past the composer from a TUI plugin](./features/2026-10-16-tui-prompt-deliver.md)
 - [Record who requested a cancel on the aborted row](./features/2026-10-16-abort-requester.md)
+- [Concurrent first open of a fresh database](./features/2026-10-16-fresh-db-concurrent-init.md)
 
 ## Session records
 
@@ -124,6 +125,11 @@ carries every feature forward unchanged. That commit includes the full
   - `POST /session/{id}/abort?requester=` (`tui`, `tui-revert`, `api`;
     default `api`, others `400`); the TUI sends `tui` for its interrupt and
     `tui-revert` for undo; vt-343 on both hosts; fork-only.
+
+- [2026-10-16 `ses_eb8582f68ffeUwFYhDGSv6jx7B`](./sessions/2026-10-16-fresh-db-concurrent-init.md)
+  - Fix concurrent first opens of a fresh database (WAL switch before the
+    busy timeout, WAL upgrade deadlock-avoidance BUSY, double schema
+    creation); isolated builds on desktop and m4max, nothing installed.
 
 - [2026-10-16 `ses_ed24b7cfbffe5YyKo7piBEsLF6`](./sessions/2026-10-16-tui-prompt-deliver.md)
   - Add `api.prompt.deliver`, so vibeterm deliveries reach a session while a
