@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { TuiComposerCaret, TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
-import { createPromptControl } from "../src/plugin/prompt-control"
+import { createPromptControl, type PromptSend } from "../src/plugin/prompt-control"
 
 function fixture() {
   let revision = 0
   let current: TuiPromptInfo = { input: "", parts: [], mode: "normal" }
   let submits = 0
-  const flags = { dialog: false, ready: true, sessionID: null }
+  const flags: { dialog: boolean; ready: boolean; sessionID: string | null } = { dialog: false, ready: true, sessionID: null }
   const handoff = { visible: true, disabled: false, ready: true }
   const ref: TuiPromptRef = {
     focused: true,
@@ -17,8 +17,10 @@ function fixture() {
     submit() { submits++ },
   }
   let active: TuiPromptRef | undefined = ref
-  const control = createPromptControl(() => active, () => flags)
-  return { control, ref, flags, handoff, bind: (next?: TuiPromptRef) => { active = next }, edit: (text: string) => ref.set({ input: text, parts: [] }), settle: () => { revision++ }, submits: () => submits }
+  const sent: Parameters<PromptSend>[0][] = []
+  const send: PromptSend = (request) => (sent.push(request), { status: "submitted", messageID: request.messageID, partID: request.partID })
+  const control = createPromptControl(() => active, () => flags, undefined, send)
+  return { control, ref, flags, handoff, sent, bind: (next?: TuiPromptRef) => { active = next }, edit: (text: string) => ref.set({ input: text, parts: [] }), settle: () => { revision++ }, submits: () => submits }
 }
 
 describe("prompt compare and set", () => {
@@ -195,6 +197,58 @@ expect(lossy.ref.current.input).toBe("[Pasted 1]")
     expect(f.control.replace(request)).toEqual(receipt)
     expect(f.control.replace({ ...request, caret: { offset: 2 } }).status).toBe("conflict")
     expect(f.placed()).toHaveLength(1)
+  })
+})
+
+describe("prompt delivery past the composer", () => {
+  const request = { sessionID: "ses_shown", text: "[vibeterm_metadata]\nfrom another session", messageID: "msg_a", partID: "prt_a" }
+
+  test("sends with a dialog open and the composer in shell mode, touching neither", () => {
+    const f = fixture()
+    f.flags.sessionID = "ses_shown"
+    f.flags.dialog = true
+    f.ref.set({ input: "!half a command", parts: [], mode: "shell" })
+    const before = f.control.read()
+    expect(f.control.deliver(request)).toEqual({ status: "submitted", messageID: "msg_a", partID: "prt_a" })
+    expect(f.sent).toEqual([request])
+    expect(f.control.read()).toEqual(before)
+    expect(f.submits()).toBe(0)
+  })
+
+  test("answers a repeated delivery with its first receipt and sends it once", () => {
+    const f = fixture()
+    f.flags.sessionID = "ses_shown"
+    const receipt = f.control.deliver(request)
+    expect(f.control.deliver(request)).toEqual(receipt)
+    expect(f.control.deliver({ ...request, partID: "prt_other" })).toEqual({ status: "not-ready", reason: "invalid" })
+    expect(f.sent).toHaveLength(1)
+  })
+
+  test("makes its own IDs when the caller gives none", () => {
+    const f = fixture()
+    f.flags.sessionID = "ses_shown"
+    const receipt = f.control.deliver({ sessionID: "ses_shown", text: "hello" })
+    expect(receipt).toMatchObject({ status: "submitted", messageID: expect.stringMatching(/^msg_/), partID: expect.stringMatching(/^prt_/) })
+  })
+
+  test("refuses where the composer itself could not submit, sending nothing", () => {
+    const refused = (setup: (f: ReturnType<typeof fixture>) => void, req: Parameters<typeof f.control.deliver>[0] = request) => {
+      const f = fixture()
+      f.flags.sessionID = "ses_shown"
+      setup(f)
+      const result = f.control.deliver(req)
+      expect(f.sent).toEqual([])
+      return result
+    }
+    const f = fixture()
+    expect(refused((f) => { f.handoff.visible = false })).toEqual({ status: "not-ready", reason: "hidden" })
+    expect(refused((f) => { f.handoff.disabled = true })).toEqual({ status: "not-ready", reason: "disabled" })
+    expect(refused((f) => { f.flags.ready = false })).toEqual({ status: "not-ready", reason: "syncing" })
+    expect(refused((f) => { f.flags.sessionID = "ses_other" })).toEqual({ status: "not-ready", reason: "session" })
+    expect(refused((f) => { f.bind(undefined) })).toEqual({ status: "not-ready", reason: "unmounted" })
+    expect(refused(() => {}, { ...request, messageID: "nope" })).toEqual({ status: "not-ready", reason: "invalid" })
+    expect(createPromptControl(() => f.ref, () => ({ ...f.flags, sessionID: "ses_shown" })).deliver(request))
+      .toEqual({ status: "not-ready", reason: "unmounted" })
   })
 })
 

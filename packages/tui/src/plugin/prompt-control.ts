@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto"
 import type {
   TuiComposerApi,
+  TuiComposerDeliverRefusal,
+  TuiComposerDeliverRequest,
+  TuiComposerDeliverResult,
   TuiComposerDraft,
   TuiComposerGuard,
   TuiComposerResult,
@@ -10,20 +13,25 @@ import type {
 } from "@opencode-ai/plugin/tui"
 import type { ComposerSeal } from "../context/composer-seal"
 import { copyPromptParts } from "../prompt/undo"
+import { Identifier } from "@opencode-ai/core/id/id"
 
 type State = { dialog: boolean; ready: boolean; sessionID: string | null }
 type Content = Pick<TuiComposerSnapshot, "generation" | "sha256" | "partsSha256">
+/** Sends a delivery past the composer; see `TuiComposerApi.deliver`. Absent, every delivery is `unmounted`. */
+export type PromptSend = (request: Required<TuiComposerDeliverRequest>) => TuiComposerDeliverResult
 
 /** All checks and mutations run synchronously on the owning TUI thread. */
 export function createPromptControl(
   read: () => TuiPromptRef | undefined,
   state: () => State,
   composerSeal?: ComposerSeal,
+  send?: PromptSend,
 ): TuiComposerApi {
   let active: TuiPromptRef | undefined
   let generation = randomUUID()
   const replacements = new Map<string, { key: string; receipt: TuiComposerResult }>()
   const submissions = new Map<string, { key: string; receipt: TuiComposerResult }>()
+  const deliveries = new Map<string, TuiComposerDeliverResult & { status: "submitted" }>()
 
   function observe() {
     const ref = read()
@@ -92,10 +100,35 @@ export function createPromptControl(
     }
   }
 
+  /* Gated on what decides whether the composer could submit at all, minus what only stands between a person and
+     the composer: an open dialog, shell mode and focus are not reasons to refuse, since nothing is typed. */
+  function deliver(request: TuiComposerDeliverRequest): TuiComposerDeliverResult {
+    const ids = { messageID: request.messageID ?? Identifier.ascending("message"), partID: request.partID ?? Identifier.ascending("part") }
+    if (!ids.messageID.startsWith("msg_") || !ids.partID.startsWith("prt_")) return { status: "not-ready", reason: "invalid" }
+    const earlier = deliveries.get(ids.messageID)
+    if (earlier) return earlier.partID === ids.partID ? earlier : { status: "not-ready", reason: "invalid" }
+    const { ref, handoff, flags } = observe()
+    const refuse = (reason: TuiComposerDeliverRefusal): TuiComposerDeliverResult => ({ status: "not-ready", reason })
+    if (!ref || !handoff || !send) return refuse("unmounted")
+    if (composerSeal?.sealed()) return refuse("disabled")
+    if (!handoff.visible) return refuse("hidden")
+    if (handoff.disabled) return refuse("disabled")
+    if (!flags.ready) return refuse("syncing")
+    if (flags.sessionID !== request.sessionID) return refuse("session")
+    const result = send({ sessionID: request.sessionID, text: request.text, ...ids })
+    if (result.status === "submitted") {
+      deliveries.set(ids.messageID, result)
+      const oldest = deliveries.keys().next()
+      if (deliveries.size > 256 && !oldest.done) deliveries.delete(oldest.value)
+    }
+    return result
+  }
+
   return {
     seal,
     snapshot,
     read: draft,
+    deliver,
     replace(request) {
       const current = snapshot()
       const parts = request.promptParts ?? []

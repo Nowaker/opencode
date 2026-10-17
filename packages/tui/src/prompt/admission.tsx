@@ -38,6 +38,11 @@ export type Admission<Body> = {
   state: "sending" | "checking" | "unknown" | "rejected"
   slow: boolean
   error?: string
+  /**
+   * Sent past the composer by `api.prompt.deliver`. Its sender looks the message up by ID and sends again with the
+   * same IDs, so a delivery that is not known to be stored is dropped here rather than handed back to the composer.
+   */
+  delivery?: boolean
 }
 
 export type AdmissionSend =
@@ -100,6 +105,7 @@ export function createPromptAdmission<Body>(io: AdmissionIO<Body>) {
     const found = await io.lookup(entry.sessionID, messageID)
     if (!find(messageID)) return
     if (found.type === "found" && found.partIDs.includes(entry.textPartID)) return remove(messageID)
+    if (entry.delivery) return remove(messageID)
     if (found.type === "found")
       return update(messageID, { state: "rejected", error: `${cause.message} (only partly saved)` })
     if (found.type === "missing" && cause.type === "rejected") return update(messageID, { state: "rejected" })
@@ -131,7 +137,8 @@ export function createPromptAdmission<Body>(io: AdmissionIO<Body>) {
       if (!sessionID) return store.entries
       return store.entries.filter((entry) => entry.sessionID === sessionID)
     },
-    submit(entry: Pick<Admission<Body>, "messageID" | "sessionID" | "textPartID" | "prompt" | "body">) {
+    submit(entry: Pick<Admission<Body>, "messageID" | "sessionID" | "textPartID" | "prompt" | "body" | "delivery">) {
+      if (find(entry.messageID)) return
       setStore(
         produce((draft) => {
           draft.entries.push({ ...entry, state: "sending", slow: false })

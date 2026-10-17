@@ -61,6 +61,39 @@ export type TuiComposerSealResult =
   | { status: "sealed"; seal: TuiComposerSeal; draft: TuiComposerDraft }
   | { status: "refused"; reason: TuiComposerSealRefusal }
 
+/**
+ * Text sent to the shown session as a turn of its own, past the composer. `messageID` and `partID` are the IDs the
+ * message and its text part are stored under (`msg_…`, `prt_…`); the server stores a message once per ID, so a
+ * caller that is unsure whether a delivery landed sends it again with the same IDs. Omitted, the TUI makes them.
+ */
+export type TuiComposerDeliverRequest = {
+  sessionID: string
+  text: string
+  messageID?: string
+  partID?: string
+}
+
+/**
+ * Why `deliver()` refused; a refused delivery sends nothing. `hidden`: the session shows no prompt (a permission or a
+ * question is waiting, or it is a subagent). `disabled`: the composer is sealed or disabled. `session`: the TUI is not
+ * showing `sessionID`. `agent`/`model`/`workspace`: no agent or model is selected, or the session's workspace is not
+ * connected. `invalid`: a malformed ID.
+ */
+export type TuiComposerDeliverRefusal =
+  | "unmounted"
+  | "hidden"
+  | "disabled"
+  | "syncing"
+  | "session"
+  | "agent"
+  | "model"
+  | "workspace"
+  | "invalid"
+
+export type TuiComposerDeliverResult =
+  | { status: "submitted"; messageID: string; partID: string }
+  | { status: "not-ready"; reason: TuiComposerDeliverRefusal }
+
 export type TuiComposerApi = {
   /**
     * Pauses composer input synchronously until release. Keys, pastes, mouse input, navigation and legacy prompt
@@ -81,4 +114,13 @@ export type TuiComposerApi = {
   replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"]; caret?: TuiComposerCaret }): TuiComposerResult
   /** A submitted receipt acknowledges invocation, not server admission. */
   submit(request: TuiComposerGuard): TuiComposerResult
+  /**
+   * Sends `text` to the shown session as its own turn, with the agent, model and variant the composer would use,
+   * without touching the composer: its text, caret, focus and undo history stay as they are, and an open dialog
+   * (command palette, agent or model list, paste editor) stays open with its filter and selection. It is refused
+   * only where the composer itself could not submit: no prompt shown, sealed, disabled, still syncing. A submitted
+   * receipt acknowledges that the TUI sent it, not that the server stored it; a server that refuses it does not put
+   * the text in the composer.
+   */
+  deliver(request: TuiComposerDeliverRequest): TuiComposerDeliverResult
 }

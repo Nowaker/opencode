@@ -273,6 +273,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       replace: () => ({ status: "not-ready", snapshot: composer }),
       submit: () => ({ status: "not-ready", snapshot: composer }),
       seal: () => ({ status: "refused", reason: "unsupported" }),
+      deliver: () => ({ status: "not-ready", reason: "unmounted" }),
     },
     route: {
       register: () => {

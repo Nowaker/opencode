@@ -1007,7 +1007,10 @@ export function Prompt(props: PromptProps) {
     )
   }
 
-  const admissions = createMemo(() => (props.sessionID ? admission.entries(props.sessionID) : []))
+  // A delivery is its sender's to retry or report, so it gets no notice here and is never given back.
+  const admissions = createMemo(() =>
+    props.sessionID ? admission.entries(props.sessionID).filter((entry) => !entry.delivery) : [],
+  )
   const unconfirmed = createMemo(() => admissions().filter((entry) => entry.state === "unknown"))
   const [unsent, setUnsent] = createSignal<string>()
   const admissionBusy = createMemo(() => admissions().find((entry) => entry.state === "checking" || entry.slow))

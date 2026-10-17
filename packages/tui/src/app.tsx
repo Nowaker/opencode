@@ -59,7 +59,8 @@ import { Session } from "./routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
-import { PromptAdmissionProvider } from "./prompt/admission"
+import { PromptAdmissionProvider, usePromptAdmission } from "./prompt/admission"
+import { createPromptSend } from "./prompt/deliver"
 import { ToastProvider, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
 import { KVProvider, useKV } from "./context/kv"
@@ -431,6 +432,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
   })
 
   const composerSeal = useComposerSeal()
+  const admission = usePromptAdmission()
   let retiring = false
   const api = createTuiApi(
     createTuiApiAdapters({
@@ -450,6 +452,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
       attention,
       promptRef,
       composerSeal,
+      promptSend: createPromptSend({ local, admission, sync, project }),
       Slot: pluginRuntime.Slot,
       click: { on: ids.on },
       blocks: { register: pluginRuntime.registerBlock },

@@ -31,6 +31,9 @@ import type { TuiComposerApi, TuiComposerCaret } from "./tui-prompt.js"
 export type {
   TuiComposerApi,
   TuiComposerCaret,
+  TuiComposerDeliverRefusal,
+  TuiComposerDeliverRequest,
+  TuiComposerDeliverResult,
   TuiComposerDraft,
   TuiComposerGuard,
   TuiComposerResult,

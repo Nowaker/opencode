@@ -63,7 +63,7 @@ function setup() {
   const server = createServer()
   const { admission, dispose } = createRoot((dispose) => ({ admission: createPromptAdmission(server.io), dispose }))
   let count = 0
-  const submit = (text: string) => {
+  const submit = (text: string, delivery?: boolean) => {
     count += 1
     const messageID = `msg_${count}`
     const body = { messageID, textPartID: `prt_${count}`, text }
@@ -73,6 +73,7 @@ function setup() {
       textPartID: body.textPartID,
       prompt: { input: text, parts: [], mode: "normal" },
       body,
+      ...(delivery ? { delivery } : {}),
     })
     return messageID
   }
@@ -208,6 +209,37 @@ describe("prompt admission", () => {
     t.server.store(t.server.sends[0])
     await until(() => t.state(id) === undefined)
     gate.resolve({ type: "ok" })
+    t.dispose()
+  })
+
+  test("a delivery the server refuses is dropped, never kept for the composer to take back", async () => {
+    const t = setup()
+    t.server.reject()
+    const id = t.submit("from another session", true)
+    await until(() => t.state(id) === undefined)
+    expect(t.server.messages.size).toBe(0)
+    expect(t.admission.release(id)).toBeUndefined()
+    t.dispose()
+  })
+
+  test("a delivery whose answer is lost is dropped too, for its sender to look up by ID", async () => {
+    const t = setup()
+    t.server.drop()
+    const id = t.submit("from another session", true)
+    await until(() => t.state(id) === undefined)
+    expect(t.server.sends).toHaveLength(1)
+    t.dispose()
+  })
+
+  test("submitting an ID it already tracks sends nothing more", async () => {
+    const t = setup()
+    const gate = t.server.hold()
+    const id = t.submit("once")
+    t.admission.submit({ messageID: id, sessionID: "ses_1", textPartID: "prt_1", prompt: { input: "once", parts: [] }, body: { messageID: id, textPartID: "prt_1", text: "once" } })
+    expect(t.admission.entries()).toHaveLength(1)
+    gate.resolve({ type: "ok" })
+    await until(() => t.state(id) === undefined)
+    expect(t.server.sends).toHaveLength(1)
     t.dispose()
   })
 })
