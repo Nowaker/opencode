@@ -14,7 +14,7 @@ async function poll<A>(read: () => Promise<A | undefined>, message: string) {
   }
 }
 
-test("isolated HTTP abort and disposal persist per-run provenance across subsequent turns", async () => {
+test("isolated HTTP abort records its requester and disposal persists per-run provenance across subsequent turns", async () => {
   await using tmp = await tmpdir()
   const provider = createServer((request, response) => {
     request.resume()
@@ -95,7 +95,9 @@ test("isolated HTTP abort and disposal persist per-run provenance across subsequ
     const created = await client.session.create({ title: "Abort provenance" }, { throwOnError: true })
     const sessionID = created.data.id
     const seen = new Set<string>()
-    for (const action of ["abort", "instance", "global", "config", "abort"] as const) {
+    // "abort" is a bare HTTP abort; "tui" and "tui-revert" pass their requester. Each disposal follows a
+    // requester-carrying cancel, so a requester leaking into the next run would show up on its row.
+    for (const action of ["abort", "tui", "instance", "tui-revert", "global", "config", "abort"] as const) {
       await client.session.promptAsync({ sessionID, parts: [{ type: "text", text: action }] }, { throwOnError: true })
       const assistant = await poll(async () => {
         const result = await client.session.messages({ sessionID }, { throwOnError: true })
@@ -106,6 +108,15 @@ test("isolated HTTP abort and disposal persist per-run provenance across subsequ
       seen.add(assistant.id)
       if (action === "abort") {
         expect((await client.session.abort({ sessionID }, { throwOnError: true })).data).toBe(true)
+      }
+      if (action === "tui" || action === "tui-revert") {
+        for (const invalid of ["killed", "bogus"]) {
+          const url = new URL(`/session/${sessionID}/abort`, baseURL)
+          url.searchParams.set("directory", tmp.path)
+          url.searchParams.set("requester", invalid)
+          expect((await fetch(url, { method: "POST" })).status).toBe(400)
+        }
+        expect((await client.session.abort({ sessionID, requester: action }, { throwOnError: true })).data).toBe(true)
       }
       if (action === "instance") {
         expect((await client.instance.dispose(undefined, { throwOnError: true })).data).toBe(true)
@@ -120,12 +131,15 @@ test("isolated HTTP abort and disposal persist per-run provenance across subsequ
         const result = await client.session.message({ sessionID, messageID: assistant.id }, { throwOnError: true })
         return result.data.info.role === "assistant" && result.data.info.time.completed ? result.data.info : undefined
       }, `${action} did not finalize its assistant`)
+      const cancelled = action === "abort" || action === "tui" || action === "tui-revert"
       expect(completed.error).toEqual({
         name: "MessageAbortedError",
         data: {
           message: "Aborted",
-          cause: action === "abort" ? "cancel" : "dispose",
-          ...(action === "abort" ? {} : { dispose: action === "config" ? "config" : "api" }),
+          cause: cancelled ? "cancel" : "dispose",
+          ...(cancelled
+            ? { requester: action === "abort" ? "api" : action }
+            : { dispose: action === "config" ? "config" : "api" }),
         },
       })
     }

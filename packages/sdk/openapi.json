@@ -7317,6 +7317,15 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "requester",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["tui", "tui-revert", "api"]
+            },
+            "required": false
           }
         ],
         "responses": {

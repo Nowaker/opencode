@@ -3997,6 +3997,7 @@ export class Session2 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
+      requester?: "tui" | "tui-revert" | "api"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4008,6 +4009,7 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "requester" },
           ],
         },
       ],

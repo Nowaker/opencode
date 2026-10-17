@@ -240,7 +240,7 @@ or the separately generated SDK v2 for the HTTP surface.
 | `GET`    | `/session/:id/todo`                      | Get the todo list for a session       | Returns <a href={typesUrl}><code>Todo[]</code></a>                                 |
 | `POST`   | `/session/:id/init`                      | Analyze app and create `AGENTS.md`    | body: `{ messageID, providerID, modelID }`, returns `boolean`                      |
 | `POST`   | `/session/:id/fork`                      | Fork an existing session at a message | body: `{ messageID? }`, returns <a href={typesUrl}><code>Session</code></a>        |
-| `POST`   | `/session/:id/abort`                     | Abort a running session               | Returns `boolean`                                                                  |
+| `POST`   | `/session/:id/abort`                     | Abort a running session               | query: `requester?` (`tui`, `tui-revert`, `api`; default `api`), returns `boolean` |
 | `POST`   | `/session/:id/share`                     | Share a session                       | Returns <a href={typesUrl}><code>Session</code></a>                                |
 | `DELETE` | `/session/:id/share`                     | Unshare a session                     | Returns <a href={typesUrl}><code>Session</code></a>                                |
 | `GET`    | `/session/:id/diff`                      | Get the diff for this session         | query: `messageID?`, returns <a href={typesUrl}><code>FileDiff[]</code></a>        |
@@ -256,7 +256,7 @@ or the separately generated SDK v2 for the HTTP surface.
 
 Interrupted assistant messages keep the `MessageAbortedError` name and `data.message`. New errors optionally include `data.cause`: `cancel` for an explicit cancellation or `dispose` for instance teardown. `killed` is accepted for compatibility with externally recorded errors, but OpenCode does not emit it.
 
-Disposal errors may include `data.dispose` when known: `exit` for worker shutdown, `reload` for instance reload, `config` for a global configuration change, or `api` for an explicit disposal endpoint. Cancellation errors may include `data.requester` (`tui`, `tui-revert`, or `api`) when supplied by the cancelling caller. These fields describe that run only; older stored errors can omit all of them.
+Disposal errors may include `data.dispose` when known: `exit` for worker shutdown, `reload` for instance reload, `config` for a global configuration change, or `api` for an explicit disposal endpoint. Cancellation errors record `data.requester`: the `requester` query of `POST /session/:id/abort`, which is `tui` for the TUI's interrupt (`esc` twice, `/abort`, the `session_abort` keybind), `tui-revert` for the TUI's undo of a running turn, and `api` when omitted. Any other value is rejected with `400`. Errors written before this field existed omit it. These fields describe that run only; older stored errors can omit all of them.
 
 | Method | Path                              | Description                             | Notes                                                                                                                                                                 |
 | ------ | --------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -10187,6 +10187,7 @@ export type SessionAbortData = {
   query?: {
     directory?: string
     workspace?: string
+    requester?: "tui" | "tui-revert" | "api"
   }
   url: "/session/{sessionID}/abort"
 }

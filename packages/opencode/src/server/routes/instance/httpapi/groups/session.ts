@@ -60,6 +60,13 @@ export const MessagesQuery = Schema.Struct({
     description: "Without before or after: 'desc' (default) pages from the newest message, 'asc' from the oldest",
   }),
 })
+export const AbortQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  requester: Schema.optional(SessionV1.AbortRequester).annotate({
+    description:
+      "Who asked for the cancel, recorded as error.data.requester on the aborted assistant message: 'tui' (prompt interrupt), 'tui-revert' (undo/revert) or 'api' (default when omitted)",
+  }),
+})
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
@@ -268,7 +275,7 @@ export const SessionApi = HttpApi.make("session")
         ),
         HttpApiEndpoint.post("abort", SessionPaths.abort, {
           params: { sessionID: SessionID },
-          query: WorkspaceRoutingQuery,
+          query: AbortQuery,
           success: described(Schema.Boolean, "Aborted session"),
           error: HttpApiError.BadRequest,
         }).annotateMerge(
