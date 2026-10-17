@@ -29,8 +29,8 @@ export type PasteResult = { text: string; inline: boolean; origin: PasteOrigin }
 
 // The paste dialog of prompt.paste_mode 'dialog': the options on the left, and on the right the
 // paste as it will go in, in the prompt's own editor and box, updated as options change and
-// editable. Space toggles the selected option, enter pastes, esc cancels, and tab moves between the
-// options and the editor, where space and enter type as usual except that enter still pastes.
+// editable. Space toggles the selected option, enter pastes, esc cancels. Right or tab moves from the
+// options to the editor, where space and arrows work as usual and enter still pastes; tab goes back.
 export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; onPaste(result: PasteResult): void }) {
   const dialog = useDialog()
   const { theme, syntax } = useTheme()
@@ -45,7 +45,6 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
   const [rows, setRows] = createSignal(1)
   const [target, setTarget] = createSignal<TextareaRenderable>()
   let edited = props.origin.body !== undefined
-  let applying = false
   let textarea: TextareaRenderable
 
   // The dialog starts a quarter of the way down the screen (ui/dialog.tsx). Around the editor it has
@@ -66,9 +65,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
   function show() {
     setText(wrapPaste(body(), options()))
     if (!textarea || textarea.isDestroyed) return
-    applying = true
     textarea.setText(text())
-    applying = false
     measure()
   }
 
@@ -84,10 +81,13 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
     show()
   }
 
+  // The editor reports a change a microtask after it happened, so the dialog's own setText reaches
+  // here too, once the dialog is done; a flag set around setText would already be cleared. A change
+  // is a hand edit only when the editor no longer holds the text the dialog last showed.
   function adoptEdit() {
-    setText(textarea.plainText)
     measure()
-    if (applying) return
+    if (textarea.plainText === text()) return
+    setText(textarea.plainText)
     const unwrapped = unwrapPaste(textarea.plainText, options())
     setBody(unwrapped.body)
     setOptions(unwrapped.options)
@@ -139,6 +139,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
     commands: [{ name: "dialog.paste.paste", title: "Paste", category: "Dialog", run: paste }],
     bindings: [
       ...tuiConfig.keybinds.get("input.submit").map((binding) => ({ ...binding, cmd: "dialog.paste.paste" })),
+      { key: "right", desc: "To the editor", group: "Dialog", cmd: () => focusOn("editor") },
       {
         key: "space",
         desc: "Toggle paste option",
@@ -243,7 +244,8 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
               </text>
             ) : undefined}
             <text fg={theme.text} {...onClick(() => focusOn(focus() === "editor" ? "options" : "editor"))}>
-              tab <span style={{ fg: theme.textMuted }}>{focus() === "editor" ? "options" : "edit"}</span>
+              {focus() === "editor" ? "tab" : "→/tab"}{" "}
+              <span style={{ fg: theme.textMuted }}>{focus() === "editor" ? "options" : "edit"}</span>
             </text>
             <text fg={theme.text} {...onClick(paste)}>
               enter <span style={{ fg: theme.textMuted }}>paste</span>
