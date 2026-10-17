@@ -107,8 +107,14 @@ carries every feature forward unchanged. That commit includes the full
 - [Prompt history scoped to the session](./features/2026-10-15-prompt-history-scope.md)
 - [ctrl+u deletes back to the line start, or the whole line](./features/2026-10-16-input-line-discard.md)
 - [A paste dialog with cleanup and wrap options on every paste](./features/2026-10-16-paste-dialog-mode.md)
+- [Transcript filter: choose which kinds of entries the transcript shows](./features/2026-10-16-transcript-filter.md)
 
 ## Session records
+
+- [2026-10-16 `ses_eb93ce62fffekug2rIeYIQFnpF`](./sessions/2026-10-16-transcript-filter.md)
+  - `/filter` (ctrl+x f) dialog shows or hides 13 entry kinds, with tool calls
+    and file actions narrowed by name; `transcript.show` defaults; vt-327 on
+    both hosts; no v1 PR (needs #56007, #53871, #53660).
 
 - [2026-10-16 `ses_eec5b71ddffe4A47jCysfkQh6l`](./sessions/2026-10-16-history-bar.md)
   - Benchmark load all on ten long sessions (+1.3-4.3 GB, 15-164 s); three-row
@@ -592,6 +598,7 @@ Run 2026-10-12, v1 `dfb56f76c7` (`v1.19.0`), v2 `039eb85ba1`;
 | `prompt-undo-history` | #54460 | pass | L | - |
 | `paste-edit-dialog` | #54463 | pass | L | - |
 | `paste-dialog-mode` | #56268 | not in the rig yet | L, after `paste-edit-dialog` | - |
+| `transcript-filter` | - (needs #56007, #53871, #53660) | not in the rig yet | L: v2 transcript rewritten | - |
 | `bash-syntax` | #54704 | proved | M: v2 tool views rewritten | - |
 | `heredoc-syntax` | #54705 | proved | M, after bash syntax | - |
 | `file-languages` | #54706 | proved | M | - |

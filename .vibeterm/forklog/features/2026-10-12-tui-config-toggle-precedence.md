@@ -76,6 +76,7 @@ Trigger: desktop `kv.json` held `"tips_hidden": false` and `tui.json` held
 | `mouse` | env `OPENCODE_DISABLE_MOUSE` | env kill switch | none needed: env only disables |
 | `startup.instant_prompt` / `early_input` | none | - | - |
 | `theme` (upstream) | kv `theme` | config already wins | none |
+| `transcript.show.<kind>` | kv `transcript_filter`, `tool_details_visibility`, `assistant_metadata_visibility`; `/filter`, **Show/Hide tool calls** | new key | config-first from the start (`de17779440`, item 42) |
 
 Vibeterm (opencode-tools `a0aff80`): the knob catalog lists the toggles in
 `KV_TOGGLES` and a settings row shows a remembered toggle only while the key is
@@ -105,6 +106,10 @@ See the [session record](../sessions/2026-10-12-tui-config-precedence.md#verific
 - 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
   audit, rule, nine commits on `dev-nowaker`, carried onto nine owning
   branches; opencode-tools catalog. Evidence: that session's Verification.
+- 2026-10-16 [`ses_eb93ce62fffekug2rIeYIQFnpF`](../sessions/2026-10-16-transcript-filter.md) -
+  `transcript.show` follows the rule from its first commit; "Show/Hide tool
+  details" became the filter's Tool calls row; opencode-tools `ea05c72b` lets
+  `KV_TOGGLES` name a dotted path into a kv.json object.
 
 ## Current maintenance notes
 
