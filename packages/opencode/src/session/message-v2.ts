@@ -39,6 +39,7 @@ import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { Effect, Schema } from "effect"
 import { SqlErrorMessage } from "./sql-error"
+import type { SessionAbort } from "./abort"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
@@ -877,14 +878,14 @@ function isAfter(info: Info, other?: Info) {
 
 export function fromError(
   e: unknown,
-  ctx: { providerID: ProviderV2.ID; aborted?: boolean },
+  ctx: { providerID: ProviderV2.ID; aborted?: boolean; abort?: SessionAbort.Metadata },
 ): NonNullable<Assistant["error"]> {
   const sql = SqlErrorMessage.message(e)
   if (sql !== undefined) return new NamedError.Unknown({ message: sql }, { cause: e }).toObject()
   switch (true) {
     case e instanceof DOMException && e.name === "AbortError":
       return new AbortedError(
-        { message: e.message },
+        { message: e.message, ...ctx.abort },
         {
           cause: e,
         },
@@ -914,7 +915,7 @@ export function fromError(
       ).toObject()
     case e instanceof Error && (e as FetchDecompressionError).code === "ZlibError":
       if (ctx.aborted) {
-        return new AbortedError({ message: e.message }, { cause: e }).toObject()
+        return new AbortedError({ message: e.message, ...ctx.abort }, { cause: e }).toObject()
       }
       return new APIError(
         {

@@ -254,6 +254,10 @@ or the separately generated SDK v2 for the HTTP surface.
 
 ### Messages
 
+Interrupted assistant messages keep the `MessageAbortedError` name and `data.message`. New errors optionally include `data.cause`: `cancel` for an explicit cancellation or `dispose` for instance teardown. `killed` is accepted for compatibility with externally recorded errors, but OpenCode does not emit it.
+
+Disposal errors may include `data.dispose` when known: `exit` for worker shutdown, `reload` for instance reload, `config` for a global configuration change, or `api` for an explicit disposal endpoint. Cancellation errors may include `data.requester` (`tui`, `tui-revert`, or `api`) when supplied by the cancelling caller. These fields describe that run only; older stored errors can omit all of them.
+
 | Method | Path                              | Description                             | Notes                                                                                                                                                                 |
 | ------ | --------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`  | `/session/:id/message`            | List messages in a session              | query: `limit?`, returns `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}[]`                                                        |

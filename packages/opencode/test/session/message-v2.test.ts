@@ -1732,15 +1732,23 @@ describe("session.message-v2.fromError", () => {
   })
 
   test("classifies ZlibError as AbortedError when abort context is provided", () => {
-    const zlibError = new Error(
-      'ZlibError fetching "https://opencode.cloudflare.dev/anthropic/messages". For more information, pass `verbose: true` in the second argument to fetch()',
+    const zlibError = Object.assign(
+      new Error(
+        'ZlibError fetching "https://opencode.cloudflare.dev/anthropic/messages". For more information, pass `verbose: true` in the second argument to fetch()',
+      ),
+      { code: "ZlibError", errno: 0 },
     )
-    ;(zlibError as any).code = "ZlibError"
-    ;(zlibError as any).errno = 0
 
-    const result = MessageV2.fromError(zlibError, { providerID, aborted: true })
+    const result = MessageV2.fromError(zlibError, {
+      providerID,
+      aborted: true,
+      abort: { cause: "cancel", requester: "tui" },
+    })
 
-    expect(result.name).toBe("MessageAbortedError")
+    expect(result).toEqual({
+      name: "MessageAbortedError",
+      data: { message: zlibError.message, cause: "cancel", requester: "tui" },
+    })
   })
 })
 

@@ -59,6 +59,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { InstanceStore } from "@/project/instance-store"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -1325,29 +1326,34 @@ it.instance("cancel interrupts loop and resolves with an assistant message", () 
   }),
 )
 
-it.instance("cancel records MessageAbortedError on interrupted process", () =>
-  Effect.gen(function* () {
-    const { llm } = yield* useServerConfig(providerCfg)
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const chat = yield* sessions.create({ title: "Pinned" })
-    yield* llm.hang
-    yield* user(chat.id, "hello")
+for (const requester of [undefined, "tui", "api"] as const) {
+  it.instance(`cancel records MessageAbortedError with ${requester ?? "unspecified"} requester`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      yield* user(chat.id, "hello")
 
-    const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-    yield* llm.wait(1)
-    yield* waitForBusy(chat.id)
-    yield* prompt.cancel(chat.id)
-    const exit = yield* Fiber.await(fiber)
-    expect(Exit.isSuccess(exit)).toBe(true)
-    if (Exit.isSuccess(exit)) {
-      const info = exit.value.info
-      if (info.role === "assistant") {
-        expect(info.error?.name).toBe("MessageAbortedError")
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* waitForBusy(chat.id)
+      yield* prompt.cancel(chat.id, requester ? { requester } : undefined)
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) {
+        const info = exit.value.info
+        if (info.role === "assistant") {
+          expect(info.error).toEqual({
+            name: "MessageAbortedError",
+            data: { message: "Aborted", cause: "cancel", ...(requester ? { requester } : {}) },
+          })
+        }
       }
-    }
-  }),
-)
+    }),
+  )
+}
 
 raceNoLLMServer.instance(
   "finalizes assistant when cancelled before processor creation completes",
@@ -1376,7 +1382,7 @@ raceNoLLMServer.instance(
       const first = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* Effect.promise(() => firstCreate.promise)
 
-      yield* prompt.cancel(chat.id)
+      yield* prompt.cancel(chat.id, { requester: "tui-revert" })
       const firstExit = yield* Fiber.await(first)
       expect(Exit.isSuccess(firstExit)).toBe(true)
 
@@ -1387,7 +1393,10 @@ raceNoLLMServer.instance(
       if (firstInterrupted?.info.role === "assistant") {
         expect(firstInterrupted.info.finish).toBeUndefined()
         expect(firstInterrupted.info.time.completed).toBeNumber()
-        expect(firstInterrupted.info.error?.name).toBe("MessageAbortedError")
+        expect(firstInterrupted.info.error).toEqual({
+          name: "MessageAbortedError",
+          data: { message: "Aborted", cause: "cancel", requester: "tui-revert" },
+        })
       }
 
       yield* prompt.prompt({
@@ -1432,11 +1441,44 @@ raceNoLLMServer.instance(
       expect(lastAssistant?.info.role).toBe("assistant")
       if (lastUser?.info.role === "user" && lastAssistant?.info.role === "assistant") {
         expect(lastAssistant.info.parentID).toBe(lastUser?.info.id)
+        expect(lastAssistant.info.error).toEqual({
+          name: "MessageAbortedError",
+          data: { message: "Aborted", cause: "cancel" },
+        })
       }
     }),
   { config: cfg },
   3_000,
 )
+
+for (const reason of [undefined, "exit", "reload", "config", "api"] as const) {
+  it.instance(`instance disposal records ${reason ?? "unspecified"} abort provenance`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const store = yield* InstanceStore.Service
+      const { directory } = yield* TestInstance
+      const chat = yield* sessions.create({ title: "Dispose provenance" })
+      yield* llm.hang
+      yield* user(chat.id, "hello")
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      if (reason === "reload") yield* store.reload({ directory })
+      else yield* store.disposeDirectory(directory, reason)
+      yield* Fiber.await(fiber)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const info = messages.at(-1)?.info
+      expect(info?.role).toBe("assistant")
+      if (info?.role !== "assistant") throw new Error("missing interrupted assistant")
+      expect(info.time.completed).toBeNumber()
+      expect(info.error).toEqual({
+        name: "MessageAbortedError",
+        data: { message: "Aborted", cause: "dispose", ...(reason ? { dispose: reason } : {}) },
+      })
+    }),
+  )
+}
 
 noLLMServer.instance(
   "cancel finalizes subtask tool state",

@@ -50,6 +50,7 @@ import { Cause, Deferred, Effect, Exit, Latch, Layer, Option, Scope, Context, Sc
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
+import { SessionAbort } from "./abort"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
@@ -129,7 +130,7 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 }
 
 export interface Interface {
-  readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly cancel: (sessionID: SessionID, options?: SessionAbort.CancelOptions) => Effect.Effect<void>
   readonly prompt: (
     input: PromptInput,
     admission?: Deferred.Deferred<void, AdmissionRejected>,
@@ -199,9 +200,9 @@ const layer = Layer.effect(
       } satisfies TaskPromptOps
     })
 
-    const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
+    const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID, options?: SessionAbort.CancelOptions) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
-      yield* state.cancel(sessionID)
+      yield* state.cancel(sessionID, options)
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -1464,6 +1465,7 @@ const layer = Layer.effect(
             msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
               providerID: msg.providerID,
               aborted: true,
+              abort: yield* SessionAbort.metadata,
             })
             msg.time.completed = Date.now()
             yield* sessions.updateMessage(msg)
