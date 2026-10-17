@@ -11,6 +11,8 @@ const SPACE = " "
 const DOWN = "\x1b[B"
 const UP = "\x1b[A"
 const TAB = "\t"
+const RIGHT = "\x1b[C"
+const LEFT = "\x1b[D"
 const config = { prompt: { paste_mode: "dialog" as const } }
 const code = "    def f():\n        return 1\n"
 
@@ -165,6 +167,98 @@ test("tab moves to the editor, where space and letters type and enter still past
       await rig.press(ENTER)
       await closed(rig)
       expect(rig.parts()).toMatchObject([{ type: "text", text: "X Ya\nb\nc" }])
+    },
+    { config },
+  )
+})
+
+// Every cleanup changes this text: blank lines at both ends and in a run, trailing spaces, a shared
+// four-space indent and terminal colors.
+const messy = "\n\n    alpha   \n\n\n\n        beta  \n    \x1b[31mgamma\x1b[0m\n\n"
+const keys = ["fence", "code", "quote", "trim", "dedent", "collapse", "ansi"] as const
+
+// Moves the selection to an option row and toggles it, tracking the row the selection is on.
+function options(rig: PromptRig) {
+  let row = 0
+  return async (key: (typeof keys)[number] | "inline") => {
+    const target = ["inline", ...keys].indexOf(key)
+    while (row < target) await rig.press(DOWN), row++
+    while (row > target) await rig.press(UP), row--
+    await rig.press(SPACE)
+  }
+}
+
+// With insert inline on the result goes in as typed, so the prompt holds exactly what the dialog had.
+async function pastesBack(rig: PromptRig, toggle: (key: "inline") => Promise<void>) {
+  await toggle("inline")
+  await rig.press(ENTER)
+  await closed(rig)
+  expect(rig.text()).toBe(messy)
+}
+
+test.each([...keys])("turning %s on and off gives back the paste as it was", async (key) => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, messy)
+      const toggle = options(rig)
+      await toggle(key)
+      await toggle(key)
+      await pastesBack(rig, toggle)
+    },
+    { config },
+  )
+})
+
+test("every option on, then off in reverse and in a shuffled order, gives back the paste", async () => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, messy)
+      const toggle = options(rig)
+      for (const key of keys) await toggle(key)
+      expect(rig.frame()).toMatch(/┃\s+> ```/)
+      for (const key of [...keys].reverse()) await toggle(key)
+      // A fixed shuffle, so a failure can be replayed.
+      const shuffled = ["dedent", "fence", "ansi", "trim", "quote", "collapse", "code"] as const
+      for (const key of shuffled) await toggle(key)
+      for (const key of ["collapse", "fence", "trim", "code", "ansi", "quote", "dedent"] as const) await toggle(key)
+      await pastesBack(rig, toggle)
+    },
+    { config },
+  )
+})
+
+test("right moves to the editor and tab back; focus and caret moves there are not edits", async () => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, messy)
+      const toggle = options(rig)
+      await toggle("trim")
+      await rig.press(RIGHT)
+      await wait(() => rig.frame().includes("tab options"))
+      for (const key of [DOWN, DOWN, RIGHT, RIGHT, LEFT, UP]) await rig.press(key)
+      await rig.press(TAB)
+      await wait(() => rig.frame().includes("→/tab edit"))
+      await toggle("trim")
+      await rig.press(TAB)
+      await rig.press(TAB)
+      await pastesBack(rig, toggle)
+    },
+    { config },
+  )
+})
+
+test("right arrow in the editor moves the caret instead of leaving it", async () => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, "ab")
+      await rig.press(RIGHT)
+      await rig.press(RIGHT)
+      await rig.press("X")
+      await rig.press(TAB)
+      await rig.press(SPACE) // insert inline
+      await rig.press(ENTER)
+      await closed(rig)
+      expect(rig.text()).toBe("aXb")
     },
     { config },
   )
