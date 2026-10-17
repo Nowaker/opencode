@@ -98,6 +98,12 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 
 ## Timeline
 
+- 2026-10-17 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-17-spawn-prompt-recheck.md) -
+  re-verified on installed `vt-343`: the 2026-10-13 spawn's exact 4.3 KB
+  `--prompt` argv draws bare and through `vt-spawn-session`, with or without
+  3 s of injected startup latency; on `vt-275` a one-line prompt hangs exactly
+  like the brief, so the prompt text was never the cause.
+
 - 2026-10-14 `ses_ec6ba061bffesQBkvfMn0aKona`: reproduced lost requests during
   asynchronous static-import initialization. The early request got no reply
   while a later request to the same worker succeeded; the readiness-gated

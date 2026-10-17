@@ -114,6 +114,12 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-17 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-17-spawn-prompt-recheck.md)
+  - The 2026-10-13 "4.3 KB `--prompt` hangs a new-session spawn" report does
+    not reproduce on `vt-343`, bare or through `vt-spawn-session`; on `vt-275`
+    a one-line prompt hangs the same way, so it was the Bun worker-request
+    loss fixed in `vt-285`, not the text. No source change.
+
 - [2026-10-16 `ses_eb83d5fd6ffe2F4YAv9F3pW2IU`](./sessions/2026-10-16-abort-requester.md)
   - `POST /session/{id}/abort?requester=` (`tui`, `tui-revert`, `api`;
     default `api`, others `400`); the TUI sends `tui` for its interrupt and
