@@ -116,6 +116,40 @@ describe("Runner", () => {
   // --- cancel semantics ---
 
   it.live(
+    "prepares only admitted work and stamps only the selected active cancellation",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      let prepared = 0
+      let stamped = 0
+      const runner = Runner.make<string>(scope, {
+        prepare: (work) => {
+          prepared += 1
+          return work
+        },
+        onInterrupt: Effect.succeed("interrupted"),
+      })
+      const stamp = () => {
+        stamped += 1
+      }
+      yield* runner.cancelWith(stamp)
+      expect(prepared).toBe(0)
+      expect(stamped).toBe(0)
+      const first = yield* runner.ensureRunning(Effect.never).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      const joined = yield* runner.ensureRunning(Effect.succeed("not admitted")).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      expect(prepared).toBe(1)
+      yield* runner.cancelWith(stamp)
+      yield* Effect.all([Fiber.join(first), Fiber.join(joined)])
+      expect(stamped).toBe(1)
+      expect(yield* runner.ensureRunning(Effect.succeed("replacement"))).toBe("replacement")
+      expect(prepared).toBe(2)
+      yield* runner.cancelWith(stamp)
+      expect(stamped).toBe(1)
+    }),
+  )
+
+  it.live(
     "cancel interrupts running work",
     Effect.gen(function* () {
       const s = yield* Scope.Scope
