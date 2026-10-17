@@ -110,8 +110,14 @@ carries every feature forward unchanged. That commit includes the full
 - [A paste dialog with cleanup and wrap options on every paste](./features/2026-10-16-paste-dialog-mode.md)
 - [Transcript filter: choose which kinds of entries the transcript shows](./features/2026-10-16-transcript-filter.md)
 - [Send a turn past the composer from a TUI plugin](./features/2026-10-16-tui-prompt-deliver.md)
+- [Record who requested a cancel on the aborted row](./features/2026-10-16-abort-requester.md)
 
 ## Session records
+
+- [2026-10-16 `ses_eb83d5fd6ffe2F4YAv9F3pW2IU`](./sessions/2026-10-16-abort-requester.md)
+  - `POST /session/{id}/abort?requester=` (`tui`, `tui-revert`, `api`;
+    default `api`, others `400`); the TUI sends `tui` for its interrupt and
+    `tui-revert` for undo; vt-343 on both hosts; fork-only.
 
 - [2026-10-16 `ses_ed24b7cfbffe5YyKo7piBEsLF6`](./sessions/2026-10-16-tui-prompt-deliver.md)
   - Add `api.prompt.deliver`, so vibeterm deliveries reach a session while a
@@ -742,7 +748,7 @@ Requested by `ses_ebc7292d6ffe0m5W6cH7M4vIPv`, coordinated with TUI owner `ses_e
 
 - `error.data.cause`: `cancel` for explicit cancellation, `dispose` for instance teardown. Schemas also accept `killed` for Vibeterm-written rows; OpenCode does not emit it. Legacy rows may omit all new fields.
 - `error.data.dispose`: optional `exit`, `reload`, `config` or `api`, only with `cause = "dispose"` when the caller knows the source. Other teardown omits the detail.
-- `error.data.requester`: optional `tui`, `tui-revert` or `api`, only with `cause = "cancel"` when supplied. Server plumbing accepts `SessionPrompt.cancel(sessionID, { requester })`; HTTP input/defaulting and SDK/TUI callers are the TUI owner's separate follow-on, not part of this server delivery.
+- `error.data.requester`: optional `tui`, `tui-revert` or `api`, only with `cause = "cancel"` when supplied. Server plumbing accepts `SessionPrompt.cancel(sessionID, { requester })`; HTTP input/defaulting and SDK/TUI callers are the TUI owner's separate follow-on, not part of this server delivery; delivered in [Record who requested a cancel on the aborted row](./features/2026-10-16-abort-requester.md).
 - Stable seams: canonical `packages/schema/src/v1/session.ts` AbortedError fields, Core's shared schema fields, `Runner.make` admission `prepare` and serialized `cancelWith`, `SessionAbort.Current`, `SessionRunState` disposal observer, both processor and prompt interruption finalizers, and the worker/global/API disposal call sites. Metadata belongs to one admitted run; the first cancellation/disposal claim wins and replacement work gets a fresh cell.
 - Generated artifacts: `packages/sdk/js/src/v2/gen/types.gen.ts` and `packages/sdk/openapi.json`; `packages/client` generation produced no changes. Regenerate rather than hand-edit them on future schema changes.
 
