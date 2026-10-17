@@ -116,10 +116,11 @@ describe("DatabaseMigration", () => {
   test("initializes one fresh database from concurrent processes", async () => {
     await using tmp = await tmpdir()
     const deadline = Date.now() + 80_000
+    const modes = ["open", "open", "open", "open"]
     for (const round of [1, 2, 3, 4, 5]) {
       const filename = path.join(tmp.path, `fresh-${round}.sqlite`)
-      const results = await openConcurrently(filename, ["open", "open", "open", "open"], deadline)
-      expect(results, `round ${round}`).toEqual(results.map(() => ({ exit: 0, stderr: "" })))
+      const results = await openConcurrently(filename, modes, deadline)
+      expect(results, `round ${round}`).toEqual(modes.map(() => ({ exit: 0, stderr: "" })))
       await Effect.runPromise(
         Effect.gen(function* () {
           const { db } = yield* Database.Service
