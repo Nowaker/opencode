@@ -113,6 +113,37 @@ describe("DatabaseMigration", () => {
       ),
     )
   })
+  test("initializes one fresh database from concurrent processes", async () => {
+    await using tmp = await tmpdir()
+    for (const round of [1, 2, 3, 4, 5]) {
+      const filename = path.join(tmp.path, `fresh-${round}.sqlite`)
+      const children = Array.from({ length: 4 }, () =>
+        Bun.spawn([process.execPath, path.join(import.meta.dir, "fixture", "database-open.ts"), filename], {
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+        }),
+      )
+      const readers = children.map((child) => child.stdout.getReader())
+      expect(
+        (await Promise.all(readers.map((reader) => reader.read()))).map((chunk) => new TextDecoder().decode(chunk.value)),
+      ).toEqual(children.map(() => "ready\n"))
+      readers.forEach((reader) => reader.releaseLock())
+      children.forEach((child) => child.stdin.end())
+
+      const results = await Promise.all(
+        children.map(async (child) => ({ exit: await child.exited, stderr: await new Response(child.stderr).text() })),
+      )
+      expect(results, `round ${round}`).toEqual(children.map(() => ({ exit: 0, stderr: "" })))
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: migrations.length })
+        }).pipe(Effect.provide(Database.layerFromPath(filename)), Effect.scoped),
+      )
+    }
+  }, 90_000)
+
   if (process.platform === "linux") {
     test("declared schema has no ungenerated migrations", async () => {
       const result = await $`bun ${fileURLToPath(new URL("../script/migration.ts", import.meta.url))} --check`

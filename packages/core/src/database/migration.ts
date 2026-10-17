@@ -22,20 +22,31 @@ export function apply(db: Database) {
         sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
       )
       if (tables.some((table) => table.name === "session")) return yield* applyOnly(db, migrations)
-      if (tables.length > 0) return yield* Effect.die("Database is not empty and has no session table")
-      yield* db.transaction((tx) =>
-        Effect.gen(function* () {
-          yield* schema.up(tx)
-          yield* tx.run(
-            sql`CREATE TABLE ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`,
-          )
-          yield* Effect.forEach(migrations, (migration) =>
-            tx.run(
-              sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
-            ),
-          )
-        }),
+      // Another process may be creating the schema right now. Decide "empty"
+      // again while holding SQLite's write lock, so a loser waits for the
+      // winner's commit and then migrates the database it created.
+      const created = yield* db.transaction(
+        (tx) =>
+          Effect.gen(function* () {
+            const current = yield* tx.all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+            )
+            if (current.some((table) => table.name === "session")) return false
+            if (current.length > 0) return yield* Effect.die("Database is not empty and has no session table")
+            yield* schema.up(tx)
+            yield* tx.run(
+              sql`CREATE TABLE ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`,
+            )
+            yield* Effect.forEach(migrations, (migration) =>
+              tx.run(
+                sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
+              ),
+            )
+            return true
+          }),
+        { behavior: "immediate" },
       )
+      if (!created) return yield* applyOnly(db, migrations)
     }),
   )
 }
