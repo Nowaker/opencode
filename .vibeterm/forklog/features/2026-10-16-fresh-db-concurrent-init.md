@@ -41,19 +41,22 @@ Only the WAL conversion is attempted again, and only for failures `SqliteFailure
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `69d1db22c9` | 2026-10-16 | Busy timeout before WAL; WAL conversion waits behind a concurrent converter; schema creation decided under the write lock | `Database.layerFromPath` (`disableWAL: true`), `Database` layer pragmas, `DatabaseMigration.apply` |
+| `ecce854f45` | 2026-10-16 | Test harness owns, deadlines and reaps every child process | `openConcurrently` in `packages/core/test/database-migration.test.ts`, fixture modes in `test/fixture/database-open.ts` |
 
 ## Verification
 
 Recorded by `ses_eb8582f68ffeUwFYhDGSv6jx7B`; details in its [session record](../sessions/2026-10-16-fresh-db-concurrent-init.md#verification).
 
 - `bun test test/database-migration.test.ts -t "concurrent processes"` (packages/core) - fails on the base (`table \`workspace\` already exists`, and `SQLITE_BUSY` at journal_mode before the pragma reorder); with only fixes 1 and 3 fails on m4max at `PRAGMA journal_mode = WAL`; passes with all three on desktop and 5/5 on m4max.
-- Isolated binaries, concurrent `opencode db "SELECT 1 AS ok"` against one fresh scratch data dir: 0 failed rounds at N=2 and N=4 (20 rounds each) on both hosts; the live binaries failed 4/10 and 8/10 (desktop vt-340), 7/10 and 9/10 (m4max vt-343).
+- Isolated binaries, concurrent `opencode db "SELECT 1 AS ok"` against one fresh scratch data dir: 0 failed rounds at N=2 and N=4 (20 rounds each) on both hosts; the live binaries failed 4/10 and 8/10 (desktop vt-343), 7/10 and 9/10 (m4max vt-343).
+- `concurrent-open harness` tests (exit-before-ready and stall child modes): the harness rejects and every one of its four children is reaped, on desktop and m4max.
 - Two cold TUIs on a throwaway tmux socket against one fresh data dir: live vt-340 desktop failed 2/5 and 3/12 rounds, live vt-343 m4max 2/20; isolated builds 0/12 (desktop) and 0/20 (m4max).
 - `vibeterm-v2-guard gate --v1` (run by `.vibeterm/build.sh`) PASSED on both hosts.
 
 ## Timeline
 
 - 2026-10-16 [`ses_eb8582f68ffeUwFYhDGSv6jx7B`](../sessions/2026-10-16-fresh-db-concurrent-init.md) - initial build. Evidence: `69d1db22c9`, isolated builds on desktop and m4max.
+- 2026-10-16 [`ses_eb8582f68ffeUwFYhDGSv6jx7B`](../sessions/2026-10-16-fresh-db-concurrent-init.md#parent-gate-finding-2026-10-17-same-workday) - test-harness ownership fix after the parent gate. Evidence: `ecce854f45`.
 
 ## Current maintenance notes
 

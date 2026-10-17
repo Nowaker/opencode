@@ -9,7 +9,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `fresh-db-race` (worktree `.vibeterm/worktrees/fresh-db-race` on both hosts)
 - Upstream base: `dev-nowaker` at `c459e6157b`
-- Source result commit(s): `69d1db22c9`
+- Source result commit(s): `69d1db22c9`, `ecce854f45` (test-only)
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -61,7 +61,7 @@ Commands and results:
 - `bun typecheck` in `packages/core` and `packages/opencode`: exit 0.
 - Migration sources: `git diff dev-nowaker..HEAD -- packages/core/src/database/migration/ migration.gen.ts schema.gen.ts schema.sql.ts` is empty.
 - Concurrent `opencode db "SELECT 1 AS ok"` against one fresh scratch data dir (scratch XDG_*, OPENCODE_TOOLS_DATA_DIR, OPENCODE_PLUGINS_DATA_DIR):
-  - desktop live vt-333: N=2 10/10 rounds failed; live vt-340: N=2 4/10, N=4 8/10; isolated `69d1db22c9`: N=2 0/20, N=4 0/20.
+  - desktop live vt-333: N=2 10/10 rounds failed; live vt-343 (another session installed `c459e6157b` at 22:54 local, before this run): N=2 4/10, N=4 8/10; isolated `69d1db22c9`: N=2 0/20, N=4 0/20.
   - m4max live vt-343: N=2 7/10, N=4 9/10; isolated `69d1db22c9`: N=2 0/20, N=4 0/20.
 - Two cold TUIs on a throwaway tmux socket against one fresh data dir:
   - desktop live vt-340: 2/5 rounds (pane exited 1), 3/12 rounds (`Error: Failed query:` on screen); isolated: 0/12.
@@ -72,11 +72,22 @@ Commands and results:
 - Build command: `OPENCODE_SRC=<worktree> OPENCODE_INSTALL=<worktree>/tmp/isolated/opencode VIBETERM_V2_GUARD=<opencode-tools>/vibeterm-opencode-client/bin/vibeterm-v2-guard <worktree>/.vibeterm/build.sh` on each host (m4max PATH adds `/opt/homebrew/lib/node_modules/npm/bin/node-gyp-bin` for `bun install`).
 - Installed artifact: not installed. Isolated `1.19.0-vt-344-dfb56f76c7` - desktop sha256 `7e1d4516ca082f0d3f8f1341e7e06c1f9c1ddd4825822cfc709bf60e82024dbc`, m4max sha256 `a50620626c117d9e66549c79994013a44b57cbfa4bfb972e69a6ec3f596b614c`. Both lack the deliberately uncommitted retry-header cap, which lives only in each primary checkout.
 - v2 guard gate: PASSED on both hosts (desktop against opencode-ai@1.19.3 / @opencode/cli@2.0.32; m4max against cached opencode-ai@1.19.0 / @opencode/cli@2.0.29).
-- Running services: not touched; live binaries' sha256 unchanged across both builds.
+- Running services: not touched; each live binary's sha256 was the same before and after every isolated build (desktop `e6339fcb...` vt-343 around the final build, m4max `82b93479...` vt-343).
+
+## Parent gate finding (2026-10-17, same workday)
+
+The m4max parent rejected `b94d8e9438` on one test-resource finding from its independent reviewer: the multi-process test spawned four children without cleanup, asserted readiness before closing stdin and had no readiness or completion deadline, so an early-exiting child left its siblings blocked in `Bun.stdin.text()` and a stalled child outlived the 90s timeout. The runtime algorithm was approved.
+
+- `ecce854f45` - test-only: `openConcurrently` owns each child from spawn, bounds readiness and completion by one deadline (80s inside the unchanged 90s budget), and its finally block cancels readers, SIGKILLs survivors and awaits every child before returning. The fixture gains `exit-before-ready` and `stall` modes; two tests drive the real harness with one such child among three normal ones.
+- Old harness, same fixture modes (`packages/core/tmp/old-harness-leak.ts`, scratch): exit-before-ready rejected and left 3 of 4 children alive; stall never settled and left the stalled child alive. Same on desktop and m4max; the scratch driver then killed them.
+- New harness: exit-before-ready child exited 3 and the other three were SIGKILLed; stall child SIGKILLed at the deadline and the other three exited 0; `kill(pid, 0)` fails for all eight; no fixture process remains.
+- `bun test test/database-migration.test.ts -t "concurrent processes|concurrent-open harness"`: 3 pass on desktop, 3/3 runs on m4max. Full file: 21 pass, 1 fail (the pre-existing embedded-init timeout). `bun typecheck` (core) exit 0 on both hosts.
+- `git diff 69d1db22c9 -- packages/core/src packages/opencode/src` is empty, so the isolated binaries were not rebuilt: desktop `7e1d4516...`, m4max `a50620626c...`, both unchanged.
 
 ## Commit provenance
 
 - `69d1db22c9` - fix(core): initialize a fresh database safely from concurrent processes
+- `ecce854f45` - test(core): own every child of the concurrent fresh-database test
 - Required trailer: `AI-Session-ID: ses_eb8582f68ffeUwFYhDGSv6jx7B`
 
 ```sh
