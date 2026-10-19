@@ -73,6 +73,8 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 
 ## Current maintenance notes
 
+- Scheduled delivery identity: branch `preserve-hook-profile`, session `ses_eac9def85ffeQUlw8vmM8s7aoY`, moves session profile persistence to the final user-message save boundary after `chat.message` hooks. A delivery ticket can change the message's agent/model/variant after picker resolution; storing the pre-hook values made the actual turn and the session's next inherited profile disagree. Ordinary agent/model default resolution is unchanged. The focused regression is `persists the final user profile after message hooks override it` in `packages/opencode/test/session/prompt.test.ts`.
+
 - `createPromptSend` mirrors the normal-prompt branch of
   `component/prompt/index.tsx` `submitInner`; an upstream change to how that
   builds its `session.prompt` body must be carried into `deliver.ts`.

@@ -2997,6 +2997,38 @@ noLLMServer.instance(
   },
 )
 
+noLLMServer.instance(
+  "persists the final user profile after message hooks override it",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+
+      const message = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        model: { providerID: ProviderV2.ID.make("opencode"), modelID: ModelV2.ID.make("kimi-k2.5-free") },
+        variant: "low",
+        noReply: true,
+        parts: [{ type: "text", text: "input" }],
+      })
+
+      if (message.info.role !== "user") throw new Error("expected user message")
+      expect(message.info.agent).toBe("plan")
+      expect(message.info.model).toEqual({ ...ref, variant: "high" })
+      const stored = yield* sessions.get(session.id)
+      expect(stored.agent).toBe("plan")
+      expect(stored.model).toEqual({ providerID: ref.providerID, id: ref.modelID, variant: "high" })
+    }),
+  {
+    config: {
+      ...cfg,
+      plugin: [pathToFileURL(path.join(import.meta.dir, "..", "fixture", "message-profile-plugin.ts")).href],
+    },
+  },
+)
+
 // Agent / command resolution errors
 
 noLLMServer.instance(

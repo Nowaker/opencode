@@ -77,5 +77,10 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
 
 ## Unknowns and blocked verification
 
-- No upstream PR: the route only matters with the fork's composer bridge
-  (`api.prompt` is fork-only).
+- No upstream PR: the route only matters with the fork's composer bridge (`api.prompt` is fork-only).
+
+## Scheduled profile persistence follow-up
+
+- Session `ses_eac9def85ffeQUlw8vmM8s7aoY`, branch `preserve-hook-profile`: an isolated installed-binary observation found session profile persistence already completed at hook entry, before a delivery ticket rewrote the user row. Control preserved `plan/fixture/chosen/xhigh`; the picker-based fallback produced that same user row but left the session on `build/fixture/fixture/default`.
+- The engine saves the final post-hook profile immediately before saving its user message, through the existing session writer. The regression fails on the unmodified source with stored agent `build`, then passes after the move. The full prompt suite passed 88 tests with one existing skip; the affected package typecheck passed.
+- An isolated canonical `1.19.0-vt-361-dfb56f76c7` build passed the v2 guard against cached `opencode-ai@1.19.0` and `@opencode/cli@2.0.29`; disk reserve blocked newer fixture downloads. Nine real-TUI schedule scenarios passed 54 assertions for user-row identity, persisted session identity and the responding agent/model. The final cross-repository gate approved with high confidence and no blockers.
