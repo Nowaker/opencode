@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker` (`master-nowaker` until 2026-09-22)
 - Development branch(es): direct work on `master-nowaker`
 - First local commit: `dd04c4f1b`
-- Current local commit(s): `dd04c4f1b`
+- Current local commit(s): `dd04c4f1b`, `99c94db64b`
 - Upstream base when introduced: `a85d8d23aa` (`v1.18.5`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
@@ -38,15 +38,18 @@ dirty OpenCode source change.
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `dd04c4f1b` | 2026-06-16 | Trace compaction boundaries and overflow decisions | `compactionDebug` calls in `session/prompt.ts` |
+| `99c94db64b` | 2026-10-18 | Keep the always-on trace under the canonical runtime log directory, including isolated XDG/profile roots | `Global.Path.log` in `session/prompt.ts`; real prompt-loop regression |
 
 ## Verification
 
-- The introducing commit records the trace destination as
-  `~/.local/share/opencode/log/compaction-debug.log`.
+- The destination is `path.join(Global.Path.log, "compaction-debug.log")`, normally `${XDG_DATA_HOME:-~/.local/share}/opencode/log/compaction-debug.log`. Profile launchers that isolate XDG data isolate this trace too; `OPENCODE_CONFIG_DIR` alone does not redirect runtime logs.
+- The location regression fails on the home-relative implementation and passes with the canonical path. It executes a real in-flight compaction and checks diagnostic task boundaries plus the resumed response.
 - 2026-08-29 semantic gate: prompt and compaction tests pass inside
   388 pass / 3 skip / 0 fail.
 
 ## Timeline
+
+- 2026-10-18 [`ses_eae68f338ffepUkW4TfyEKqFCp`](../sessions/2026-10-18-compaction-log-path.md) - user chose "Keep log, fix location". Preserve always-on writes, events, fields and compaction behavior; use the runtime log directory rather than a hard-coded home path. Reviewed regression and isolated installed-binary HTTP proof recorded in the linked session.
 
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   classify this as diagnostics, not a decision fix. Always-on I/O and the

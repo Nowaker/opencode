@@ -115,6 +115,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-18 `ses_eae68f338ffepUkW4TfyEKqFCp`](./sessions/2026-10-18-compaction-log-path.md) - Keep always-on compaction diagnostics under the canonical XDG/runtime log directory; real prompt-loop regression and isolated installed HTTP compaction proof.
+
 - [2026-10-17 `ses_eebf9a83fffeIQQwW9gVFo5jaO`](./sessions/2026-10-17-spawn-prompt-recheck.md)
   - The 2026-10-13 "4.3 KB `--prompt` hangs a new-session spawn" report does
     not reproduce on `vt-343`, bare or through `vt-spawn-session`; on `vt-275`
