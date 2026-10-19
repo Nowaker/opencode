@@ -492,8 +492,12 @@ The options are on the left. The paste as it will go in is on the right, in the 
 - **quote with >** - a Markdown quote on every line, outside the code block.
 - **trim whitespace** - removes trailing whitespace from each line and blank lines at the start and the end. Leading whitespace is indentation and stays.
 - **normalize indents** - removes the indentation every non-blank line shares. Tabs and spaces are compared character for character, so a tab is never counted as some number of spaces.
+- **remove indents** - removes all leading spaces and tabs from every line, shared or not. While it is on, normalize indents is greyed out: there is no indentation left for it to remove.
 - **collapse blank lines** - leaves at most one blank line in a row.
+- **join into one line** - makes the paste one line. Blank lines are dropped, and the other lines are joined with a single space, without the trailing whitespace before each break or the indentation after it; spaces inside a line, and at the start and end of the paste, stay. A Windows line ending (`\r\n`) counts as one break. While it is on, collapse blank lines is greyed out, and inline code is no longer greyed out for a multi-line paste.
 - **strip ANSI escapes** - removes terminal colors and other escape sequences, as in copied command output.
+
+The cleanups run before the wraps and the quote, so a wrap goes around the cleaned-up text, and join into one line comes after the other cleanups, so a code block or inline code goes around the joined line.
 
 <kbd>up</kbd> and <kbd>down</kbd> select an option, <kbd>space</kbd> or a click toggles it, <kbd>enter</kbd> pastes and <kbd>esc</kbd> cancels. The options you pick are kept for the next paste, also after a restart. <kbd>right</kbd> or <kbd>tab</kbd> moves from the options to the editor, where you can change the text by hand: <kbd>space</kbd> and the arrow keys work as usual there, <kbd>enter</kbd> still pastes, and <kbd>tab</kbd> goes back to the options (<kbd>shift+tab</kbd> also switches either way). Until you type or delete text in the editor, every option undoes itself: turning it off gives back what it changed, and with every option off the editor holds the paste exactly as it came. Moving the caret or the focus is not an edit. After an edit, turning a cleanup off no longer restores what the edit replaced; the wraps can still be turned on and off.
 

@@ -1,6 +1,6 @@
-import { TextareaRenderable, TextAttributes, type RGBA } from "@opentui/core"
+import { ScrollBoxRenderable, TextareaRenderable, TextAttributes, type RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { createSignal, For, onMount } from "solid-js"
+import { createEffect, createSignal, For, onMount } from "solid-js"
 import { useTheme } from "../context/theme"
 import { useKV } from "../context/kv"
 import { useTuiConfig } from "../config"
@@ -46,6 +46,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
   const [target, setTarget] = createSignal<TextareaRenderable>()
   let edited = props.origin.body !== undefined
   let textarea: TextareaRenderable
+  let list: ScrollBoxRenderable | undefined
 
   // The dialog starts a quarter of the way down the screen (ui/dialog.tsx). Around the editor it has
   // 6 rows: its top padding, the title, a gap, the hint row under the box, its bottom padding and a
@@ -53,9 +54,22 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
   // and at least as tall as the options beside it, up to the room left; longer text scrolls.
   const editorHeight = () => {
     const room = dimensions().height - Math.ceil(dimensions().height / 4) - 6 - promptFrameRows(true)
-    const beside = PasteOptionList.length - promptFrameRows(true) - 1
+    const beside = listHeight() - promptFrameRows(true) - 1
     return Math.max(1, Math.min(room, Math.max(beside, rows())))
   }
+
+  // The options get the same rows as the editor's column; on a short screen they scroll, following
+  // the selection.
+  const listHeight = () =>
+    Math.max(1, Math.min(PasteOptionList.length, dimensions().height - Math.ceil(dimensions().height / 4) - 6))
+
+  createEffect(() => {
+    const index = selected()
+    const height = listHeight()
+    if (!list || list.isDestroyed) return
+    if (index < list.scrollTop) list.scrollTo(index)
+    if (index >= list.scrollTop + height) list.scrollTo(index - height + 1)
+  })
 
   function measure() {
     if (!textarea || textarea.isDestroyed) return
@@ -72,7 +86,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
   // Before an edit, a cleanup turned off brings back the source; after one, only turning a cleanup
   // on can change the text, since what the edit replaced is gone.
   function toggle(key: PasteOptionKey) {
-    if (pasteOptionDisabled(key, body())) return
+    if (pasteOptionDisabled(key, body(), options())) return
     const next = togglePasteOption(options(), key)
     setOptions(next)
     kv.set(PasteOptionsKVKey, next)
@@ -110,7 +124,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
     dialog.clear()
   }
 
-  const checked = (key: PasteOptionKey) => options()[key] && !pasteOptionDisabled(key, body())
+  const checked = (key: PasteOptionKey) => options()[key] && !pasteOptionDisabled(key, body(), options())
 
   useBindings(() => ({
     priority: 1,
@@ -178,11 +192,20 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
         </text>
       </box>
       <box flexDirection="row" gap={2}>
-        <box flexShrink={0}>
+        {/* A scroll box grows to fill the row unless told otherwise; this one is as wide as its rows:
+            the widest label, its checkbox and its padding. */}
+        <scrollbox
+          flexGrow={0}
+          flexShrink={0}
+          width={Math.max(...PasteOptionList.map((option) => option.label.length)) + 6}
+          height={listHeight()}
+          scrollbarOptions={{ visible: false }}
+          ref={(value: ScrollBoxRenderable) => (list = value)}
+        >
           <For each={PasteOptionList}>
             {(option, index) => {
               const current = () => selected() === index()
-              const disabled = () => pasteOptionDisabled(option.key, body())
+              const disabled = () => pasteOptionDisabled(option.key, body(), options())
               return (
                 <box
                   paddingLeft={1}
@@ -213,7 +236,7 @@ export function DialogPasteOptions(props: { origin: PasteOrigin; color: RGBA; on
               )
             }}
           </For>
-        </box>
+        </scrollbox>
         <box flexGrow={1} flexShrink={1}>
           <PromptFrame color={props.color} padBottom>
             <textarea

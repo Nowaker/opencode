@@ -7,7 +7,9 @@ export const PasteOptionList = [
   { key: "quote", label: "quote with >" },
   { key: "trim", label: "trim whitespace" },
   { key: "dedent", label: "normalize indents" },
+  { key: "unindent", label: "remove indents" },
   { key: "collapse", label: "collapse blank lines" },
+  { key: "join", label: "join into one line" },
   { key: "ansi", label: "strip ANSI escapes" },
 ] as const
 
@@ -24,7 +26,9 @@ export const PasteOptionsDefault: PasteOptions = {
   quote: false,
   trim: false,
   dedent: false,
+  unindent: false,
   collapse: false,
+  join: false,
   ansi: false,
 }
 
@@ -45,9 +49,14 @@ export function togglePasteOption(options: PasteOptions, key: PasteOptionKey): P
   return next
 }
 
-// Inline code is one line; for more it is off and greyed out in the dialog.
-export function pasteOptionDisabled(key: PasteOptionKey, body: string) {
-  return key === "code" && body.includes("\n")
+// Off and greyed out in the dialog, keeping its stored value: inline code for text of more than one
+// line, and a cleanup another one already covers - remove indents leaves normalize indents no
+// indent to remove, and join into one line leaves collapse blank lines no blank line.
+export function pasteOptionDisabled(key: PasteOptionKey, body: string, options: PasteOptions) {
+  if (key === "code") return body.includes("\n")
+  if (key === "dedent") return options.unindent
+  if (key === "collapse") return options.join
+  return false
 }
 
 // The paste as it goes into the prompt: cleaned up, then wrapped.
@@ -55,12 +64,16 @@ export function applyPasteOptions(text: string, options: PasteOptions) {
   return wrapPaste(cleanPaste(text, options), options)
 }
 
-// The cleanups, each of which leaves its own output unchanged when applied again.
+// The cleanups, each of which leaves its own output unchanged when applied again. The line-based
+// ones run before the join, and the wraps after the cleanups, so a wrap goes around the joined line.
+// A greyed-out cleanup still runs: what covers it leaves it nothing to change.
 export function cleanPaste(text: string, options: PasteOptions) {
   const stripped = options.ansi ? text.replace(ANSI, "") : text
   const trimmed = options.trim ? trimLines(stripped) : stripped
   const dedented = options.dedent ? dedent(trimmed) : trimmed
-  return options.collapse ? dedented.replace(/\n(?:[ \t]*\n){2,}/g, "\n\n") : dedented
+  const unindented = options.unindent ? dedented.replace(/^[ \t]+/gm, "") : dedented
+  const collapsed = options.collapse ? unindented.replace(/\n(?:[ \t]*\n){2,}/g, "\n\n") : unindented
+  return options.join ? joinLines(collapsed) : collapsed
 }
 
 // A fence longer than any run of backticks in the text, so the text cannot close it; the quote
@@ -68,7 +81,7 @@ export function cleanPaste(text: string, options: PasteOptions) {
 export function wrapPaste(body: string, options: PasteOptions) {
   const wrapped = options.fence
     ? fence(body)
-    : options.code && !pasteOptionDisabled("code", body)
+    : options.code && !pasteOptionDisabled("code", body, options)
       ? inlineCode(body)
       : body
   if (!options.quote) return wrapped
@@ -124,6 +137,20 @@ function dedent(text: string) {
   })
   if (!common) return text
   return lines.map((line) => (line.trim() ? line.slice(common.length) : "")).join("\n")
+}
+
+// One line: blank lines go, and the rest are joined with one space, losing the whitespace at each
+// join (the trailing whitespace before it and the indent after it). Whitespace inside a line and at
+// the paste's two ends is left for the other cleanups. A CR LF or a lone CR is one break.
+function joinLines(text: string) {
+  if (!/[\r\n]/.test(text)) return text
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim())
+  return lines
+    .map((line, index) => {
+      const start = index === 0 ? line : line.trimStart()
+      return index === lines.length - 1 ? start : start.trimEnd()
+    })
+    .join(" ")
 }
 
 function longestBacktickRun(text: string) {
