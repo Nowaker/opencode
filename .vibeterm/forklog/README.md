@@ -115,10 +115,12 @@ carries every feature forward unchanged. That commit includes the full
 - [Record who requested a cancel on the aborted row](./features/2026-10-16-abort-requester.md)
 - [Concurrent first open of a fresh database](./features/2026-10-16-fresh-db-concurrent-init.md)
 - [Choose the running-turn animation: scanner or one-cell spinner](./features/2026-10-18-busy-indicator.md)
+- [Let the compacting hook project the prior summary](./features/2026-10-18-compacting-hook-summary.md)
 
 ## Session records
 
 - [2026-10-18 `ses_eaca65b1bffeZBbc3UZRmHnrMn`](./sessions/2026-10-18-busy-indicator.md) - `busy_indicator` (`scanner` | `spinner`) chooses the running-turn animation in the prompt and `opencode run` footers; fork-only; vt-364 on both hosts; opencode-tools `d4b5a6beb13` enforces Vibeterm default `spinner`.
+- [2026-10-18 `ses_eac9cdf26ffeEPtXV2TXi0WMOu`](./sessions/2026-10-18-fork-hook-seams.md) - `experimental.session.compacting` gains the prior summary, both models and retained messages with an overridable `previousSummary`; `shell.env` gains an optional `source`; landed as `e160264623`.
 
 - [2026-10-18 `ses_ed7634c31ffeH84yR0S99Ty8Nd`](./sessions/2026-10-18-paste-dialog-oneline.md) - Paste dialog options remove indents and join into one line; v1 PR #56268 updated; vt-360 on both hosts.
 
