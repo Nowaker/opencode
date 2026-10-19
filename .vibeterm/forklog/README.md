@@ -26,6 +26,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Run-owned test scratch](./features/2026-10-18-test-scratch-lifetime.md)
+
 - [Per-run abort provenance](#per-run-abort-provenance)
 - [On-demand search outside repositories](#on-demand-search-outside-repositories)
 - [Inactive HTTP Directory Instances](#inactive-http-directory-instances)
@@ -114,6 +116,8 @@ carries every feature forward unchanged. That commit includes the full
 - [Concurrent first open of a fresh database](./features/2026-10-16-fresh-db-concurrent-init.md)
 
 ## Session records
+
+- [2026-10-18 `ses_eae7b2716ffeejeajH2nwHZP45`](./sessions/2026-10-18-test-scratch-lifetime.md) - Supervise OpenCode/TUI test scratch through child failure and interruption, verify both hosts, and attribute Bun package-cache exchange leftovers to their separate owner.
 
 - [2026-10-18 `ses_eae68f338ffepUkW4TfyEKqFCp`](./sessions/2026-10-18-compaction-log-path.md) - Keep always-on compaction diagnostics under the canonical XDG/runtime log directory; real prompt-loop regression and isolated installed HTTP compaction proof.
 
