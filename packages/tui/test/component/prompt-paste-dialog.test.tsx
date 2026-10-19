@@ -32,7 +32,8 @@ async function closed(rig: PromptRig) {
   await wait(() => !rig.frame().includes("enter paste"))
 }
 
-// The option rows are, in order: insert inline, ```, `, >, trim, normalize indents, collapse, ANSI.
+// The option rows are, in order: insert inline, ```, `, >, trim, normalize indents, remove indents,
+// collapse, join into one line, ANSI.
 async function select(rig: PromptRig, index: number) {
   for (let step = 0; step < index; step++) await rig.press(DOWN)
 }
@@ -48,7 +49,7 @@ test("a paste opens the dialog, and its preview follows the options", async () =
       await rig.press(SPACE)
       expect(rig.frame()).toContain("[x] normalize indents")
       expect(rig.frame()).toMatch(/┃\s{2}def f\(\):/)
-      await select(rig, 4) // down four more wraps round to ```
+      await select(rig, 6) // down six more wraps round to ```
       await rig.press(SPACE)
       expect(rig.frame()).toContain("[x] wrap with ```")
       expect(rig.frame()).toMatch(/┃\s{2}```/)
@@ -175,7 +176,7 @@ test("tab moves to the editor, where space and letters type and enter still past
 // Every cleanup changes this text: blank lines at both ends and in a run, trailing spaces, a shared
 // four-space indent and terminal colors.
 const messy = "\n\n    alpha   \n\n\n\n        beta  \n    \x1b[31mgamma\x1b[0m\n\n"
-const keys = ["fence", "code", "quote", "trim", "dedent", "collapse", "ansi"] as const
+const keys = ["fence", "code", "quote", "trim", "dedent", "unindent", "collapse", "join", "ansi"] as const
 
 // Moves the selection to an option row and toggles it, tracking the row the selection is on.
 function options(rig: PromptRig) {
@@ -218,9 +219,13 @@ test("every option on, then off in reverse and in a shuffled order, gives back t
       expect(rig.frame()).toMatch(/┃\s+> ```/)
       for (const key of [...keys].reverse()) await toggle(key)
       // A fixed shuffle, so a failure can be replayed.
-      const shuffled = ["dedent", "fence", "ansi", "trim", "quote", "collapse", "code"] as const
+      // Join makes the paste one line, so inline code can go on and replaces the code block; collapse
+      // is greyed out under join and stays off.
+      const shuffled = ["dedent", "join", "fence", "ansi", "unindent", "trim", "quote", "collapse", "code"] as const
       for (const key of shuffled) await toggle(key)
-      for (const key of ["collapse", "fence", "trim", "code", "ansi", "quote", "dedent"] as const) await toggle(key)
+      expect(rig.frame()).toMatch(/┃\s+> `alpha beta gamma`/)
+      // Normalize indents is greyed out until remove indents is off, so it goes off last.
+      for (const key of ["code", "trim", "join", "ansi", "quote", "unindent", "dedent"] as const) await toggle(key)
       await pastesBack(rig, toggle)
     },
     { config },
@@ -244,6 +249,48 @@ test("right moves to the editor and tab back; focus and caret moves there are no
       await pastesBack(rig, toggle)
     },
     { config },
+  )
+})
+
+test("remove indents greys out normalize indents, and join greys out collapse blank lines", async () => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, "  a\n\n\n    b")
+      const toggle = options(rig)
+      await toggle("unindent")
+      await toggle("dedent") // greyed out: stays off
+      expect(rig.frame()).toContain("[x] remove indents")
+      expect(rig.frame()).toContain("[ ] normalize indents")
+      await toggle("join")
+      await toggle("collapse") // greyed out: stays off
+      expect(rig.frame()).toContain("[ ] collapse blank lines")
+      await toggle("code") // one line now, so inline code can go on
+      expect(rig.frame()).toMatch(/┃\s+`a b`/)
+      await toggle("inline")
+      await rig.press(ENTER)
+      await closed(rig)
+      expect(rig.text()).toBe("`a b`")
+    },
+    { config },
+  )
+})
+
+// The dialog starts a quarter of the way down, so a 16-row screen leaves the options 6 rows: the list
+// scrolls to keep the selection on screen.
+test("on a short screen the options scroll with the selection", async () => {
+  await withPrompt(
+    async (rig) => {
+      await paste(rig, "a\nb")
+      expect(rig.frame()).toContain("[ ] insert inline")
+      expect(rig.frame()).not.toContain("strip ANSI escapes")
+      await select(rig, 9)
+      expect(rig.frame()).toContain("strip ANSI escapes")
+      expect(rig.frame()).not.toContain("insert inline")
+      expect(rig.frame()).toContain("enter paste")
+      await rig.press(DOWN) // wraps round to the first
+      expect(rig.frame()).toContain("insert inline")
+    },
+    { config, height: 16 },
   )
 })
 
