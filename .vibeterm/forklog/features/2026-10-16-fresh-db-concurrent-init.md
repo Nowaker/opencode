@@ -6,9 +6,10 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `fresh-db-race`
 - First local commit: `69d1db22c9`
-- Current local commit(s): `69d1db22c9`
+- Current local commit(s): `5a7a4ce66d` (runtime; rebased from `69d1db22c9`, byte-identical source), `317676cee9`, `3713c28942` (tests)
 - Upstream base when introduced: `github/v1` as merged into `dev-nowaker` at `c459e6157b`
-- Last checked against upstream: `c459e6157b` (dev-nowaker)
+- Last checked against upstream: `github/v1` `dfb56f76c7`, `github/dev` `afc68054c3` (2026-10-18)
+- Upstream disposition: fork-only; does not meet the upstream v1 criticality bar (see below)
 
 ## Original request
 
@@ -57,11 +58,16 @@ Recorded by `ses_eb8582f68ffeUwFYhDGSv6jx7B`; details in its [session record](..
 
 - 2026-10-16 [`ses_eb8582f68ffeUwFYhDGSv6jx7B`](../sessions/2026-10-16-fresh-db-concurrent-init.md) - initial build. Evidence: `69d1db22c9`, isolated builds on desktop and m4max.
 - 2026-10-16 [`ses_eb8582f68ffeUwFYhDGSv6jx7B`](../sessions/2026-10-16-fresh-db-concurrent-init.md#parent-gate-finding-2026-10-17-same-workday) - test-harness ownership fix after the parent gate. Evidence: `ecce854f45`.
+- 2026-10-18 [`ses_eb8582f68ffeUwFYhDGSv6jx7B`](../sessions/2026-10-16-fresh-db-concurrent-init.md#landing-and-install-2026-10-18) - landed on `dev-nowaker` at `ef64ea1966` (runtime `5a7a4ce66d`), pushed to origin and nowaker-github, installed as `1.19.0-vt-351-dfb56f76c7` on both hosts. Evidence: v2 guard gate PASSED on both; post-install N=4 `opencode db` 0/10 failed rounds on both.
 
 ## Current maintenance notes
 
 - On an upstream bump, inspect `packages/core/src/database/database.ts` (pragma order, `disableWAL`, WAL retry predicate) and `DatabaseMigration.apply`. Keep the multi-process test in `packages/core/test/database-migration.test.ts` with fixture `test/fixture/database-open.ts`.
 - The interleaving that exposes race 2 shows up on m4max (darwin-arm64) far more than on desktop; run the multi-process test there when touching this seam.
+
+### Upstream disposition (2026-10-18)
+
+Fork-only, does not meet upstream v1 criticality. Upstream v1 takes only data loss, security problems, or crashes and breakage with no workaround; #53886 was closed because each SQLite contention failure was temporary and a retry worked. Here the loser exits 1 once, only while the database file is first created, and relaunching it succeeds against the winner's schema, so the same reasoning applies. The bug is already tracked upstream against v2 as [#53879](https://github.com/anomalyco/opencode/issues/53879) (labelled `reproduced`), with open PRs [#50344](https://github.com/anomalyco/opencode/pull/50344) (cross-process schema bootstrap) and [#53983](https://github.com/anomalyco/opencode/pull/53983) (retry the WAL switch on SQLITE_BUSY), which cover the same three races. `github/dev` `afc68054c3` still runs WAL before `busy_timeout` and decides emptiness outside the schema transaction. Drop this customization when a v1 base carries an equivalent fix.
 
 ## Supersession or removal
 

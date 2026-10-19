@@ -101,4 +101,18 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
 
 ## Unknowns and blocked verification
 
-- Landing, the live install and upstream submission are left to the coordinator after the requester accepts.
+- None after the landing below. Remaining known limits: the pre-existing embedded-init 5000ms timeout, and m4max's v2 guard gate compares against cached opencode-ai@1.19.0 / @opencode/cli@2.0.29.
+
+## Landing and install (2026-10-18)
+
+The coordinator `ses_ef8235798ffejGr4sa22eXmVNv` relayed user approval `qst_148981423001DxDRL16DbT80gF` ("Land and install"), after the m4max parent accepted `cc9f262379` (runtime `69d1db22c9`).
+
+- Rebased onto `dev-nowaker` `99c94db64b`, ordered fix, tests, then forklog. The tree is identical to the pre-reorder rebase, and `git diff 69d1db22c9 HEAD -- packages/core/src/database` is empty. The rebase conflicted only on the forklog README index, resolved by keeping both sides.
+- Commits: `5a7a4ce66d` fix, `317676cee9` and `3713c28942` tests, `4c5bb03197` and `ef64ea1966` forklog. Fast-forwarded `dev-nowaker` to `ef64ea1966` and pushed it to origin and nowaker-github; both tips verified at `ef64ea1966`.
+- Before landing, on the rebased tree: `bun test test/database-migration.test.ts -t "concurrent processes|concurrent-open harness"` gave 3 pass, 0 fail, 31 expect() calls; core `bun typecheck` exit 0.
+- Each primary checkout's dirty retry diff reverse-applied cleanly against `retry-header-delay-cap.patch` before the build, and each installed binary carries the `OPENCODE_RETRY_MAX_HEADER_DELAY_MS` marker.
+- Desktop install: `.vibeterm/build.sh` with `VIBETERM_V2_GUARD`, gate PASSED (vs opencode-ai@1.19.3, @opencode/cli@2.0.32). Installed `1.19.0-vt-351-dfb56f76c7`, sha256 `c3c7f77ae39a02e0f751815cbe72d4bde7dfbefa37b8dcaeb1309f4231d18f32` (previous live vt-346 `16ae45dc...`).
+- m4max install: fast-forwarded its `dev-nowaker` to `ef64ea1966`, after another session's `build.sh` finished. Gate PASSED (vs cached opencode-ai@1.19.0, @opencode/cli@2.0.29). Installed `1.19.0-vt-351-dfb56f76c7`, sha256 `3deebb276e2cddc031412656af09aaaa743aae1a214b25051b093512db904e8b` (previous live vt-346 `cbdb65aa...`).
+- Post-install check: `tmp/db-race-repro.ts <live bin> 4 10` in scratch dirs gave 0/10 failed rounds on desktop and 0/10 on m4max.
+- No tab or service was restarted. Both `fresh-db-race` worktrees and isolated vt-344 binaries are kept for Focus QA.
+- Upstream: fork-only. The reasoning is in the feature record's "Upstream disposition".
