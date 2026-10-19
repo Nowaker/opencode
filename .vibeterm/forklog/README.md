@@ -117,6 +117,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-18 `ses_ed7634c31ffeH84yR0S99Ty8Nd`](./sessions/2026-10-18-paste-dialog-oneline.md) - Paste dialog options remove indents and join into one line; v1 PR #56268 updated; vt-360 on both hosts.
+
 - [2026-10-18 `ses_eae7b2716ffeejeajH2nwHZP45`](./sessions/2026-10-18-test-scratch-lifetime.md) - Supervise OpenCode/TUI test scratch through child failure and interruption, verify both hosts, and attribute Bun package-cache exchange leftovers to their separate owner.
 
 - [2026-10-18 `ses_eae68f338ffepUkW4TfyEKqFCp`](./sessions/2026-10-18-compaction-log-path.md) - Keep always-on compaction diagnostics under the canonical XDG/runtime log directory; real prompt-loop regression and isolated installed HTTP compaction proof.

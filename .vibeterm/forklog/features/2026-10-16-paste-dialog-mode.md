@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branch: `dev-nowaker`
-- Development branch(es): `paste-modal-mode` (fork); `paste-dialog-mode` (upstream PR head `90be91461d`, stacked on `paste-edit-dialog`)
+- Development branch(es): `paste-modal-mode` (fork); `paste-dialog-mode` (upstream PR head `5753e93597`, stacked on `paste-edit-dialog`)
 - First local commit: `070fe4290b`
-- Current local commit(s): `070fe4290b`, `4d3f094277` (toggles undo themselves, right arrow)
+- Current local commit(s): `070fe4290b`, `4d3f094277` (toggles undo themselves, right arrow), `85a5c7edb2` (remove indents, join into one line)
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#56268](https://github.com/anomalyco/opencode/pull/56268) against `v1`, stacked on #54463. **Needs a v2 port later.**
@@ -63,6 +63,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 |---|---|---|---|
 | `070fe4290b` | 2026-10-16 | `prompt.paste_mode` and the paste dialog | `PasteOptionList`, `applyPasteOptions`, `cleanPaste`, `wrapPaste`, `unwrapPaste`, `PasteOptionsKVKey` in `packages/tui/src/prompt/paste-options.ts`; `DialogPasteOptions` in `component/dialog-paste-options.tsx`; `openPasteDialog`, `placePaste`, `pasteOrigins`, `lastPaste`, the `input.undo` command and the `paste_mode` branches of `pasteInputText` and `openPaste` in `component/prompt/index.tsx`; `split()` in `prompt/undo.ts`; `Prompt.paste_mode` in `config/index.tsx`; `test/prompt/paste-options.test.ts`, `test/component/prompt-paste-dialog.test.tsx`; tui.mdx "Paste dialog" |
 | `4d3f094277` | 2026-10-16 | options undo themselves until a real edit (OpenTUI reports textarea changes a microtask late); right from the options into the editor, tab back | `adoptEdit` comparing `textarea.plainText` with `text()` and the `right` binding in `dialog-paste-options.tsx`; reversibility and focus tests in `prompt-paste-dialog.test.tsx` |
+| `85a5c7edb2` | 2026-10-18 | remove indents and join into one line; normalize indents greyed under remove indents, collapse blank lines greyed under join; options list scrolls | `unindent`, `join`, `joinLines`, `pasteOptionDisabled(key, body, options)` in `prompt/paste-options.ts`; the options `scrollbox` and `listHeight` in `dialog-paste-options.tsx`; seeded random walks in `test/prompt/paste-options.test.ts` |
 
 ## Verification
 
@@ -80,3 +81,6 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   unticking an option did not restore its change (user report on vt-322+); fixed in
   `4d3f094277` with right arrow into the editor, installed as vt-333 on desktop and m4max.
   Evidence: that session's "toggles undo themselves" section.
+- 2026-10-18 [`ses_ed7634c31ffeH84yR0S99Ty8Nd`](../sessions/2026-10-18-paste-dialog-oneline.md) -
+  remove indents and join into one line (user request); `85a5c7edb2`, installed as vt-360 on
+  desktop and m4max. Evidence: that session's verification.
