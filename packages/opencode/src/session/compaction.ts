@@ -138,6 +138,14 @@ function queuedPrompts(messages: SessionV1.WithParts[], parentID: MessageID) {
   )
 }
 
+function hookModel(model: Provider.Model) {
+  return {
+    providerID: model.providerID,
+    modelID: model.id,
+    limit: { context: model.limit.context, input: model.limit.input, output: model.limit.output },
+  }
+}
+
 function preserveRecentBudget(input: { cfg: ConfigV1.Info; model: Provider.Model }) {
   return (
     input.cfg.compaction?.preserve_recent_tokens ??
@@ -400,16 +408,61 @@ const layer = Layer.effect(
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
+      const visible = history.filter((_, index) => !hidden.has(index))
       const selected = yield* select({
-        messages: history.filter((_, index) => !hidden.has(index)),
+        messages: visible,
         cfg,
         model,
       })
-      // Allow plugins to inject context or replace compaction prompt.
+      /*
+       * What the conversation keeps verbatim after a successful compaction, in continuation order: the tail
+       * past the summarized head (only when the compaction message records where it starts), the overflow
+       * replay (re-added only for an auto or resumed compaction), and the queued prompts moved behind the
+       * summary. A plugin projecting the prior summary needs this to know which facts survive without it.
+       */
+      const retained = [
+        ...(compactionPart && selected.tail_start_id ? visible.slice(selected.head.length) : []),
+        ...(replay && (input.auto || input.resume) ? [replay] : []),
+        ...queued,
+      ].flatMap((msg) => {
+        const text = serialize(msg)
+        if (!text) return []
+        const rawText =
+          msg.info.role === "user"
+            ? msg.parts
+                .flatMap((part) =>
+                  part.type === "text" && !part.synthetic && !part.ignored && part.text ? [part.text] : [],
+                )
+                .join("\n\n")
+            : ""
+        return [{ id: msg.info.id, role: msg.info.role, text, ...(rawText ? { rawText } : {}) }]
+      })
+      // A manual compaction carries the TUI's model without its variant, so a turn it interrupted continues as
+      // that turn's own prompt did.
+      const continueAs = input.auto
+        ? userMessage
+        : (history
+            .flatMap((msg) =>
+              msg.info.role === "user" && !msg.parts.some((part) => part.type === "compaction") ? [msg.info] : [],
+            )
+            .reduce<SessionV1.User | undefined>(
+              (newest, info) => (!newest || info.time.created >= newest.time.created ? info : newest),
+              undefined,
+            ) ?? userMessage)
+      const conversationModel = yield* provider
+        .getModel(continueAs.model.providerID, continueAs.model.modelID)
+        .pipe(Effect.catch(() => Effect.succeed(undefined)))
+      // Allow plugins to inject context, replace the compaction prompt, or project the prior summary.
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
-        { sessionID: input.sessionID },
-        { context: [], prompt: undefined },
+        {
+          sessionID: input.sessionID,
+          previousSummary,
+          model: hookModel(model),
+          conversationModel: conversationModel && hookModel(conversationModel),
+          retainedMessages: retained,
+        },
+        { context: [], prompt: undefined, previousSummary },
       )
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
@@ -418,7 +471,7 @@ const layer = Layer.effect(
         compacting.prompt ??
         [
           buildPrompt({
-            previousSummary,
+            previousSummary: compacting.previousSummary,
             context: [conversation],
           }),
           ...compacting.context,
@@ -500,19 +553,6 @@ const layer = Layer.effect(
           tail_start_id: selected.tail_start_id,
         })
       }
-
-      // A manual compaction carries the TUI's model without its variant, so a turn it interrupted continues as
-      // that turn's own prompt did.
-      const continueAs = input.auto
-        ? userMessage
-        : (history
-            .flatMap((msg) =>
-              msg.info.role === "user" && !msg.parts.some((part) => part.type === "compaction") ? [msg.info] : [],
-            )
-            .reduce<SessionV1.User | undefined>(
-              (newest, info) => (!newest || info.time.created >= newest.time.created ? info : newest),
-              undefined,
-            ) ?? userMessage)
 
       if (result === "continue" && (input.auto || input.resume)) {
         if (replay) {

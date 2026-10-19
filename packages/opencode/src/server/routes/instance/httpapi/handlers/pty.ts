@@ -68,7 +68,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
 
     const create = Effect.fn("PtyHttpApi.create")(function* (ctx: { payload: typeof Pty.CreateInput.Type }) {
       const cwd = ctx.payload.cwd || (yield* InstanceState.context).directory
-      const shell = yield* plugin.trigger("shell.env", { cwd }, { env: {} as Record<string, string> })
+      const shell = yield* plugin.trigger("shell.env", { cwd, source: "pty" }, { env: {} as Record<string, string> })
       return yield* pty(
         Pty.Service.use((service) =>
           service.create({

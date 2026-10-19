@@ -33,6 +33,8 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { buildPrompt } from "@opencode-ai/core/session/compaction"
+import type { Hooks } from "@opencode-ai/plugin"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -429,6 +431,81 @@ function compactionContext(context: string) {
     list: () => Effect.succeed([]),
     init: () => Effect.void,
   })
+}
+
+type Compacting = Parameters<Required<Hooks>["experimental.session.compacting"]>
+
+function compactingHook(edit: (input: Compacting[0], output: Compacting[1]) => void) {
+  return Layer.mock(Plugin.Service)({
+    trigger: <Name extends string, Input, Output>(name: Name, input: Input, output: Output) => {
+      if (name !== "experimental.session.compacting") return Effect.succeed(output)
+      return Effect.sync(() => {
+        edit(input as Compacting[0], output as Compacting[1])
+        return output
+      })
+    },
+    list: () => Effect.succeed([]),
+    init: () => Effect.void,
+  })
+}
+
+const noHooks = Layer.mock(Plugin.Service)({
+  trigger: <Name extends string, Input, Output>(_name: Name, _input: Input, output: Output) => Effect.succeed(output),
+  list: () => Effect.succeed([]),
+  init: () => Effect.void,
+})
+
+function promptText(input: LLM.StreamInput) {
+  const content = input.messages[0]?.content
+  if (typeof content === "string") return content
+  return (content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
+}
+
+// Reproduces the default prompt from the serialized conversation the compaction actually sent.
+function expectedPrompt(text: string, previousSummary: string | undefined) {
+  const start = text.indexOf("<conversation>\n") + "<conversation>\n".length
+  return buildPrompt({ previousSummary, context: [text.slice(start, text.indexOf("\n</conversation>"))] })
+}
+
+// Runs two compactions in one session and returns the prompt the second one sent.
+function repeatedCompaction(plugin: Layer.Layer<Plugin.Service>) {
+  const stub = llm()
+  let captured = ""
+  stub.push(reply("summary one"))
+  stub.push(
+    reply("summary two", (input) => {
+      captured = promptText(input)
+    }),
+  )
+  return Effect.gen(function* () {
+    const ssn = yield* SessionNs.Service
+    const session = yield* ssn.create({})
+    yield* createUserMessage(session.id, "older context")
+    yield* createUserMessage(session.id, "keep this turn")
+    yield* createCompactionMarker(session.id)
+    let msgs = yield* ssn.messages({ sessionID: session.id })
+    yield* SessionCompaction.use.process({
+      parentID: msgs.at(-1)!.info.id,
+      messages: msgs,
+      sessionID: session.id,
+      auto: false,
+    })
+    yield* createUserMessage(session.id, "latest turn")
+    yield* createCompactionMarker(session.id)
+    msgs = MessageV2.filterCompacted(yield* MessageV2.stream(session.id))
+    yield* SessionCompaction.use.process({
+      parentID: msgs.at(-1)!.info.id,
+      messages: msgs,
+      sessionID: session.id,
+      auto: false,
+    })
+    const summaries = (yield* ssn.messages({ sessionID: session.id })).flatMap((msg) =>
+      msg.info.role === "assistant" && msg.info.summary
+        ? msg.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))
+        : [],
+    )
+    return { captured, summaries }
+  }).pipe(withCompaction({ llm: stub.llmLayer, plugin }))
 }
 
 describe("session.compaction.isOverflow", () => {
@@ -1655,6 +1732,94 @@ describe("session.compaction.process", () => {
         withCompaction({
           llm: stub.llmLayer,
           plugin: compactionContext("Prioritize unresolved migration details"),
+        }),
+      )
+    },
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "sends the default anchored prompt unchanged when no plugin hooks compaction",
+    () =>
+      Effect.gen(function* () {
+        const result = yield* repeatedCompaction(noHooks)
+        expect(result.captured).toContain("<prior-summary>\nsummary one\n</prior-summary>")
+        expect(result.captured).toBe(expectedPrompt(result.captured, "summary one"))
+      }),
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "passes the prior summary and models to the compacting hook and keeps the prompt byte-identical when untouched",
+    () => {
+      const seen: { input?: Compacting[0]; output?: Compacting[1] } = {}
+      return Effect.gen(function* () {
+        const result = yield* repeatedCompaction(
+          compactingHook((input, output) => {
+            seen.input = input
+            seen.output = structuredClone(output)
+          }),
+        )
+        expect(result.captured).toBe(expectedPrompt(result.captured, "summary one"))
+        expect(seen.input?.previousSummary).toBe("summary one")
+        expect(seen.output).toEqual({ context: [], prompt: undefined, previousSummary: "summary one" })
+        expect(seen.input?.model).toMatchObject({ providerID: "test", modelID: "test-model" })
+        expect(seen.input?.model?.limit.context).toBeGreaterThan(0)
+        expect(seen.input?.conversationModel).toMatchObject({ providerID: "test", modelID: "test-model" })
+      })
+    },
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "anchors the compaction prompt to the prior summary the hook returns without changing the stored one",
+    () =>
+      Effect.gen(function* () {
+        const result = yield* repeatedCompaction(
+          compactingHook((_input, output) => {
+            output.previousSummary = "projected summary"
+          }),
+        )
+        expect(result.captured).toBe(expectedPrompt(result.captured, "projected summary"))
+        expect(result.captured).not.toContain("summary one")
+        expect(result.summaries).toEqual(["summary one", "summary two"])
+      }),
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "lists the retained tail for the compacting hook",
+    () => {
+      const stub = llm()
+      stub.push(reply("summary"))
+      let input: Compacting[0] | undefined
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        yield* createUserMessage(session.id, "older context")
+        const keep = yield* createUserMessage(session.id, "keep this turn")
+        const also = yield* createUserMessage(session.id, "and this one too")
+        yield* createCompactionMarker(session.id)
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        yield* SessionCompaction.use.process({
+          parentID: msgs.at(-1)!.info.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        expect(input?.previousSummary).toBeUndefined()
+        expect(input?.retainedMessages).toEqual([
+          { id: keep.id, role: "user", text: "[User]: keep this turn", rawText: "keep this turn" },
+          { id: also.id, role: "user", text: "[User]: and this one too", rawText: "and this one too" },
+        ])
+      }).pipe(
+        withCompaction({
+          llm: stub.llmLayer,
+          config: cfg({ tail_turns: 2, preserve_recent_tokens: 10_000 }),
+          plugin: compactingHook((value) => {
+            input = value
+          }),
         }),
       )
     },

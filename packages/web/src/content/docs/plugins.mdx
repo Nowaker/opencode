@@ -275,6 +275,8 @@ export const InjectEnvPlugin = async () => {
 
 `input` always has `cwd`. A shell command run for a session also carries `sessionID`, the `messageID` of the assistant message holding the tool call, and that call's `callID`: the shell tool and the `!` command both pass them. A user terminal (PTY) has no session and passes `cwd` only.
 
+`input.source` says what runs in the environment: `"tool"` for the agent's shell tool, `"shell"` for a user `!` command, and `"pty"` for a user terminal. It is optional in the type, so treat a missing `source` as unknown rather than assuming one.
+
 ---
 
 ### Custom tools
@@ -390,3 +392,25 @@ Format as a structured prompt that a new agent can use to resume work.
 ```
 
 When `output.prompt` is set, it completely replaces the default compaction prompt. The `output.context` array is ignored in this case.
+
+The hook also receives what it needs to rewrite the prior summary before the model sees it:
+
+- `input.previousSummary`: the text of the newest prior summary. It is absent on a session's first compaction.
+- `input.model`: the model that writes the summary, as `{ providerID, modelID, limit: { context, input?, output } }`.
+- `input.conversationModel`: the model the conversation continues on after compaction, in the same shape. It is absent when that model cannot be resolved.
+- `input.retainedMessages`: the messages kept verbatim after the summary if compaction succeeds, in the order the conversation continues with them. That is the retained tail of recent turns, a message replayed after an overflow, then prompts queued during the compaction. Each entry has the original message `id`, its `role`, and its `text` in the format of the `<conversation>` block. User messages also carry `rawText`, their own text parts joined by blank lines. Nothing is retained when compaction fails.
+
+`output.previousSummary` starts as `input.previousSummary`, and the default prompt anchors to whatever the hook leaves there. Set it to a shorter projection to change what the summarizer sees, or to `undefined` to drop the prior summary block. The stored summary message is not changed, and `output.previousSummary` is ignored when `output.prompt` is set.
+
+```ts title=".opencode/plugins/project-summary.ts"
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const ProjectSummaryPlugin: Plugin = async () => {
+  return {
+    "experimental.session.compacting": async (input, output) => {
+      if (!input.previousSummary) return
+      output.previousSummary = input.previousSummary.split("\n## Discoveries")[0]
+    },
+  }
+}
+```

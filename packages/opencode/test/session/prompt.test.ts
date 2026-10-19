@@ -684,6 +684,35 @@ it.instance("loop exits without an LLM request for interrupted orphan tool calls
   }),
 )
 
+it.instance("stores a prompt text part's metadata without sending it to the model", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const metadata = { delivery: { compact: true, source: "metadata-marker-7f3a" } }
+    const user = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "condensed body", metadata }],
+    })
+    yield* llm.text("world")
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const stored = (yield* sessions.messages({ sessionID: chat.id }))
+      .find((msg) => msg.info.id === user.info.id)
+      ?.parts.find((part) => part.type === "text")
+    expect(stored?.type === "text" && stored.metadata).toEqual(metadata)
+    const body = JSON.stringify((yield* llm.hits)[0]?.body)
+    expect(body).toContain("condensed body")
+    expect(body).not.toContain("metadata-marker-7f3a")
+  }),
+)
+
 it.instance("loop calls LLM and returns assistant message", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
@@ -2178,19 +2207,19 @@ unixNoLLMServer(
 )
 
 unixNoLLMServer(
-  "shell passes the tool call's session, message and call ids to shell.env",
+  "shell passes the tool call's session, message and call ids and the shell source to shell.env",
   () =>
     Effect.gen(function* () {
       const { prompt, chat } = yield* boot()
       const result = yield* prompt.shell({
         sessionID: chat.id,
         agent: "build",
-        command: 'printf "%s" "$HOOK_IDS"',
+        command: 'printf "%s|%s" "$HOOK_IDS" "$HOOK_SOURCE"',
       })
 
       const tool = completedTool(result.parts)
       if (!tool) return
-      expect(tool.state.output).toBe([chat.id, result.info.id, tool.callID].join("|"))
+      expect(tool.state.output).toBe([chat.id, result.info.id, tool.callID, "shell"].join("|"))
       expect(tool.messageID).toBe(result.info.id)
     }),
   {

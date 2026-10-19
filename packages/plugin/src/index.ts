@@ -234,6 +234,12 @@ export type ProviderHook = {
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
+export type CompactionModel = {
+  providerID: string
+  modelID: string
+  limit: { context: number; input?: number; output: number }
+}
+
 export interface Hooks {
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
@@ -283,7 +289,14 @@ export interface Hooks {
     output: { args: any },
   ) => Promise<void>
   "shell.env"?: (
-    input: { cwd: string; sessionID?: string; messageID?: string; callID?: string },
+    input: {
+      cwd: string
+      sessionID?: string
+      messageID?: string
+      callID?: string
+      /** What runs in this environment: the agent's shell tool, a user `!` command, or a user terminal. */
+      source?: "tool" | "shell" | "pty"
+    },
     output: { env: Record<string, string> },
   ) => Promise<void>
   "tool.execute.after"?: (
@@ -314,12 +327,29 @@ export interface Hooks {
    * Called before session compaction starts. Allows plugins to customize
    * the compaction prompt.
    *
+   * Input:
+   * - `previousSummary`: Text of the newest prior summary, absent on a first compaction
+   * - `model`: The model that writes the summary
+   * - `conversationModel`: The model the conversation continues on, absent when it cannot be resolved
+   * - `retainedMessages`: Messages kept verbatim after the summary if compaction succeeds, in continuation
+   *   order: the retained tail, the overflow replay, then queued prompts. `id` is the original message ID,
+   *   `text` uses the compaction conversation format, and `rawText` is a user message's own text parts
+   *   joined by blank lines.
+   *
+   * Output:
    * - `context`: Additional context strings appended to the default prompt
    * - `prompt`: If set, replaces the default compaction prompt entirely
+   * - `previousSummary`: The prior summary the default prompt anchors to, initialized from the input
    */
   "experimental.session.compacting"?: (
-    input: { sessionID: string },
-    output: { context: string[]; prompt?: string },
+    input: {
+      sessionID: string
+      previousSummary?: string
+      model?: CompactionModel
+      conversationModel?: CompactionModel
+      retainedMessages?: { id: string; role: "user" | "assistant"; text: string; rawText?: string }[]
+    },
+    output: { context: string[]; prompt?: string; previousSummary?: string },
   ) => Promise<void>
   /**
    * Called after compaction succeeds and before a synthetic user

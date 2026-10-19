@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import path from "path"
+import { pathToFileURL } from "url"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { PtyID } from "@opencode-ai/core/pty/schema"
 import { Server } from "../../src/server/server"
@@ -294,6 +296,72 @@ describe("pty HttpApi bridge", () => {
           HttpClient.execute,
         )
         expect(removed.status).toBe(200)
+      }),
+  )
+  ;(process.platform === "win32" ? effectIt.live.skip : effectIt.live)(
+    "passes the pty source to shell.env and lets its env override the caller's",
+    () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
+        const plugin = path.join(dir, "plugin.ts")
+        yield* Effect.promise(() =>
+          Bun.write(
+            plugin,
+            [
+              "export default async () => ({",
+              '  "shell.env": (input, output) => {',
+              '    output.env.SHARED = "plugin"',
+              "    output.env.HOOK_SOURCE = input.source",
+              "  },",
+              "})",
+              "",
+            ].join("\n"),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(dir, "opencode.json"),
+            JSON.stringify({ plugin: [pathToFileURL(plugin).href], formatter: false, lsp: false }),
+          ),
+        )
+        const created = yield* HttpClientRequest.post(PtyPaths.create).pipe(
+          directoryHeader(dir),
+          HttpClientRequest.bodyJson({
+            command: "/bin/sh",
+            args: ["-c", 'printf "%s|%s|%s\\n" "$CALLER" "$SHARED" "$HOOK_SOURCE"; sleep 5'],
+            env: { CALLER: "caller", SHARED: "caller" },
+          }),
+          Effect.flatMap(HttpClient.execute),
+        )
+        expect(created.status).toBe(200)
+        const info = yield* Schema.decodeUnknownEffect(Pty.Info)(yield* created.json)
+
+        const socket = yield* Socket.makeWebSocket(
+          `${(yield* serverUrl()).replace(/^http/, "ws")}${PtyPaths.connect.replace(":ptyID", info.id)}?cursor=0&directory=${encodeURIComponent(dir)}`,
+          { closeCodeIsError: () => false },
+        )
+        const messages = yield* Queue.unbounded<string>()
+        yield* socket
+          .runRaw((message) =>
+            Queue.offer(messages, typeof message === "string" ? message : new TextDecoder().decode(message)),
+          )
+          .pipe(Effect.catch(() => Effect.void))
+          .pipe(Effect.forkScoped)
+        const write = yield* socket.writer
+
+        const takeUntil = (expected: string, seen = ""): Effect.Effect<string, unknown> =>
+          Effect.gen(function* () {
+            const next = seen + (yield* Queue.take(messages).pipe(Effect.timeout("5 seconds")))
+            if (next.includes(expected)) return next
+            return yield* takeUntil(expected, next)
+          })
+
+        expect(yield* takeUntil("caller|plugin|pty")).toContain("caller|plugin|pty")
+        yield* write(new Socket.CloseEvent(1000, "done")).pipe(Effect.catch(() => Effect.void))
+        yield* HttpClientRequest.delete(PtyPaths.remove.replace(":ptyID", info.id)).pipe(
+          directoryHeader(dir),
+          HttpClient.execute,
+        )
       }),
   )
 })

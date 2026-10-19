@@ -220,7 +220,7 @@ describe("tool.shell", () => {
   )
 
   if (process.platform !== "win32") {
-    it.live("passes the call's session, message and call ids to shell.env", () =>
+    it.live("passes the call's session, message and call ids and the tool source to shell.env", () =>
       Effect.gen(function* () {
         const plugin = pathToFileURL(path.join(import.meta.dir, "..", "fixture", "shell-env-plugin.ts")).href
         const tmp = yield* tmpdirScoped({ config: { plugin: [plugin] } })
@@ -228,10 +228,10 @@ describe("tool.shell", () => {
           tmp,
           Effect.gen(function* () {
             const result = yield* run(
-              { command: 'printf "%s" "$HOOK_IDS"' },
+              { command: 'printf "%s|%s" "$HOOK_IDS" "$HOOK_SOURCE"' },
               { ...ctx, messageID: MessageID.make("msg_hook"), callID: "call_hook" },
             )
-            expect(result.output).toBe("ses_test|msg_hook|call_hook")
+            expect(result.output).toBe("ses_test|msg_hook|call_hook|tool")
           }),
         )
       }),

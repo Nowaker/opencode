@@ -192,6 +192,7 @@ describe("v2 pty HttpApi", () => {
               '    output.env.PLUGIN = "plugin"',
               '    output.env.TERM = "plugin"',
               "    output.env.HOOK_CWD = input.cwd",
+              "    output.env.HOOK_SOURCE = input.source",
               "  },",
               "})",
               "",
@@ -209,7 +210,10 @@ describe("v2 pty HttpApi", () => {
           directoryHeader(dir),
           HttpClientRequest.bodyJson({
             command: "/bin/sh",
-            args: ["-c", 'printf "%s|%s|%s|%s|%s\\n" "$CALLER" "$SHARED" "$PLUGIN" "$TERM" "$HOOK_CWD"; sleep 5'],
+            args: [
+              "-c",
+              'printf "%s|%s|%s|%s|%s|%s\\n" "$CALLER" "$SHARED" "$PLUGIN" "$TERM" "$HOOK_CWD" "$HOOK_SOURCE"; sleep 5',
+            ],
             cwd,
             env: { CALLER: "caller", SHARED: "caller", TERM: "caller" },
           }),
@@ -240,8 +244,8 @@ describe("v2 pty HttpApi", () => {
             return yield* takeUntil(expected, next)
           })
 
-        expect(yield* takeUntil(`caller|plugin|plugin|xterm-256color|${cwd}`)).toContain(
-          `caller|plugin|plugin|xterm-256color|${cwd}`,
+        expect(yield* takeUntil(`caller|plugin|plugin|xterm-256color|${cwd}|pty`)).toContain(
+          `caller|plugin|plugin|xterm-256color|${cwd}|pty`,
         )
         yield* write(new Socket.CloseEvent(1000, "done")).pipe(Effect.catch(() => Effect.void))
         yield* HttpClientRequest.delete(`/api/pty/${info.id}`).pipe(directoryHeader(dir), HttpClient.execute)

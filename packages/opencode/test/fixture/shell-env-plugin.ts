@@ -2,9 +2,10 @@
 // test can assert them from the command's output.
 export default async () => ({
   "shell.env": async (
-    input: { sessionID?: string; messageID?: string; callID?: string },
+    input: { sessionID?: string; messageID?: string; callID?: string; source?: string },
     output: { env: Record<string, string> },
   ) => {
     output.env.HOOK_IDS = [input.sessionID, input.messageID, input.callID].join("|")
+    output.env.HOOK_SOURCE = input.source ?? ""
   },
 })
