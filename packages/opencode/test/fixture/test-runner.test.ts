@@ -78,7 +78,7 @@ test.each(["pass", "fail", "exit"])("test runner removes scratch after %s", asyn
   const child = rig.start(result)
   try {
     const scratch = await ready(child)
-    expect(await fs.readdir(scratch)).toEqual(["active", "opencode-test-failed-init", "opencode-tui-test-forgotten"])
+    expect((await fs.readdir(scratch)).toSorted()).toEqual(["active", "opencode-test-failed-init", "opencode-tui-test-forgotten"])
 
     // When the suite exits normally or with a failed assertion.
     child.stdin.end()
