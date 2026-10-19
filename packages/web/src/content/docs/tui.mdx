@@ -516,6 +516,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `scroll_acceleration.enabled` - Enable macOS-style scroll acceleration for smooth, natural scrolling. When enabled, scroll speed increases with rapid scrolling gestures and stays precise for slower movements. **This setting takes precedence over `scroll_speed` and overrides it when enabled.**
 - `scroll_speed` - Controls how fast the TUI scrolls when using scroll commands (minimum: `0.001`, supports decimal values). Defaults to `3`. **Note: This is ignored if `scroll_acceleration.enabled` is set to `true`.**
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
+- `busy_indicator` - The animation left of `esc interrupt` while a turn runs, in the TUI and in `opencode run`. `"scanner"` (default) slides a bar left and right; `"spinner"` turns a single cell, like the other busy notices such as **Sending prompt**. The scanner holds still for most of its cycle, so on a lagging host many of its frames look the same. Every spinner frame draws a different glyph, so you can still tell the turn is alive.
 - `footer` - Chooses which details message footers and other transcript entries show: agent, model, variant, time, duration, total and message ID. See [Footer](#footer).
 - `datetime_format` - How times and dates are written. See [Date and time format](#date-and-time-format).
 - `tool_output.collapse` - How much of a tool's output shows before **Click to expand**. See [Tool output](#tool-output).

@@ -11,7 +11,7 @@
 import { useTerminalDimensions } from "@opentui/solid"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { registerOpencodeSpinner } from "@opencode-ai/tui/component/register-spinner"
-import { createColors, createFrames } from "@opencode-ai/tui/ui/spinner"
+import { busyIndicator } from "@opencode-ai/tui/ui/spinner"
 import {
   RUN_SUBAGENT_PANEL_ROWS,
   RunCommandMenuBody,
@@ -254,22 +254,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   const runTheme = createMemo(() => props.theme())
   const theme = createMemo(() => runTheme().footer)
   const block = createMemo(() => runTheme().block)
-  const spin = createMemo(() => {
-    return {
-      frames: createFrames({
-        color: theme().highlight,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        minAlpha: 0.3,
-      }),
-      color: createColors({
-        color: theme().highlight,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        minAlpha: 0.3,
-      }),
-    }
-  })
+  const spin = createMemo(() => busyIndicator(props.tuiConfig.busy_indicator, theme().highlight))
   const permission = createMemo<Extract<FooterView, { type: "permission" }> | undefined>(() => {
     const view = active()
     return view.type === "permission" ? view : undefined
@@ -841,7 +826,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                 >
                   <Show when={busy() && !exiting()}>
                     <box flexShrink={0}>
-                      <spinner color={spin().color} frames={spin().frames} interval={40} />
+                      <spinner color={spin().color} frames={spin().frames} interval={spin().interval} />
                     </box>
                   </Show>
 

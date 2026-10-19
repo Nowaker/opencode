@@ -83,6 +83,7 @@ function runTuiConfig(config: Config | undefined): RunTuiConfig {
     leader_timeout: config.leader_timeout,
     diff_style: config.diff_style ?? "auto",
     input: config.input,
+    busy_indicator: config.busy_indicator,
   }
 }
 

@@ -28,7 +28,11 @@ async function wait(fn: () => boolean, timeout = 10_000) {
 }
 
 // Sends a prompt while a turn is running and returns the footer row once `expected` shows in it.
-async function footerWhileRunning(answer: () => Promise<Response>, expected: string) {
+async function footerWhileRunning(
+  answer: () => Promise<Response>,
+  expected: string,
+  config: Parameters<typeof createTuiResolvedConfig>[0] = {},
+) {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")
   const setup = await createTestRenderer({ width: 120, height: 24, useThread: false })
@@ -76,7 +80,7 @@ async function footerWhileRunning(answer: () => Promise<Response>, expected: str
       run({
         url: "http://test",
         directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        config: createTuiResolvedConfig({ plugin_enabled: {}, ...config }),
         fetch: calls.fetch,
         events: createEventSource().source,
         args: { continue: true },
@@ -154,4 +158,21 @@ test("a rejected prompt's notice shows two spaces after esc interrupt", async ()
 test("an unconfirmed prompt's notice shows two spaces after esc interrupt", async () => {
   const line = await footerWhileRunning(async () => new Response("bad gateway", { status: 502 }), "may not have")
   expect(line).toMatch(/esc interrupt {2}Prompt may not have been received/)
+})
+
+test("a running turn shows the sliding scanner by default", async () => {
+  const held = Promise.withResolvers<Response>()
+  const line = await footerWhileRunning(() => held.promise, "Sending prompt").finally(() =>
+    held.resolve(json({}, { status: 502 })),
+  )
+  expect(line).toMatch(/^ +[■⬝]{8} +esc interrupt/)
+})
+
+test("busy_indicator spinner shows one spinner cell instead of the scanner", async () => {
+  const held = Promise.withResolvers<Response>()
+  const line = await footerWhileRunning(() => held.promise, "Sending prompt", { busy_indicator: "spinner" }).finally(
+    () => held.resolve(json({}, { status: 502 })),
+  )
+  expect(line).toMatch(/^ +[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] +esc interrupt/)
+  expect(line).not.toMatch(/[■⬝]/)
 })

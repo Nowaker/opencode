@@ -1,6 +1,8 @@
 import type { ColorInput } from "@opentui/core"
 import { RGBA } from "@opentui/core"
 import type { ColorGenerator } from "opentui-spinner"
+import type { TuiConfig } from "../config"
+import { TuiLayout } from "../layout"
 
 interface AdvancedGradientOptions {
   colors: ColorInput[]
@@ -365,4 +367,15 @@ export function createColors(options: KnightRiderOptions = {}): ColorGenerator {
   }
 
   return createKnightRiderTrail(trailOptions)
+}
+
+/**
+ * The animation a running turn shows: the sliding scanner, or the one-cell spinner every other busy notice
+ * uses. Every spinner frame draws a different glyph, while the scanner holds still for most of its cycle, so
+ * on a host too lagged to draw every frame only the spinner still shows that the turn is alive.
+ */
+export function busyIndicator(style: TuiConfig.Info["busy_indicator"], color: ColorInput) {
+  if (style === "spinner") return { frames: [...TuiLayout.Spinner.frames], color, interval: TuiLayout.Spinner.interval }
+  const options = { color, style: "blocks", inactiveFactor: 0.6, minAlpha: 0.3 } satisfies KnightRiderOptions
+  return { frames: createFrames(options), color: createColors(options), interval: 40 }
 }
