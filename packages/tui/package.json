@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "bench:prompt": "bun run script/bench-prompt-input.tsx",
-    "test": "bun test --timeout 30000 --only-failures",
+    "test": "bun run ../../script/test.ts --timeout 30000 --only-failures",
     "typecheck": "tsgo --noEmit"
   },
   "exports": {
