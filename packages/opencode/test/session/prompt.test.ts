@@ -3,11 +3,12 @@ import { OwnerQuiescence } from "@/owner/quiescence"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Global } from "@opencode-ai/core/global"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import path from "path"
 import { closeSync, constants, openSync } from "fs"
 import { fileURLToPath, pathToFileURL } from "url"
@@ -1732,8 +1733,40 @@ const compactDuringTurn = Effect.fn("test.compactDuringTurn")(function* (input: 
   const exits = yield* Effect.all([Fiber.await(turn), Fiber.await(compact), ...(queued ? [Fiber.await(queued)] : [])])
   expect(exits.every(Exit.isSuccess)).toBe(true)
 
-  return { hits: yield* llm.hits, messages: yield* sessions.messages({ sessionID: chat.id }) }
+  return { sessionID: chat.id, hits: yield* llm.hits, messages: yield* sessions.messages({ sessionID: chat.id }) }
 })
+
+it.instance("compaction diagnostics use the runtime log directory", () =>
+  Effect.gen(function* () {
+    const legacy = Bun.file(path.join(Global.Path.home, ".local/share/opencode/log/compaction-debug.log"))
+    const before = yield* Effect.promise(() => legacy.exists())
+    const compact = yield* compactDuringTurn({})
+    const text = yield* Effect.promise(() => Bun.file(path.join(Global.Path.log, "compaction-debug.log")).text())
+    const decode = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          ts: Schema.String,
+          event: Schema.String,
+          sessionID: SessionID,
+          step: Schema.Number,
+          auto: Schema.optional(Schema.Boolean),
+          inflight: Schema.optional(Schema.Boolean),
+          resume: Schema.optional(Schema.Boolean),
+          result: Schema.optional(Schema.String),
+        }),
+      ),
+    )
+    const events = text.trim().split("\n").map((line) => decode(line)).filter((event) => event.sessionID === compact.sessionID)
+    expect(events.filter((event) => event.event.startsWith("compaction_task_"))).toEqual([
+      expect.objectContaining({ event: "compaction_task_start", auto: false, inflight: true, resume: true }),
+      expect.objectContaining({ event: "compaction_task_end", result: "continue" }),
+    ])
+    expect(yield* Effect.promise(() => legacy.exists())).toBe(before)
+    expect(compact.hits).toHaveLength(3)
+    expect(compact.messages.at(-1)?.parts.some((part) => part.type === "text" && part.text === "after compaction")).toBe(true)
+  }),
+  30_000,
+)
 
 it.instance("/compact during a turn answers a prompt queued before it after the summary", () =>
   Effect.gen(function* () {

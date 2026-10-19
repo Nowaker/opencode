@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { Global } from "@opencode-ai/core/global"
 import { appendFile, mkdir } from "node:fs/promises"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -100,7 +101,7 @@ function formatMcpResourceBytes(value: number) {
   return `${Math.ceil(value / (1024 * 1024))} MB`
 }
 
-const COMPACTION_DEBUG_LOG = path.join(os.homedir(), ".local/share/opencode/log/compaction-debug.log")
+const COMPACTION_DEBUG_LOG = path.join(Global.Path.log, "compaction-debug.log")
 let compactionDebugDirectory: Promise<string | undefined> | undefined
 
 function compactionDebug(input: {
