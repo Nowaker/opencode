@@ -250,6 +250,52 @@ describe("prompt delivery past the composer", () => {
     expect(createPromptControl(() => f.ref, () => ({ ...f.flags, sessionID: "ses_shown" })).deliver(request))
       .toEqual({ status: "not-ready", reason: "unmounted" })
   })
+
+  describe("metadata", () => {
+    const metadata = { vibeterm: { schema: 1, provenance: { block: "[vibeterm_metadata]\n[/vibeterm_metadata]", n: [1, null, true] } } }
+    const shown = () => {
+      const f = fixture()
+      f.flags.sessionID = "ses_shown"
+      return f
+    }
+
+    test("passes a copy on with the delivery, and none when absent", () => {
+      const f = shown()
+      expect(f.control.deliveryMetadata).toBe(true)
+      const given = structuredClone(metadata)
+      f.control.deliver({ ...request, metadata: given })
+      given.vibeterm.schema = 2
+      f.control.deliver({ ...request, messageID: "msg_b", partID: "prt_b" })
+      expect(f.sent).toEqual([{ ...request, metadata }, { ...request, messageID: "msg_b", partID: "prt_b" }])
+      expect("metadata" in f.sent[1]).toBe(false)
+    })
+
+    test("refuses metadata that is not a plain JSON object, sending nothing", () => {
+      const cyclic: Record<string, unknown> = {}
+      cyclic.self = cyclic
+      const shared = { a: 1 }
+      for (const bad of [[], "x", 1, null, new Date(), new Map(), { a: undefined }, { a: Number.NaN }, { a: () => 1 }, { a: 1n }, { a: new Date() }, cyclic]) {
+        const f = shown()
+        expect(f.control.deliver({ ...request, metadata: bad as Record<string, unknown> })).toEqual({ status: "not-ready", reason: "invalid" })
+        expect(f.sent).toEqual([])
+      }
+      const f = shown()
+      expect(f.control.deliver({ ...request, metadata: { x: shared, y: shared, z: Object.create(null) } }).status).toBe("submitted")
+    })
+
+    test("a repeat returns the first receipt only with the same metadata, whatever its key order", () => {
+      const f = shown()
+      const receipt = f.control.deliver({ ...request, metadata: { a: 1, b: { c: 2, d: 3 } } })
+      expect(f.control.deliver({ ...request, metadata: { b: { d: 3, c: 2 }, a: 1 } })).toEqual(receipt)
+      expect(f.control.deliver({ ...request, metadata: { a: 2, b: { c: 2, d: 3 } } })).toEqual({ status: "not-ready", reason: "invalid" })
+      expect(f.control.deliver(request)).toEqual({ status: "not-ready", reason: "invalid" })
+      expect(f.sent).toHaveLength(1)
+      const plain = shown()
+      const first = plain.control.deliver(request)
+      expect(plain.control.deliver({ ...request, metadata: {} })).toEqual({ status: "not-ready", reason: "invalid" })
+      expect(plain.control.deliver(request)).toEqual(first)
+    })
+  })
 })
 
 function caretFixture() {

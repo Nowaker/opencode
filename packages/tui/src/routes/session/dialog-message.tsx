@@ -15,6 +15,7 @@ export function DialogMessage(props: {
   messageID: string
   sessionID: string
   queued?: boolean
+  provenance?: { text: string; expanded: boolean; set: (open: boolean) => void }
   setPrompt?: (prompt: PromptInfo) => void
   restorePrompt?: (prompt: PromptInfo) => void
 }) {
@@ -70,6 +71,30 @@ export function DialogMessage(props: {
     },
   }
 
+  const provenance = props.provenance
+  const provenanceOptions = provenance
+    ? [
+        {
+          title: provenance.expanded ? "Collapse provenance" : "Expand provenance",
+          value: "message.provenance.toggle",
+          description: "the full delivery record below the message",
+          onSelect: (dialog: DialogContext) => {
+            provenance.set(!provenance.expanded)
+            dialog.clear()
+          },
+        },
+        {
+          title: "Copy provenance",
+          value: "message.provenance.copy",
+          description: "full delivery text to clipboard",
+          onSelect: async (dialog: DialogContext) => {
+            await clipboard.write?.(provenance.text)
+            dialog.clear()
+          },
+        },
+      ]
+    : []
+
   return (
     <DialogSelect
       title="Message Actions"
@@ -95,6 +120,7 @@ export function DialogMessage(props: {
             dialog.clear()
           },
         },
+        ...provenanceOptions,
         {
           title: "Fork",
           value: "session.fork",

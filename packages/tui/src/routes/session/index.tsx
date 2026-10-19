@@ -84,6 +84,14 @@ import { highlightCached } from "../../util/highlight-cache"
 import { forgivingMarkdown, USER_MARKDOWN_LIMIT } from "../../util/user-markdown"
 import { messageSegments, yamlSegments, type MessageSegment } from "../../util/message-blocks"
 import {
+  messageProvenance,
+  provenanceAll,
+  provenanceExpanded,
+  ProvenanceView,
+  setProvenance,
+  toggleAllProvenance,
+} from "./provenance"
+import {
   JSON_AS_YAML,
   outputLanguage,
   parseOutputJson,
@@ -205,6 +213,7 @@ const sessionBindingCommands = [
   "session.toggle.turn_time",
   "session.toggle.turn_duration",
   "session.toggle.thinking",
+  "session.toggle.provenance",
   "session.toggle.actions",
   "session.toggle.scrollbar",
   "session.toggle.generic_tool_output",
@@ -1003,6 +1012,18 @@ export function Session() {
       },
     },
     {
+      title: provenanceAll() ? "Collapse delivery provenance" : "Expand delivery provenance",
+      value: "session.toggle.provenance",
+      category: "Session",
+      slash: {
+        name: "provenance",
+      },
+      run: () => {
+        batch(toggleAllProvenance)
+        dialog.clear()
+      },
+    },
+    {
       title: showDetails() ? "Hide tool calls" : "Show tool calls",
       value: "session.toggle.actions",
       category: "Session",
@@ -1685,10 +1706,20 @@ export function Session() {
                             onMouseUp={(event) => {
                               if (renderer.getSelection()?.getSelectedText()) return
                               if (idUnder(renderer.currentRenderBuffer, event)) return
+                              const views = messageProvenance(sync.data.part[message.id] ?? [])
                               dialog.replace(() => (
                                 <DialogMessage
                                   messageID={message.id}
                                   sessionID={route.sessionID}
+                                  provenance={
+                                    views.length
+                                      ? {
+                                          text: views.map((view) => view.fullText).join("\n\n"),
+                                          expanded: views.every((view) => provenanceExpanded(view.id)),
+                                          set: (open) => setProvenance(views.map((view) => view.id), open),
+                                        }
+                                      : undefined
+                                  }
                                   queued={pending() !== undefined && index() > pending()!}
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
                                   restorePrompt={restorePrompt}
@@ -1837,6 +1868,7 @@ function UserMessage(props: {
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
   const shown = createMemo(() => ctx.filter()[TranscriptFilter.userKind(props.parts)].shown)
+  const provenance = createMemo(() => messageProvenance(props.parts))
 
   return (
     <>
@@ -1865,6 +1897,13 @@ function UserMessage(props: {
             flexShrink={0}
           >
             <UserText text={text()} />
+            <For each={provenance()}>
+              {(view) => (
+                <ProvenanceView id={view.id} provenance={view.provenance}>
+                  <UserText text={view.fullText} />
+                </ProvenanceView>
+              )}
+            </For>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>

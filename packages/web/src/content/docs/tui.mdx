@@ -45,11 +45,24 @@ Click a prompt in the conversation to act on it:
 | **Revert messages** | Removes this prompt and everything after it, and puts the prompt back in the prompt box. Files stay as they are. |
 | **Revert messages and files** | The same, and also reverts the file changes those messages made. |
 | **Copy** | Copies the prompt's text. |
+| **Expand provenance** / **Collapse provenance** | Opens or closes the prompt's [delivery provenance](#delivery-provenance). Listed only for a prompt that has one. |
+| **Copy provenance** | Copies the prompt's full delivery text. Listed only for a prompt that has [delivery provenance](#delivery-provenance). |
 | **Fork** | Starts a new session from the conversation before this prompt. |
 
 The two Revert actions are listed with [`revert.files`](#options)'s choice first. The conversation shows the revert at once; if the server refuses it, for example because a turn is running, it comes back and a notice says why.
 
 A prompt sent while a turn is running waits, marked **QUEUED**, until the turn reaches it. Click it and choose **Unqueue** to take it back: it leaves the queue and its text and attachments return to the prompt box, above anything typed there since. The running turn keeps going. If the turn has already picked the prompt up, nothing changes and a notice says so.
+
+### Delivery provenance
+
+A prompt that another session or tool delivered, such as a Vibeterm `vibeterm_prompt_session` message, starts with a short `[vibeterm_metadata]` block naming the sender. The model reads only that short block. The full record of the delivery can travel with the prompt as metadata on its text part, `metadata.vibeterm = { schema: 1, provenance: { block, entries, displayText?, modelText } }`, and that metadata is never sent to the model. `modelText` is the exact text the record was written for. A TUI plugin sends the record with `api.prompt.deliver({ sessionID, text, metadata })` when `api.prompt.deliveryMetadata` is `true`; a prompt sent over the server API carries it as its text part's `metadata`.
+
+A prompt with a full record shows one more row below its text: `▸ Delivery provenance · N fields · Click to expand`. Click it, choose **Expand provenance** in the prompt's [message actions](#message-actions), or press `ctrl+x p` to open every one in the session at once. Opened, it shows:
+
+- The full text the sender wrote: `displayText` when the record has it, otherwise the prompt with its short block swapped for the full one, every field and `*_local` time included.
+- **Fields**: every field of the record, nested fields and lists in the block's own `key: value` shape.
+
+**Copy provenance** copies that full text. A prompt without a record, with a record the TUI cannot read (another `schema`, or fields that disagree with the block), or whose text is no longer exactly the record's `modelText` looks exactly as before, so an edited prompt never shows a stale record.
 
 ## File references
 
@@ -101,6 +114,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 | Token, context and cost usage | Below the prompt, and the Context section of the session sidebar | Opens the status dialog (`/status`) |
 | Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path |
 | Model in a message footer | After `▣` and the agent below an answer | Opens the model picker with the model that turn ran on highlighted |
+| `Delivery provenance` row | Below a prompt that carries a full delivery record | Opens or closes the record. See [Delivery provenance](#delivery-provenance) |
 | Session title | Top of the session sidebar | Renames the session (`/rename`) |
 | Session ID | Below the session title in the sidebar | Copies the ID |
 | Message ID (`msg_...`) | Message footers, when [`footer.message_id`](#footer) shows them | Copies the ID |
@@ -252,6 +266,18 @@ Start a new session. _Alias_: `/clear`
 ```
 
 **Keybind:** `ctrl+x n`
+
+---
+
+### provenance
+
+Open or close the [delivery provenance](#delivery-provenance) of every prompt in the session. A record opened or closed on its own since is set to match.
+
+```bash frame="none"
+/provenance
+```
+
+**Keybind:** `ctrl+x p`
 
 ---
 

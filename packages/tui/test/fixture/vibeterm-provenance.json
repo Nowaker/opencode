@@ -1,0 +1,103 @@
+[
+  {
+    "text": "[vibeterm_metadata]\nsession_id: ses_fixture\n[/vibeterm_metadata]\n\n---\n\nbody\n",
+    "metadata": {
+      "vibeterm": {
+        "schema": 1,
+        "provenance": {
+          "modelText": "[vibeterm_metadata]\nsession_id: ses_fixture\n[/vibeterm_metadata]\n\n---\n\nbody\n",
+          "block": "[vibeterm_metadata]\ncall: fixture\nsession_id: ses_fixture\n[/vibeterm_metadata]",
+          "entries": [
+            { "key": "call", "value": { "kind": "scalar", "value": "fixture" } },
+            { "key": "session_id", "value": { "kind": "scalar", "value": "ses_fixture" } }
+          ]
+        }
+      }
+    },
+    "expectedFullText": "[vibeterm_metadata]\ncall: fixture\nsession_id: ses_fixture\n[/vibeterm_metadata]\n\n---\n\nbody\n",
+    "expectedEntries": [
+      { "key": "call", "value": { "kind": "scalar", "value": "fixture" } },
+      { "key": "session_id", "value": { "kind": "scalar", "value": "ses_fixture" } }
+    ]
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\n\ncompact-body",
+    "metadata": {
+      "source": "fixture",
+      "vibeterm": {
+        "schema": 1,
+        "provenance": {
+          "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\n\ncompact-body",
+          "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]",
+          "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }],
+          "displayText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\n\nfull-body\noptions: a,b,c"
+        }
+      }
+    },
+    "expectedFullText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\n\nfull-body\noptions: a,b,c",
+    "expectedEntries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }]
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]",
+    "metadata": {
+      "vibeterm": {
+        "schema": 1,
+        "provenance": {
+          "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]",
+          "block": "[vibeterm_metadata]\nmap:\n  item: first\n  item: second\nrecords:\n- id: one\n  at_local: retained\n- id: one\n[/vibeterm_metadata]",
+          "entries": [
+            { "key": "map", "value": { "kind": "map", "entries": [{ "key": "item", "value": "first" }, { "key": "item", "value": "second" }] } },
+            { "key": "records", "value": { "kind": "records", "records": [[{ "key": "id", "value": "one" }, { "key": "at_local", "value": "retained" }], [{ "key": "id", "value": "one" }]] } }
+          ]
+        }
+      }
+    },
+    "expectedFullText": "[vibeterm_metadata]\nmap:\n  item: first\n  item: second\nrecords:\n- id: one\n  at_local: retained\n- id: one\n[/vibeterm_metadata]",
+    "expectedEntries": [
+      { "key": "map", "value": { "kind": "map", "entries": [{ "key": "item", "value": "first" }, { "key": "item", "value": "second" }] } },
+      { "key": "records", "value": { "kind": "records", "records": [[{ "key": "id", "value": "one" }, { "key": "at_local", "value": "retained" }], [{ "key": "id", "value": "one" }]] } }
+    ]
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody", "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]", "entries": [{ "key": "x", "value": { "kind": "records", "records": [[{ "key": "id", "value": 1 }]] } }] } } },
+    "expectedFullText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody",
+    "expectedEntries": null
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody", "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]", "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }], "displayText": false } } },
+    "expectedFullText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nbody",
+    "expectedEntries": null
+  },
+  {
+    "text": "edited-body",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\noriginal-body", "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]", "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }], "displayText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\noriginal-body" } } },
+    "expectedFullText": "edited-body",
+    "expectedEntries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }]
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: compact\n[/vibeterm_metadata]\nbody",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: compact\n[/vibeterm_metadata]\nbody", "block": "[vibeterm_metadata]\ncall: original\n[/vibeterm_metadata]", "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "different" } }] } } },
+    "expectedFullText": "[vibeterm_metadata]\ncall: compact\n[/vibeterm_metadata]\nbody",
+    "expectedEntries": null
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: legacy\n[/vibeterm_metadata]\nbody",
+    "metadata": {},
+    "expectedFullText": "[vibeterm_metadata]\ncall: legacy\n[/vibeterm_metadata]\nbody",
+    "expectedEntries": null
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nchanged-body",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\noriginal-body", "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]", "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }], "displayText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nfull-original-body" } } },
+    "expectedFullText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nchanged-body",
+    "expectedEntries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }]
+  },
+  {
+    "text": "[vibeterm_metadata]\ncall: changed\n[/vibeterm_metadata]\noriginal-body",
+    "metadata": { "vibeterm": { "schema": 1, "provenance": { "modelText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\noriginal-body", "block": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]", "entries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }], "displayText": "[vibeterm_metadata]\ncall: fixture\n[/vibeterm_metadata]\nfull-original-body" } } },
+    "expectedFullText": "[vibeterm_metadata]\ncall: changed\n[/vibeterm_metadata]\noriginal-body",
+    "expectedEntries": [{ "key": "call", "value": { "kind": "scalar", "value": "fixture" } }]
+  }
+]

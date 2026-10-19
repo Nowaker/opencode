@@ -247,6 +247,38 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("never sends user text part metadata, such as Vibeterm delivery provenance, to the model", async () => {
+    const messageID = "m-user"
+    const compact = "[vibeterm_metadata]\ncall: vibeterm_prompt_session\n[/vibeterm_metadata]\n\nbody"
+    const secret = "full-provenance-only-for-the-reader"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(messageID),
+        parts: [
+          {
+            ...basePart(messageID, "p1"),
+            type: "text",
+            text: compact,
+            metadata: {
+              vibeterm: {
+                schema: 1,
+                provenance: {
+                  block: `[vibeterm_metadata]\ncall: vibeterm_prompt_session\nnote: ${secret}\n[/vibeterm_metadata]`,
+                  entries: [{ key: "note", value: { kind: "scalar", value: secret } }],
+                  displayText: `${secret}\nbody`,
+                },
+              },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model)
+    expect(messages).toStrictEqual([{ role: "user", content: [{ type: "text", text: compact }] }])
+    expect(JSON.stringify(messages)).not.toContain(secret)
+  })
+
   test("converts user text/file parts and injects compaction/subtask prompts", async () => {
     const messageID = "m-user"
 

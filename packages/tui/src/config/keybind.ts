@@ -176,6 +176,7 @@ export const CommandMap = {
   messages_toggle_conceal: "session.toggle.conceal",
   tool_details: "session.toggle.actions",
   display_thinking: "session.toggle.thinking",
+  session_toggle_provenance: "session.toggle.provenance",
   prompt_submit: "prompt.submit",
   prompt_editor_context_clear: "prompt.editor_context.clear",
   prompt_skills: "prompt.skills",

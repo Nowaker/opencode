@@ -155,6 +155,7 @@ export const Definitions = {
   messages_toggle_conceal: keybind("<leader>h", "Toggle code block concealment in messages"),
   tool_details: keybind("none", "Show or hide tool calls"),
   display_thinking: keybind("none", "Toggle thinking blocks visibility"),
+  session_toggle_provenance: keybind("<leader>p", "Expand or collapse every message's delivery provenance"),
 
   prompt_submit: keybind("none", "Submit prompt"),
   prompt_editor_context_clear: keybind("none", "Clear editor context"),

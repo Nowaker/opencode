@@ -18,7 +18,9 @@ import { Identifier } from "@opencode-ai/core/id/id"
 type State = { dialog: boolean; ready: boolean; sessionID: string | null }
 type Content = Pick<TuiComposerSnapshot, "generation" | "sha256" | "partsSha256">
 /** Sends a delivery past the composer; see `TuiComposerApi.deliver`. Absent, every delivery is `unmounted`. */
-export type PromptSend = (request: Required<TuiComposerDeliverRequest>) => TuiComposerDeliverResult
+export type PromptSend = (
+  request: Required<Omit<TuiComposerDeliverRequest, "metadata">> & Pick<TuiComposerDeliverRequest, "metadata">,
+) => TuiComposerDeliverResult
 
 /** All checks and mutations run synchronously on the owning TUI thread. */
 export function createPromptControl(
@@ -31,7 +33,7 @@ export function createPromptControl(
   let generation = randomUUID()
   const replacements = new Map<string, { key: string; receipt: TuiComposerResult }>()
   const submissions = new Map<string, { key: string; receipt: TuiComposerResult }>()
-  const deliveries = new Map<string, TuiComposerDeliverResult & { status: "submitted" }>()
+  const deliveries = new Map<string, { receipt: TuiComposerDeliverResult & { status: "submitted" }; metadata: string }>()
 
   function observe() {
     const ref = read()
@@ -105,8 +107,13 @@ export function createPromptControl(
   function deliver(request: TuiComposerDeliverRequest): TuiComposerDeliverResult {
     const ids = { messageID: request.messageID ?? Identifier.ascending("message"), partID: request.partID ?? Identifier.ascending("part") }
     if (!ids.messageID.startsWith("msg_") || !ids.partID.startsWith("prt_")) return { status: "not-ready", reason: "invalid" }
+    if (request.metadata !== undefined && !isJsonObject(request.metadata)) return { status: "not-ready", reason: "invalid" }
+    const metadata = request.metadata === undefined ? "" : canonicalJson(request.metadata)
     const earlier = deliveries.get(ids.messageID)
-    if (earlier) return earlier.partID === ids.partID ? earlier : { status: "not-ready", reason: "invalid" }
+    if (earlier)
+      return earlier.receipt.partID === ids.partID && earlier.metadata === metadata
+        ? earlier.receipt
+        : { status: "not-ready", reason: "invalid" }
     const { ref, handoff, flags } = observe()
     const refuse = (reason: TuiComposerDeliverRefusal): TuiComposerDeliverResult => ({ status: "not-ready", reason })
     if (!ref || !handoff || !send) return refuse("unmounted")
@@ -115,9 +122,14 @@ export function createPromptControl(
     if (handoff.disabled) return refuse("disabled")
     if (!flags.ready) return refuse("syncing")
     if (flags.sessionID !== request.sessionID) return refuse("session")
-    const result = send({ sessionID: request.sessionID, text: request.text, ...ids })
+    const result = send({
+      sessionID: request.sessionID,
+      text: request.text,
+      ...ids,
+      ...(request.metadata === undefined ? {} : { metadata: structuredClone(request.metadata) }),
+    })
     if (result.status === "submitted") {
-      deliveries.set(ids.messageID, result)
+      deliveries.set(ids.messageID, { receipt: result, metadata })
       const oldest = deliveries.keys().next()
       if (deliveries.size > 256 && !oldest.done) deliveries.delete(oldest.value)
     }
@@ -129,6 +141,7 @@ export function createPromptControl(
     snapshot,
     read: draft,
     deliver,
+    deliveryMetadata: true,
     replace(request) {
       const current = snapshot()
       const parts = request.promptParts ?? []
@@ -169,4 +182,36 @@ export function createPromptControl(
       return receipt
     },
   }
+}
+
+// Strings, finite numbers, booleans, null, arrays and objects whose prototype is Object's or null, with no cycles.
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  const seen = new Set<object>()
+  const json = (item: unknown): boolean => {
+    if (item === null || typeof item === "string" || typeof item === "boolean") return true
+    if (typeof item === "number") return Number.isFinite(item)
+    if (typeof item !== "object" || seen.has(item)) return false
+    seen.add(item)
+    const plain = Array.isArray(item) ? item.every(json) : isPlain(item) && Object.values(item).every(json)
+    seen.delete(item)
+    return plain
+  }
+  return isPlain(value) && json(value)
+}
+
+function isPlain(value: unknown): value is object {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+// JSON with object keys sorted, so two deliveries of the same metadata compare equal whatever their key order.
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`
+  return JSON.stringify(value)
 }

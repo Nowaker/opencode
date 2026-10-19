@@ -65,19 +65,28 @@ export type TuiComposerSealResult =
  * Text sent to the shown session as a turn of its own, past the composer. `messageID` and `partID` are the IDs the
  * message and its text part are stored under (`msg_…`, `prt_…`); the server stores a message once per ID, so a
  * caller that is unsure whether a delivery landed sends it again with the same IDs. Omitted, the TUI makes them.
+ *
+ * `metadata` is stored as the text part's `metadata`, as a prompt's text part input `metadata` is: shown by readers
+ * such as the TUI, never sent to the model. It must be a plain JSON object (strings, finite numbers, booleans, null,
+ * arrays and plain objects, no cycles); it is copied when `deliver()` is called. Omitted, the part has no `metadata`.
+ * A repeat with the same `messageID` returns the earlier receipt only when `partID` and `metadata` are the same as the
+ * first time (object key order aside); otherwise it is refused `invalid`, since the message is stored only once.
+ * Only a host whose `TuiComposerApi.deliveryMetadata` is `true` stores it; an older host drops it silently.
  */
 export type TuiComposerDeliverRequest = {
   sessionID: string
   text: string
   messageID?: string
   partID?: string
+  metadata?: Record<string, unknown>
 }
 
 /**
  * Why `deliver()` refused; a refused delivery sends nothing. `hidden`: the session shows no prompt (a permission or a
  * question is waiting, or it is a subagent). `disabled`: the composer is sealed or disabled. `session`: the TUI is not
  * showing `sessionID`. `agent`/`model`/`workspace`: no agent or model is selected, or the session's workspace is not
- * connected. `invalid`: a malformed ID.
+ * connected. `invalid`: a malformed ID, `metadata` that is not a plain JSON object, or a repeated `messageID` whose
+ * `partID` or `metadata` differs from the first delivery.
  */
 export type TuiComposerDeliverRefusal =
   | "unmounted"
@@ -123,4 +132,6 @@ export type TuiComposerApi = {
    * the text in the composer.
    */
   deliver(request: TuiComposerDeliverRequest): TuiComposerDeliverResult
+  /** `true` when `deliver()` stores `request.metadata` on the delivered text part. Absent on hosts that drop it. */
+  readonly deliveryMetadata?: true
 }

@@ -38,7 +38,14 @@ export function createPromptSend(input: Input): PromptSend {
         agent: agent.name,
         model,
         variant: input.local.model.variant.current(),
-        parts: [{ id: request.partID, type: "text", text: request.text }],
+        parts: [
+          {
+            id: request.partID,
+            type: "text",
+            text: request.text,
+            ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+          },
+        ],
       },
     })
     return { status: "submitted", messageID: request.messageID, partID: request.partID }
