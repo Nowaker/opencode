@@ -76,7 +76,8 @@ await using tmp = await tmpdir({
 
 ### Notes
 
-- Directories are created in the system temp folder with prefix `opencode-test-`
+- Run suites with `bun run test [files or Bun test flags]` from `packages/opencode` or `packages/tui`. The shared `script/test.ts` supervisor gives each child an isolated temporary root, home, XDG stores and runtime caches, then removes its own root after the child exits, including failed preloads and interrupted runs. A direct `bun test` bypasses this run-level cleanup.
+- Directories are created under the run's temporary folder with prefix `opencode-test-`
 - Use `await using` for automatic cleanup when the variable goes out of scope
 - Paths are sanitized to strip null bytes (defensive fix for CI environments)
 
