@@ -187,6 +187,18 @@ export class McpOAuthProvider implements OAuthClientProvider {
 export class McpOAuthPendingProvider extends McpOAuthProvider {
   private pendingClientInfo?: OAuthClientInformationFull
   private pendingTokens?: OAuthTokens
+  private pendingCodeVerifier?: string
+
+  override async saveCodeVerifier(codeVerifier: string): Promise<void> {
+    this.pendingCodeVerifier = codeVerifier
+  }
+
+  override async codeVerifier(): Promise<string> {
+    if (!this.pendingCodeVerifier) {
+      throw new Error(`No code verifier saved for MCP server: ${this.mcpName}`)
+    }
+    return this.pendingCodeVerifier
+  }
 
   override async clientInformation(): Promise<OAuthClientInformation | undefined> {
     if (!this.config.clientId) return this.pendingClientInfo

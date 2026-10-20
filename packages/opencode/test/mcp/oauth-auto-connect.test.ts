@@ -38,6 +38,7 @@ function serveOAuthMcp(options: OAuthMcpOptions = {}) {
       })
       let listToolsCalls = 0
       let requiresAuth = true
+      let codeChallenge: string | undefined
 
       if (capabilities === "tools") {
         protocol.setRequestHandler(ListToolsRequestSchema, () => {
@@ -54,6 +55,7 @@ function serveOAuthMcp(options: OAuthMcpOptions = {}) {
       await protocol.connect(transport)
       const http = Bun.serve({
         port: 0,
+        hostname: "127.0.0.1",
         async fetch(request) {
           const url = new URL(request.url)
           const origin = url.origin
@@ -92,6 +94,12 @@ function serveOAuthMcp(options: OAuthMcpOptions = {}) {
           }
           if (url.pathname === "/token") {
             const body = new URLSearchParams(await request.text())
+            if (
+              codeChallenge &&
+              new Bun.CryptoHasher("sha256").update(body.get("code_verifier") ?? "").digest("base64url") !==
+                codeChallenge
+            )
+              return Response.json({ error: "invalid_grant", error_description: "PKCE mismatch" }, { status: 400 })
             if (body.get("code") !== "valid-code") {
               return Response.json(
                 { error: "invalid_grant", error_description: "Token exchange failed" },
@@ -121,6 +129,9 @@ function serveOAuthMcp(options: OAuthMcpOptions = {}) {
           requiresAuth = false
         },
         listToolsCalls: () => listToolsCalls,
+        expectChallenge: (challenge: string) => {
+          codeChallenge = challenge
+        },
         close: async () => {
           await http.stop(true)
           await protocol.close()
@@ -245,6 +256,26 @@ mcpTest.instance("successful reauthentication commits replacement credentials", 
     expect(entry?.tokens?.accessToken).toBe("replacement-token")
     expect(entry?.clientInfo?.clientId).toBe("replacement-client")
     expect(entry?.serverUrl).toBe(server.url)
+  }),
+)
+
+mcpTest.instance("overlapping startAuth replaces the pending transport and shared state", () =>
+  Effect.gen(function* () {
+    yield* stopOAuthCallback
+    const server = yield* serveOAuthMcp()
+    const mcp = yield* MCP.Service
+    const auth = yield* McpAuth.Service
+    const name = "test-overlapping-auth"
+    yield* mcp.add(name, remote(server.url))
+    const first = yield* mcp.startAuth(name)
+    const second = yield* mcp.startAuth(name)
+    const challenge = new URL(second.authorizationUrl).searchParams.get("code_challenge")
+    if (!challenge) throw new Error("Missing PKCE challenge")
+    server.expectChallenge(challenge)
+
+    expect(second.oauthState).not.toBe(first.oauthState)
+    expect(yield* auth.getOAuthState(name)).toBe(second.oauthState)
+    expect((yield* mcp.finishAuth(name, "valid-code")).status).toBe("connected")
   }),
 )
 
