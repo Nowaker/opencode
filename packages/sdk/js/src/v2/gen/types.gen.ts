@@ -2465,6 +2465,10 @@ export type McpUnsupportedOAuthError = {
   error: string
 }
 
+export type McpOAuthFlowError = {
+  error: string
+}
+
 export type McpServerNotFoundError = {
   _tag: "McpServerNotFoundError"
   name: string
@@ -8716,9 +8720,9 @@ export type McpAuthRemoveData = {
 
 export type McpAuthRemoveErrors = {
   /**
-   * Bad request
+   * McpOAuthFlowError | InvalidRequestError
    */
-  400: BadRequestError
+  400: McpOAuthFlowError | InvalidRequestError
   /**
    * McpServerNotFoundError
    */
@@ -8739,7 +8743,10 @@ export type McpAuthRemoveResponses = {
 export type McpAuthRemoveResponse = McpAuthRemoveResponses[keyof McpAuthRemoveResponses]
 
 export type McpAuthStartData = {
-  body?: never
+  body?: {
+    callbackMode: "external"
+    redirectUri: string
+  }
   path: {
     name: string
   }
@@ -8752,9 +8759,9 @@ export type McpAuthStartData = {
 
 export type McpAuthStartErrors = {
   /**
-   * McpUnsupportedOAuthError | InvalidRequestError
+   * McpUnsupportedOAuthError | McpOAuthFlowError | InvalidRequestError
    */
-  400: McpUnsupportedOAuthError | InvalidRequestError
+  400: McpUnsupportedOAuthError | McpOAuthFlowError | InvalidRequestError
   /**
    * McpServerNotFoundError
    */
@@ -8770,6 +8777,9 @@ export type McpAuthStartResponses = {
   200: {
     authorizationUrl: string
     oauthState: string
+    callbackMode?: "external"
+    expiresAt?: number
+    status?: "connected"
   }
 }
 
@@ -8777,7 +8787,10 @@ export type McpAuthStartResponse = McpAuthStartResponses[keyof McpAuthStartRespo
 
 export type McpAuthCallbackData = {
   body?: {
-    code: string
+    code?: string
+    state?: string
+    error?: string
+    errorDescription?: string
   }
   path: {
     name: string
@@ -8791,9 +8804,9 @@ export type McpAuthCallbackData = {
 
 export type McpAuthCallbackErrors = {
   /**
-   * BadRequest | InvalidRequestError
+   * BadRequest | McpOAuthFlowError | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequest | McpOAuthFlowError | InvalidRequestError
   /**
    * McpServerNotFoundError
    */
@@ -8825,9 +8838,9 @@ export type McpAuthAuthenticateData = {
 
 export type McpAuthAuthenticateErrors = {
   /**
-   * McpUnsupportedOAuthError | InvalidRequestError
+   * McpUnsupportedOAuthError | McpOAuthFlowError | InvalidRequestError
    */
-  400: McpUnsupportedOAuthError | InvalidRequestError
+  400: McpUnsupportedOAuthError | McpOAuthFlowError | InvalidRequestError
   /**
    * McpServerNotFoundError
    */

@@ -1,6 +1,6 @@
 import { cmd } from "./cmd"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
-import { effectCmd } from "../effect-cmd"
+import { CliError, effectCmd } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -385,7 +385,9 @@ export const McpLogoutCommand = effectCmd({
       return
     }
 
-    yield* MCP.Service.use((mcp) => mcp.removeAuth(serverName))
+    yield* MCP.Service.use((mcp) => mcp.removeAuth(serverName)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    )
     prompts.log.success(`Removed OAuth credentials for ${serverName}`)
     prompts.outro("Done")
   }),

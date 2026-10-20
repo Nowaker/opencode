@@ -23,7 +23,10 @@ export class SchemaErrorMiddleware extends HttpApiMiddleware.Service<SchemaError
 ) {}
 
 export const schemaErrorLayer = HttpApiMiddleware.layerSchemaErrorTransform(SchemaErrorMiddleware, (error, context) => {
-  const reason = truncateReason(error.cause.message)
+  const oauth =
+    context.endpoint.path.startsWith("/mcp/") &&
+    (context.endpoint.path.endsWith("/auth") || context.endpoint.path.endsWith("/auth/callback"))
+  const reason = oauth ? "Invalid MCP OAuth request" : truncateReason(error.cause.message)
   const response = context.endpoint.path.startsWith("/api/")
     ? Effect.fail(
         new InvalidRequestError({
