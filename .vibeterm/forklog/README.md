@@ -26,6 +26,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Pending PKCE isolation and Portal-owned MCP callbacks](#portal-owned-mcp-oauth-callbacks)
+
 - [Run-owned test scratch](./features/2026-10-18-test-scratch-lifetime.md)
 
 - [Per-run abort provenance](#per-run-abort-provenance)
@@ -121,6 +123,11 @@ carries every feature forward unchanged. That commit includes the full
 ## Session records
 
 - [2026-10-20 `ses_ea36bec92ffeijTeQtWfT4KIU4`](./sessions/2026-10-20-click-commit-kind.md) - a clicked run of 7-40 lowercase hex reaches `api.click.on` as kind `commit`, never copied by opencode; Vibeterm asks git and opens tig, the forge page or a copy; landed as `9f2a993d24`.
+- 2026-10-20 `ses_eaba85458ffeY2n7wGqgOYt27p` - isolate pending PKCE
+  verifiers (`1cdfe76abb`) and add explicit state-bound external MCP callbacks
+  (`843f8b658e`); coordinated with Portal and Vibeterm. See
+  [the feature and verification record](#portal-owned-mcp-oauth-callbacks).
+
 - [2026-10-19 `ses_eaca3043cffex00KfTm0HE9UJr`](./sessions/2026-10-19-delivery-provenance-view.md) - user messages show an expandable full delivery provenance from `metadata.vibeterm`; composer `deliver()` carries text-part `metadata` behind `deliveryMetadata: true`; landed as `ad24b3b1e2`.
 - [2026-10-18 `ses_eaca65b1bffeZBbc3UZRmHnrMn`](./sessions/2026-10-18-busy-indicator.md) - `busy_indicator` (`scanner` | `spinner`) chooses the running-turn animation in the prompt and `opencode run` footers; fork-only; vt-364 on both hosts; opencode-tools `d4b5a6beb13` enforces Vibeterm default `spinner`.
 - [2026-10-18 `ses_eac9cdf26ffeEPtXV2TXi0WMOu`](./sessions/2026-10-18-fork-hook-seams.md) - `experimental.session.compacting` gains the prior summary, both models and retained messages with an overridable `previousSummary`; `shell.env` gains an optional `source`; landed as `e160264623`.
@@ -822,6 +829,31 @@ Linux runtime proof, from `packages/opencode`: `bun script/serve-idle-proof.ts <
 - A repeat of the final source process proof again kept the active pair and expired the idle pair, then expired the completed turn's pair and recreated a different PID on demand. Both candidate runs and the retained-control run report successful owned-process cleanup. No live API, configuration, database, serve unit, TUI, default Vibeterm server or Meridian instance was modified or restarted.
 - Finalizer safety follow-up: the existing process-global pending OAuth map must not be cleared wholesale when one directory expires. Records carry their directory, and `mcp/pending-auth.ts` removes/closes only that directory's captured transports, preserving a replacement record during close. The unchanged global-clear behavior failed both ownership regressions (`0 pass, 2 fail`); selective cleanup passes all three ownership/failure/replacement cases. Full MCP plus idle/config regression run after this follow-up: `98 pass, 0 fail`; opencode typecheck and the actual source-process proof pass again. This narrows cleanup ownership, not the existing OAuth server-name lookup or credential architecture.
 - Oracle review of `425240ff80` found a native-promise lease gap in codemode's raced-out MCP calls and OAuth exchanges. `tool/code-mode.ts` holds the actual SDK promise through native settlement; `mcp/index.ts` holds the complete `startAuth` connect-plus-commit and `finishAuth` exchange-plus-commit continuations, including after a waiting Effect fiber is interrupted. The existing exchange error response is preserved. `test/tool/code-mode-idle.test.ts` and `test/mcp/native-idle.test.ts` exercise actual CodeModeTool/MCP methods over real SDK HTTP transports: all five cases fail before the fix (`0 pass, 5 fail`, disposal count `1` expected `0`), then pass with the same held race/connect/exchange/commit inputs. Each case releases native work, waits for settlement, verifies no disposal at 99 ms, and observes expiry at the full 100 ms idle interval. Interrupted token exchange still commits its fixture credentials. The commit hook in the OAuth tests only gates and delegates to the real provider method; token exchange and credential persistence are real. Command from `packages/opencode`: `env -u TMPDIR bun test --timeout 30000 test/mcp test/tool/code-mode-idle.test.ts test/tool/code-mode.test.ts test/tool/code-mode-integration.test.ts test/project/instance-idle.test.ts test/server/httpapi-instance-idle.test.ts test/cli/serve/instance-idle-timeout.test.ts` gives `154 pass, 0 fail`; `bun typecheck` passes. The seven earlier commits remain unchanged; this correction is a focused new commit for re-review, with no build/install or live-state action.
+
+## Portal-owned MCP OAuth callbacks
+
+- Purpose: a phone or desktop browser using Portal can finish MCP OAuth
+  without redirecting to its own loopback address or another tab's listener.
+- Pending providers keep their PKCE verifier in memory; another process's
+  shared credential-store updates cannot replace it during a login.
+- `POST /mcp/{name}/auth` accepts explicit `callbackMode: "external"` and a
+  per-flow `redirectUri`. This skips the desktop callback listener and retains
+  the original state, directory, provider and five-minute expiry in process.
+- External completion requires matching state, is claimed before exchange,
+  rejects replay/overlap, and commits only through the original pending
+  provider. Desktop `authenticate` and legacy manual completion remain.
+- Verified source: `1cdfe76abb`, `843f8b658e`. Focused core/API tests:
+  50 passed, 174 assertions; package typecheck passed. Fixtures validate exact
+  client registration, redirect URI and S256 PKCE, including external login
+  followed by desktop reauthentication.
+- Candidate `1.19.0-vt-371-dfb56f76c7` passed the canonical database-safety
+  gate and an isolated compiled-server test: connected, one token exchange,
+  replay rejected, legacy listener unaffected and owned listeners stopped.
+- Portal owns browser cookies and its same-origin launch/callback endpoints;
+  Vibeterm pins completion to the original process generation and scope.
+  Those companion changes are separate repositories. The source review
+  approved coordinated local activation; a real credential-backed iPhone
+  acceptance result is not asserted by the synthetic tests.
 
 ## Audit and upstream lifecycle
 
