@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `tui-click-controls` (fork); `tui-id-click` (fork); `tui-click-controls-pr` (`99d94f2f6c` on upstream `dev` `5d9cd9b259`, the upstream PR head, without the instant-screen part and the `api.click` plugin hook)
 - First local commit: `feaf2e5468`
-- Current local commit(s): `feaf2e5468`, `b503ecd0e9`
+- Current local commit(s): `feaf2e5468`, `b503ecd0e9`, `eb6eccb165`, `9f2a993d24`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#53871](https://github.com/anomalyco/opencode/pull/53871) against v1 `dev`, closing issue #48563. opencode-agent[bot] closed it within a minute (v1 takes critical fixes only); it stays open for linking. Comments with the PR link on #48563, #40521 and #13242. **Needs a v2 port later.**
@@ -103,6 +103,7 @@ user:
 
 | `b503ecd0e9` | 2026-10-07 | ID clicks with the `api.click.on` hook; esc interrupt, usage, directory, footer model, Modified Files, todo clicks | `idAt`/`idUnder`/`markOwnIds`/`createIdClick` in `packages/tui/src/ui/id-click.ts`; `idClick` in `packages/tui/src/app.tsx`; `TuiClick`/`TuiClickEvent`/`TuiClickHandler` in `packages/plugin/src/tui.ts`; scoped `click.on` in `packages/opencode/src/plugin/tui/runtime.ts`; `idUnder` stand-downs and `openModel` in `packages/tui/src/routes/session/index.tsx`; `DialogModel` `current`; diff route `file` param in `packages/tui/src/feature-plugins/system/diff-viewer.tsx`; `pick` in `packages/tui/src/feature-plugins/sidebar/todo.tsx`; `test/ui/id-click.test.ts`, `test/cli/tui/diff-viewer.test.tsx`, `test/feature-plugins/sidebar-sections.test.tsx` |
 | `eb6eccb165` | 2026-10-14 | Every other clicked ID reaches `api.click.on` as kind `id`: a prefixed ID whose body starts with a hex timestamp, or a provider call ID after a `callID:` label, with the row's text before it as `before` | `PREFIXED`/`CALL_LABEL` and the `id` branch of `idAt` in `packages/tui/src/ui/id-click.ts`; `before` passed through in `idClick` in `packages/tui/src/app.tsx`; `TuiClickEvent.target.kind`/`before` in `packages/plugin/src/tui.ts`; "Clickable elements" in `packages/web/src/content/docs/tui.mdx`; `test/ui/id-click.test.ts` |
+| `9f2a993d24` | 2026-10-20 | A run of 7-40 lowercase hex holding a digit and a letter reaches `api.click.on` as kind `commit`; one no handler takes is left alone, not copied | `COMMIT` and the `commit` branch of `idAt` in `packages/tui/src/ui/id-click.ts`; the `commit` early return in `idClick` in `packages/tui/src/app.tsx`; `TuiClickEvent.target.kind` in `packages/plugin/src/tui.ts`; "Clickable elements" in `packages/web/src/content/docs/tui.mdx`; `test/ui/id-click.test.ts` |
 
 ## Verification
 
@@ -176,6 +177,9 @@ user:
 - 2026-10-14 [`ses_ee6a1ab65ffeoR9UKM5RnpfCzC`](../sessions/2026-10-14-click-any-id.md) -
   `eb6eccb165`: any other ID in the transcript reaches plugins as kind `id`;
   build and install on desktop and m4max (`1.19.0-vt-300-dfb56f76c7`).
+- 2026-10-20 [`ses_ea36bec92ffeijTeQtWfT4KIU4`](../sessions/2026-10-20-click-commit-kind.md) -
+  `9f2a993d24`: a clicked commit hash reaches plugins as kind `commit`;
+  build and install on desktop and m4max (`1.19.0-vt-372-dfb56f76c7`).
 
 ## Current maintenance notes
 

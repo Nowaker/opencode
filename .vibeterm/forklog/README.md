@@ -120,6 +120,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-10-20 `ses_ea36bec92ffeijTeQtWfT4KIU4`](./sessions/2026-10-20-click-commit-kind.md) - a clicked run of 7-40 lowercase hex reaches `api.click.on` as kind `commit`, never copied by opencode; Vibeterm asks git and opens tig, the forge page or a copy; landed as `9f2a993d24`.
 - [2026-10-19 `ses_eaca3043cffex00KfTm0HE9UJr`](./sessions/2026-10-19-delivery-provenance-view.md) - user messages show an expandable full delivery provenance from `metadata.vibeterm`; composer `deliver()` carries text-part `metadata` behind `deliveryMetadata: true`; landed as `ad24b3b1e2`.
 - [2026-10-18 `ses_eaca65b1bffeZBbc3UZRmHnrMn`](./sessions/2026-10-18-busy-indicator.md) - `busy_indicator` (`scanner` | `spinner`) chooses the running-turn animation in the prompt and `opencode run` footers; fork-only; vt-364 on both hosts; opencode-tools `d4b5a6beb13` enforces Vibeterm default `spinner`.
 - [2026-10-18 `ses_eac9cdf26ffeEPtXV2TXi0WMOu`](./sessions/2026-10-18-fork-hook-seams.md) - `experimental.session.compacting` gains the prior summary, both models and retained messages with an overridable `previousSummary`; `shell.env` gains an optional `source`; landed as `e160264623`.
