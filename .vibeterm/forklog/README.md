@@ -850,7 +850,13 @@ Serve lifetime delivery by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-16:
   vt305 inode. The CPU coordinator received installed version and operator
   restart requirements. No default Vibeterm server or Meridian restart occurred.
 
-Weekly audit by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-14:
+Weekly audit, 2026-10-21 UTC / October 20 America/Chicago, worker `ses_ea3ec7a53ffeXJgN8sQHkeA52H` for coordinator `ses_eeda1d251ffel81U5Y42j4kb33`:
+
+- The [canonical PR ledger](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#upstream-pr-ledger) records 74 successful individual REST checks at 01:32:31.530022Z-01:32:38.261240Z: all 71 author PRs plus three separate references. Complete author search returned 71 PRs on one page with `incomplete_results=false`: 35 open, 36 closed unmerged, none merged. The original 19 remain closed unmerged. Nine additions are open; #54457 closed unmerged and #54503 changed head. No state alone establishes upstream equivalence.
+- Integration and both live fork mirrors were independently checked at `9fe6a8dd1f14807cd13e4137ab4b3f2a4679cb56`; the October 14 baseline `193f0da1da89df307eba69ef4cd353227e85406c` has 93 subsequent commits. Local `github/v1` remains `dfb56f76c7637d5d34167bba405fe23f916f37e9`, not the current live upstream v1. Local-ref ancestry is not evidence that integration contains every live upstream commit.
+- [Audit session evidence](./sessions/fork-audit.md#weekly-audit-october-21) records this documentation-only pass. The canonical inventory owns full PR fields and source-session reconciliation; the historical 420-commit appendix is unchanged. No patch was removed and no runtime, build, binary, service, tab or schedule was changed. Candidates remain unmerged and unpushed pending coordinator review.
+
+Historical weekly audit by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-14:
 
 - The [canonical PR ledger](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#upstream-pr-ledger)
   supersedes the older open-PR snapshot. All 19 previously inventoried PRs

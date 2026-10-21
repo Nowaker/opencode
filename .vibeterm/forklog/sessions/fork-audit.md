@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Workdays: 2026-10-06 through 2026-10-16 (America/Chicago)
+- Workdays: 2026-10-06 through 2026-10-20 (America/Chicago)
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
@@ -14,6 +14,17 @@
 - Source baseline: `e6abfddbcc228ad755a699a6a359d20af1011013`
 - Upstream baseline: `907b3bc518`; fetched `github/dev`: `4ac0d9c3d1`
 - Forklog commit: this file's introducing commit
+
+## Weekly audit, October 21
+
+- Worker: `ses_ea3ec7a53ffeXJgN8sQHkeA52H`; scheduled coordinator: `ses_eeda1d251ffel81U5Y42j4kb33`. UTC date October 21 is local October 20. Existing seven-day snooze `sch_114248c050018JP5NPUlsfbqd8` is unchanged.
+- Scope: documentation only, preserving the dirty retry overlay, all primary changes and unrelated worktrees. Tools candidate starts at `44964c4927ceba0be148f3a9b82e74c22405d3d3`; fork candidate starts at `9fe6a8dd1f14807cd13e4137ab4b3f2a4679cb56`, independently confirmed on both live mirrors. No runtime validation or patch-disabled regression was run because this audit changes no runtime behavior and removes no patch.
+- Complete GitHub author search at 2026-10-21T01:31:37.739392Z returned 71 PRs on one page, `total_count=71`, `incomplete_results=false`. Individual endpoint checks at 01:32:31.530022Z-01:32:38.261240Z all succeeded: 71 author PRs plus three separate references. Author disposition is 35 open, 36 closed unmerged, zero merged. Nine additions are open; #54457 closed unmerged at 2026-10-14T05:39:07Z and #54503's checked head is `49691d403e76`. The original 19 remain closed unmerged; references #41247/#53303 remain closed unmerged and #46449 remains merged into v2.
+- Canonical detail and current ledger: [Vibeterm inventory](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#upstream-pr-ledger). Private raw evidence: tools data root `tmp/upstream-pr-census/run-1792546296008/`, with 74 `pull-<number>.json` responses, complete search page, `census.json` and `summary.json`; 0600 files under 0700 directory. Full SHAs, head/base branches and create/update/closure/merge/check timestamps are retained there rather than duplicating the PR inventory here.
+- Publication: coordinator review owns integration and push. Main verified historical recovered tools inventory `0e3407cd1f8` is already published beneath `44964c4927c`; the former recovery approval is obsolete, not a blocker for this audit. This record is not evidence that these new documentation candidates have been merged or pushed.
+- History: exact `193f0da1da89df307eba69ef4cd353227e85406c..9fe6a8dd1f14807cd13e4137ab4b3f2a4679cb56` contains 93 commits: 38 forklog-only, three other docs-only, two generated/SDK-only and 50 source/test/mixed. Every row has source-session attribution. Private tools evidence `tmp/weekly-audit-ses_ea3ec7a53ffe/history.json` holds every commit, changed path and trailer plus local refs. Existing indexed records cover prompt admission, TUI presentation/input, HTTP/MCP lifetime, abort provenance, fresh-database races, compaction diagnostics, test scratch, hook source and delivery provenance; the canonical inventory enumerates current source/session groups.
+- Branch-only: `image-receipt` `439a409b623725da438547fb3fee45e818cc9c99` (`ses_eb3d69eb1ffehtCEhzMIv3d3zv`, 17 files) and `private-build-root` `02a4e433afc0d9c2168107601edfc9b2877c9f75` (`ses_ea91593fbffeYXhQUv2IOy6Czq`, `.vibeterm/build.sh`) are outside integration, without matching forklog records found. Source intent and validation are not inferred from missing documentation; their owners retain disposition. Attachment successor is `ses_ea823f638ffeX0Ww6xO2BQBXQz`. This audit does not authorize landing either branch.
+- Upstream: live REST refs at 2026-10-21T01:37:46.653Z were v1 `a1f604bbe0285c1e43f00a2568c8aa19f0fb02ff` and dev `adcda1b84f6ccdc39031b9fe5998f1641472725f`. Complete post-October-14 UTC pages contain eight v1 commits and 271 dev commits. The ancestry delta from recorded v1 `dfb56f76c763` is nine commits, including an October 13 docs change outside that time window; fork/live-v1 distance is 369/9. Original 19 PR file-path/source snapshots at both refs are retained in private tools `tmp/upstream-equivalence-audit/evidence.json` (0600). Path existence/hash/line count is not semantic equivalence; missing moved paths are not a complete no-match. Independent v1 delta review found sharing removal rather than the original navigation/sidebar enhancements. No full equivalent or passing patch-disabled regression was established; every patch remains carried.
 
 ## User request
 
