@@ -127,7 +127,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 
 A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere, and nothing happens on hover. A click on an ID inside a message, tool call or footer acts on the ID, not on the message or tool around it.
 
-A TUI plugin can take clicks on IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message" | "id", value, before }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. `id` is any other prefixed ID whose body starts with a hex timestamp, as every ID opencode mints does, or a tool call ID after a `callID:` label; `before` is the text left of it on its row. IDs in message footers and the sidebar always copy.
+A TUI plugin can take clicks on IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message" | "id" | "commit", value, before }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. `id` is any other prefixed ID whose body starts with a hex timestamp, as every ID opencode mints does, or a tool call ID after a `callID:` label; `before` is the text left of it on its row. `commit` is a run of 7 to 40 lowercase hex holding both a digit and a letter, which may be a git commit hash; whether it names one is the handler's question, and one no handler takes is left alone rather than copied. IDs in message footers and the sidebar always copy.
 
 ---
 

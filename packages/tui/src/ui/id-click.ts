@@ -17,6 +17,10 @@ const PREFIXED = /^[a-z]{2,6}_[0-9a-f]{4}[0-9A-Za-z]{4,}$/
 // A provider's tool call ID has no prefix of its own, so it counts only after
 // a label naming it: `callID: "toolu_…"`.
 const CALL_LABEL = /(?:\b|_)call_?id"?\s*[:=]\s*"?$/i
+// What a git commit hash looks like: 7 to 40 lowercase hex with a digit and a
+// letter, so a number or a word made of hex letters (`defaced`) is not one.
+// Whether it names a commit is the plugin's question; opencode never copies it.
+const COMMIT = /^(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}$/
 
 type Cells = { width: number; height: number; buffers: { char: Uint32Array } }
 type Area = { x: number; y: number; width: number; height: number }
@@ -55,6 +59,7 @@ export function idAt(cells: Cells, x: number, y: number, area?: Area) {
   if (match) return { kind: KINDS[match[1] as keyof typeof KINDS], value }
   const before = cellText(cells, y, left, start)
   if (PREFIXED.test(value) || (value.length >= 8 && CALL_LABEL.test(before))) return { kind: "id" as const, value, before }
+  if (COMMIT.test(value)) return { kind: "commit" as const, value }
 }
 
 // The ID under a click, if any. Element handlers that act on a click call this

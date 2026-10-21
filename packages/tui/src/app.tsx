@@ -417,7 +417,8 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
   const ids = createIdClick()
   // A click on an ID outside a dialog is copied. One in what the AI or a tool
   // wrote goes to the plugins that asked for it first; one drawn as this
-  // session's own footer or sidebar ID is always copied.
+  // session's own footer or sidebar ID is always copied. A commit hash only
+  // ever goes to the plugins: nothing is copied when none takes it.
   const idClick = onClick((evt: MouseEvent) => {
     if (dialog.stack.length > 0) return false
     const found = idUnder(renderer.currentRenderBuffer, evt)
@@ -426,6 +427,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
     const ours =
       found.value === sessionID || (sessionID && sync.data.message[sessionID]?.some((x) => x.id === found.value))
     const target = { kind: found.kind, value: found.value, ...("before" in found ? { before: found.before } : {}) }
+    if (found.kind === "commit") return ids.run({ target, context: { sessionID } })
     if ((found.own && ours) || !ids.run({ target, context: { sessionID } }))
       copyText(clipboard, toast.show, found.value)
     return true

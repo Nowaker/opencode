@@ -46,6 +46,17 @@ describe("ui.id-click", () => {
     expect(idAt(frame(`see ${call}`), 6, 0)).toBeUndefined()
   })
 
+  test("finds a commit hash of 7 to 40 hex, but not a number, a hex word or a longer run", () => {
+    const sha = "f1e1275"
+    const full = "f1e12758b04c6e3a0d9bb2e0c0e5a9e4f3a2b1c0"
+    expect(idAt(frame(`fixed in ${sha}.`), 10, 0)).toEqual({ kind: "commit", value: sha })
+    expect(idAt(frame(full), 20, 0)).toEqual({ kind: "commit", value: full })
+    expect(idAt(frame("2026101 defaced f1e127"), 2, 0)).toBeUndefined()
+    expect(idAt(frame("2026101 defaced f1e127"), 10, 0)).toBeUndefined()
+    expect(idAt(frame("2026101 defaced f1e127"), 18, 0)).toBeUndefined()
+    expect(idAt(frame(`${full}a`), 3, 0)).toBeUndefined()
+  })
+
   test("reads only inside the clicked renderable, so a neighbouring column does not join the ID", () => {
     const cells = frame(`${SES}abc`)
     expect(idAt(cells, 3, 0)?.value).toBe(`${SES}abc`)

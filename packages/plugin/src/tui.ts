@@ -609,8 +609,12 @@ export type TuiWorkspace = {
 /** A session (`ses_`) or message (`msg_`) ID the user clicked. */
 export type TuiClickEvent = {
   target: {
-    /** `id` is any other prefixed ID, or a provider call ID after a `callID:` label. */
-    kind: "session" | "message" | "id"
+    /**
+     * `id` is any other prefixed ID, or a provider call ID after a `callID:` label.
+     * `commit` is 7 to 40 lowercase hex that may be a git commit hash; opencode
+     * does nothing with one no handler takes.
+     */
+    kind: "session" | "message" | "id" | "commit"
     value: string
     /** For `id`: what the row shows left of the ID, which says what an unprefixed one is. */
     before?: string
@@ -621,7 +625,7 @@ export type TuiClickEvent = {
   }
 }
 
-/** Return true to take the click; otherwise opencode copies the ID. */
+/** Return true to take the click; otherwise opencode copies the ID, and leaves a `commit` alone. */
 export type TuiClickHandler = (event: TuiClickEvent) => boolean | void
 
 export type TuiClick = {
