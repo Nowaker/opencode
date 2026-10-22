@@ -57,12 +57,11 @@ A prompt sent while a turn is running waits, marked **QUEUED**, until the turn r
 
 A prompt that another session or tool delivered, such as a Vibeterm `vibeterm_prompt_session` message, starts with a short `[vibeterm_metadata]` block naming the sender. The model reads only that short block. The full record of the delivery can travel with the prompt as metadata on its text part, `metadata.vibeterm = { schema: 1, provenance: { block, entries, displayText?, modelText } }`, and that metadata is never sent to the model. `modelText` is the exact text the record was written for. A TUI plugin sends the record with `api.prompt.deliver({ sessionID, text, metadata })` when `api.prompt.deliveryMetadata` is `true`; a prompt sent over the server API carries it as its text part's `metadata`.
 
-A prompt with a full record shows one more row below its text: `▸ Delivery provenance · N fields · Click to expand`. Click it, choose **Expand provenance** in the prompt's [message actions](#message-actions), or press `ctrl+x p` to open every one in the session at once. Opened, it shows:
+A prompt that starts with one or more `[vibeterm_metadata]` blocks is drawn as one box in two parts with no gap between them. The top part is the Vibeterm section: the blocks' fields with the `[vibeterm_metadata]` and `[/vibeterm_metadata]` lines hidden, under a left bar in [`vibeterm_color`](#options). The bottom part is the prompt itself, under the agent's color, without the blank lines and the `---` rule that separate it from the blocks. Each part highlights on its own when the mouse is over it.
 
-- The full text the sender wrote: `displayText` when the record has it, otherwise the prompt with its short block swapped for the full one, every field and `*_local` time included.
-- **Fields**: every field of the record, nested fields and lists in the block's own `key: value` shape.
+The Vibeterm section shows what the model reads. When the prompt has a full record, it ends with `▸ N fields in the full record · Click to expand`, and a click anywhere in the section opens it to every field of the record, every `*_local` time included. When `displayText` differs from what the model was sent, the full message as delivered follows. Click again, choose **Expand provenance** in the prompt's [message actions](#message-actions), or press `ctrl+x p` to open or close every section in the session at once. A click in the Vibeterm section never opens the message actions; an ID in it still copies on click. A right click copies the blocks, the full ones when the record is stored.
 
-**Copy provenance** copies that full text. A prompt without a record, with a record the TUI cannot read (another `schema`, or fields that disagree with the block), or whose text is no longer exactly the record's `modelText` looks exactly as before, so an edited prompt never shows a stale record.
+**Copy provenance** in the message actions copies the full text: `displayText` when the record has it, otherwise the prompt with its short block swapped for the full one. A prompt without a record, with a record the TUI cannot read (another `schema`, or fields that disagree with the block), or whose text is no longer exactly the record's `modelText` still gets its Vibeterm section with the fields it carries, but nothing to expand, so an edited prompt never shows a stale record.
 
 ## File references
 
@@ -114,7 +113,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 | Token, context and cost usage | Below the prompt, and the Context section of the session sidebar | Opens the status dialog (`/status`) |
 | Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path |
 | Model in a message footer | After `▣` and the agent below an answer | Opens the model picker with the model that turn ran on highlighted |
-| `Delivery provenance` row | Below a prompt that carries a full delivery record | Opens or closes the record. See [Delivery provenance](#delivery-provenance) |
+| Vibeterm section | The top of a delivered prompt | Opens or closes the full delivery record; a right click copies the blocks. Never opens the message actions. See [Delivery provenance](#delivery-provenance) |
 | Session title | Top of the session sidebar | Renames the session (`/rename`) |
 | Session ID | Below the session title in the sidebar | Copies the ID |
 | Message ID (`msg_...`) | Message footers, when [`footer.message_id`](#footer) shows them | Copies the ID |
@@ -542,6 +541,7 @@ No key is shared between the prompt and conversation scrolling, so each one does
 - `scroll_acceleration.enabled` - Enable macOS-style scroll acceleration for smooth, natural scrolling. When enabled, scroll speed increases with rapid scrolling gestures and stays precise for slower movements. **This setting takes precedence over `scroll_speed` and overrides it when enabled.**
 - `scroll_speed` - Controls how fast the TUI scrolls when using scroll commands (minimum: `0.001`, supports decimal values). Defaults to `3`. **Note: This is ignored if `scroll_acceleration.enabled` is set to `true`.**
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
+- `vibeterm_color` - The left bar of the [Vibeterm section](#delivery-provenance) a delivered prompt starts with: `"#rrggbb"`, or an ANSI color number from 0 to 255, which your terminal's own palette draws. Defaults to `13`, bright magenta, the color of `VIBETERM` in Vibeterm's top bar. Vibeterm sets it from its brand color.
 - `busy_indicator` - The animation left of `esc interrupt` while a turn runs, in the TUI and in `opencode run`. `"scanner"` (default) slides a bar left and right; `"spinner"` turns a single cell, like the other busy notices such as **Sending prompt**. The scanner holds still for most of its cycle, so on a lagging host many of its frames look the same. Every spinner frame draws a different glyph, so you can still tell the turn is alive.
 - `footer` - Chooses which details message footers and other transcript entries show: agent, model, variant, time, duration, total and message ID. See [Footer](#footer).
 - `datetime_format` - How times and dates are written. See [Date and time format](#date-and-time-format).

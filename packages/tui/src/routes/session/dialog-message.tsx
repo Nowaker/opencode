@@ -77,7 +77,7 @@ export function DialogMessage(props: {
         {
           title: provenance.expanded ? "Collapse provenance" : "Expand provenance",
           value: "message.provenance.toggle",
-          description: "the full delivery record below the message",
+          description: "the full delivery record in the Vibeterm section",
           onSelect: (dialog: DialogContext) => {
             provenance.set(!provenance.expanded)
             dialog.clear()

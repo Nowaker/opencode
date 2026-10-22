@@ -30,6 +30,16 @@ export const ScrollAcceleration = Schema.Struct({
 export const DiffStyle = Schema.Literals(["auto", "stacked"]).annotate({
   description: "Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column",
 })
+export const VibetermColor = Schema.Union([
+  Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/)),
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 })),
+]).annotate({
+  description: [
+    "Left bar of the Vibeterm section a delivered message starts with: '#rrggbb', or an ANSI color number 0-255,",
+    "which the terminal's own palette draws (default: 13, bright magenta, Vibeterm's brand color)",
+  ].join(" "),
+})
+
 export const BusyIndicator = Schema.Literals(["scanner", "spinner"]).annotate({
   description: [
     "What the prompt footer and opencode run show while a turn runs: 'scanner' (default) slides a bar left and",
@@ -788,6 +798,7 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   busy_indicator: Schema.optional(BusyIndicator),
+  vibeterm_color: Schema.optional(VibetermColor),
   keep_scroll_on_submit: Schema.optional(Schema.Boolean).annotate({
     description:
       "Keep the session scroll position when a prompt is submitted instead of jumping to the bottom (default: false). Set here, it decides on every start and /keep-scroll lasts until the TUI exits; unset, /keep-scroll is remembered",

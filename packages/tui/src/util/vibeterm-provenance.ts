@@ -122,6 +122,27 @@ export function fullProvenanceText(part: ProvenancePart) {
   return `${provenance.block}${part.text.slice(leading[0].length)}`
 }
 
+// Fork-only, not part of the codec mirror: the `[vibeterm_metadata]` blocks a text starts with, one
+// or several in a row, apart from the rest. `head` is those blocks as written, `fields` the lines
+// inside them with the tag lines dropped, and `body` what follows, without the blank lines and the
+// one `---` rule a delivery puts between them. Undefined when the text does not start with a block.
+export function splitVibetermHead(text: string) {
+  const fields: string[] = []
+  let at = 0
+  while (true) {
+    const block = LEADING_BLOCK.exec(text.slice(at))
+    if (!block) break
+    fields.push(...block[0].split(/\r?\n/).slice(1, -1))
+    at += block[0].length
+    const gap = /^(?:[ \t]*\r?\n)*(?=\[vibeterm_metadata\]\r?\n)/.exec(text.slice(at))
+    if (!gap) break
+    at += gap[0].length
+  }
+  if (!at) return
+  const separator = /^(?:[ \t]*\r?\n)*(?:---[ \t]*(?:\r?\n|$))?(?:[ \t]*\r?\n)*/.exec(text.slice(at))
+  return { head: text.slice(0, at), fields: fields.join("\n"), body: text.slice(at + (separator?.[0].length ?? 0)) }
+}
+
 // Every entry as `key: value` lines, maps indented and each record a `- ` item, the shape the
 // block itself uses.
 export function provenanceFields(entries: readonly MetadataEntry[]) {

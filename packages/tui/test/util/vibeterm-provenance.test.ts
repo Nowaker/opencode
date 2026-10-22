@@ -7,6 +7,7 @@ import {
   provenanceView,
   readPartProvenance,
   readVibetermProvenance,
+  splitVibetermHead,
 } from "../../src/util/vibeterm-provenance"
 
 // Cases of opencode-tools _lib/vibeterm-provenance/fixtures/tui-fork.json, the shared codec's
@@ -84,4 +85,19 @@ test("provenanceFields lists every entry in the block's own shape", () => {
   expect(provenanceFields(entries)).toBe(
     "call: x\nmap:\n  item: first\n  item: second\nrecords:\n- id: one\n  at_local: kept\n- id: two",
   )
+})
+
+test("splitVibetermHead takes every leading block and the one rule after them, and nothing else", () => {
+  const one = "[vibeterm_metadata]\na: 1\n[/vibeterm_metadata]"
+  const two = "[vibeterm_metadata]\nb: 2\nc: 3\n[/vibeterm_metadata]"
+  expect(splitVibetermHead(`${one}\n\n${two}\n\n---\n\nbody\n---\nmore`)).toEqual({
+    head: `${one}\n\n${two}`,
+    fields: "a: 1\nb: 2\nc: 3",
+    body: "body\n---\nmore",
+  })
+  expect(splitVibetermHead(`${one}\nbody`)?.body).toBe("body")
+  expect(splitVibetermHead(one)).toEqual({ head: one, fields: "a: 1", body: "" })
+  expect(splitVibetermHead(`${one}\n\nbody\n\n${two}`)?.fields).toBe("a: 1")
+  expect(splitVibetermHead(`text\n${one}`)).toBeUndefined()
+  expect(splitVibetermHead("[vibeterm_metadata]\nnever closed")).toBeUndefined()
 })

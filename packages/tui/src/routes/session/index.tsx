@@ -87,9 +87,10 @@ import {
   messageProvenance,
   provenanceAll,
   provenanceExpanded,
-  ProvenanceView,
   setProvenance,
   toggleAllProvenance,
+  vibetermHead,
+  VibetermSection,
 } from "./provenance"
 import {
   JSON_AS_YAML,
@@ -1868,7 +1869,8 @@ function UserMessage(props: {
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
   const shown = createMemo(() => ctx.filter()[TranscriptFilter.userKind(props.parts)].shown)
-  const provenance = createMemo(() => messageProvenance(props.parts))
+  const head = createMemo(() => vibetermHead(props.parts))
+  const body = createMemo(() => head()?.body ?? text())
 
   return (
     <>
@@ -1877,76 +1879,83 @@ function UserMessage(props: {
           id={props.message.id}
           visible={shown()}
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-          border={["left"]}
-          borderColor={color()}
-          customBorderChars={SplitBorder.customBorderChars}
           marginTop={props.index === 0 ? 0 : 1}
         >
-          <box
-            onMouseOver={() => {
-              setHover(true)
-            }}
-            onMouseOut={() => {
-              setHover(false)
-            }}
-            onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
-            paddingLeft={2}
-            backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
-            flexShrink={0}
-          >
-            <UserText text={text()} />
-            <For each={provenance()}>
-              {(view) => (
-                <ProvenanceView id={view.id} provenance={view.provenance}>
-                  <UserText text={view.fullText} />
-                </ProvenanceView>
-              )}
-            </For>
-            <Show when={files().length}>
-              <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
-                <For each={files()}>
-                  {(file) => {
-                    const directory = file.mime === "application/x-directory"
-                    return (
-                      <text fg={theme.text}>
-                        <span style={{ bg: theme.secondary, fg: theme.background }}>
-                          {directory ? " Directory " : " File "}
-                        </span>
-                        <span style={{ bg: theme.backgroundElement, fg: theme.textMuted }}> {file.filename} </span>
-                      </text>
-                    )
-                  }}
-                </For>
-              </box>
-            </Show>
-            <Show when={metadataVisible()}>
-              <text
-                ref={markOwnIds}
-                marginTop={userFooterGap(text(), files().length, time() || messageID()) ? 1 : 0}
-                fg={theme.textMuted}
-              >
-                <Show
-                  when={queued()}
-                  fallback={
-                    <Show when={time()}>
-                      <span style={{ fg: theme.textMuted }}>
-                        {Locale.todayTimeOrDateTime(props.message.time.created, ctx.tui.datetime_format)}
-                      </span>
-                    </Show>
-                  }
+          <Show when={head()}>
+            {(found) => (
+              <VibetermSection head={found()}>
+                <UserText text={found().full?.body ?? ""} />
+              </VibetermSection>
+            )}
+          </Show>
+          <box border={["left"]} borderColor={color()} customBorderChars={SplitBorder.customBorderChars}>
+            <box
+              onMouseOver={() => {
+                setHover(true)
+              }}
+              onMouseOut={() => {
+                setHover(false)
+              }}
+              onMouseUp={props.onMouseUp}
+              paddingTop={head() ? 0 : 1}
+              paddingBottom={1}
+              paddingLeft={2}
+              backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+              flexShrink={0}
+            >
+              <Show when={body()}>
+                <UserText text={body()} />
+              </Show>
+              <Show when={files().length}>
+                <box
+                  flexDirection="row"
+                  paddingBottom={metadataVisible() ? 1 : 0}
+                  paddingTop={1}
+                  gap={1}
+                  flexWrap="wrap"
                 >
-                  <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
-                </Show>
-                <Show when={messageID()}>
-                  <span style={{ fg: theme.textMuted }}>
-                    {queued() || time() ? " · " : ""}
-                    {props.message.id}
-                  </span>
-                </Show>
-              </text>
-            </Show>
+                  <For each={files()}>
+                    {(file) => {
+                      const directory = file.mime === "application/x-directory"
+                      return (
+                        <text fg={theme.text}>
+                          <span style={{ bg: theme.secondary, fg: theme.background }}>
+                            {directory ? " Directory " : " File "}
+                          </span>
+                          <span style={{ bg: theme.backgroundElement, fg: theme.textMuted }}> {file.filename} </span>
+                        </text>
+                      )
+                    }}
+                  </For>
+                </box>
+              </Show>
+              <Show when={metadataVisible()}>
+                <text
+                  ref={markOwnIds}
+                  marginTop={body() && userFooterGap(body(), files().length, time() || messageID()) ? 1 : 0}
+                  fg={theme.textMuted}
+                >
+                  <Show
+                    when={queued()}
+                    fallback={
+                      <Show when={time()}>
+                        <span style={{ fg: theme.textMuted }}>
+                          {Locale.todayTimeOrDateTime(props.message.time.created, ctx.tui.datetime_format)}
+                        </span>
+                      </Show>
+                    }
+                  >
+                    <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                  </Show>
+                  <Show when={messageID()}>
+                    <span style={{ fg: theme.textMuted }}>
+                      {queued() || time() ? " · " : ""}
+                      {props.message.id}
+                    </span>
+                  </Show>
+                </text>
+              </Show>
+            </box>
           </box>
         </box>
       </Show>

@@ -1,8 +1,9 @@
-import { CliRenderEvents, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { CliRenderEvents, RGBA, SyntaxStyle, type TerminalColors } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import {
   DEFAULT_THEMES,
   addTheme,
+  ansiToRgba,
   allThemes,
   generateSubtleSyntax,
   generateSyntax,
@@ -20,7 +21,7 @@ import {
   type ThemeJson,
 } from "../theme"
 import { toolCodeTheme } from "../theme/tool-code"
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useKV } from "./kv"
@@ -150,6 +151,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       })
     })
 
+    // The terminal's own 16 colors once detected, so an ANSI number draws as that terminal draws it.
+    const [palette, setPalette] = createSignal<readonly (string | null)[]>([])
     let systemThemeSignature: string | undefined
     let systemThemeMode: "dark" | "light" | undefined
     let hasResolvedSystemTheme = false
@@ -157,6 +160,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       return renderer
         .getPalette({ size: 16 })
         .then((colors: TerminalColors) => {
+          if (colors.palette[0]) setPalette(colors.palette)
           if (!colors.palette[0]) {
             if (hasResolvedSystemTheme) return
             setSystemTheme(undefined)
@@ -272,6 +276,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const syntax = createSyntaxStyleMemo(() => generateSyntax(values()))
     const subtleSyntax = createSyntaxStyleMemo(() => generateSubtleSyntax(values()))
     const toolSyntax = createSyntaxStyleMemo(() => generateSyntax(toolCodeTheme(values())))
+    const vibeterm = createMemo(() => {
+      const color = config.vibeterm_color ?? 13
+      if (typeof color === "string") return RGBA.fromHex(color)
+      const detected = palette()[color]
+      return detected ? RGBA.fromHex(detected) : ansiToRgba(color)
+    })
 
     return {
       theme: new Proxy(values(), {
@@ -288,6 +298,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       syntax,
       subtleSyntax,
       toolSyntax,
+      /** The Vibeterm section's bar: tui.json `vibeterm_color`, Vibeterm's brand color by default. */
+      vibeterm,
       mode: () => store.mode,
       locked: () => store.lock !== undefined,
       lock: () => pin(store.mode),
