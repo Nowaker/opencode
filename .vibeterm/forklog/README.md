@@ -117,8 +117,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Choose the running-turn animation: scanner or one-cell spinner](./features/2026-10-18-busy-indicator.md)
 - [Let the compacting hook project the prior summary](./features/2026-10-18-compacting-hook-summary.md)
 - [Expandable delivery provenance on user messages](./features/2026-10-19-delivery-provenance-view.md)
+- [Snapshot cleanup repair, op timing and oversize warning](./features/2026-10-27-snapshot-housekeeping.md)
 
 ## Session records
+
+- [2026-10-27 `ses_e8079207bfferzKUfQEvpgORlL`](./sessions/2026-10-27-snapshot-housekeeping.md) - snapshot gc repairs empty objects and missing alternates, deletes its own partial packs, runs at most hourly per store with backoff; `snapshot op` timing lines and `snapshot oversized` warnings (`snapshot_oversize_bytes`); landed as `593d18abc2`, `72f013ccac`; vt-376 on both hosts; issue #59766, PR blocked.
 
 - [2026-10-22 `ses_eaca3043cffex00KfTm0HE9UJr`](./sessions/2026-10-22-vibeterm-section.md) - a delivered prompt's `[vibeterm_metadata]` blocks become a Vibeterm section above it, with their own hover, click-to-expand and right-click copy, under tui.json `vibeterm_color`; landed as `6df5f316a7`; vt-373 on both hosts.
 - [2026-10-20 `ses_ea36bec92ffeijTeQtWfT4KIU4`](./sessions/2026-10-20-click-commit-kind.md) - a clicked run of 7-40 lowercase hex reaches `api.click.on` as kind `commit`, never copied by opencode; Vibeterm asks git and opens tig, the forge page or a copy; landed as `9f2a993d24`.
