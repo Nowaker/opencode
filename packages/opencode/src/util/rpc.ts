@@ -11,17 +11,16 @@ export function listen(rpc: Definition) {
     // A request that throws must still be answered, or its caller waits forever.
     const reply = await Promise.resolve()
       .then(() => rpc[parsed.method](parsed.input))
-      .then(
-        (result) => ({ type: "rpc.result", result, id: parsed.id }),
-        (error) => ({
-          type: "rpc.result",
-          // Some failures keep their text on the cause: a taken --port rejects with an empty ServeError.
-          error: errorMessage(error instanceof Error && !error.message && error.cause ? error.cause : error),
-          id: parsed.id,
-        }),
-      )
-    postMessage(JSON.stringify(reply))
+      .then((result) => JSON.stringify({ type: "rpc.result", result, id: parsed.id }))
+      .catch((error) => JSON.stringify({ type: "rpc.result", error: failureMessage(error), id: parsed.id }))
+    postMessage(reply)
   }
+}
+
+// Some failures keep their text on the cause: a taken --port rejects with an empty ServeError.
+function failureMessage(error: unknown): string {
+  if (error instanceof Error && !error.message && error.cause) return failureMessage(error.cause)
+  return errorMessage(error)
 }
 
 export function emit(event: string, data: unknown) {
@@ -39,11 +38,10 @@ export function client<T extends Definition>(target: {
     const parsed = JSON.parse(evt.data)
     if (parsed.type === "rpc.result") {
       const request = pending.get(parsed.id)
-      if (request) {
-        pending.delete(parsed.id)
-        if (typeof parsed.error === "string") request.reject(new Error(parsed.error))
-        else request.resolve(parsed.result)
-      }
+      if (!request) return
+      pending.delete(parsed.id)
+      if (typeof parsed.error === "string") return request.reject(new Error(parsed.error))
+      return request.resolve(parsed.result)
     }
     if (parsed.type === "rpc.event") {
       const handlers = listeners.get(parsed.event)
