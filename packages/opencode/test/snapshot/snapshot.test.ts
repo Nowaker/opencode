@@ -6,7 +6,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, Logger } from "effect"
 import { Snapshot } from "../../src/snapshot"
 import { Global } from "@opencode-ai/core/global"
 import { Hash } from "@opencode-ai/core/util/hash"
@@ -388,6 +388,127 @@ it.instance(
     }),
   ),
   { git: true },
+)
+
+const captureLogs = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const lines: { message: unknown; level: string; fields: Record<string, unknown> }[] = []
+    const capture = Logger.make((options) => {
+      const parts = Array.isArray(options.message) ? options.message : [options.message]
+      lines.push({ message: parts[0], level: options.logLevel, fields: Object.assign({}, ...parts.slice(1)) })
+    })
+    const value = yield* self.pipe(Effect.provideService(Logger.CurrentLoggers, new Set([capture])))
+    return { value, lines, named: (message: string) => lines.filter((line) => line.message === message) }
+  })
+
+it.instance(
+  "track and patch log one snapshot op line with the session and what they staged",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const gitdir = yield* snapshotStore(tmp.path)
+      const store = path.relative(path.join(Global.Path.data, "snapshot"), gitdir).replaceAll("\\", "/")
+      yield* write(`${tmp.path}/a.txt`, "12345")
+      yield* write(`${tmp.path}/sub/new.txt`, "1234567")
+
+      const tracked = yield* captureLogs(snapshot.track("ses_track"))
+      expect(tracked.named("snapshot op")).toHaveLength(1)
+      const track = tracked.named("snapshot op")[0]!.fields
+      expect(track).toMatchObject({ op: "track", sessionID: "ses_track", files: 2, added_bytes: 12, store, ok: true })
+      expect(Number.isInteger(track.duration_ms)).toBe(true)
+
+      yield* write(`${tmp.path}/b.txt`, "123")
+      const patched = yield* captureLogs(snapshot.patch(before, "ses_patch"))
+      expect(patched.named("snapshot op").map((line) => line.fields)).toEqual([
+        {
+          op: "patch",
+          sessionID: "ses_patch",
+          duration_ms: expect.any(Number),
+          files: 1,
+          added_bytes: 3,
+          store,
+          ok: true,
+        },
+      ])
+      expect(patched.value.files).toHaveLength(3)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "cleanup logs one snapshot op line without a session, also when it waits for its schedule",
+  withTrackedSnapshot(({ snapshot }) =>
+    Effect.gen(function* () {
+      const first = yield* captureLogs(snapshot.cleanup())
+      const second = yield* captureLogs(snapshot.cleanup())
+      expect(first.named("snapshot op").map((line) => line.fields)).toEqual([
+        expect.objectContaining({ op: "cleanup", files: 0, added_bytes: 0, ok: true, result: "collected" }),
+      ])
+      expect(second.named("snapshot op").map((line) => line.fields)).toEqual([
+        expect.objectContaining({ op: "cleanup", ok: true, result: "scheduled" }),
+      ])
+      expect(first.named("snapshot op")[0]!.fields).not.toHaveProperty("sessionID")
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "an oversized snapshot is still recorded and warns with its largest files",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/dist/bundle.js`, "x".repeat(1500))
+      yield* write(`${tmp.path}/small.txt`, "tiny")
+      const tracked = yield* captureLogs(snapshot.track("ses_big"))
+
+      const warnings = tracked.named("snapshot oversized")
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]!.level).toBe("Warn")
+      expect(warnings[0]!.fields).toMatchObject({
+        op: "track",
+        sessionID: "ses_big",
+        files: 2,
+        added_bytes: 1504,
+        threshold_bytes: 1000,
+        top: "dist/bundle.js:1500,small.txt:4",
+      })
+      expect((yield* snapshot.patch(before)).files).toContain(fwd(tmp.path, "dist", "bundle.js"))
+    }),
+  ),
+  { git: true, config: { snapshot_oversize_bytes: 1000 } },
+)
+
+// 28 files under the 2 MB per-file limit add 53.2 MB, just over the 50 MiB (52.4 MB) default.
+const trackPastDefaultThreshold = withTrackedSnapshot(({ tmp, snapshot }) =>
+  Effect.gen(function* () {
+    const content = "x".repeat(1_900_000)
+    yield* Effect.forEach(
+      Array.from({ length: 28 }, (_, i) => i),
+      (i) => write(`${tmp.path}/out/${i}.txt`, content),
+      { concurrency: 8, discard: true },
+    )
+    const tracked = yield* captureLogs(snapshot.track())
+    expect(tracked.named("snapshot op")[0]!.fields).toMatchObject({ files: 28, added_bytes: 28 * 1_900_000 })
+    return tracked.named("snapshot oversized")
+  }),
+)
+
+it.instance(
+  "the oversize warning defaults to 50 MiB",
+  Effect.gen(function* () {
+    const warnings = yield* trackPastDefaultThreshold
+    expect(warnings.map((line) => line.fields.threshold_bytes)).toEqual([50 * 1024 * 1024])
+    expect(String(warnings[0]!.fields.top).split(",")).toHaveLength(10)
+  }),
+  { git: true },
+)
+
+it.instance(
+  "snapshot_oversize_bytes false turns the warning off",
+  Effect.gen(function* () {
+    expect(yield* trackPastDefaultThreshold).toEqual([])
+  }),
+  { git: true, config: { snapshot_oversize_bytes: false } },
 )
 
 it.instance(

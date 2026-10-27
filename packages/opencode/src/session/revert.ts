@@ -101,7 +101,7 @@ const layer = Layer.effect(
       if (!rev) return session
       if (input.files === false) return yield* revertMessages(session, rev)
 
-      rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
+      rev.snapshot = session.revert?.snapshot ?? (yield* snap.track(input.sessionID))
       if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
       const kept = yield* snap.revert(patches)
       if (kept.length) yield* reportKept(input.sessionID, kept)
@@ -177,7 +177,15 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Database.node, Session.node, Snapshot.node, Storage.node, EventV2Bridge.node, SessionSummary.node, SessionRunState.node],
+  deps: [
+    Database.node,
+    Session.node,
+    Snapshot.node,
+    Storage.node,
+    EventV2Bridge.node,
+    SessionSummary.node,
+    SessionRunState.node,
+  ],
 })
 
 export * as SessionRevert from "./revert"

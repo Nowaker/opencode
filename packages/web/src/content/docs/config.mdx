@@ -670,6 +670,19 @@ For large repositories or projects with many submodules, the snapshot system can
 
 Note that disabling snapshots means changes made by the agent cannot be rolled back through the UI.
 
+New untracked files over 2 MB are never recorded. When one snapshot records more than `snapshot_oversize_bytes` of file content (default 50 MiB), OpenCode logs a `snapshot oversized` warning naming the 10 largest files, so build output or binaries that are missing from `.gitignore` can be found. The files are still recorded, so undo and revert keep working for them. Set it to `false` to turn the warning off.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "snapshot_oversize_bytes": 104857600
+}
+```
+
+Every snapshot `track`, `patch` and `cleanup` logs one `snapshot op` line with `op`, `sessionID` (not for cleanup), `duration_ms`, `files`, `added_bytes`, `store` and `ok`; cleanup adds `result` (`collected`, `scheduled`, `busy` or `failed`).
+
+The hourly cleanup collects each snapshot store at most once an hour across all OpenCode processes. It repairs stores that git cannot collect (empty objects, a deleted alternate repository), deletes the partial pack a failed or interrupted run leaves behind, and backs off up to a day while a store keeps failing.
+
 ---
 
 ### Autoupdate

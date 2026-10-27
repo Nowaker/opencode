@@ -26,9 +26,17 @@ const interval = Duration.toMillis(Duration.hours(1))
 const backoffCap = Duration.toMillis(Duration.days(1))
 const CleanupPlan = Schema.Struct({ failures: Schema.Number, next: Schema.Number })
 const decodePlan = Schema.decodeUnknownOption(Schema.fromJsonString(CleanupPlan))
+const oversize = 50 * 1024 * 1024
+const topLimit = 10
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
+interface Added {
+  readonly files: number
+  readonly bytes: number
+  readonly sizes: ReadonlyArray<readonly [string, number]>
+}
+const nothingAdded: Added = { files: 0, bytes: 0, sizes: [] }
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
   readonly text: string
@@ -40,8 +48,8 @@ type State = Omit<Interface, "init">
 export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly cleanup: () => Effect.Effect<void>
-  readonly track: () => Effect.Effect<string | undefined>
-  readonly patch: (hash: string) => Effect.Effect<Patch>
+  readonly track: (sessionID?: string) => Effect.Effect<string | undefined>
+  readonly patch: (hash: string, sessionID?: string) => Effect.Effect<Patch>
   readonly restore: (snapshot: string) => Effect.Effect<void>
   /** Returns the files it left as they are because the snapshot store no longer has their earlier content. */
   readonly revert: (patches: Patch[]) => Effect.Effect<string[]>
@@ -149,7 +157,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const stage = Effect.fnUntraced(function* (files: string[]) {
-          if (!files.length) return
+          if (!files.length) return true
           const result = yield* git(
             [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
             {
@@ -157,11 +165,12 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               stdin: encodeTopLevelLiteralPathspecs(files),
             },
           )
-          if (result.code === 0) return
+          if (result.code === 0) return true
           yield* Effect.logWarning("failed to add snapshot files", {
             exitCode: result.code,
             stderr: result.stderr,
           })
+          return false
         })
 
         const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
@@ -263,7 +272,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           const tracked = diff.text.split("\0").filter(Boolean)
           const untracked = other.text.split("\0").filter(Boolean)
           const all = Array.from(new Set([...tracked, ...untracked]))
-          if (!all.length) return
+          if (!all.length) return nothingAdded
 
           // Resolve source-repo ignore rules against the exact candidate set.
           // --no-index keeps this pattern-based even when a path is already tracked.
@@ -277,29 +286,36 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           }
 
           const allow = all.filter((item) => !ignored.has(item))
-          if (!allow.length) return
+          if (!allow.length) return nothingAdded
 
-          const large = new Set(
-            (yield* Effect.all(
+          const sizes = new Map(
+            yield* Effect.all(
               allow.map((item) =>
                 fs
                   .stat(path.join(state.worktree, item))
                   .pipe(Effect.catch(() => Effect.void))
                   .pipe(
                     Effect.map((stat) => {
-                      if (!stat || stat.type !== "File") return
-                      const size = typeof stat.size === "bigint" ? Number(stat.size) : stat.size
-                      return size > limit ? item : undefined
+                      if (!stat || stat.type !== "File") return [item, 0] as const
+                      return [item, typeof stat.size === "bigint" ? Number(stat.size) : stat.size] as const
                     }),
                   ),
               ),
               { concurrency: 8 },
-            )).filter((item): item is string => Boolean(item)),
+            ),
           )
-          const block = new Set(untracked.filter((item) => large.has(item)))
+          const untrackedSet = new Set(untracked)
+          const block = new Set(allow.filter((item) => untrackedSet.has(item) && (sizes.get(item) ?? 0) > limit))
           yield* sync(Array.from(block))
           // Stage only the allowed candidate paths so snapshot updates stay scoped.
-          yield* stage(allow.filter((item) => !block.has(item)))
+          const staged = allow.filter((item) => !block.has(item))
+          if (!(yield* stage(staged))) return
+          const stagedSizes = staged.map((item) => [item, sizes.get(item) ?? 0] as const)
+          return {
+            files: staged.length,
+            bytes: stagedSizes.reduce((sum, item) => sum + item[1], 0),
+            sizes: stagedSizes,
+          } satisfies Added
         })
 
         const pack = path.join(state.gitdir, "objects", "pack")
@@ -392,42 +408,97 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         // Every process that opens the project runs cleanup a minute after start, so the schedule lives in the
         // store: short-lived processes would otherwise repack the whole store on every launch and get killed
         // mid-repack. Failures back off by doubling the interval, up to a day.
+        const collect = Effect.fnUntraced(function* () {
+          const now = yield* Clock.currentTimeMillis
+          const plan = Option.getOrElse(decodePlan(yield* read(planFile)), () => ({ failures: 0, next: 0 }))
+          if (now < plan.next) return "scheduled" as const
+          yield* dropMissingAlternates()
+          const first = yield* gc()
+          const result =
+            first.code !== 0 && first.stderr.includes(" is empty") && (yield* dropEmptyObjects()) ? yield* gc() : first
+          if (busy(result)) return "busy" as const
+          if (result.code === 0) {
+            yield* fs
+              .writeFileString(planFile, JSON.stringify({ failures: 0, next: now + interval }))
+              .pipe(Effect.ignore)
+            yield* Effect.logInfo("cleanup", { prune })
+            return "collected" as const
+          }
+          const failures = plan.failures + 1
+          const delay = Math.min(interval * 2 ** failures, backoffCap)
+          yield* fs.writeFileString(planFile, JSON.stringify({ failures, next: now + delay })).pipe(Effect.ignore)
+          yield* Effect.logWarning("cleanup failed", {
+            exitCode: result.code,
+            stderr: result.stderr,
+            failures,
+            retryInMs: delay,
+          })
+          return "failed" as const
+        })
+
+        const store = path.relative(path.join(Global.Path.data, "snapshot"), state.gitdir).replaceAll("\\", "/")
+
+        // One "snapshot op" line per track, patch and cleanup on an enabled store; Vibeterm parses these fields.
+        // duration_ms includes the wait for the store lock, since the caller's step waits for it too.
+        const report = Effect.fnUntraced(function* (input: {
+          op: "track" | "patch" | "cleanup"
+          sessionID?: string
+          start: number
+          added: Added | undefined
+          ok: boolean
+          result?: string
+        }) {
+          yield* Effect.logInfo("snapshot op", {
+            op: input.op,
+            ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+            duration_ms: Math.round((yield* Clock.currentTimeMillis) - input.start),
+            files: input.added?.files ?? 0,
+            added_bytes: input.added?.bytes ?? 0,
+            store,
+            ok: input.ok,
+            ...(input.result ? { result: input.result } : {}),
+          })
+        })
+
+        // Content is still recorded when it is oversized: skipping it would make undo and revert silently miss
+        // those files, and the warning is enough for a person or agent to fix .gitignore.
+        const guard = Effect.fnUntraced(function* (
+          op: "track" | "patch",
+          sessionID: string | undefined,
+          added?: Added,
+        ) {
+          if (!added) return
+          const threshold = (yield* config.get()).snapshot_oversize_bytes ?? oversize
+          if (threshold === false || added.bytes <= threshold) return
+          yield* Effect.logWarning("snapshot oversized", {
+            op,
+            ...(sessionID ? { sessionID } : {}),
+            store,
+            files: added.files,
+            added_bytes: added.bytes,
+            threshold_bytes: threshold,
+            top: added.sizes
+              .toSorted((a, b) => b[1] - a[1])
+              .slice(0, topLimit)
+              .map((item) => `${item[0]}:${item[1]}`)
+              .join(","),
+          })
+        })
+
         const cleanup = Effect.fnUntraced(function* () {
+          const start = yield* Clock.currentTimeMillis
           return yield* locked(
             Effect.gen(function* () {
               if (!(yield* enabled())) return
               if (!(yield* exists(state.gitdir))) return
-              const now = yield* Clock.currentTimeMillis
-              const plan = Option.getOrElse(decodePlan(yield* read(planFile)), () => ({ failures: 0, next: 0 }))
-              if (now < plan.next) return
-              yield* dropMissingAlternates()
-              const first = yield* gc()
-              const result =
-                first.code !== 0 && first.stderr.includes(" is empty") && (yield* dropEmptyObjects())
-                  ? yield* gc()
-                  : first
-              if (busy(result)) return
-              if (result.code === 0) {
-                yield* fs
-                  .writeFileString(planFile, JSON.stringify({ failures: 0, next: now + interval }))
-                  .pipe(Effect.ignore)
-                yield* Effect.logInfo("cleanup", { prune })
-                return
-              }
-              const failures = plan.failures + 1
-              const delay = Math.min(interval * 2 ** failures, backoffCap)
-              yield* fs.writeFileString(planFile, JSON.stringify({ failures, next: now + delay })).pipe(Effect.ignore)
-              yield* Effect.logWarning("cleanup failed", {
-                exitCode: result.code,
-                stderr: result.stderr,
-                failures,
-                retryInMs: delay,
-              })
+              const result = yield* collect()
+              yield* report({ op: "cleanup", start, added: nothingAdded, ok: result !== "failed", result })
             }),
           )
         })
 
-        const track = Effect.fnUntraced(function* () {
+        const track = Effect.fnUntraced(function* (sessionID?: string) {
+          const start = yield* Clock.currentTimeMillis
           return yield* locked(
             Effect.gen(function* () {
               if (!(yield* enabled())) return
@@ -449,19 +520,29 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 yield* seed()
                 yield* Effect.logInfo("initialized")
               }
-              yield* add()
+              const added = yield* add()
               const result = yield* git(args(["write-tree"]), { cwd: state.directory })
               const hash = result.text.trim()
               yield* Effect.logInfo("tracking", { hash, cwd: state.directory, git: state.gitdir })
+              yield* report({
+                op: "track",
+                sessionID,
+                start,
+                added,
+                ok: added !== undefined && result.code === 0 && hash !== "",
+              })
+              yield* guard("track", sessionID, added)
               return hash
             }),
           )
         })
 
-        const patch = Effect.fnUntraced(function* (hash: string) {
+        const patch = Effect.fnUntraced(function* (hash: string, sessionID?: string) {
+          const start = yield* Clock.currentTimeMillis
           return yield* locked(
             Effect.gen(function* () {
-              yield* add()
+              const added = yield* add()
+              yield* guard("patch", sessionID, added)
               const result = yield* git(
                 [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
                 {
@@ -470,6 +551,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               )
               if (result.code !== 0) {
                 yield* Effect.logWarning("failed to get diff", { hash, exitCode: result.code })
+                yield* report({ op: "patch", sessionID, start, added, ok: false })
                 return { hash, files: [] }
               }
               const files = result.text
@@ -480,6 +562,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
               // Hide ignored-file removals from the user-facing patch output.
               const ignored = yield* ignore(files)
+              yield* report({ op: "patch", sessionID, start, added, ok: added !== undefined })
 
               return {
                 hash,
@@ -896,11 +979,11 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
       cleanup: Effect.fn("Snapshot.cleanup")(function* () {
         return yield* InstanceState.useEffect(state, (s) => s.cleanup())
       }),
-      track: Effect.fn("Snapshot.track")(function* () {
-        return yield* InstanceState.useEffect(state, (s) => s.track())
+      track: Effect.fn("Snapshot.track")(function* (sessionID?: string) {
+        return yield* InstanceState.useEffect(state, (s) => s.track(sessionID))
       }),
-      patch: Effect.fn("Snapshot.patch")(function* (hash: string) {
-        return yield* InstanceState.useEffect(state, (s) => s.patch(hash))
+      patch: Effect.fn("Snapshot.patch")(function* (hash: string, sessionID?: string) {
+        return yield* InstanceState.useEffect(state, (s) => s.patch(hash, sessionID))
       }),
       restore: Effect.fn("Snapshot.restore")(function* (snapshot: string) {
         return yield* InstanceState.useEffect(state, (s) => s.restore(snapshot))

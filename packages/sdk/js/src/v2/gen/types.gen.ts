@@ -1954,6 +1954,10 @@ export type Config = {
     ignore?: Array<string>
   }
   snapshot?: boolean
+  /**
+   * Log a 'snapshot oversized' warning naming the largest files when one snapshot adds more than this many bytes of file content. The files are still recorded. Set to false to disable. Defaults to 52428800 (50 MiB).
+   */
+  snapshot_oversize_bytes?: number | false
   plugin?: Array<
     | string
     | [

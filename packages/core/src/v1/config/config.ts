@@ -53,6 +53,10 @@ export const Info = Schema.Struct({
     description:
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
   }),
+  snapshot_oversize_bytes: Schema.optional(Schema.Union([PositiveInt, Schema.Literal(false)])).annotate({
+    description:
+      "Log a 'snapshot oversized' warning naming the largest files when one snapshot adds more than this many bytes of file content. The files are still recorded. Set to false to disable. Defaults to 52428800 (50 MiB).",
+  }),
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPluginV1.Spec))),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
     description:
