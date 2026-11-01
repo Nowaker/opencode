@@ -340,6 +340,7 @@ export interface Hooks {
    * - `context`: Additional context strings appended to the default prompt
    * - `prompt`: If set, replaces the default compaction prompt entirely
    * - `previousSummary`: The prior summary the default prompt anchors to, initialized from the input
+   * - `stopSequences`: Literal output boundaries, initialized to []; matched text is suppressed locally
    */
   "experimental.session.compacting"?: (
     input: {
@@ -349,7 +350,7 @@ export interface Hooks {
       conversationModel?: CompactionModel
       retainedMessages?: { id: string; role: "user" | "assistant"; text: string; rawText?: string }[]
     },
-    output: { context: string[]; prompt?: string; previousSummary?: string },
+    output: { context: string[]; prompt?: string; previousSummary?: string; stopSequences?: string[] },
   ) => Promise<void>
   /**
    * Called after compaction succeeds and before a synthetic user

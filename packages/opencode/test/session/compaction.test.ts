@@ -1762,7 +1762,7 @@ describe("session.compaction.process", () => {
         )
         expect(result.captured).toBe(expectedPrompt(result.captured, "summary one"))
         expect(seen.input?.previousSummary).toBe("summary one")
-        expect(seen.output).toEqual({ context: [], prompt: undefined, previousSummary: "summary one" })
+        expect(seen.output).toEqual({ context: [], prompt: undefined, previousSummary: "summary one", stopSequences: [] })
         expect(seen.input?.model).toMatchObject({ providerID: "test", modelID: "test-model" })
         expect(seen.input?.model?.limit.context).toBeGreaterThan(0)
         expect(seen.input?.conversationModel).toMatchObject({ providerID: "test", modelID: "test-model" })

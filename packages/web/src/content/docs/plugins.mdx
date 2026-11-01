@@ -414,3 +414,21 @@ export const ProjectSummaryPlugin: Plugin = async () => {
   }
 }
 ```
+
+Set `output.stopSequences` to literal text boundaries that the model must not publish. It starts as `[]`; leaving it empty or unset preserves ordinary streaming. Empty strings are rejected. These are local processor boundaries, not provider request options, so they work across providers and do not depend on provider stop-sequence support.
+
+```ts title=".opencode/plugins/summary-boundary.ts"
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const SummaryBoundaryPlugin: Plugin = async () => ({
+  "experimental.session.compacting": async (_input, output) => {
+    output.stopSequences = ["\n## Reserved Records", "<begin-records>"]
+  },
+})
+```
+
+The processor buffers only the longest suffix that could begin a sequence (at most the longest sequence's length minus one), including sequences split across deltas. A newline-prefixed sequence also matches at the very start of output without its leading newline. Matching is literal, not a semantic detector for arbitrary prose. At a match, only the preceding safe text is published; the sequence and everything after it are discarded, including later events in the same provider chunk. An unmatched suffix is published at natural text-end.
+
+On a local match, the provider stream scope closes before `experimental.text.complete` runs on the accepted narrative. The text part is finalized once and the assistant message finishes with `stop`; successful compaction and its continuation policy still apply. The completion hook is outside provider retries on this path: if it throws, compaction fails instead of accepting an unaugmented summary. With boundaries enabled, a summary with no non-whitespace accepted narrative fails before the completion hook, preserving source history.
+
+Received usage and cost are preserved. No provider finish-step or final usage is fabricated. The finalized text part carries `metadata.localStop: { reason: "stop-sequence", sequenceIndex: number, finalUsage: "unavailable" }`, and the `local stream stop` log carries those fields with session and message IDs. `sequenceIndex` indexes the supplied array; sequence contents and rejected output are not logged.

@@ -453,7 +453,7 @@ const layer = Layer.effect(
         .getModel(continueAs.model.providerID, continueAs.model.modelID)
         .pipe(Effect.catch(() => Effect.succeed(undefined)))
       // Allow plugins to inject context, replace the compaction prompt, or project the prior summary.
-      const compacting = yield* plugin.trigger(
+      const compacting = yield* plugin.trigger<"experimental.session.compacting">(
         "experimental.session.compacting",
         {
           sessionID: input.sessionID,
@@ -462,7 +462,7 @@ const layer = Layer.effect(
           conversationModel: conversationModel && hookModel(conversationModel),
           retainedMessages: retained,
         },
-        { context: [], prompt: undefined, previousSummary },
+        { context: [], prompt: undefined, previousSummary, stopSequences: [] },
       )
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
@@ -510,6 +510,7 @@ const layer = Layer.effect(
         assistantMessage: msg,
         sessionID: input.sessionID,
         model,
+        stopSequences: compacting.stopSequences,
       })
       const result = yield* processor.process({
         user: userMessage,

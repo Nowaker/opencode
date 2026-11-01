@@ -27,6 +27,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { TransactionDiagnostic } from "@opencode-ai/core/database/transaction-diagnostic"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { textStop } from "./text-stop"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -53,6 +54,7 @@ type Input = {
   assistantMessage: SessionV1.Assistant
   sessionID: SessionID
   model: Provider.Model
+  stopSequences?: readonly string[]
 }
 
 export interface Interface {
@@ -98,6 +100,10 @@ const layer = Layer.effect(
     const database = yield* Database.Service
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
+      const stopSequences = input.stopSequences?.length ? input.stopSequences : undefined
+      let boundary = stopSequences && textStop(stopSequences)
+      let stopped: number | undefined
+      let acceptedNarrative = false
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
@@ -257,6 +263,58 @@ const layer = Layer.effect(
       })
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
+
+      const publishText = Effect.fnUntraced(function* (text: string, metadata?: SessionV1.TextPart["metadata"]) {
+        if (!ctx.currentText) return
+        ctx.currentText.text += text
+        if (text.trim()) acceptedNarrative = true
+        if (metadata) ctx.currentText.metadata = metadata
+        if (boundary && !text) return
+        yield* session.updatePartDelta({
+          sessionID: ctx.currentText.sessionID,
+          messageID: ctx.currentText.messageID,
+          partID: ctx.currentText.id,
+          field: "text",
+          delta: text,
+        })
+      })
+
+      const finishText = Effect.fn("SessionProcessor.finishText")(function* (metadata?: SessionV1.TextPart["metadata"]) {
+        if (!ctx.currentText) return
+        if (boundary) {
+          const suffix = boundary.finish()
+          if (suffix) yield* publishText(suffix)
+          if (ctx.assistantMessage.summary && !acceptedNarrative) {
+            throw new Error("Compaction produced no accepted narrative")
+          }
+        }
+        ctx.currentText.text = (yield* plugin.trigger(
+          "experimental.text.complete",
+          {
+            sessionID: ctx.sessionID,
+            messageID: ctx.assistantMessage.id,
+            partID: ctx.currentText.id,
+          },
+          { text: ctx.currentText.text },
+        )).text
+        const end = Date.now()
+        ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
+        if (metadata) ctx.currentText.metadata = metadata
+        yield* session.updatePart(ctx.currentText)
+        ctx.currentText = undefined
+      })
+
+      const finishStoppedText = Effect.fn("SessionProcessor.finishStoppedText")(function* (sequenceIndex: number) {
+        const localStop = { reason: "stop-sequence", sequenceIndex, finalUsage: "unavailable" }
+        if (ctx.currentText) ctx.currentText.metadata = { ...ctx.currentText.metadata, localStop }
+        yield* Effect.logInfo("local stream stop", {
+          sessionID: ctx.sessionID,
+          messageID: ctx.assistantMessage.id,
+          ...localStop,
+        })
+        yield* finishText()
+        ctx.assistantMessage.finish = "stop"
+      })
 
       const toolResultOutput = (
         value: Extract<StreamEvent, { type: "tool-result" }>,
@@ -502,6 +560,7 @@ const layer = Layer.effect(
           }
 
           case "text-start":
+            boundary = stopSequences && textStop(stopSequences)
             ctx.currentText = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -514,39 +573,16 @@ const layer = Layer.effect(
             yield* session.updatePart(ctx.currentText)
             return
 
-          case "text-delta":
+          case "text-delta": {
             if (!ctx.currentText) return
-            ctx.currentText.text += value.text
-            if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
-            yield* session.updatePartDelta({
-              sessionID: ctx.currentText.sessionID,
-              messageID: ctx.currentText.messageID,
-              partID: ctx.currentText.id,
-              field: "text",
-              delta: value.text,
-            })
+            const delta = boundary?.push(value.text)
+            yield* publishText(delta ? delta.text : value.text, value.providerMetadata)
+            stopped = delta?.stop
             return
+          }
 
           case "text-end":
-            if (!ctx.currentText) return
-            // oxlint-disable-next-line no-self-assign -- reactivity trigger
-            ctx.currentText.text = ctx.currentText.text
-            ctx.currentText.text = (yield* plugin.trigger(
-              "experimental.text.complete",
-              {
-                sessionID: ctx.sessionID,
-                messageID: ctx.assistantMessage.id,
-                partID: ctx.currentText.id,
-              },
-              { text: ctx.currentText.text },
-            )).text
-            {
-              const end = Date.now()
-              ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-            }
-            if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
-            yield* session.updatePart(ctx.currentText)
-            ctx.currentText = undefined
+            yield* finishText(value.providerMetadata)
             return
 
           case "finish":
@@ -656,24 +692,27 @@ const layer = Layer.effect(
           yield* Effect.gen(function* () {
             ctx.currentText = undefined
             ctx.reasoningMap = {}
+            stopped = undefined
+            acceptedNarrative = false
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 
+            if (!stopSequences) {
+              yield* stream.pipe(
+                Stream.tap((event) => handleEvent(event)),
+                Stream.takeUntil(() => ctx.needsCompaction),
+                Stream.runDrain,
+              )
+              return
+            }
             yield* stream.pipe(
-              Stream.tap((event) => handleEvent(event)),
-              Stream.takeUntil(() => ctx.needsCompaction),
+              Stream.takeUntilEffect((event) =>
+                handleEvent(event).pipe(Effect.map(() => stopped !== undefined || ctx.needsCompaction)),
+              ),
               Stream.runDrain,
+              Effect.scoped,
             )
           }).pipe(
-            Effect.onInterrupt(() =>
-              Effect.gen(function* () {
-                aborted = true
-                abort = yield* SessionAbort.metadata
-                if (!ctx.assistantMessage.error) {
-                  yield* halt(new DOMException("Aborted", "AbortError"))
-                }
-              }),
-            ),
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => Effect.fail(Cause.squash(cause)),
@@ -692,6 +731,28 @@ const layer = Layer.effect(
                   })
                 },
               }),
+            ),
+            Effect.andThen(() =>
+              Effect.gen(function* () {
+                if (!stopSequences) return
+                if (stopped !== undefined) yield* finishStoppedText(stopped)
+                if (ctx.assistantMessage.summary && !acceptedNarrative) {
+                  throw new Error("Compaction produced no accepted narrative")
+                }
+              }),
+            ),
+            Effect.onInterrupt(() =>
+              Effect.gen(function* () {
+                aborted = true
+                abort = yield* SessionAbort.metadata
+                if (!ctx.assistantMessage.error) {
+                  yield* halt(new DOMException("Aborted", "AbortError"))
+                }
+              }),
+            ),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) => Effect.fail(Cause.squash(cause)),
             ),
             Effect.catch(halt),
             Effect.ensuring(cleanup()),
