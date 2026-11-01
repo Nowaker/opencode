@@ -10163,6 +10163,14 @@ export type SessionMessageResponse = SessionMessageResponses[keyof SessionMessag
 export type SessionForkData = {
   body?: {
     messageID?: string
+    /**
+     * ID for the new session, so a caller can name it before the copy finishes. Generated when omitted.
+     */
+    id?: string
+    /**
+     * How to copy an assistant message that is still streaming: exclude drops it, settle copies it completed with every unfinished tool marked interrupted. Omitted copies it as is.
+     */
+    unsettled?: "exclude" | "settle"
   }
   path: {
     sessionID: string

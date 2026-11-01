@@ -239,7 +239,7 @@ or the separately generated SDK v2 for the HTTP surface.
 | `GET`    | `/session/:id/children`                  | Get a session's child sessions        | Returns <a href={typesUrl}><code>Session[]</code></a>                              |
 | `GET`    | `/session/:id/todo`                      | Get the todo list for a session       | Returns <a href={typesUrl}><code>Todo[]</code></a>                                 |
 | `POST`   | `/session/:id/init`                      | Analyze app and create `AGENTS.md`    | body: `{ messageID, providerID, modelID }`, returns `boolean`                      |
-| `POST`   | `/session/:id/fork`                      | Fork an existing session at a message | body: `{ messageID? }`, returns <a href={typesUrl}><code>Session</code></a>        |
+| `POST`   | `/session/:id/fork`                      | Fork an existing session at a message | body: `{ messageID?, id?, unsettled? }`, returns <a href={typesUrl}><code>Session</code></a>. `id` names the new session; `unsettled` is `exclude` or `settle` for an answer still streaming |
 | `POST`   | `/session/:id/abort`                     | Abort a running session               | query: `requester?` (`tui`, `tui-revert`, `api`; default `api`), returns `boolean` |
 | `POST`   | `/session/:id/share`                     | Share a session                       | Returns <a href={typesUrl}><code>Session</code></a>                                |
 | `DELETE` | `/session/:id/share`                     | Unshare a session                     | Returns <a href={typesUrl}><code>Session</code></a>                                |

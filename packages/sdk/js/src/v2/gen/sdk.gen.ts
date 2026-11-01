@@ -3974,6 +3974,8 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      id?: string
+      unsettled?: "exclude" | "settle"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3986,6 +3988,8 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "id" },
+            { in: "body", key: "unsettled" },
           ],
         },
       ],

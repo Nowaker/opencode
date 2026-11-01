@@ -70,6 +70,8 @@ import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
+import { useBackgroundFork } from "./fork-background"
+import { takeDraft } from "../../component/prompt/draft-stash"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import {
   Sidebar,
@@ -295,6 +297,7 @@ export function Session() {
   const event = useEvent()
   const project = useProject()
   const paths = useTuiPaths()
+  const backgroundFork = useBackgroundFork()
   const tuiConfig = useTuiConfig()
   const kv = useKV()
   const { theme } = useTheme()
@@ -553,9 +556,11 @@ export function Session() {
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)
-    if (seeded || !route.prompt || !r) return
+    if (seeded || !r) return
     seeded = true
-    r.set(route.prompt)
+    if (route.prompt) return r.set(route.prompt)
+    // A background fork from the last prompt leaves that prompt here for whichever TUI opens the session first.
+    void takeDraft(paths.state, route.sessionID).then((draft) => draft && restorePrompt(draft.prompt))
   }
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
@@ -776,6 +781,21 @@ export function Session() {
         ))
       },
     },
+    ...(
+      [
+        ["message", "this message"],
+        ["last-message", "last message"],
+        ["last-prompt", "last prompt"],
+      ] as const
+    ).map(([point, name]) => ({
+      title: `Fork in background from ${name}`,
+      value: `session.fork.background.${point}`,
+      category: "Session",
+      slash: {
+        name: `fork-in-background-from-${name.replace(" ", "-")}`,
+      },
+      run: () => void backgroundFork(route.sessionID, point),
+    })),
     {
       title: "Compact session",
       value: "session.compact",
@@ -1721,7 +1741,11 @@ export function Session() {
                                         }
                                       : undefined
                                   }
-                                  queued={pending() !== undefined && index() > pending()!}
+                                  queued={
+                                    pending() !== undefined &&
+                                    index() > pending()! &&
+                                    TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
+                                  }
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
                                   restorePrompt={restorePrompt}
                                 />
@@ -1860,7 +1884,13 @@ function UserMessage(props: {
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
-  const queued = createMemo(() => props.pending !== undefined && props.index > props.pending)
+  // A notice never reaches the model, so it is never waiting for the turn to pick it up.
+  const queued = createMemo(
+    () =>
+      props.pending !== undefined &&
+      props.index > props.pending &&
+      TranscriptFilter.userKind(props.parts) === "prompts",
+  )
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
   const time = createMemo(() => ctx.footer("time", "user", props.message.id))

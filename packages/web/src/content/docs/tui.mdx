@@ -224,6 +224,24 @@ Open the [transcript filter](#transcript-filter), to choose which kinds of entri
 
 ---
 
+### fork-in-background
+
+Fork the current session into a new one without leaving it. Your view stays where it is and a running turn keeps going, so these work while the model is mid-answer or a tool is running. Each asks for confirmation, then shows a toast with the new session ID. When the copy is done a second toast appears, and the session gets a notice with the new ID. Only you see that notice; it is never sent to the model, and it does not start a turn.
+
+```bash frame="none"
+/fork-in-background-from-this-message
+/fork-in-background-from-last-message
+/fork-in-background-from-last-prompt
+```
+
+- **from-this-message** copies everything up to now, including an answer that is still streaming. That answer is copied as finished. A tool that was still running is copied as failed: "the command executed, its result is unknown". The new session is idle and runs nothing.
+- **from-last-message** copies everything except the answer still streaming.
+- **from-last-prompt** works like `/fork` on your newest prompt. Everything before that prompt is copied, and the prompt itself waits in the new session's prompt box. The draft is saved to disk, so it shows the first time any TUI opens that session, in any tab or process.
+
+They are also in the command palette as **Fork in background from this message**, **from last message** and **from last prompt**.
+
+---
+
 ### help
 
 Show the help dialog.

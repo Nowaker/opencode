@@ -171,6 +171,25 @@ function getForkedTitle(title: string): string {
   return `${title} (fork #1)`
 }
 
+// A tool the fork caught mid-run has started but its outcome is unknown. It gets the state an abort leaves,
+// marked interrupted so the forked session never treats it as pending work.
+function settlePart(part: SessionV1.Part, end: number): SessionV1.Part {
+  if (part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
+    return {
+      ...part,
+      state: {
+        status: "error",
+        input: part.state.input,
+        error: "Session was forked while this tool was running: the command executed, its result is unknown",
+        metadata: { ...(part.state.status === "running" ? part.state.metadata : {}), interrupted: true, forked: true },
+        time: { start: part.state.status === "running" ? part.state.time.start : end, end },
+      },
+    }
+  if ((part.type === "text" || part.type === "reasoning") && part.time && part.time.end === undefined)
+    return { ...part, time: { ...part.time, end } }
+  return part
+}
+
 function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFrom: SessionID) {
   const result = structuredClone(metadata) ?? {}
   const lineage: unknown = result.vibeterm?.lineage
@@ -293,10 +312,25 @@ export const CreateInput = Schema.optional(
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
 
+// v2's fork copies only settled history; `unsettled` lets a v1 caller ask for that ("exclude") or for a
+// settled copy of the in-flight assistant message ("settle"). Omitted keeps the raw copy older callers get.
+export const ForkUnsettled = Schema.Literals(["exclude", "settle"]).annotate({
+  description:
+    "How to copy an assistant message that is still streaming: exclude drops it, settle copies it completed with every unfinished tool marked interrupted. Omitted copies it as is.",
+})
+export type ForkUnsettled = Schema.Schema.Type<typeof ForkUnsettled>
+
 export const ForkInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
+  id: Schema.optional(
+    SessionID.annotate({
+      description: "ID for the new session, so a caller can name it before the copy finishes. Generated when omitted.",
+    }),
+  ),
+  unsettled: Schema.optional(ForkUnsettled),
 })
+export type ForkInput = Schema.Schema.Type<typeof ForkInput>
 export const GetInput = SessionID
 export const ChildrenInput = SessionID
 export const RemoveInput = SessionID
@@ -445,7 +479,7 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -724,11 +758,14 @@ const layer: Layer.Layer<
       })
     })
 
-    const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+    const fork = Effect.fn("Session.fork")(function* (input: ForkInput) {
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
+      if (input.id && Option.isSome(yield* get(input.id).pipe(Effect.option)))
+        return yield* Effect.die(new Error(`Session already exists: ${input.id}`))
       const title = getForkedTitle(original.title)
       const session = yield* createNext({
+        id: input.id,
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
@@ -739,14 +776,19 @@ const layer: Layer.Layer<
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()
       const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
+      const settledAt = Date.now()
 
       for (const msg of msgs.slice(0, target < 0 ? msgs.length : target)) {
+        const streaming = msg.info.role === "assistant" && !msg.info.time.completed
+        if (streaming && input.unsettled === "exclude") continue
+        const settle = streaming && input.unsettled === "settle"
         const newID = MessageID.ascending()
         idMap.set(msg.info.id, newID)
 
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
         const cloned = yield* updateMessage({
           ...msg.info,
+          ...(settle && { time: { ...msg.info.time, completed: settledAt } }),
           sessionID: session.id,
           id: newID,
           vibeterm: MachineProvenance.copy(msg.info, newID),
@@ -755,7 +797,7 @@ const layer: Layer.Layer<
 
         for (const part of msg.parts) {
           const p: SessionV1.Part = {
-            ...part,
+            ...(settle ? settlePart(part, settledAt) : part),
             id: PartID.ascending(),
             messageID: cloned.id,
             sessionID: session.id,

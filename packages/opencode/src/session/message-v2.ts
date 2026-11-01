@@ -858,7 +858,7 @@ export function latest(msgs: WithParts[]) {
   let finished: Assistant | undefined
   for (const msg of msgs) {
     const info = msg.info
-    if (info.role === "user" && isAfter(info, user)) user = info
+    if (info.role === "user" && isAfter(info, user) && !isNotice(msg)) user = info
     if (info.role === "assistant" && isAfter(info, assistant)) assistant = info
     if (info.role === "assistant" && info.finish && isAfter(info, finished)) finished = info
   }
@@ -868,6 +868,12 @@ export function latest(msgs: WithParts[]) {
       : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
   )
   return { user, assistant, finished, tasks }
+}
+
+// A user message whose every part is an ignored text is a notice for the reader (a background fork's
+// receipt, Vibeterm's user_message): the model never sees it, so it must not count as the prompt a turn answers.
+function isNotice(msg: WithParts) {
+  return msg.parts.length > 0 && msg.parts.every((part) => part.type === "text" && part.ignored)
 }
 
 function isAfter(info: Info, other?: Info) {

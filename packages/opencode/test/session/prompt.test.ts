@@ -3260,3 +3260,83 @@ unix(
   { git: true },
   30_000,
 )
+
+unix(
+  "forks a session in the background while its turn runs a tool",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Background fork",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const ready = path.join(dir, "fork-ready")
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "run" }] })
+      yield* llm.tool("bash", { command: `touch '${ready}'; sleep 30`, timeout: 30_000, workdir: path.resolve(dir) })
+
+      const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const tool = toolPart(msgs.findLast((item) => item.info.role === "assistant")?.parts ?? [])
+          if (tool?.state.status !== "running") return
+          return (yield* Effect.promise(() => Bun.file(ready).exists())) ? (true as const) : undefined
+        }),
+        "timed out waiting for the running tool",
+      )
+
+      const settled = yield* sessions.fork({ sessionID: chat.id, unsettled: "settle" })
+      const copied = yield* sessions.messages({ sessionID: settled.id })
+      const answer = copied.findLast((item) => item.info.role === "assistant")
+      expect(answer?.info.role === "assistant" && answer.info.time.completed).toBeGreaterThan(0)
+      const tool = errorTool(answer?.parts ?? [])
+      expect(tool?.state.error).toContain("the command executed, its result is unknown")
+      expect(tool?.state.metadata).toMatchObject({ interrupted: true, forked: true })
+      expect(tool?.state.input).toMatchObject({ command: `touch '${ready}'; sleep 30` })
+      expect((yield* status.get(settled.id)).type).toBe("idle")
+
+      const excluded = yield* sessions.fork({ sessionID: chat.id, unsettled: "exclude" })
+      expect((yield* sessions.messages({ sessionID: excluded.id })).map((item) => item.info.role)).toEqual(["user"])
+
+      // The source turn is untouched: still busy, its tool still running.
+      expect((yield* status.get(chat.id)).type).toBe("busy")
+      const source = yield* MessageV2.filterCompactedEffect(chat.id)
+      expect(toolPart(source.findLast((item) => item.info.role === "assistant")?.parts ?? [])?.state.status).toBe(
+        "running",
+      )
+
+      yield* prompt.cancel(chat.id)
+      expect(Exit.isSuccess(yield* Fiber.await(run))).toBe(true)
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance("a reader-only notice after a finished turn does not start another", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Notice" })
+    yield* llm.text("answer")
+    yield* prompt.prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "ask" }] })
+    expect(yield* llm.calls).toBe(1)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Background fork finished: ses_x", ignored: true }],
+    })
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    expect(yield* llm.calls).toBe(1)
+  }),
+  { git: true },
+  30_000,
+)
