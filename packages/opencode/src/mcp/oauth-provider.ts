@@ -7,6 +7,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js"
 import { Effect } from "effect"
 import { McpAuth } from "./auth"
+import { AuthFlowError } from "./external-auth"
 
 const OAUTH_CALLBACK_PORT = 19876
 const OAUTH_CALLBACK_PATH = "/mcp/oauth/callback"
@@ -21,6 +22,7 @@ export interface McpOAuthConfig {
 
 export interface McpOAuthCallbacks {
   onRedirect: (url: URL) => void | Promise<void>
+  oauthState?: string
 }
 
 export class McpOAuthProvider implements OAuthClientProvider {
@@ -28,7 +30,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
     protected mcpName: string,
     protected serverUrl: string,
     protected config: McpOAuthConfig,
-    private callbacks: McpOAuthCallbacks,
+    protected callbacks: McpOAuthCallbacks,
     protected auth: McpAuth.Interface,
   ) {}
 
@@ -187,6 +189,22 @@ export class McpOAuthProvider implements OAuthClientProvider {
 export class McpOAuthPendingProvider extends McpOAuthProvider {
   private pendingClientInfo?: OAuthClientInformationFull
   private pendingTokens?: OAuthTokens
+  private pendingCodeVerifier?: string
+
+  override async state(): Promise<string> {
+    return this.callbacks.oauthState ?? super.state()
+  }
+
+  override async saveCodeVerifier(codeVerifier: string): Promise<void> {
+    this.pendingCodeVerifier = codeVerifier
+  }
+
+  override async codeVerifier(): Promise<string> {
+    if (!this.pendingCodeVerifier) {
+      throw new Error(`No code verifier saved for MCP server: ${this.mcpName}`)
+    }
+    return this.pendingCodeVerifier
+  }
 
   override async clientInformation(): Promise<OAuthClientInformation | undefined> {
     if (!this.config.clientId) return this.pendingClientInfo
@@ -209,6 +227,7 @@ export class McpOAuthPendingProvider extends McpOAuthProvider {
   }
 
   override async invalidateCredentials(type: "all" | "client" | "tokens"): Promise<void> {
+    if (this.callbacks.oauthState) throw new AuthFlowError({ message: "External OAuth credentials rejected" })
     if (type === "all" || type === "client") this.pendingClientInfo = undefined
     if (type === "all" || type === "tokens") this.pendingTokens = undefined
   }

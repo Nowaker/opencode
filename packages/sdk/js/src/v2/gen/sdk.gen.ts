@@ -2373,6 +2373,8 @@ export class Auth2 extends HeyApiClient {
       name: string
       directory?: string
       workspace?: string
+      callbackMode?: "external"
+      redirectUri?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2384,6 +2386,8 @@ export class Auth2 extends HeyApiClient {
             { in: "path", key: "name" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "callbackMode" },
+            { in: "body", key: "redirectUri" },
           ],
         },
       ],
@@ -2392,6 +2396,11 @@ export class Auth2 extends HeyApiClient {
       url: "/mcp/{name}/auth",
       ...options,
       ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 
@@ -2406,6 +2415,9 @@ export class Auth2 extends HeyApiClient {
       directory?: string
       workspace?: string
       code?: string
+      state?: string
+      error?: string
+      errorDescription?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2418,6 +2430,9 @@ export class Auth2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "code" },
+            { in: "body", key: "state" },
+            { in: "body", key: "error" },
+            { in: "body", key: "errorDescription" },
           ],
         },
       ],
