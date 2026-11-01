@@ -31,6 +31,8 @@ export function compactionStopCase(options: {
   sequences?: string[]
   complete?: Effect.Effect<void, unknown>
   completeError?: Error
+  append?: (text: string) => string
+  afterComplete?: Effect.Effect<void, unknown>
   config?: Partial<ConfigV1.Info>
   native?: boolean
 }) {
@@ -47,7 +49,8 @@ export function compactionStopCase(options: {
           completed.push(output.text)
           if (options.complete) yield* options.complete.pipe(Effect.orDie)
           if (options.completeError) throw options.completeError
-          Object.assign(output, { text: output.text + records })
+          Object.assign(output, { text: options.append ? options.append(output.text) : output.text + records })
+          if (options.afterComplete) yield* options.afterComplete.pipe(Effect.orDie)
         }
         return output
       }),

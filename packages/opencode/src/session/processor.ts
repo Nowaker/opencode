@@ -104,6 +104,7 @@ const layer = Layer.effect(
       let boundary = stopSequences && textStop(stopSequences)
       let stopped: number | undefined
       let acceptedNarrative = false
+      let completingText = false
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
@@ -288,6 +289,7 @@ const layer = Layer.effect(
             throw new Error("Compaction produced no accepted narrative")
           }
         }
+        completingText = true
         ctx.currentText.text = (yield* plugin.trigger(
           "experimental.text.complete",
           {
@@ -297,6 +299,7 @@ const layer = Layer.effect(
           },
           { text: ctx.currentText.text },
         )).text
+        completingText = false
         const end = Date.now()
         ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
         if (metadata) ctx.currentText.metadata = metadata
@@ -715,7 +718,7 @@ const layer = Layer.effect(
           }).pipe(
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterruptsOnly(cause),
-              (cause) => Effect.fail(Cause.squash(cause)),
+              (cause) => completingText ? Effect.die(Cause.squash(cause)) : Effect.fail(Cause.squash(cause)),
             ),
             Effect.retry(
               SessionRetry.policy({

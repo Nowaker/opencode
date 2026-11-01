@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `compacting-hook-seams` (worktree `.vibeterm/worktrees/compacting-hook-seams`); `compaction-stream-boundary` (worktree `.vibeterm/worktrees/compaction-stream-boundary`)
 - First local commit: `e160264623`
-- Current local commit(s): `e160264623`; the stream-boundary commit carrying `AI-Session-ID: ses_e6b90f99fffennKWXq3VoePII2`
+- Current local commit(s): `e160264623`; `deb9f05a51` plus its natural-completion gate follow-up on `compaction-stream-boundary`, both carrying `AI-Session-ID: ses_e6b90f99fffennKWXq3VoePII2`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
 - Upstream PR: none (fork-only by request)
@@ -41,6 +41,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 - `experimental.session.compacting` is not part of the HTTP API, so no SDK or client regeneration.
 - The boundary matcher holds only the longest possible suffix prefix (at most max sequence length minus one), handles delta splits and newline-prefixed boundaries at output start, and flushes unmatched suffixes at natural text-end. Empty sequences are rejected.
 - A match ends the provider-scoped consumer before the completion hook, without interrupting the processor or draining trailing events in the same chunk. Hook failure and empty accepted narrative fail compaction and preserve source history.
+- Completion-hook failures at natural text-end are excluded before provider retry classification too, whether boundaries are enabled or disabled. The original error is carried through failure handling unchanged; a later plugin cannot trigger regeneration after an earlier plugin consumed its retention snapshot. `retry.ts` is unchanged.
 - Received usage stays intact; no finish-step is synthesized. Text-part `metadata.localStop` and the `local stream stop` log record `{ reason: "stop-sequence", sequenceIndex, finalUsage: "unavailable" }` without rejected text or sequence contents.
 
 ## Changes
@@ -48,7 +49,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `e160264623` | 2026-10-18 | hook input/output fields; `continueAs` resolved before the hook | `SessionCompaction.process` `experimental.session.compacting` trigger and `buildPrompt` call (`packages/opencode/src/session/compaction.ts`), `Hooks["experimental.session.compacting"]` and `CompactionModel` (`packages/plugin/src/index.ts`), `plugins.mdx` "Compaction hooks" |
-| Commit carrying `ses_e6b90f99fffennKWXq3VoePII2` | 2026-10-31 | optional hook output `stopSequences`, bounded text matcher, scoped stream stop, shared text finalization, honest missing-usage accounting | `text-stop.ts`, `SessionProcessor.create` and policy consumer, compacting hook output and processor input, `plugins.mdx` |
+| `deb9f05a51` | 2026-10-31 | optional hook output `stopSequences`, bounded text matcher, scoped stream stop, shared text finalization, honest missing-usage accounting | `text-stop.ts`, `SessionProcessor.create` and policy consumer, compacting hook output and processor input, `plugins.mdx` |
+| Natural-completion gate follow-up carrying `ses_e6b90f99fffennKWXq3VoePII2` | 2026-10-31 | exclude completion-hook failures before provider retry classification and preserve original API errors | `SessionProcessor.finishText`, pre-retry cause handling, `compaction-completion.test.ts` |
 
 ## Verification
 
@@ -57,6 +59,8 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 - Stream-boundary coverage: `text-stop.test.ts` has 49 passing cases for every split position, output start, EOF, overlapping prefixes, empty rejection and literal inline prose. `compaction-stop.test.ts` and `compaction-stop-http.test.ts` have 10 passing cases covering actual published deltas, one completion/append, provider scope closure, retained usage, no synthetic finish-step, failure preserving history and retryable completion failure without provider retry.
 - Real HTTP evidence: a hanging loopback SSE server observes both request abort and response cancellation while the completion hook is awaiting acknowledgement, on AI SDK and native runtimes. Each test asserts one request, successful `Compacted`, safe-only publications, completed summary, and no error/retry.
 - Final combined run: `bun run test test/session/text-stop.test.ts test/session/compaction-stop.test.ts test/session/compaction-stop-http.test.ts test/session/processor-effect.test.ts test/session/compaction.test.ts` - 138 pass, 1 skip, 0 fail, 571 assertions. One earlier combined run interrupted the existing pending-tool cleanup test; that case passed alone and the full rerun passed. `bun typecheck` in both packages exits 0; editor diagnostics repeatedly timed out across the assigned worktree, so no fresh editor-diagnostic claim is made.
+- Gate regression: all four `compaction-completion.test.ts` cases first failed because a one-shot retryable natural-end completion error caused two provider requests. After the fix, 14 integrated tests pass with 157 assertions across that file and the two stop suites. Cases cover failure before append and after retention consumes its snapshot, with boundaries enabled and disabled; each asserts one request, failed summary, original API error fields, visible source history, no `Compacted`, no continuation and no retry status. Both package typechecks exit 0; fresh diagnostics for the processor and new/modified test files are clean in this follow-up.
+- Gate broad validation: two seven-suite runs hit `ENOSPC` in test-fixture directory creation. A subsequent alternate-scratch run wedged and was deliberately interrupted by the parent, which explicitly took ownership of final broad validation and installation. No broad-pass claim is made for this follow-up.
 
 ## Timeline
 
@@ -72,5 +76,5 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 ### Upstream integration checklist
 
 - Locate the `experimental.session.compacting` trigger in `SessionCompaction.process`; keep `buildPrompt` reading `compacting.previousSummary`.
-- Run `test/session/compaction.test.ts`, `processor-effect.test.ts`, `text-stop.test.ts`, `compaction-stop.test.ts`, `compaction-stop-http.test.ts`, and `bun typecheck` in `packages/opencode` and `packages/plugin`.
+- Run `test/session/compaction.test.ts`, `processor-effect.test.ts`, `text-stop.test.ts`, `compaction-stop.test.ts`, `compaction-stop-http.test.ts`, `compaction-completion.test.ts`, and `bun typecheck` in `packages/opencode` and `packages/plugin`.
 - Link a new timeline row to the current session record.
