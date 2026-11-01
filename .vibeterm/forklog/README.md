@@ -128,8 +128,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Let the compacting hook project the prior summary](./features/2026-10-18-compacting-hook-summary.md)
 - [Expandable delivery provenance on user messages](./features/2026-10-19-delivery-provenance-view.md)
 - [Snapshot cleanup repair, op timing and oversize warning](./features/2026-10-27-snapshot-housekeeping.md)
+- [Fork a session in the background without leaving it](./features/2026-11-01-background-fork.md)
 
 ## Session records
+
+- [2026-11-01 `ses_e66b728b8ffeIxgqjkEHgEQEui`](./sessions/2026-11-01-background-fork.md) - `/fork-in-background-from-this-message`, `-from-last-message`, `-from-last-prompt` fork without switching, during a running turn: additive fork `id`/`unsettled`, settled in-flight tools, reader-only notice, persisted prompt draft; v2 seams in the feature record; landed as `892325cec5`; vt-384 on both hosts.
 
 - [2026-10-27 `ses_e8079207bfferzKUfQEvpgORlL`](./sessions/2026-10-27-snapshot-housekeeping.md) - snapshot gc repairs empty objects and missing alternates, deletes its own partial packs, runs at most hourly per store with backoff; `snapshot op` timing lines and `snapshot oversized` warnings (`snapshot_oversize_bytes`); landed as `593d18abc2`, `72f013ccac`; vt-376 on both hosts; issue #59766, PR blocked.
 
