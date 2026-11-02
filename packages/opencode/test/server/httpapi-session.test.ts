@@ -4,7 +4,7 @@ import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { Cause, Config, Effect, Exit, Layer } from "effect"
+import { Cause, Config, Effect, Exit, Fiber, Latch, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpRouter, HttpServer } from "effect/unstable/http"
 import { layerWebSocketConstructorGlobal } from "effect/unstable/socket/Socket"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -24,6 +24,7 @@ import * as HttpSessionError from "../../src/server/routes/instance/httpapi/hand
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { SessionRunState } from "@/session/run-state"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
@@ -44,7 +45,15 @@ const noopBootstrapLayer = Layer.succeed(
   InstanceBootstrapService.Service.of({ run: Effect.void }),
 )
 const appLayer = AppNodeBuilder.build(
-  LayerNode.group([InstanceStore.node, Project.node, Session.node, Workspace.node, Database.node, Ripgrep.node]),
+  LayerNode.group([
+    InstanceStore.node,
+    Project.node,
+    Session.node,
+    SessionRunState.node,
+    Workspace.node,
+    Database.node,
+    Ripgrep.node,
+  ]),
   [[InstanceStore.bootstrapNode, noopBootstrapLayer]],
 )
 const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
@@ -651,6 +660,134 @@ describe("session HttpApi", () => {
           body: JSON.stringify({ messageID: message.info.id, files: false }),
         })
         expect(reverted.revert).toEqual({ messageID: message.info.id })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  for (const boundary of ["before", "after"] as const) {
+    it.live(`applies the pending ${boundary}-message cut without input admission or an AI turn`, () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const directory = yield* tmpdirScoped({ git: true, config: testProviderConfig(llm.url) })
+        yield* Effect.gen(function* () {
+          const svc = yield* Session.Service
+          const session = yield* createSession({ title: "static revert" })
+          const first = yield* createTextMessage(session.id, "first")
+          const second = yield* createTextMessage(session.id, "second")
+          const third = yield* createTextMessage(session.id, "third")
+          const headers = { "x-opencode-directory": directory, "content-type": "application/json" }
+          // An after-message revert is staged at the first message to remove.
+          const target = boundary === "before" ? second : third
+          yield* Effect.promise(() => Bun.write(path.join(directory, "kept.txt"), "before revert"))
+          yield* requestJson<Session.Info>(pathFor(SessionPaths.revert, { sessionID: session.id }), {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ messageID: target.info.id, files: boundary === "after" }),
+          })
+          yield* Effect.promise(() => Bun.write(path.join(directory, "kept.txt"), "keep current files"))
+
+          const applied = yield* requestJson<Session.Info>(
+            pathFor(SessionPaths.applyRevert, { sessionID: session.id }),
+            {
+              method: "POST",
+              headers,
+            },
+          )
+
+          expect(applied.revert).toBeUndefined()
+          expect((yield* svc.messages({ sessionID: session.id })).map((message) => message.info.id)).toEqual(
+            boundary === "before" ? [first.info.id] : [first.info.id, second.info.id],
+          )
+          const database = yield* Database.Service
+          expect(
+            yield* database.db
+              .select({ id: SessionInputTable.id })
+              .from(SessionInputTable)
+              .where(eq(SessionInputTable.session_id, session.id))
+              .all()
+              .pipe(Effect.orDie),
+          ).toEqual([])
+          expect(applied.metadata).toEqual(session.metadata)
+          expect(yield* llm.calls).toBe(0)
+          expect(yield* Effect.promise(() => Bun.file(path.join(directory, "kept.txt")).text())).toBe(
+            "keep current files",
+          )
+        }).pipe(provideInstanceEffect(directory))
+      }).pipe(Effect.provide(TestLLMServer.layer)),
+    )
+  }
+
+  it.instance(
+    "applies a part boundary and safely repeats an already applied revert",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const svc = yield* Session.Service
+        const session = yield* createSession({ title: "part revert" })
+        const first = yield* createTextMessage(session.id, "keep")
+        const removed = yield* svc.updatePart({
+          id: PartID.ascending(),
+          sessionID: session.id,
+          messageID: first.info.id,
+          type: "text",
+          text: "remove",
+        })
+        yield* createTextMessage(session.id, "tail")
+        yield* svc.setRevert({
+          sessionID: session.id,
+          revert: { messageID: first.info.id, partID: removed.id },
+          summary: session.summary,
+        })
+        const headers = { "x-opencode-directory": test.directory }
+        const route = pathFor(SessionPaths.applyRevert, { sessionID: session.id })
+
+        const applied = yield* requestJson<Session.Info>(route, { method: "POST", headers })
+        const repeated = yield* requestJson<Session.Info>(route, { method: "POST", headers })
+
+        expect(applied.revert).toBeUndefined()
+        expect(repeated).toEqual(applied)
+        const remaining = yield* svc.messages({ sessionID: session.id })
+        expect(
+          remaining.map((message) => ({ id: message.info.id, parts: message.parts.map((part) => part.id) })),
+        ).toEqual([{ id: first.info.id, parts: [first.part.id] }])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "refuses to apply while busy and leaves the pending cut available for retry",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const svc = yield* Session.Service
+        const state = yield* SessionRunState.Service
+        const session = yield* createSession({ title: "busy revert" })
+        const first = yield* createTextMessage(session.id, "pending")
+        yield* svc.setRevert({ sessionID: session.id, revert: { messageID: first.info.id }, summary: session.summary })
+        const ready = Latch.makeUnsafe()
+        const running = yield* state
+          .ensureRunning(
+            session.id,
+            Effect.succeed({ info: first.info, parts: [first.part] }),
+            ready.open.pipe(Effect.andThen(Effect.never)),
+          )
+          .pipe(Effect.forkChild)
+        yield* ready.await
+        const headers = { "x-opencode-directory": test.directory }
+        const route = pathFor(SessionPaths.applyRevert, { sessionID: session.id })
+
+        const refused = yield* request(route, { method: "POST", headers })
+
+        expect(refused.status).toBe(409)
+        expect(yield* responseJson(refused)).toMatchObject({ _tag: "SessionBusyError", sessionID: session.id })
+        expect((yield* svc.get(session.id)).revert).toEqual({ messageID: first.info.id })
+        expect((yield* svc.messages({ sessionID: session.id })).map((message) => message.info.id)).toEqual([
+          first.info.id,
+        ])
+        yield* Fiber.interrupt(running)
+        yield* state.cancel(session.id)
+        expect((yield* requestJson<Session.Info>(route, { method: "POST", headers })).revert).toBeUndefined()
+        expect(yield* svc.messages({ sessionID: session.id })).toEqual([])
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

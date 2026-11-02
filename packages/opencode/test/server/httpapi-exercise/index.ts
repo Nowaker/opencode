@@ -1624,6 +1624,22 @@ const scenarios: Scenario[] = [
       "status",
     ),
   http.protected
+    .post("/session/{sessionID}/revert/apply", "session.applyRevert")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Apply revert session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/revert/apply", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(
+      200,
+      (body, ctx) => {
+        object(body)
+        check(body.id === ctx.state.id && body.revert === undefined, "apply should return the session without a revert")
+      },
+      "status",
+    ),
+  http.protected
     .post("/session/{sessionID}/unrevert", "session.unrevert")
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Unrevert session" }))

@@ -186,6 +186,8 @@ import type {
   QuestionV2Reply,
   SessionAbortErrors,
   SessionAbortResponses,
+  SessionApplyRevertErrors,
+  SessionApplyRevertResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -4396,6 +4398,38 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Apply pending revert
+   *
+   * Permanently remove the pending reverted messages and parts and clear the revert marker without admitting input or starting an AI turn. Files remain in their current state. An idle session without a pending revert is unchanged.
+   */
+  public applyRevert<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionApplyRevertResponses, SessionApplyRevertErrors, ThrowOnError>({
+      url: "/session/{sessionID}/revert/apply",
+      ...options,
+      ...params,
     })
   }
 

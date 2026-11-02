@@ -28,6 +28,7 @@ export type RevertInput = Schema.Schema.Type<typeof RevertInput>
 export interface Interface {
   readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError>
   readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
+  readonly apply: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
   readonly cleanup: (session: Session.Info) => Effect.Effect<void>
 }
 
@@ -170,7 +171,13 @@ const layer = Layer.effect(
       yield* sessions.clearRevert(sessionID)
     })
 
-    return Service.of({ revert, unrevert, cleanup })
+    const apply = Effect.fn("SessionRevert.apply")(function* (input: { sessionID: SessionID }) {
+      yield* state.assertNotBusy(input.sessionID)
+      yield* cleanup(yield* sessions.get(input.sessionID).pipe(Effect.orDie))
+      return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+    })
+
+    return Service.of({ revert, unrevert, apply, cleanup })
   }),
 )
 

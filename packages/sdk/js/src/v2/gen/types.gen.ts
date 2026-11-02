@@ -10612,6 +10612,44 @@ export type SessionRevertResponses = {
 
 export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
 
+export type SessionApplyRevertData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/revert/apply"
+}
+
+export type SessionApplyRevertErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * SessionBusyError
+   */
+  409: SessionBusyError
+}
+
+export type SessionApplyRevertError = SessionApplyRevertErrors[keyof SessionApplyRevertErrors]
+
+export type SessionApplyRevertResponses = {
+  /**
+   * Updated session
+   */
+  200: Session
+}
+
+export type SessionApplyRevertResponse = SessionApplyRevertResponses[keyof SessionApplyRevertResponses]
+
 export type SessionUnrevertData = {
   body?: never
   path: {

@@ -395,6 +395,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapBusy(revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }))
     })
 
+    const applyRevert = Effect.fn("SessionHttpApi.applyRevert")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* SessionError.mapBusy(revertSvc.apply(ctx.params))
+    })
+
     const unrevert = Effect.fn("SessionHttpApi.unrevert")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
       return yield* SessionError.mapBusy(revertSvc.unrevert({ sessionID: ctx.params.sessionID }))
@@ -496,6 +501,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("command", command)
       .handle("shell", shell)
       .handle("revert", revert)
+      .handle("applyRevert", applyRevert)
       .handle("unrevert", unrevert)
       .handle("unqueue", unqueue)
       .handle("permissionRespond", permissionRespond)

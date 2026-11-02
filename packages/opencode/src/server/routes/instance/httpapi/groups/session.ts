@@ -119,6 +119,7 @@ export const SessionPaths = {
   command: `${root}/:sessionID/command`,
   shell: `${root}/:sessionID/shell`,
   revert: `${root}/:sessionID/revert`,
+  applyRevert: `${root}/:sessionID/revert/apply`,
   unrevert: `${root}/:sessionID/unrevert`,
   permissions: `${root}/:sessionID/permissions/:permissionID`,
   deleteMessage: `${root}/:sessionID/message/:messageID`,
@@ -401,6 +402,19 @@ export const SessionApi = HttpApi.make("session")
             summary: "Revert message",
             description:
               "Revert a specific message in a session, undoing its effects and restoring the previous state. Pass `files: false` to revert only the messages and leave every file untouched.",
+          }),
+        ),
+        HttpApiEndpoint.post("applyRevert", SessionPaths.applyRevert, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Session.Info, "Updated session"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.applyRevert",
+            summary: "Apply pending revert",
+            description:
+              "Permanently remove the pending reverted messages and parts and clear the revert marker without admitting input or starting an AI turn. Files remain in their current state. An idle session without a pending revert is unchanged.",
           }),
         ),
         HttpApiEndpoint.post("unrevert", SessionPaths.unrevert, {
