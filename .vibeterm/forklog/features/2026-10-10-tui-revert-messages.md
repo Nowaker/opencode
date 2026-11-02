@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `revert-modes`; upstream `v1-revert-messages`
 - First local commit: `c199a85944`
-- Current local commit(s): `c199a85944`, `7c6a2b63f3` (fork default)
+- Current local commit(s): `c199a85944`, `7c6a2b63f3` (fork default), `c813788a7f`, `9936a766c7` (optional pending Apply)
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 - Upstream: PR [#54436](https://github.com/anomalyco/opencode/pull/54436) (`v1-revert-messages`, `0737c14d50`), default `revert.files: true`. **Needs a v2 port later.**
@@ -106,6 +106,8 @@ Session [`ses_ed759a0b4ffeCubC9xxc8hYgHY`](../sessions/2026-10-10-revert-unqueue
   Evidence: patch-identical in `git range-diff`; that session's gates.
 - 2026-10-12 [`ses_ece4671adffe4Y4d8Yv35NSjXh`](../sessions/2026-10-12-v1-v2-patch-rig.md) -
   rig run: `v1-revert-messages` applies on `v1.19.0`; v2 port cost L. See the [matrix](../README.md#tui-patches-on-v1-and-v2).
+
+- 2026-11-01 [`ses_e652b2871ffe8ePJ17VkrGTnma`](../sessions/2026-11-01-apply-revert.md) adds [Apply revert](./2026-11-01-apply-revert.md) without changing file selection: physical cleanup preserves the current file state, waits for optimistic staging, and retains the draft. Backend and native-renderer regressions pass; both clean-source native installations report vt-394.
 
 ## Current maintenance notes
 

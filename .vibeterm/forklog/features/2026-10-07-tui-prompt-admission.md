@@ -7,7 +7,7 @@
 - Development branch(es): `submit-retain-draft`, `prompt-admission`
 - First local commit: `777a8045b8`
 - Current local commit(s): `777a8045b8`, `9612d23d3e`, `c55ad9c400`, `38a64a3d4a`,
-  `c8356e7900`, `a27f434803`, `423914987f`, `78f558ead8`, `313bc88cfe`
+  `c8356e7900`, `a27f434803`, `423914987f`, `78f558ead8`, `313bc88cfe`, `9936a766c7`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`, contains `v1.18.34`)
 - Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
 
@@ -165,6 +165,8 @@ text vanished from the composer and was retyped.
   rebased onto upstream `v1` `dfb56f76c7` (`v1.19.0`). Conflict in
   `app.tsx`: `PromptAdmissionProvider` wraps v1's new
   `UpdateNotificationProvider` subtree. Evidence: TUI suite, that session.
+
+- 2026-11-01 [`ses_e652b2871ffe8ePJ17VkrGTnma`](../sessions/2026-11-01-apply-revert.md) fixes disabled Enter being replayed after the textarea's IME deferral during [Apply revert](./2026-11-01-apply-revert.md). The immediate `onSubmit` guard retains the draft when Apply finishes; seven strict native scenarios and 68 related prompt regressions pass. This does not change admission or reconciliation semantics.
 
 ## Current maintenance notes
 

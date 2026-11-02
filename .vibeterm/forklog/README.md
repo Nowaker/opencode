@@ -101,6 +101,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Pass messageID to the shell.env hook](./features/2026-10-08-shell-env-message-id.md)
 - [Editor-standard Home and End defaults](./features/2026-10-09-editor-home-end.md)
 - [Revert messages without reverting files, shown at once](./features/2026-10-10-tui-revert-messages.md)
+- [Apply a pending revert without starting a turn](./features/2026-11-01-apply-revert.md)
 - [Unqueue a prompt waiting behind the running turn](./features/2026-10-10-tui-unqueue-prompt.md)
 - [Delete a paste placeholder whole on word and line deletes](./features/2026-10-10-paste-placeholder-delete.md)
 - [Configure when a paste is summarized and what its placeholder says](./features/2026-10-10-paste-summary-config.md)
@@ -132,6 +133,8 @@ carries every feature forward unchanged. That commit includes the full
 - [Send the model request while file snapshots run](./features/2026-11-01-async-snapshots.md)
 
 ## Session records
+
+- [2026-11-01 `ses_e652b2871ffe8ePJ17VkrGTnma`](./sessions/2026-11-01-apply-revert.md) - prompt-free Apply revert endpoint and native card/palette action, retained draft and disabled-Enter fix; source `c813788a7f`/`9936a766c7`; clean native builds and installed HTTP probes on desktop and m4max, vt-394.
 
 - [2026-11-01 `ses_e6649eb52ffeWA5U81qVUQP5Td`](./sessions/2026-11-01-async-snapshots.md) - per-step snapshots run in the background; only tools that may write wait for them (read-only list in `ToolRegistry`), parts get their hashes when ready, the loop settles before going idle; upstreamable `5890ad1411` on `github/v1` (branch `async-snapshots` on `nowaker-github`, PR not opened), merged as `6977deacde`; vt-391 on both hosts.
 
