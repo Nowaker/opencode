@@ -131,8 +131,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Snapshot cleanup repair, op timing and oversize warning](./features/2026-10-27-snapshot-housekeeping.md)
 - [Fork a session in the background without leaving it](./features/2026-11-01-background-fork.md)
 - [Send the model request while file snapshots run](./features/2026-11-01-async-snapshots.md)
+- [Prompt external_directory for symlinks that resolve outside the project](./features/2026-11-01-symlink-external-directory.md)
 
 ## Session records
+
+- [2026-11-01 `ses_e6489be9fffe4C9rbuuFTkKk1E`](./sessions/2026-11-01-symlink-external-directory.md) - in-project symlinks (file, linked directory, other repo, dangling) that resolve outside now prompt `external_directory` in read/write/edit/apply_patch/glob/grep/lsp; a dangling-link read names its target; upstreamable `b6bdc91b38` on `github/v1` (local, disclosure route pending), merged as `1511b34f5a`; v2 is lexical by design (#38180); vt-397 on both hosts with the retry cap.
 
 - [2026-11-01 `ses_e652b2871ffe8ePJ17VkrGTnma`](./sessions/2026-11-01-apply-revert.md) - prompt-free Apply revert endpoint and native card/palette action, retained draft and disabled-Enter fix; source `c813788a7f`/`9936a766c7`; clean native builds and installed HTTP probes on desktop and m4max, vt-394.
 
