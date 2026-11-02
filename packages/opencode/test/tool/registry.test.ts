@@ -272,6 +272,43 @@ describe("tool.registry", () => {
     }),
   )
 
+  withBrokenPlugin.instance("marks only read-only built-in tools as not waiting for snapshots", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const tool = path.join(test.directory, ".opencode", "tool")
+      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(tool, "read.ts"),
+          [
+            "export default {",
+            "  description: 'custom read',",
+            "  args: {},",
+            "  execute: async () => 'ok',",
+            "}",
+            "",
+          ].join("\n"),
+        ),
+      )
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+      const readOnly = (id: string) => tools.findLast((item) => item.id === id)?.readOnly === true
+
+      expect(["glob", "grep", "webfetch", "todowrite", "websearch", "skill", "invalid"].every(readOnly)).toBe(true)
+      expect(tools.find((item) => item.id === "read")?.readOnly).toBe(true)
+      const gated = ["bash", "edit", "write", "task", "broken_plugin_tool"]
+      expect(gated.filter((id) => tools.some((item) => item.id === id))).toEqual(gated)
+      expect(gated.some(readOnly)).toBe(false)
+      // A custom tool that reuses a built-in name replaces it and must not inherit its classification.
+      expect(readOnly("read")).toBe(false)
+    }),
+  )
+
   it.instance("loads tools from .opencode/tools (plural)", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
