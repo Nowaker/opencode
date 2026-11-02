@@ -129,8 +129,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Expandable delivery provenance on user messages](./features/2026-10-19-delivery-provenance-view.md)
 - [Snapshot cleanup repair, op timing and oversize warning](./features/2026-10-27-snapshot-housekeeping.md)
 - [Fork a session in the background without leaving it](./features/2026-11-01-background-fork.md)
+- [Send the model request while file snapshots run](./features/2026-11-01-async-snapshots.md)
 
 ## Session records
+
+- [2026-11-01 `ses_e6649eb52ffeWA5U81qVUQP5Td`](./sessions/2026-11-01-async-snapshots.md) - per-step snapshots run in the background; only tools that may write wait for them (read-only list in `ToolRegistry`), parts get their hashes when ready, the loop settles before going idle; upstreamable `5890ad1411` on `github/v1` (branch `async-snapshots` on `nowaker-github`, PR not opened), merged as `6977deacde`; vt-391 on both hosts.
 
 - [2026-11-01 `ses_e6683c468ffewy5J1dk7eU3NGi`](./sessions/2026-11-01-upstream-1.19.5.md) - merge upstream `v1` through `v1.19.5` (`006d837c50`) without a force-push, as `6b5b4898ef`; five conflicts (installation, `/update`, worker RPC, sidebar share URL), retry-header cap reapplied; Bun 1.4.4; vt-386 on both hosts.
 
