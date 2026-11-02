@@ -2,6 +2,7 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
+import fs from "fs/promises"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -258,6 +259,45 @@ describe("tool.read external_directory permission", () => {
     }),
   )
 })
+
+if (process.platform !== "win32") {
+  describe("tool.read symlinks", () => {
+    it.live("asks for external_directory permission when an in-project link points outside", () =>
+      Effect.gen(function* () {
+        const outer = yield* tmpdirScoped()
+        const dir = yield* tmpdirScoped({ git: true })
+        yield* put(path.join(outer, "sub", "secret.txt"), "secret data")
+        yield* Effect.promise(() => fs.symlink(path.join(outer, "sub", "secret.txt"), path.join(dir, "file-link.txt")))
+        yield* Effect.promise(() => fs.symlink(path.join(outer, "sub"), path.join(dir, "dir-link")))
+
+        const { items, next } = asks()
+        yield* exec(dir, { filePath: path.join(dir, "file-link.txt") }, next)
+        yield* exec(dir, { filePath: path.join(dir, "dir-link", "secret.txt") }, next)
+        yield* exec(dir, { filePath: path.join(dir, "dir-link") }, next)
+
+        expect(items.filter((item) => item.permission === "external_directory").map((item) => item.patterns)).toEqual([
+          [glob(path.join(outer, "sub", "*"))],
+          [glob(path.join(outer, "sub", "*"))],
+          [glob(path.join(outer, "sub", "*"))],
+        ])
+      }),
+    )
+
+    it.live("explains a dangling link instead of suggesting the link itself", () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true })
+        const link = path.join(dir, "dangling.txt")
+        yield* Effect.promise(() => fs.symlink("does-not-exist.txt", link))
+
+        const err = yield* fail(dir, { filePath: link })
+
+        expect(err.message).toBe(
+          `File not found: ${link} is a symbolic link to does-not-exist.txt (${path.join(dir, "does-not-exist.txt")}), which does not exist.`,
+        )
+      }),
+    )
+  })
+}
 
 describe("tool.read env file permissions", () => {
   const cases: [string, boolean][] = [

@@ -13,7 +13,7 @@ import { Tool } from "@/tool/tool"
 import { Agent } from "../../src/agent/agent"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const ctx = {
@@ -263,6 +263,67 @@ describe("tool.write", () => {
       }),
     )
   })
+
+  if (process.platform !== "win32") {
+    describe("symlinks", () => {
+      const deny = {
+        ...ctx,
+        ask: (req: Parameters<Tool.Context["ask"]>[0]) =>
+          req.permission === "external_directory" ? Effect.die(new Error("external_directory denied")) : Effect.void,
+      }
+
+      it.instance("asks before writing through a directory link that points outside", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => fs.symlink(outside, path.join(test.directory, "linked")))
+
+          const exit = yield* run(
+            { filePath: path.join(test.directory, "linked", "file.txt"), content: "pwned" },
+            deny,
+          ).pipe(Effect.exit)
+
+          expect(exit._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readdir(outside))).toEqual([])
+        }),
+      )
+
+      it.instance("asks before overwriting the outside target of a file link", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => fs.writeFile(path.join(outside, "target.txt"), "original"))
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(outside, "target.txt"), path.join(test.directory, "link.txt")),
+          )
+
+          const exit = yield* run({ filePath: path.join(test.directory, "link.txt"), content: "pwned" }, deny).pipe(
+            Effect.exit,
+          )
+
+          expect(exit._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readFile(path.join(outside, "target.txt"), "utf-8"))).toBe("original")
+        }),
+      )
+
+      it.instance("asks before creating the outside target of a dangling link", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(outside, "created.txt"), path.join(test.directory, "dangling.txt")),
+          )
+
+          const exit = yield* run({ filePath: path.join(test.directory, "dangling.txt"), content: "pwned" }, deny).pipe(
+            Effect.exit,
+          )
+
+          expect(exit._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readdir(outside))).toEqual([])
+        }),
+      )
+    })
+  }
 
   describe("title generation", () => {
     it.instance("returns relative path as title", () =>

@@ -220,4 +220,36 @@ describe("tool.grep", () => {
       expect(requests.find((req) => req.permission === "external_directory")).toBeUndefined()
     }),
   )
+
+  it.instance("asks for external_directory permission when an in-project link points outside", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+
+      const test = yield* TestInstance
+      const outside = yield* Effect.acquireRelease(
+        Effect.promise(async () => fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "opencode-grep-outside-")))),
+        (dir) => Effect.promise(() => fs.rm(dir, { recursive: true, force: true })),
+      )
+      yield* Effect.promise(() => Bun.write(path.join(outside, "secret.txt"), "needle"))
+      yield* Effect.promise(() => fs.symlink(outside, path.join(test.directory, "linked")))
+      const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+      const next: Tool.Context = {
+        ...ctx,
+        ask: (req) =>
+          Effect.sync(() => {
+            requests.push(req)
+          }),
+      }
+
+      const info = yield* GrepTool
+      const grep = yield* info.init()
+      yield* grep.execute({ pattern: "needle", path: path.join(test.directory, "linked") }, next)
+      yield* grep.execute({ pattern: "needle", path: path.join(test.directory, "linked", "secret.txt") }, next)
+
+      expect(requests.filter((req) => req.permission === "external_directory").map((req) => req.patterns)).toEqual([
+        [path.join(outside, "*")],
+        [path.join(outside, "*")],
+      ])
+    }),
+  )
 })

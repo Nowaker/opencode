@@ -3,6 +3,7 @@ import path from "path"
 import * as fs from "fs/promises"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ApplyPatchTool } from "../../src/tool/apply_patch"
 import { LSP } from "@/lsp/lsp"
@@ -11,13 +12,21 @@ import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Truncate } from "@/tool/truncate"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(
   LayerNode.compile(
-    LayerNode.group([LSP.node, FSUtil.node, Format.node, EventV2Bridge.node, Truncate.node, Agent.node]),
+    LayerNode.group([
+      LSP.node,
+      FSUtil.node,
+      Format.node,
+      EventV2Bridge.node,
+      Truncate.node,
+      Agent.node,
+      CrossSpawnSpawner.node,
+    ]),
   ),
 )
 
@@ -546,4 +555,43 @@ EOF`
       expect(yield* readText(target)).toBe(`He said "hi"\nsome${emDash}dash\nend\n`)
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.instance(
+      "asks before patching files through links that point outside",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* writeText(path.join(outside, "target.txt"), "original\n")
+          yield* Effect.promise(() => fs.symlink(outside, path.join(test.directory, "linked")))
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(outside, "created.txt"), path.join(test.directory, "dangling.txt")),
+          )
+          const deny: ToolCtx = {
+            ...baseCtx,
+            ask: (input) =>
+              input.permission === "external_directory"
+                ? Effect.die(new Error("external_directory denied"))
+                : Effect.void,
+          }
+
+          yield* expectFailure(
+            execute(
+              {
+                patchText: "*** Begin Patch\n*** Update File: linked/target.txt\n@@\n-original\n+pwned\n*** End Patch",
+              },
+              deny,
+            ),
+          )
+          yield* expectFailure(
+            execute({ patchText: "*** Begin Patch\n*** Add File: dangling.txt\n+pwned\n*** End Patch" }, deny),
+          )
+
+          expect(yield* readText(path.join(outside, "target.txt"))).toBe("original\n")
+          yield* expectReadFailure(path.join(outside, "created.txt"))
+        }),
+      { git: true },
+    )
+  }
 })
