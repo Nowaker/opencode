@@ -82,10 +82,10 @@ export type TuiComposerDeliverRequest = {
 }
 
 /**
- * Why `deliver()` refused; a refused delivery sends nothing. `hidden`: the session shows no prompt (a permission or a
- * question is waiting, or it is a subagent). `disabled`: the composer is sealed or disabled. `session`: the TUI is not
- * showing `sessionID`. `agent`/`model`/`workspace`: no agent or model is selected, or the session's workspace is not
- * connected. `invalid`: a malformed ID, `metadata` that is not a plain JSON object, or a repeated `messageID` whose
+ * Why `deliver()` refused; a refused delivery sends nothing. `unmounted`: the TUI shows no session prompt (a subagent,
+ * or it is still opening). `hidden`: a prompt is mounted but not shown. `disabled`: the composer is sealed or disabled,
+ * such as while a revert is applied. `session`: the TUI is not showing `sessionID`. `agent`/`model`/`workspace`: no
+ * agent or model is selected, or the session's workspace is not connected. `invalid`: a malformed ID, `metadata` that is not a plain JSON object, or a repeated `messageID` whose
  * `partID` or `metadata` differs from the first delivery.
  */
 export type TuiComposerDeliverRefusal =
@@ -126,8 +126,10 @@ export type TuiComposerApi = {
   /**
    * Sends `text` to the shown session as its own turn, with the agent, model and variant the composer would use,
    * without touching the composer: its text, caret, focus and undo history stay as they are, and an open dialog
-   * (command palette, agent or model list, paste editor) stays open with its filter and selection. It is refused
-   * only where the composer itself could not submit: no prompt shown, sealed, disabled, still syncing. A submitted
+   * (command palette, agent or model list, paste editor) stays open with its filter and selection. A permission or
+   * question prompt shown in the composer's place stays on screen, unanswered: the server stores the text and the
+   * turn waiting on that prompt reads it once the person answered. It is refused only where the composer itself could
+   * not submit: no session prompt, sealed, disabled, still syncing. A submitted
    * receipt acknowledges that the TUI sent it, not that the server stored it; a server that refuses it does not put
    * the text in the composer.
    */

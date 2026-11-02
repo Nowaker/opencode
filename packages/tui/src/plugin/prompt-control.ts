@@ -15,7 +15,13 @@ import type { ComposerSeal } from "../context/composer-seal"
 import { copyPromptParts } from "../prompt/undo"
 import { Identifier } from "@opencode-ai/core/id/id"
 
-type State = { dialog: boolean; ready: boolean; sessionID: string | null }
+/**
+ * The shown session's composer is replaced by a permission or question prompt. A delivery still goes through: the
+ * server stores it and the turn waiting on that prompt reads it once the person answered, so the prompt is neither
+ * answered nor dismissed. `disabled` is what would disable the composer itself, such as a revert being applied.
+ */
+export type PromptHeld = { disabled: boolean }
+type State = { dialog: boolean; ready: boolean; sessionID: string | null; held?: PromptHeld }
 type Content = Pick<TuiComposerSnapshot, "generation" | "sha256" | "partsSha256">
 /** Sends a delivery past the composer; see `TuiComposerApi.deliver`. Absent, every delivery is `unmounted`. */
 export type PromptSend = (
@@ -103,7 +109,8 @@ export function createPromptControl(
   }
 
   /* Gated on what decides whether the composer could submit at all, minus what only stands between a person and
-     the composer: an open dialog, shell mode and focus are not reasons to refuse, since nothing is typed. */
+     the composer: an open dialog, shell mode, focus and a permission or question prompt in its place (`PromptHeld`)
+     are not reasons to refuse, since nothing is typed. */
   function deliver(request: TuiComposerDeliverRequest): TuiComposerDeliverResult {
     const ids = { messageID: request.messageID ?? Identifier.ascending("message"), partID: request.partID ?? Identifier.ascending("part") }
     if (!ids.messageID.startsWith("msg_") || !ids.partID.startsWith("prt_")) return { status: "not-ready", reason: "invalid" }
@@ -116,10 +123,11 @@ export function createPromptControl(
         : { status: "not-ready", reason: "invalid" }
     const { ref, handoff, flags } = observe()
     const refuse = (reason: TuiComposerDeliverRefusal): TuiComposerDeliverResult => ({ status: "not-ready", reason })
-    if (!ref || !handoff || !send) return refuse("unmounted")
+    const gate = ref ? handoff : flags.held && { visible: true, disabled: flags.held.disabled }
+    if (!gate || !send) return refuse("unmounted")
     if (composerSeal?.sealed()) return refuse("disabled")
-    if (!handoff.visible) return refuse("hidden")
-    if (handoff.disabled) return refuse("disabled")
+    if (!gate.visible) return refuse("hidden")
+    if (gate.disabled) return refuse("disabled")
     if (!flags.ready) return refuse("syncing")
     if (flags.sessionID !== request.sessionID) return refuse("session")
     const result = send({

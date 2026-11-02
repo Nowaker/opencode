@@ -20,6 +20,7 @@ import { Config } from "@/config/config"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "@/provider/provider"
 import { Env } from "../../src/env"
@@ -1961,6 +1962,93 @@ it.instance("async admission stores a different prompt while the session is busy
     yield* Effect.all([Fiber.join(first), Fiber.join(queued)])
     expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
   }),
+)
+
+// A prompt sent while the turn waits on a person (a permission or a question) is stored at once and leaves that
+// request pending; answering it lets the turn go on, and the turn then answers the prompt.
+const promptWhileAsked = Effect.fn("test.promptWhileAsked")(function* <A extends { id: string }>(input: {
+  tool: string
+  args: Record<string, unknown>
+  permission: PermissionV1.Ruleset
+  pending: (sessionID: SessionID) => Effect.Effect<A | undefined>
+  answer: (request: A) => Effect.Effect<void, unknown>
+}) {
+  const { dir, llm } = yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const chat = yield* sessions.create({ title: "Asked", permission: input.permission })
+  yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "go" }] })
+  yield* llm.tool(input.tool, { ...input.args, ...(input.tool === "bash" ? { workdir: path.resolve(dir) } : {}) })
+  yield* llm.text("after the tool")
+  yield* llm.text("spare")
+  const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+  const asked = yield* pollWithTimeout(input.pending(chat.id), `${input.tool} never asked`)
+
+  const id = MessageID.ascending()
+  const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+  const delivered = yield* prompt.prompt(queuedPrompt(chat.id, id, "delivered words"), admitted).pipe(Effect.forkChild)
+  yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
+
+  expect((yield* input.pending(chat.id))?.id).toBe(asked.id)
+  expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 0 })
+  expect(run.pollUnsafe()).toBeUndefined()
+  expect(yield* llm.calls).toBe(1)
+
+  yield* input.answer(asked)
+  yield* Effect.all([Fiber.join(run), Fiber.join(delivered)])
+  const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+  expect(completedTool(msgs.flatMap((msg) => msg.parts))?.state.input).toMatchObject(input.args)
+  expect(yield* turnsFor(chat.id, id)).toEqual({ users: 1, replies: 1 })
+  expect(yield* sentToModel("delivered words")).toBeGreaterThan(0)
+  expect(yield* input.pending(chat.id)).toBeUndefined()
+})
+
+unix(
+  "a prompt sent while a permission is pending is stored, leaves the permission pending, and is answered after it",
+  () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      yield* promptWhileAsked({
+        tool: "bash",
+        args: { command: "printf ran", description: "probe" },
+        permission: [
+          { permission: "*", pattern: "*", action: "allow" },
+          { permission: "bash", pattern: "*", action: "ask" },
+        ],
+        pending: (sessionID) =>
+          permission.list().pipe(Effect.map((items) => items.find((item) => item.sessionID === sessionID))),
+        answer: (request) => permission.reply({ requestID: request.id, reply: "once" }),
+      })
+    }),
+  { git: true },
+  30_000,
+)
+
+const withQuestionTool = testEffect(
+  LayerNode.compile(LayerNode.group([promptRoot, testLLMServerNode]), [
+    [SessionSummary.node, summary],
+    [LSP.node, lsp],
+    [MCP.node, makeMcp()],
+    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true, enableQuestionTool: true })],
+  ]),
+)
+
+withQuestionTool.instance(
+  "a prompt sent while a question is pending is stored, leaves the question pending, and is answered after it",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      yield* promptWhileAsked({
+        tool: "question",
+        args: { questions: [{ header: "probe", question: "go on?", options: [{ label: "yes", description: "go on" }] }] },
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        pending: (sessionID) =>
+          question.list().pipe(Effect.map((items) => items.find((item) => item.sessionID === sessionID))),
+        answer: (request) => question.reply({ requestID: request.id, answers: [["yes"]] }),
+      })
+    }),
+  { git: true },
+  30_000,
 )
 
 // Unqueue

@@ -188,6 +188,7 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
         dialog: input.dialog.stack.length > 0,
         ready: input.sync.ready,
         sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
+        held: input.promptRef?.held,
       }),
       input.composerSeal,
       input.promptSend,

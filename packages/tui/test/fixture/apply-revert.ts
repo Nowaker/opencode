@@ -61,10 +61,11 @@ export type Rig = ReturnType<typeof createRig>
 /**
  * Runs the real TUI on a test renderer against a wire-level fake server, whose session is reverted to the second
  * prompt when `reverted`. The POSTs under test wait for the scenario to answer them through `rig.gate`. Once the
- * app exited, every request an action started has been made, so the log proves no turn was ever started.
+ * app exited, every request an action started has been made, so the log proves no turn was ever started, unless
+ * the scenario starts `turns` itself.
  */
 export async function withApp(
-  options: { width: number; reverted?: boolean; mode?: "dark" | "light" },
+  options: { width: number; reverted?: boolean; mode?: "dark" | "light"; turns?: boolean },
   body: (rig: Rig) => Promise<void>,
 ) {
   await using tmp = await tmpdir()
@@ -77,7 +78,7 @@ export async function withApp(
     messages: transcript,
   }
   const events = createEventSource()
-  const requests: { method: string; path: string }[] = []
+  const requests: { method: string; path: string; body?: string }[] = []
   const gates = new Map<string, PromiseWithResolvers<Response>[]>()
   const checks = new Set<() => void>()
   const check = () => checks.forEach((run) => run())
@@ -106,7 +107,11 @@ export async function withApp(
   const fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
-      const call = { method: request.method, path: new URL(request.url).pathname }
+      const call = {
+        method: request.method,
+        path: new URL(request.url).pathname,
+        ...(request.method === "POST" ? { body: await request.clone().text() } : {}),
+      }
       requests.push(call)
       check()
       if (call.method !== "POST") return calls.fetch(input, init)
@@ -164,7 +169,8 @@ export async function withApp(
     await task
     setup.renderer.off("frame", check)
     setup.renderer.off("focused_renderable", check)
-    expect(requests.filter((call) => call.method === "POST" && promptPaths.includes(call.path))).toEqual([])
+    if (!options.turns)
+      expect(requests.filter((call) => call.method === "POST" && promptPaths.includes(call.path))).toEqual([])
     return rig
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
@@ -190,7 +196,7 @@ function createRig(input: {
   api: TuiPluginApi
   setup: Awaited<ReturnType<typeof createTestRenderer>>
   server: { session: Session; messages: typeof transcript }
-  requests: { method: string; path: string }[]
+  requests: { method: string; path: string; body?: string }[]
   gates: Map<string, PromiseWithResolvers<Response>[]>
   checks: Set<() => void>
   emit: (event: GlobalEvent) => void
@@ -247,6 +253,8 @@ function createRig(input: {
     emit,
     updated,
     posts: (path: string) => input.requests.filter((call) => call.method === "POST" && call.path === path).length,
+    bodies: (path: string) =>
+      input.requests.flatMap((call) => (call.method === "POST" && call.path === path ? [JSON.parse(call.body ?? "null")] : [])),
     /** Holds the next POST to `path` until the scenario answers it. */
     gate(path: string) {
       const gate = Promise.withResolvers<Response>()

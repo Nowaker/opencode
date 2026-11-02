@@ -575,6 +575,7 @@ export function Session() {
     const merged = mergeFailedPrompt(draft, current)
     if (merged) prompt.set(merged.prompt)
   }
+  onCleanup(promptRef.hold(() => (disabled() ? { disabled: applyingRevert() } : undefined)))
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)

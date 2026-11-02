@@ -6,7 +6,7 @@ function fixture() {
   let revision = 0
   let current: TuiPromptInfo = { input: "", parts: [], mode: "normal" }
   let submits = 0
-  const flags: { dialog: boolean; ready: boolean; sessionID: string | null } = { dialog: false, ready: true, sessionID: null }
+  const flags: { dialog: boolean; ready: boolean; sessionID: string | null; held?: { disabled: boolean } } = { dialog: false, ready: true, sessionID: null }
   const handoff = { visible: true, disabled: false, ready: true }
   const ref: TuiPromptRef = {
     focused: true,
@@ -249,6 +249,39 @@ describe("prompt delivery past the composer", () => {
     expect(refused(() => {}, { ...request, messageID: "nope" })).toEqual({ status: "not-ready", reason: "invalid" })
     expect(createPromptControl(() => f.ref, () => ({ ...f.flags, sessionID: "ses_shown" })).deliver(request))
       .toEqual({ status: "not-ready", reason: "unmounted" })
+  })
+
+  describe("while a permission or question prompt stands in for the composer", () => {
+    const held = (disabled = false) => {
+      const f = fixture()
+      f.flags.sessionID = "ses_shown"
+      f.bind(undefined)
+      f.flags.held = { disabled }
+      return f
+    }
+
+    test("sends, and the composer stays unmounted for everything else", () => {
+      const f = held()
+      expect(f.control.deliver(request)).toEqual({ status: "submitted", messageID: "msg_a", partID: "prt_a" })
+      expect(f.sent).toEqual([request])
+      const guard = f.control.snapshot()
+      expect(guard).toMatchObject({ reason: "unmounted", ready: false, visible: false })
+      expect(f.control.replace({ ...guard, correlationId: "one", text: "typed" }).status).toBe("not-ready")
+      expect(f.control.submit({ ...guard, correlationId: "two" }).status).toBe("not-ready")
+      expect(f.control.seal()).toEqual({ status: "refused", reason: "unmounted" })
+      expect(f.submits()).toBe(0)
+    })
+
+    test("refuses what would refuse the composer itself, sending nothing", () => {
+      const disabled = held(true)
+      expect(disabled.control.deliver(request)).toEqual({ status: "not-ready", reason: "disabled" })
+      const syncing = held()
+      syncing.flags.ready = false
+      expect(syncing.control.deliver(request)).toEqual({ status: "not-ready", reason: "syncing" })
+      const other = held()
+      expect(other.control.deliver({ ...request, sessionID: "ses_other" })).toEqual({ status: "not-ready", reason: "session" })
+      expect([disabled, syncing, other].flatMap((f) => f.sent)).toEqual([])
+    })
   })
 
   describe("metadata", () => {
