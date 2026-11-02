@@ -8,7 +8,7 @@
 - First local commit: `6ece456497`
 - Current local commit(s): `6ece456497`
 - Upstream base when introduced: `907b3bc518` (upstream `dev`)
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 - Upstream: issue [#53193](https://github.com/anomalyco/opencode/issues/53193), PR [#53194](https://github.com/anomalyco/opencode/pull/53194)
 
 ## Original request
@@ -87,6 +87,8 @@ quoting the user:
 - 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
   [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.pin_title` set in tui.json decides; `/pin-title` lasts until exit and toasts.
   Evidence: `27d0b208a1`; branch `tui-sidebar-pin-title` `af843baee3`.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  merge of upstream `v1.19.5`: upstream dropped the sidebar share URL (#55718); removed inside the pinnable `title()`. Evidence: TUI suite 859 pass.
 
 ## Current maintenance notes
 

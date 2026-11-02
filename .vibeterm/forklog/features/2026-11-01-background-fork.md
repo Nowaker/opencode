@@ -8,7 +8,7 @@
 - First local commit: `892325cec5`
 - Current local commit(s): `892325cec5`
 - Upstream base when introduced: `dfb56f76c7` (`v1.19.0`, `github/v1`)
-- Last checked against upstream: `dfb56f76c7`; v2 design check against `github/dev` `8bca532929`
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`); v2 design check against `github/dev` `8bca532929`
 
 ## Original request
 
@@ -70,6 +70,8 @@ See [the session record](../sessions/2026-11-01-background-fork.md#verification)
 ## Timeline
 
 - 2026-11-01 [`ses_e66b728b8ffeIxgqjkEHgEQEui`](../sessions/2026-11-01-background-fork.md) - initial build, tests, isolated real run, install on desktop and m4max as `1.19.0-vt-384-dfb56f76c7`. Evidence: `892325cec5`.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  merged with upstream `v1.19.5` without conflict. Evidence: fork tests 9 pass, prompt suite; installed-binary smoke (caller `id`, `unsettled: "settle"`, notice, `session list`) on both hosts at `1.19.5-vt-386-006d837c50`.
 
 ## Current maintenance notes
 

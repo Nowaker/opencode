@@ -8,7 +8,7 @@
 - First local commit: `593d18abc2`
 - Current local commit(s): `593d18abc2`, `72f013ccac`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
-- Last checked against upstream: `dfb56f76c7`
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 
 ## Original request
 
@@ -64,6 +64,8 @@ Log contract parsed by Vibeterm (logfmt from `packages/core/src/observability/lo
 ## Timeline
 
 - 2026-10-27 [`ses_e8079207bfferzKUfQEvpgORlL`](../sessions/2026-10-27-snapshot-housekeeping.md) - initial build. Evidence: `593d18abc2`, `72f013ccac`; vt-376 on desktop and m4max.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  merged with upstream `v1.19.5` without conflict. Evidence: `test/snapshot` pass.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `c8ce109f25`
 - Current local commit(s): `c8ce109f25`
 - Upstream base when introduced: `2fa3363c92` (upstream `dev`, contains `v1.18.33`)
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 
 ## Original request
 
@@ -74,6 +74,8 @@ verbatim:
   startup auto-update with a `/update` dialog; the `stampedMethod ===
   "unknown"` early return now precedes its check, so a fork build never
   shows the update notice. Evidence: typecheck clean; that session's gates.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  conflict with upstream's `ReleaseType` removal (#54904) resolved in `6b5b4898ef`; `stampedMethod` kept. Evidence: installation and upgrade tests pass.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `2333a1edb1` (rebase of `fe10a35c26`, itself the fork-side reapplication of `18d6718b62` on `sidebar-session-id`)
 - Current local commit(s): `2333a1edb1`
 - Upstream base when introduced: `ecc4916b5a` (upstream `dev`, `sidebar-session-id`); `dev-nowaker` stays on `907b3bc518`
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 - Upstream: issue [#53662](https://github.com/anomalyco/opencode/issues/53662), PR [#53663](https://github.com/anomalyco/opencode/pull/53663)
 
 ## Original request
@@ -79,6 +79,8 @@ the user:
 - 2026-10-12 [`ses_ecd4cb9a4ffexYnAMRzHjPZDUp`](../sessions/2026-10-12-tui-config-precedence.md) -
   [tui.json over remembered toggles](./2026-10-12-tui-config-toggle-precedence.md): `sidebar.session_id` set in tui.json decides, the instant session screen included; `/session-id` lasts until exit and toasts.
   Evidence: `e3d680468f`; branch `sidebar-session-id` `ba05d50d96`.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  merge of upstream `v1.19.5`: the session ID row stays in the resolved `title()` block. Evidence: TUI suite 859 pass.
 
 ## Current maintenance notes
 

@@ -8,8 +8,8 @@
 - First local commit: `c50b7366df` (cherry-pick of `2cef65ac7a`)
 - Current local commit(s): `c50b7366df`, `95113b27bc`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
-- Last checked against upstream: `dfb56f76c7`
-- Upstream: issue [#54934](https://github.com/anomalyco/opencode/issues/54934) (closed as not planned by the upstream bot on 2026-10-13: `v1` takes critical fixes only), PR [#54936](https://github.com/anomalyco/opencode/pull/54936) against `v1` (open). The readiness part, `95113b27bc`, is fork-only: upstream's release builds use Bun 1.3.14, which does not lose these requests.
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
+- Upstream: issue [#54934](https://github.com/anomalyco/opencode/issues/54934) (closed as not planned by the upstream bot on 2026-10-13: `v1` takes critical fixes only), PR [#54936](https://github.com/anomalyco/opencode/pull/54936) against `v1`, merged as `bbad8f350f` (in `v1.19.5`). The readiness part, `95113b27bc`, is fork-only: upstream's release builds use Bun 1.3.14, which does not lose these requests.
 
 ## Original request
 
@@ -130,6 +130,8 @@ and the coordinator `ses_ef8235798ffejGr4sa22eXmVNv`:
 - 2026-10-12 [`ses_eebf9a83fffeIQQwW9gVFo5jaO`](../sessions/2026-10-12-tui-worker-hang.md) -
   introduce; upstream issue #54934 and PR #54936 against `v1`; build and
   install on desktop and m4max (`1.19.0-vt-248-dfb56f76c7`).
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  upstream merged PR #54936 as `bbad8f350f` in `v1.19.5`. The merge `6b5b4898ef` takes upstream's reply `.catch` and `failureMessage` and keeps the fork-only `rpc.ready` handshake, request queue and worker error/close rejection (`95113b27bc`). Evidence: `test/util/rpc.test.ts` pass.
 
 ## Current maintenance notes
 

@@ -8,7 +8,7 @@
 - First local commit: `8bfa57bb26`
 - Current local commit(s): `8bfa57bb26`
 - Upstream base when introduced: `2406400f0a` (upstream `dev`, contains `v1.18.32`)
-- Last checked against upstream: `dfb56f76c7` (upstream `v1`, contains `v1.19.0`)
+- Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 
 ## Original request
 
@@ -104,6 +104,8 @@ ACP client info, the session `version` field, and the CLI daemon registry
   onto v1's `/update` flow with `InstallationBaseVersion`, and the new
   `/update` check and OpenCode 2 restore pins use it too (`f0df2fa2f1`).
   Evidence: both hosts build `1.19.0-vt-<seq>-dfb56f76c7`.
+- 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
+  upstream's new `Installation.latest()` (#54904) compares and returns `InstallationBaseVersion`, so a `-vt-` stamp is not offered its own base release; `/update` keeps the base as `current`. Bumps now merge `github/v1`, so the merge-base stays on the `v1` line. Evidence: `--print-version` `1.19.5-vt-386-006d837c50`; both hosts installed it.
 
 ## Current maintenance notes
 
