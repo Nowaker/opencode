@@ -75,6 +75,14 @@ export const ReadTool = Tool.define<
 
     const miss = Effect.fn("ReadTool.miss")(function* (filepath: string) {
       const dir = path.dirname(filepath)
+      const link = yield* fs.readLink(filepath).pipe(Effect.option)
+      if (Option.isSome(link)) {
+        return yield* Effect.fail(
+          new Error(
+            `File not found: ${filepath} is a symbolic link to ${link.value} (${path.resolve(dir, link.value)}), which does not exist.`,
+          ),
+        )
+      }
       const base = path.basename(filepath)
       const items = yield* fs.readDirectory(dir).pipe(
         Effect.map((items) =>

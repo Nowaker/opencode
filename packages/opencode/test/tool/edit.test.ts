@@ -2,9 +2,10 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { EditTool } from "../../src/tool/edit"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Format } from "../../src/format"
@@ -32,7 +33,15 @@ afterEach(async () => {
 })
 
 const layer = LayerNode.compile(
-  LayerNode.group([LSP.node, FSUtil.node, Format.node, EventV2Bridge.node, Truncate.node, Agent.node]),
+  LayerNode.group([
+    LSP.node,
+    FSUtil.node,
+    Format.node,
+    EventV2Bridge.node,
+    Truncate.node,
+    Agent.node,
+    CrossSpawnSpawner.node,
+  ]),
 )
 
 const it = testEffect(layer)
@@ -571,4 +580,48 @@ describe("tool.edit", () => {
       }),
     )
   })
+
+  if (process.platform !== "win32") {
+    describe("symlinks", () => {
+      const deny = {
+        ...ctx,
+        ask: (req: Parameters<Tool.Context["ask"]>[0]) =>
+          req.permission === "external_directory" ? Effect.die(new Error("external_directory denied")) : Effect.void,
+      }
+
+      it.instance("asks before editing the outside target of a file link", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          const target = path.join(outside, "target.txt")
+          yield* Effect.promise(() => fs.writeFile(target, "original"))
+          yield* Effect.promise(() => fs.symlink(target, path.join(test.directory, "link.txt")))
+
+          const exit = yield* run(
+            { filePath: path.join(test.directory, "link.txt"), oldString: "original", newString: "pwned" },
+            deny,
+          ).pipe(Effect.exit)
+
+          expect(exit._tag).toBe("Failure")
+          expect(yield* load(target)).toBe("original")
+        }),
+      )
+
+      it.instance("asks before creating a file under a directory link that points outside", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => fs.symlink(outside, path.join(test.directory, "linked")))
+
+          const exit = yield* run(
+            { filePath: path.join(test.directory, "linked", "new.txt"), oldString: "", newString: "pwned" },
+            deny,
+          ).pipe(Effect.exit)
+
+          expect(exit._tag).toBe("Failure")
+          expect(yield* Effect.promise(() => fs.readdir(outside))).toEqual([])
+        }),
+      )
+    })
+  }
 })

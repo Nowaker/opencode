@@ -1,6 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { describe, expect } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -103,6 +104,127 @@ describe("tool.assertExternalDirectory", () => {
       expect(requests.length).toBe(0)
     }),
   )
+
+  if (process.platform !== "win32") {
+    describe("symlinks", () => {
+      const external = (requests: ReturnType<typeof makeCtx>["requests"]) =>
+        requests.filter((r) => r.permission === "external_directory")
+
+      it.instance("asks when an in-project file link points outside", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => Bun.write(path.join(outside, "secret.txt"), "x"))
+          const link = path.join(test.directory, "link.txt")
+          yield* Effect.promise(() => fs.symlink(path.join(outside, "secret.txt"), link))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, link)
+
+          expect(external(requests).map((r) => r.patterns)).toEqual([[glob(path.join(outside, "*"))]])
+          expect(external(requests)[0].metadata).toEqual({
+            filepath: path.join(outside, "secret.txt"),
+            parentDir: outside,
+          })
+        }),
+      )
+
+      it.instance("asks for files under an in-project directory link that points outside", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => fs.mkdir(path.join(outside, "sub")))
+          yield* Effect.promise(() => fs.symlink(path.join(outside, "sub"), path.join(test.directory, "linked")))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "linked", "existing-or-not.txt"))
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "linked", "new", "deep.txt"))
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "linked"), { kind: "directory" })
+
+          expect(external(requests).map((r) => r.patterns)).toEqual([
+            [glob(path.join(outside, "sub", "*"))],
+            [glob(path.join(outside, "sub", "new", "*"))],
+            [glob(path.join(outside, "sub", "*"))],
+          ])
+        }),
+      )
+
+      it.instance("asks when a link points into another git repository", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const other = yield* tmpdirScoped({ git: true })
+          yield* Effect.promise(() => Bun.write(path.join(other, "src", "target.txt"), "x"))
+          yield* Effect.promise(() =>
+            fs.symlink(path.relative(test.directory, path.join(other, "src")), path.join(test.directory, "other")),
+          )
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "other", "target.txt"))
+
+          expect(external(requests).map((r) => r.patterns)).toEqual([[glob(path.join(other, "src", "*"))]])
+        }),
+      )
+
+      it.instance("asks for the target of a dangling link that points outside", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          const link = path.join(test.directory, "dangling.txt")
+          yield* Effect.promise(() => fs.symlink(path.join(outside, "missing", "created.txt"), link))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, link)
+
+          expect(external(requests).map((r) => r.patterns)).toEqual([[glob(path.join(outside, "missing", "*"))]])
+        }),
+      )
+
+      it.instance("does not ask for links that stay inside the project", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          yield* Effect.promise(() => Bun.write(path.join(test.directory, "real", "file.txt"), "x"))
+          yield* Effect.promise(() => fs.symlink("real", path.join(test.directory, "alias")))
+          yield* Effect.promise(() => fs.symlink("real/file.txt", path.join(test.directory, "file-link.txt")))
+          yield* Effect.promise(() => fs.symlink("real/missing.txt", path.join(test.directory, "dangling.txt")))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "alias", "file.txt"))
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "file-link.txt"))
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "dangling.txt"))
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "alias", "new.txt"))
+
+          expect(external(requests)).toEqual([])
+        }),
+      )
+
+      it.instance("does not loop on cyclic links", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          yield* Effect.promise(() => fs.symlink("b", path.join(test.directory, "a")))
+          yield* Effect.promise(() => fs.symlink("a", path.join(test.directory, "b")))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "a"))
+
+          expect(external(requests)).toEqual([])
+        }),
+      )
+
+      it.instance("keeps the written path for links outside the project", () =>
+        Effect.gen(function* () {
+          yield* TestInstance
+          const outside = yield* tmpdirScoped()
+          yield* Effect.promise(() => fs.mkdir(path.join(outside, "real")))
+          yield* Effect.promise(() => fs.symlink(path.join(outside, "real"), path.join(outside, "alias")))
+          const { requests, ctx } = makeCtx()
+
+          yield* assertExternalDirectoryEffect(ctx, path.join(outside, "alias", "file.txt"))
+
+          expect(external(requests).map((r) => r.patterns)).toEqual([[glob(path.join(outside, "alias", "*"))]])
+        }),
+      )
+    })
+  }
 
   if (process.platform === "win32") {
     it.instance(

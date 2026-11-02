@@ -1,5 +1,6 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { describe, expect } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit } from "effect"
@@ -11,7 +12,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -129,4 +130,24 @@ describe("tool.glob", () => {
       }
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.instance("asks for external_directory permission when an in-project link points outside", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const outside = yield* tmpdirScoped()
+        yield* Effect.promise(() => Bun.write(path.join(outside, "secret.ts"), "export const secret = 1\n"))
+        yield* Effect.promise(() => fs.symlink(outside, path.join(test.directory, "linked")))
+        const { items, next } = asks()
+        const info = yield* GlobTool
+        const glob = yield* info.init()
+
+        yield* glob.execute({ pattern: "*.ts", path: path.join(test.directory, "linked") }, next)
+
+        expect(items.filter((item) => item.permission === "external_directory").map((item) => item.patterns)).toEqual([
+          [path.join(outside, "*")],
+        ])
+      }),
+    )
+  }
 })
