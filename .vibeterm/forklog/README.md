@@ -135,6 +135,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-02 `ses_e62e4b66dffeHaCeeYFr3mvsZ8`](./sessions/2026-11-02-deliver-past-permission.md) - `api.prompt.deliver` sends while opencode's permission or question prompt replaces the composer (session route `PromptHeld`), leaving the prompt shown and unanswered; server proof that such a prompt is stored at once and read after the answer; `99c057215c`, fork-only; vt-399 on both hosts with the retry cap.
+
 - [2026-11-01 `ses_e6489be9fffe4C9rbuuFTkKk1E`](./sessions/2026-11-01-symlink-external-directory.md) - in-project symlinks (file, linked directory, other repo, dangling) that resolve outside now prompt `external_directory` in read/write/edit/apply_patch/glob/grep/lsp; a dangling-link read names its target; upstreamable `b6bdc91b38` on `github/v1` (local, disclosure route pending), merged as `1511b34f5a`; v2 is lexical by design (#38180); vt-397 on both hosts with the retry cap.
 
 - [2026-11-01 `ses_e652b2871ffe8ePJ17VkrGTnma`](./sessions/2026-11-01-apply-revert.md) - prompt-free Apply revert endpoint and native card/palette action, retained draft and disabled-Enter fix; source `c813788a7f`/`9936a766c7`; clean native builds and installed HTTP probes on desktop and m4max, vt-394.

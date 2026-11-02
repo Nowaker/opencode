@@ -6,9 +6,9 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `prompt-deliver`
 - First local commit: `c1645d7aef`
-- Current local commit(s): `c1645d7aef`
+- Current local commit(s): `c1645d7aef`, `99c057215c`
 - Upstream base when introduced: `dfb56f76c7` (upstream `v1`, `v1.19.0`)
-- Last checked against upstream: `dfb56f76c7`
+- Last checked against upstream: `006d837c50` (`v1.19.5`)
 
 ## Original request
 
@@ -27,12 +27,15 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   its filter, or touching the composer's draft, caret or focus.
 - A delivery whose admission is uncertain can be resent under the same IDs and
   is stored once.
+- A delivery reaches a session while opencode's permission or question prompt
+  stands in the composer's place, and leaves that prompt on screen with its
+  selection, unanswered.
 
 ## Non-goals
 
-- Delivering while a permission or question prompt replaces the composer: the
-  composer could not submit there either, so `deliver()` refuses (`hidden` /
-  `unmounted`) and the caller holds the delivery.
+- Answering, dismissing or reordering a pending permission or question, and
+  showing the composer while one is pending. A subagent session, which has no
+  composer, still refuses with `unmounted`.
 - Shell mode and slash commands: the text is always a plain prompt.
 
 ## Rationale and constraints
@@ -46,6 +49,15 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   `_lib/vibeterm-tmux/modal-delivery.e2e.test.ts`): deliveries into a tab with
   the palette, agent list, model list or paste editor open were all held until
   the dialog closed.
+- A permission or question prompt unmounts the composer, so `deliver()` found
+  no prompt ref. The server does not need one: a prompt sent while the turn
+  waits on `Permission.ask`/`Question.ask` is stored at once, the pending
+  request is untouched, and the turn reads the prompt after the person
+  answers (proved in `packages/opencode/test/session/prompt.test.ts`). The
+  session route registers `PromptHeld` (`{ disabled }`, the revert-apply
+  state) through `PromptRefProvider.hold` while it shows such a prompt, and
+  `deliver()` gates on it in place of the missing handoff. `snapshot`, `read`,
+  `replace`, `submit` and `seal` still see `unmounted`.
 - Admission normally gives a refused prompt back to the composer. A delivery
   is not the person's text, so `Admission.delivery` drops it instead and the
   composer's notice ignores it; the sender retries by ID.
@@ -55,6 +67,7 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `c1645d7aef` | 2026-10-16 | `api.prompt.deliver({ sessionID, text, messageID?, partID? })`; idempotent per messageID; delivery admissions dropped instead of given back | `packages/plugin/src/tui-prompt.ts` `TuiComposerApi.deliver`; `packages/tui/src/plugin/prompt-control.ts` `deliver`; `packages/tui/src/prompt/deliver.ts` `createPromptSend`; `packages/tui/src/prompt/admission.tsx` `Admission.delivery` |
+| `99c057215c` | 2026-11-02 | deliver while a permission or question prompt replaces the composer; the prompt stays unanswered | `packages/tui/src/context/prompt.tsx` `held`/`hold`; `packages/tui/src/routes/session/index.tsx` `promptRef.hold`; `packages/tui/src/plugin/prompt-control.ts` `PromptHeld`, `deliver` gate; `packages/tui/src/plugin/adapters.tsx` `held` |
 
 ## Verification
 
@@ -66,10 +79,14 @@ Coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   open with its filter, and the draft was unchanged; a pending permission
   prompt held the delivery and was left unanswered.
 
+- 2026-11-02, `99c057215c`: `bun run test test/prompt-control.test.ts test/routes/session/deliver-past-ask.test.tsx` (packages/tui) - 34 pass; the two app tests fail with `unmounted` with `held` unwired. Server proof: `prompt.test.ts -t "while a (permission|question) is pending"` - 2 pass. Real PTY: opencode-tools `modal-delivery.e2e.test.ts` permission scenario delivers on vt-399 with the prompt still shown, and the turn's next request carries the delivery after Allow once; vt-397 holds it.
+
 ## Timeline
 
 - 2026-10-16 [`ses_ed24b7cfbffe5YyKo7piBEsLF6`](../sessions/2026-10-16-tui-prompt-deliver.md) -
   introduced. Evidence: `c1645d7aef`, linked session.
+- 2026-11-02 [`ses_e62e4b66dffeHaCeeYFr3mvsZ8`](../sessions/2026-11-02-deliver-past-permission.md) -
+  delivers behind a pending permission or question prompt. Evidence: `99c057215c`, linked session.
 
 ## Current maintenance notes
 
