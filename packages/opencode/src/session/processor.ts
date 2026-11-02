@@ -2,7 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Context, Scope, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -48,6 +48,12 @@ export interface Handle {
     },
   ) => Effect.Effect<void>
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+  /**
+   * Waits for every file snapshot this session has started so far. Tools that may modify the worktree call
+   * this before executing, so their changes always land after the step's "before" snapshot and after the
+   * previous step's "after" snapshot.
+   */
+  readonly waitForSnapshots: Effect.Effect<void>
 }
 
 type Input = {
@@ -59,6 +65,8 @@ type Input = {
 
 export interface Interface {
   readonly create: (input: Input) => Effect.Effect<Handle>
+  /** Waits for the session's background snapshot work, including the step-start, step-finish and patch parts it writes. */
+  readonly settle: (sessionID: SessionID) => Effect.Effect<void>
 }
 
 type ToolCall = {
@@ -71,7 +79,7 @@ type ToolCall = {
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   shouldBreak: boolean
-  snapshot: string | undefined
+  snapshot: Fiber.Fiber<string | undefined> | undefined
   blocked: boolean
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
@@ -99,16 +107,48 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const database = yield* Database.Service
 
+    // Snapshots run in the background so they never delay the model request. Every snapshot a session starts
+    // is tracked here until it has finished and written its hash into the step-start, step-finish or patch
+    // part, so write-capable tools, aborts and the end of the loop can wait for it.
+    const pending = new Map<SessionID, Set<Fiber.Fiber<unknown>>>()
+
+    const background = Effect.fnUntraced(function* <A>(sessionID: SessionID, work: Effect.Effect<A>) {
+      const fiber = yield* work.pipe(
+        Effect.tapCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.void
+            : Effect.logError("snapshot failed", { "session.id": sessionID, cause: Cause.pretty(cause) }),
+        ),
+        Effect.forkIn(scope),
+      )
+      const fibers = pending.get(sessionID) ?? new Set()
+      pending.set(sessionID, fibers)
+      fibers.add(fiber)
+      fiber.addObserver(() => {
+        fibers.delete(fiber)
+        if (fibers.size === 0 && pending.get(sessionID) === fibers) pending.delete(sessionID)
+      })
+      return fiber
+    })
+
+    const settle = Effect.fn("SessionProcessor.settle")(function* (sessionID: SessionID) {
+      const fibers = pending.get(sessionID)
+      if (fibers?.size) yield* Fiber.awaitAll([...fibers])
+    })
+
+    const hashOf = (fiber: Fiber.Fiber<string | undefined>) =>
+      Fiber.await(fiber).pipe(Effect.map((exit) => (Exit.isSuccess(exit) ? exit.value : undefined)))
+
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       const stopSequences = input.stopSequences?.length ? input.stopSequences : undefined
       let boundary = stopSequences && textStop(stopSequences)
       let stopped: number | undefined
       let acceptedNarrative = false
       let completingText = false
-      // Pre-capture snapshot before the LLM stream starts. The AI SDK
-      // may execute tools internally before emitting start-step events,
-      // so capturing inside the event handler can be too late.
-      const initialSnapshot = yield* snapshot.track(input.sessionID)
+      // Start the snapshot before the LLM stream starts. The AI SDK may execute tools internally before
+      // emitting start-step events, so starting it inside the event handler can be too late. Tools that may
+      // write wait for it through waitForSnapshots; the model request and read-only tools do not.
+      const initialSnapshot = yield* background(input.sessionID, snapshot.track(input.sessionID))
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -262,6 +302,26 @@ const layer = Layer.effect(
         }
         return { call: ctx.toolcalls[input.id], part }
       })
+
+      // The patch part ID is allocated when the step ends so the part keeps its place in the message even
+      // though the patch itself is computed later.
+      const recordPatch = (start: Fiber.Fiber<string | undefined>) => {
+        const id = PartID.ascending()
+        return Effect.gen(function* () {
+          const from = yield* hashOf(start)
+          if (!from) return
+          const patch = yield* snapshot.patch(from, ctx.sessionID)
+          if (!patch.files.length) return
+          yield* session.updatePart({
+            id,
+            messageID: ctx.assistantMessage.id,
+            sessionID: ctx.sessionID,
+            type: "patch",
+            hash: patch.hash,
+            files: patch.files,
+          })
+        })
+      }
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
 
@@ -486,19 +546,34 @@ const layer = Layer.effect(
           case "provider-error":
             throw new Error(value.message)
 
-          case "step-start":
-            if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track(ctx.sessionID)
-            yield* session.updatePart({
+          case "step-start": {
+            const prior = ctx.snapshot
+            const part = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
-              snapshot: ctx.snapshot,
               type: "step-start",
-            })
+            } satisfies SessionV1.StepStartPart
+            const ready = prior?.pollUnsafe()
+            if (ready && Exit.isSuccess(ready) && ready.value) {
+              yield* session.updatePart({ ...part, snapshot: ready.value })
+              return
+            }
+            // The snapshot is still running: write the part now and fill in its hash once the snapshot is
+            // done. Without a usable hash, take a new snapshot as the synchronous handler did.
+            yield* session.updatePart(part)
+            ctx.snapshot = yield* background(
+              ctx.sessionID,
+              Effect.gen(function* () {
+                const hash = (prior ? yield* hashOf(prior) : undefined) || (yield* snapshot.track(ctx.sessionID))
+                if (hash) yield* session.updatePart({ ...part, snapshot: hash })
+                return hash
+              }),
+            )
             return
+          }
 
           case "step-finish": {
-            const completedSnapshot = yield* snapshot.track(ctx.sessionID)
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             // Anthropic reports thinking blocks it removed before the model saw the
             // prompt. Prefix mismatches mean opencode changed history behind a signed
@@ -522,37 +597,37 @@ const layer = Layer.effect(
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
-            yield* session.updatePart({
+            const finish = {
               id: PartID.ascending(),
               reason: value.reason,
-              snapshot: completedSnapshot,
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.assistantMessage.sessionID,
               type: "step-finish",
               tokens: usage.tokens,
               cost: usage.cost,
-            })
+            } satisfies SessionV1.StepFinishPart
+            yield* session.updatePart(finish)
             yield* session.updateMessage(ctx.assistantMessage)
-            if (ctx.snapshot) {
-              const patch = yield* snapshot.patch(ctx.snapshot, ctx.sessionID)
-              if (patch.files.length) {
-                yield* session.updatePart({
-                  id: PartID.ascending(),
-                  messageID: ctx.assistantMessage.id,
-                  sessionID: ctx.sessionID,
-                  type: "patch",
-                  hash: patch.hash,
-                  files: patch.files,
-                })
-              }
-              ctx.snapshot = undefined
-            }
-            yield* summary
-              .summarize({
-                sessionID: ctx.sessionID,
-                messageID: ctx.assistantMessage.parentID,
-              })
-              .pipe(Effect.ignore, Effect.forkIn(scope))
+            const start = ctx.snapshot
+            ctx.snapshot = undefined
+            const patch = start ? recordPatch(start) : Effect.void
+            // The "after" snapshot and the patch run off the critical path. The next step's write-capable
+            // tools wait for them, and the summary is computed only once both hashes are recorded.
+            yield* background(
+              ctx.sessionID,
+              Effect.gen(function* () {
+                if (start) yield* Fiber.await(start)
+                const completed = yield* snapshot.track(ctx.sessionID)
+                if (completed) yield* session.updatePart({ ...finish, snapshot: completed })
+                yield* patch
+                yield* summary
+                  .summarize({
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.assistantMessage.parentID,
+                  })
+                  .pipe(Effect.ignore, Effect.forkIn(scope))
+              }),
+            )
             if (
               !ctx.assistantMessage.summary &&
               isOverflow({ cfg: yield* config.get(), tokens: usage.tokens, model: ctx.model })
@@ -595,17 +670,7 @@ const layer = Layer.effect(
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
         if (ctx.snapshot) {
-          const patch = yield* snapshot.patch(ctx.snapshot, ctx.sessionID)
-          if (patch.files.length) {
-            yield* session.updatePart({
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.sessionID,
-              type: "patch",
-              hash: patch.hash,
-              files: patch.files,
-            })
-          }
+          yield* background(ctx.sessionID, recordPatch(ctx.snapshot))
           ctx.snapshot = undefined
         }
 
@@ -774,10 +839,11 @@ const layer = Layer.effect(
         updateToolCall,
         completeToolCall,
         process,
+        waitForSnapshots: settle(input.sessionID),
       } satisfies Handle
     })
 
-    return Service.of({ create })
+    return Service.of({ create, settle })
   }),
 )
 

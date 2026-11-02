@@ -136,7 +136,8 @@ it.effect("preserves running tool start time across metadata updates", () =>
           return state
         }),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+      waitForSnapshots: Effect.void,
+    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
 
     const tools = yield* SessionTools.resolve({
       agent,
@@ -220,7 +221,8 @@ const limitProcessor = {
   } satisfies SessionV1.Assistant,
   updateToolCall: () => Effect.die("unused"),
   completeToolCall: () => Effect.void,
-} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  waitForSnapshots: Effect.void,
+} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
 
 const callTool = Effect.fn("test.callTool")(function* (name: string, args: Record<string, unknown> = {}) {
   const tools = yield* SessionTools.resolve({

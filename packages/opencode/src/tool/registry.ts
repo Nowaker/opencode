@@ -230,6 +230,25 @@ const layer = Layer.effect(
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
+        // Built-in tools that never modify the worktree may run while the step's file snapshot is still being
+        // taken. Every other tool waits for it: shell, edit, write and patch, code mode, plugin and MCP tools
+        // (unknown side effects), and task, because subagents edit the same worktree and their changes belong
+        // to this step's diff.
+        for (const def of [
+          tool.invalid,
+          tool.question,
+          tool.read,
+          tool.glob,
+          tool.grep,
+          tool.fetch,
+          tool.todo,
+          tool.search,
+          tool.skill,
+          tool.lsp,
+          tool.plan,
+        ])
+          def.readOnly = true
+
         return {
           custom,
           builtin: [
@@ -339,6 +358,7 @@ const layer = Layer.effect(
             formatValidationError: tool.formatValidationError,
             timeout: tool.timeout,
             callTimeout: tool.callTimeout,
+            readOnly: tool.readOnly,
           }
         }),
         { concurrency: "unbounded" },

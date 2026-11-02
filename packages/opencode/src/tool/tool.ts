@@ -67,6 +67,8 @@ export interface Def<
   timeout?: number | false
   /** The timeout this call asks for itself, which raises its time limit (see `ToolTimeout.resolve`). */
   callTimeout?(args: Record<string, unknown>): number | undefined
+  /** Set by ToolRegistry for built-in tools that never modify the worktree; see ToolRegistry for the list. */
+  readOnly?: boolean
 }
 export type DefWithoutID<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,

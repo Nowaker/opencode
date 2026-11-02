@@ -1620,6 +1620,7 @@ const layer = Layer.effect(
           continue
         }
 
+        yield* processor.settle(sessionID)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
         return yield* lastAssistant(sessionID)
       },
@@ -1628,10 +1629,12 @@ const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
+      // The session stays busy until its background snapshots are recorded, including after an abort or a
+      // failure, so revert and the next turn never see a finished step without its snapshot hashes.
       return yield* state.ensureRunning(
         input.sessionID,
         lastAssistant(input.sessionID),
-        tracked(input.sessionID, runLoop(input.sessionID)),
+        tracked(input.sessionID, runLoop(input.sessionID).pipe(Effect.ensuring(processor.settle(input.sessionID)))),
       )
     })
 

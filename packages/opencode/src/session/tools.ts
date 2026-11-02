@@ -45,7 +45,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -111,6 +111,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       ),
   })
 
+  // Every tool that may modify the worktree waits here until the session's file snapshots are recorded, so
+  // its changes never leak into the step's "before" snapshot or the previous step's "after" snapshot. A
+  // tool released by an abort must not start writing after the turn has ended. The wait does not count
+  // against the tool's time limit.
+  const beforeWrite = Effect.fnUntraced(function* (options: ToolExecutionOptions, call: ToolTimeout.Call) {
+    yield* call.hold(input.processor.waitForSnapshots)
+    if (options.abortSignal?.aborted) yield* Effect.die(new DOMException("Aborted", "AbortError"))
+  })
+
   for (const item of yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
@@ -129,6 +138,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
         return guard(options, limit, (call) =>
           Effect.gen(function* () {
+            if (!item.readOnly) yield* beforeWrite(options, call)
             const ctx = context(args, options, call)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -182,6 +192,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.list }, (call) =>
           Effect.gen(function* () {
+            yield* beforeWrite(opts, call)
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -265,6 +276,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.listTemplates }, (call) =>
           Effect.gen(function* () {
+            yield* beforeWrite(opts, call)
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -352,6 +364,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.read }, (call) =>
           Effect.gen(function* () {
+            yield* beforeWrite(opts, call)
             const parsed = parseReadMcpResourceArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -432,6 +445,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       guard(opts, limit, (call) =>
         Effect.gen(function* () {
+          yield* beforeWrite(opts, call)
           const ctx = context(args, opts, call)
           yield* plugin.trigger(
             "tool.execute.before",

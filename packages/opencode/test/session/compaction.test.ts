@@ -259,6 +259,7 @@ function fake(
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
     process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
+    waitForSnapshots: Effect.void,
   } satisfies SessionProcessorModule.SessionProcessor.Handle
 }
 
@@ -267,6 +268,7 @@ function processorLayer(result: "continue" | "compact") {
     SessionProcessorModule.SessionProcessor.Service,
     SessionProcessorModule.SessionProcessor.Service.of({
       create: Effect.fn("TestSessionProcessor.create")((input) => Effect.succeed(fake(input, result))),
+      settle: () => Effect.void,
     }),
   )
 }
