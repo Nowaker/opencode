@@ -64,7 +64,7 @@ import { useDialog } from "../../ui/dialog"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
-import { revertSession, unrevertSession } from "./revert"
+import { applyRevertSession, revertSession, unrevertSession } from "./revert"
 import { mergeFailedPrompt } from "../../prompt/merge"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "../../ui/dialog-confirm"
@@ -517,6 +517,30 @@ export function Session() {
   let scroll: ScrollBoxRenderable
   let prompt: PromptRef | undefined
 
+  // Applying a pending revert per session: while it runs, undo, redo and a second apply wait. A failure
+  // is kept for the revert it was about, so the card offers a retry until the revert changes.
+  const [revertApply, setRevertApply] = createStore<
+    Record<string, { status: "applying" | "failed"; messageID: string } | undefined>
+  >({})
+  const applyingRevert = () => revertApply[route.sessionID]?.status === "applying"
+  const revertApplyFailed = () => {
+    const entry = revertApply[route.sessionID]
+    return entry?.status === "failed" && entry.messageID === session()?.revert?.messageID
+  }
+  const sessionIdle = () => (sync.data.session_status?.[route.sessionID]?.type ?? "idle") === "idle"
+  const canApplyRevert = () => !!session()?.revert?.messageID && sessionIdle() && !applyingRevert()
+  // Makes the pending revert permanent. It never touches the composer draft and starts no turn.
+  const applyRevert = () => {
+    const messageID = session()?.revert?.messageID
+    if (!messageID || !canApplyRevert()) return
+    const sessionID = route.sessionID
+    setRevertApply(sessionID, { status: "applying", messageID })
+    void applyRevertSession({ sync, sdk, toast, sessionID }).then(
+      (applied) => setRevertApply(sessionID, applied ? undefined : { status: "failed", messageID }),
+      () => setRevertApply(sessionID, { status: "failed", messageID }),
+    )
+  }
+
   const undo = async (files: boolean) => {
     const status = sync.data.session_status?.[route.sessionID]
     if (status?.type !== "idle")
@@ -784,6 +808,7 @@ export function Session() {
       title: "Undo previous message",
       value: "session.undo",
       category: "Session",
+      enabled: !applyingRevert(),
       slash: {
         name: "undo",
       },
@@ -793,6 +818,7 @@ export function Session() {
       title: "Undo previous message, keep file changes",
       value: "session.undo.messages",
       category: "Session",
+      enabled: !applyingRevert(),
       slash: {
         name: "undo-messages",
       },
@@ -802,16 +828,27 @@ export function Session() {
       title: "Undo previous message and its file changes",
       value: "session.undo.files",
       category: "Session",
+      enabled: !applyingRevert(),
       slash: {
         name: "undo-files",
       },
       run: () => undo(true),
     },
     {
+      title: "Apply revert",
+      value: "session.revert.apply",
+      category: "Session",
+      enabled: canApplyRevert(),
+      run: () => {
+        dialog.clear()
+        applyRevert()
+      },
+    },
+    {
       title: "Redo",
       value: "session.redo",
       category: "Session",
-      enabled: !!session()?.revert?.messageID,
+      enabled: !!session()?.revert?.messageID && !applyingRevert(),
       slash: {
         name: "redo",
       },
@@ -1593,9 +1630,24 @@ export function Session() {
                           {(function () {
                             const redoShortcut = useCommandShortcut("session.redo")
                             const [hover, setHover] = createSignal(false)
+                            const [applyHover, setApplyHover] = createSignal(false)
                             const dialog = useDialog()
+                            const apply = onClick(() => applyRevert())
+                            const applyHint = () => {
+                              if (applyingRevert()) return ""
+                              if (!sessionIdle()) return "available once the session is idle"
+                              if (revertApplyFailed()) return "the last apply failed"
+                              return "remove the reverted messages for good"
+                            }
+                            const applyColor = () => {
+                              if (!canApplyRevert()) return theme.textMuted
+                              if (applyHover()) return theme.selectedListItemText
+                              if (revertApplyFailed()) return theme.warning
+                              return theme.primary
+                            }
 
                             const handleUnrevert = async () => {
+                              if (applyingRevert()) return
                               const confirmed = await DialogConfirm.show(
                                 dialog,
                                 "Confirm Redo",
@@ -1623,7 +1675,9 @@ export function Session() {
                                   paddingTop={1}
                                   paddingBottom={1}
                                   paddingLeft={2}
-                                  backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                                  backgroundColor={
+                                    hover() && !applyHover() ? theme.backgroundElement : theme.backgroundPanel
+                                  }
                                 >
                                   <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
                                   <text fg={theme.textMuted}>
@@ -1646,6 +1700,38 @@ export function Session() {
                                       </For>
                                     </box>
                                   </Show>
+                                  <box marginTop={1} flexDirection="row" gap={2}>
+                                    <box
+                                      minWidth={20}
+                                      paddingLeft={1}
+                                      paddingRight={1}
+                                      flexShrink={0}
+                                      backgroundColor={applyHover() && canApplyRevert() ? theme.primary : undefined}
+                                      onMouseOver={() => setApplyHover(true)}
+                                      onMouseOut={() => setApplyHover(false)}
+                                      onMouseDown={apply.onMouseDown}
+                                      onMouseUp={(event: MouseEvent) => {
+                                        // Every release here belongs to the action, never to the card's Redo.
+                                        event.stopPropagation()
+                                        apply.onMouseUp(event)
+                                      }}
+                                    >
+                                      <Switch>
+                                        <Match when={applyingRevert()}>
+                                          <Spinner color={theme.textMuted}>Applying revert</Spinner>
+                                        </Match>
+                                        <Match when={true}>
+                                          <text
+                                            attributes={TextAttributes.BOLD}
+                                            fg={applyColor()}
+                                          >
+                                            {revertApplyFailed() ? "Retry apply revert" : "Apply revert"}
+                                          </text>
+                                        </Match>
+                                      </Switch>
+                                    </box>
+                                    <text fg={theme.textMuted}>{applyHint()}</text>
+                                  </box>
                                 </box>
                               </box>
                             )
@@ -1731,14 +1817,14 @@ export function Session() {
                     mode="replace"
                     session_id={route.sessionID}
                     visible={visible()}
-                    disabled={disabled()}
+                    disabled={disabled() || applyingRevert()}
                     on_submit={onPromptSubmit}
                     ref={bind}
                   >
                     <Prompt
                       visible={visible()}
                       ref={bind}
-                      disabled={disabled()}
+                      disabled={disabled() || applyingRevert()}
                       onSubmit={onPromptSubmit}
                       sessionID={route.sessionID}
                       space={promptSpace()}

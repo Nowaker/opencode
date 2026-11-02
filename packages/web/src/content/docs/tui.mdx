@@ -114,6 +114,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 | Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path |
 | Model in a message footer | After `▣` and the agent below an answer | Opens the model picker with the model that turn ran on highlighted |
 | Vibeterm section | The top of a delivered prompt | Opens or closes the full delivery record; a right click copies the blocks. Never opens the message actions. See [Delivery provenance](#delivery-provenance) |
+| Apply revert | The revert card at the end of the transcript, after `/undo` | Makes the revert permanent. See [Apply revert](#apply-revert). The rest of the card asks to redo |
 | Session title | Top of the session sidebar | Renames the session (`/rename`) |
 | Session ID | Below the session title in the sidebar | Copies the ID |
 | Message ID (`msg_...`) | Message footers, when [`footer.message_id`](#footer) shows them | Copies the ID |
@@ -314,6 +315,17 @@ be a Git repository**.
 ```
 
 **Keybind:** `ctrl+x r`
+
+---
+
+### Apply revert
+
+Make a pending revert permanent. Select **Revert messages** or **Revert messages and files** from a user message's action dialog, or use `/undo`. The revert card at the end of the transcript has an **Apply revert** action. It is also in the command palette (`ctrl+p`, printed `fn`+p on Mac) as **Apply revert**. It has no slash command and no default keybind.
+
+- The reverted messages are removed for good; `/redo` can no longer bring them back.
+- Files stay as the revert left them, whether it kept or reverted them.
+- Your draft in the prompt stays exactly as it is, and no AI turn starts.
+- It is available only while the session is idle. While it runs, the action shows a spinner and prompt submission, undo, redo and a second apply wait. If it fails, an error toast says why and the card offers **Retry apply revert**.
 
 ---
 

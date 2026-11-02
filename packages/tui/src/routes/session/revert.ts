@@ -10,6 +10,7 @@ import { produce, unwrap } from "solid-js/store"
 type Sync = ReturnType<typeof useSync>
 type SDK = ReturnType<typeof useSDK>
 type Toast = ReturnType<typeof useToast>
+const pendingReverts = new WeakMap<Sync, Map<string, Promise<boolean>>>()
 
 /** The two revert actions, the configured default first. */
 export function revertChoices(filesByDefault: boolean) {
@@ -53,18 +54,53 @@ export function revertSession(input: {
   files: boolean
 }) {
   const rollback = showRevert(input.sync, input.sessionID, { messageID: input.messageID })
-  return settle(
-    input.sdk.client.session.revert({ sessionID: input.sessionID, messageID: input.messageID, files: input.files }),
-    rollback,
-    input.toast,
-    "Failed to revert",
+  return trackRevert(
+    input.sync,
+    input.sessionID,
+    settle(
+      input.sdk.client.session.revert({ sessionID: input.sessionID, messageID: input.messageID, files: input.files }),
+      rollback,
+      input.toast,
+      "Failed to revert",
+    ),
   )
 }
 
 /** Restores every reverted message, showing it at once like `revertSession`. */
 export function unrevertSession(input: { sync: Sync; sdk: SDK; toast: Toast; sessionID: string }) {
   const rollback = showRevert(input.sync, input.sessionID, undefined)
-  return settle(input.sdk.client.session.unrevert({ sessionID: input.sessionID }), rollback, input.toast, "Failed to redo")
+  return trackRevert(
+    input.sync,
+    input.sessionID,
+    settle(input.sdk.client.session.unrevert({ sessionID: input.sessionID }), rollback, input.toast, "Failed to redo"),
+  )
+}
+
+export async function applyRevertSession(input: { sync: Sync; sdk: SDK; toast: Toast; sessionID: string }) {
+  const staged = pendingReverts.get(input.sync)?.get(input.sessionID)
+  if (staged && !(await staged)) return false
+  if (!input.sync.data.session.find((session) => session.id === input.sessionID)?.revert) return false
+  if ((input.sync.data.session_status[input.sessionID]?.type ?? "idle") !== "idle") {
+    input.toast.show({ variant: "error", message: "Cannot apply revert while the session is busy" })
+    return false
+  }
+  return settle(
+    input.sdk.client.session.applyRevert({ sessionID: input.sessionID }),
+    () => {},
+    input.toast,
+    "Failed to apply revert",
+  )
+}
+
+function trackRevert(sync: Sync, sessionID: string, request: Promise<boolean>) {
+  const requests = pendingReverts.get(sync) ?? new Map<string, Promise<boolean>>()
+  pendingReverts.set(sync, requests)
+  const result = request.finally(() => {
+    if (requests.get(sessionID) === result) requests.delete(sessionID)
+    if (requests.size === 0) pendingReverts.delete(sync)
+  })
+  requests.set(sessionID, result)
+  return result
 }
 
 function showRevert(sync: Sync, sessionID: string, revert: Session["revert"]) {

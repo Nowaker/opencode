@@ -2018,6 +2018,7 @@ export function Prompt(props: PromptProps) {
               }
             }}
             onSubmit={() => {
+              if (disabled()) return
               // IME: double-defer so the last composed character (e.g. Korean
               // hangul) is flushed to plainText before we read it for submission.
               void whilePending(async () => {
