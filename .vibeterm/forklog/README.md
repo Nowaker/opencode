@@ -734,6 +734,16 @@ release defeats the guard that keeps a stray opencode v2 from migrating the
 live v1 database: fix `_lib/v2-migration-guard` in opencode-tools first, and
 never set `OPENCODE_SKIP_V2_GUARD_GATE` to get past it.
 
+After installing, smoke the installed binary on each host with the tracked
+`.vibeterm/smoke.sh <binary>` (on m4max: `ssh -n` is wrong here, feed it
+with `ssh host 'bash -s -- <binary>' < .vibeterm/smoke.sh`). It runs serve on
+an explicit free loopback port in a scratch HOME and kills the server itself.
+Never write an ad-hoc smoke that runs `serve --port 0` (opencode tries 4096
+first, the address portless opencode hands its plugins) or backgrounds a
+shell function (`$!` is then the subshell, and the server is orphaned): one
+such smoke held m4max's 127.0.0.1:4096 from 2026-11-01 to 2026-11-05 and
+swallowed an OMO parent wake.
+
 Work continuing after midnight belongs to the evening's workday. A feature
 starts on its first user workday; a session record uses that session's workday.
 
