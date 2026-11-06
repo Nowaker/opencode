@@ -132,8 +132,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Fork a session in the background without leaving it](./features/2026-11-01-background-fork.md)
 - [Send the model request while file snapshots run](./features/2026-11-01-async-snapshots.md)
 - [Prompt external_directory for symlinks that resolve outside the project](./features/2026-11-01-symlink-external-directory.md)
+- [Leave plugin serverUrl undefined without an HTTP listener](./features/2026-11-05-honest-plugin-server-url.md)
 
 ## Session records
+
+- [2026-11-05 `ses_e51bbad20ffeGYfUME3WmE9Lnz`](./sessions/2026-11-05-honest-plugin-server-url.md) - `PluginInput.serverUrl` is undefined without an HTTP listener instead of a fabricated `localhost:4096` (m4max lost OMO parent wake to an orphaned serve on 4096); consumer audit: OMO safe, opencode-tools stuck-detector dereferences it but is not loaded; upstreamable `c333ffb3cc` on `github/v1` (no PR), merged as `628e9bb9ee`; vt-404 on both hosts with the retry cap.
 
 - [2026-11-05 `ses_e552a0970ffenpqGnyRp4OwJE1`](./sessions/2026-11-05-async-snapshot-reliability.md) - read-only 3-day check of async snapshots on desktop and m4max: reliable, zero background-snapshot crashes or revert errors; hashless steps follow cross-process `index.lock` collisions under host overload; m4max copies of synced user messages lack `summary` (sync, not snapshots); no source change.
 
