@@ -340,6 +340,24 @@ Levels: `debug`, `info`, `warn`, `error`. See [SDK documentation](https://openco
 
 ---
 
+### Tool deferral
+
+Keep a tool's schema out of each request until the model looks it up with the provider's tool search:
+
+```ts title=".opencode/plugins/defer-tools.ts"
+import type { Plugin } from "@opencode-ai/plugin"
+
+const always = new Set(["read", "write", "edit", "bash", "glob", "grep"])
+
+export const DeferTools: Plugin = async () => ({
+  "tool.deferral": async (input, output) => {
+    if (!always.has(input.toolID)) output.deferred = true
+  },
+})
+```
+
+The `tool.deferral` hook runs once per tool for every request, built-in, plugin and MCP tools alike, with `toolID`, `providerID`, `modelID` and the provider's `npm` package. A tool with `output.deferred = true` is sent with `defer_loading: true`. With `@ai-sdk/openai` opencode also adds the Responses `tool_search` tool. With `@ai-sdk/anthropic` the endpoint must supply the search, as a proxy that adds its own does; the Anthropic API rejects deferred tools without one, so defer only for providers that support it. Other providers ignore the flag.
+
 ### Compaction hooks
 
 Customize the context included when a session is compacted:

@@ -382,4 +382,17 @@ export interface Hooks {
    * Modify tool definitions (description and parameters) sent to LLM
    */
   "tool.definition"?: (input: { toolID: string }, output: { description: string; parameters: any }) => Promise<void>
+  /**
+   * Keep a tool's schema out of the request until the model looks it up with
+   * the provider's tool search. Called once per tool of every request,
+   * built-in, plugin and MCP alike; `deferred: true` sends it with
+   * `defer_loading`. With `@ai-sdk/openai` opencode adds the Responses
+   * `tool_search` tool itself. With `@ai-sdk/anthropic` the endpoint must
+   * supply the search (a proxy such as Meridian does); the Anthropic API
+   * itself rejects deferred tools without one.
+   */
+  "tool.deferral"?: (
+    input: { toolID: string; providerID: string; modelID: string; npm: string },
+    output: { deferred: boolean },
+  ) => Promise<void>
 }
