@@ -175,9 +175,10 @@ function limitLayer(input: {
   tools?: Tool.Def[]
   mcp?: Record<string, MCP.McpTool>
   ask?: Permission.Interface["ask"]
+  plugin?: Plugin.Interface
 }) {
   return Layer.mergeAll(
-    Layer.succeed(Plugin.Service, fakePlugin),
+    Layer.succeed(Plugin.Service, input.plugin ?? fakePlugin),
     Layer.succeed(
       Permission.Service,
       Permission.Service.of({ ...fakePermission, ask: input.ask ?? fakePermission.ask }),
@@ -323,4 +324,57 @@ testEffect(limitLayer({ tools: [asking], ask: () => Effect.promise(() => Bun.sle
       const result = yield* callTool("asking")
       expect(result.ok).toBe(true)
     }),
+)
+
+// Defers every tool but "asking", the way a plugin keeping rarely used tools behind tool search would.
+const deferring = Plugin.Service.of({
+  ...fakePlugin,
+  trigger: (name, input, output) =>
+    Effect.sync(() => {
+      if (name === "tool.deferral" && (input as { toolID: string }).toolID !== "asking") {
+        ;(output as { deferred: boolean }).deferred = true
+      }
+      return output
+    }),
+} satisfies Plugin.Interface)
+
+const resolveFor = Effect.fn("test.resolveFor")(function* (npm: string) {
+  return yield* SessionTools.resolve({
+    agent,
+    model: { ...model, api: { id: "test-model", npm } } as Provider.Model,
+    session: { id: sessionID, permission: [] } as unknown as Session.Info,
+    processor: limitProcessor,
+    bypassAgentCheck: false,
+    messages: [],
+    promptOps: {} as never,
+  })
+})
+
+const deferralLayer = limitLayer({ tools: [hangingPlugin, asking], mcp: hangingMcp().mcp, plugin: deferring })
+
+testEffect(deferralLayer).live("tool.deferral marks plugin and MCP tools defer_loading for both providers", () =>
+  Effect.gen(function* () {
+    const tools = yield* resolveFor("@ai-sdk/anthropic")
+    for (const id of ["hang", "slow_wait"]) {
+      expect(tools[id]?.providerOptions).toEqual({ anthropic: { deferLoading: true }, openai: { deferLoading: true } })
+    }
+    expect(tools.asking?.providerOptions).toBeUndefined()
+    // Anthropic's search comes from the endpoint (Meridian), so opencode adds none.
+    expect(Object.keys(tools).sort()).toEqual(["asking", "hang", "slow_wait"])
+  }),
+)
+
+testEffect(deferralLayer).live("with OpenAI, a deferred tool brings the Responses tool_search", () =>
+  Effect.gen(function* () {
+    const tools = yield* resolveFor("@ai-sdk/openai")
+    expect((tools.tool_search as { id?: string } | undefined)?.id).toBe("openai.tool_search")
+  }),
+)
+
+testEffect(limitLayer({ tools: [asking] })).live("without the hook nothing is deferred and no search is added", () =>
+  Effect.gen(function* () {
+    const tools = yield* resolveFor("@ai-sdk/openai")
+    expect(Object.keys(tools)).toEqual(["asking"])
+    expect(tools.asking?.providerOptions).toBeUndefined()
+  }),
 )

@@ -537,8 +537,43 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     tools[key] = item
   }
 
+  const deferred: string[] = []
+  for (const [id, item] of Object.entries(tools)) {
+    const output = { deferred: false }
+    yield* plugin.trigger(
+      "tool.deferral",
+      { toolID: id, providerID: input.model.providerID, modelID: input.model.api.id, npm: input.model.api.npm },
+      output,
+    )
+    if (!output.deferred) continue
+    item.providerOptions = deferLoading(item.providerOptions)
+    deferred.push(id)
+  }
+  if (deferred.length > 0 && input.model.api.npm === "@ai-sdk/openai" && !(OPENAI_TOOL_SEARCH in tools)) {
+    // `openai.tools.toolSearch()` in `ai`'s own shape: @ai-sdk/openai carries a
+    // second provider-utils, so its tool objects do not type as `ai`'s.
+    tools[OPENAI_TOOL_SEARCH] = {
+      type: "provider",
+      id: "openai.tool_search",
+      args: {},
+      inputSchema: jsonSchema({ type: "object", properties: {} }),
+    } satisfies AITool
+  }
+
   return tools
 })
+
+/** The Responses API's hosted tool search, which loads the deferred tools the model asks for. */
+export const OPENAI_TOOL_SEARCH = "tool_search"
+
+/** Mark a tool `defer_loading` for both providers that read it; each ignores the other's key. */
+export function deferLoading(options: AITool["providerOptions"]): NonNullable<AITool["providerOptions"]> {
+  return {
+    ...options,
+    anthropic: { ...options?.["anthropic"], deferLoading: true },
+    openai: { ...options?.["openai"], deferLoading: true },
+  }
+}
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value
