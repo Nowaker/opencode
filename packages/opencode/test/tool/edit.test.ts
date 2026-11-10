@@ -5,6 +5,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { EditTool } from "../../src/tool/edit"
+import { FileFacts } from "../../src/tool/file-facts"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -624,4 +625,81 @@ describe("tool.edit", () => {
       )
     })
   }
+
+  describe("file facts", () => {
+    it.instance("applies a still-matching edit to a changed file and says it changed", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* put(filepath, "alpha\nbeta\n")
+        FileFacts.remember(ctx.sessionID, filepath)
+        yield* put(filepath, "alpha\nbeta\ngamma\n")
+
+        const result = yield* run({ filePath: filepath, oldString: "beta", newString: "BETA" })
+
+        expect(result.output).toStartWith(`Edit applied successfully.\n${FileFacts.STALE_NOTE}`)
+        expect(yield* load(filepath)).toBe("alpha\nBETA\ngamma\n")
+      }),
+    )
+
+    it.instance("refuses with the stale-read error when a changed file no longer matches", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* put(filepath, "alpha\nbeta\n")
+        FileFacts.remember(ctx.sessionID, filepath)
+        yield* put(filepath, "alpha\ndelta\n")
+
+        const err = yield* fail({ filePath: filepath, oldString: "beta", newString: "BETA" })
+
+        expect(err.message).toBe(FileFacts.STALE)
+        expect(yield* load(filepath)).toBe("alpha\ndelta\n")
+      }),
+    )
+
+    it.instance("adds no note when the file is unchanged since the read", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "fresh.txt")
+        yield* put(filepath, "alpha\n")
+        FileFacts.remember(ctx.sessionID, filepath)
+
+        const first = yield* run({ filePath: filepath, oldString: "alpha", newString: "beta" })
+        const second = yield* run({ filePath: filepath, oldString: "beta", newString: "gamma" })
+
+        expect(first.output).toStartWith("Edit applied successfully.")
+        expect(first.output).not.toContain(FileFacts.STALE_NOTE)
+        expect(second.output).not.toContain(FileFacts.STALE_NOTE)
+      }),
+    )
+
+    if (process.platform !== "win32") {
+      it.instance("names the real file when editing through a link", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const real = path.join(test.directory, "real.txt")
+          const link = path.join(test.directory, "link.txt")
+          yield* put(real, "alpha\n")
+          yield* Effect.promise(() => fs.symlink("real.txt", link))
+
+          const result = yield* run({ filePath: link, oldString: "alpha", newString: "beta" })
+
+          expect(result.output).toStartWith(`Edit applied successfully: ${link} -> ${real}.`)
+          expect(yield* load(real)).toBe("beta\n")
+        }),
+      )
+
+      it.instance("refuses to create a file through a dangling link", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const link = path.join(test.directory, "dangling.txt")
+          yield* Effect.promise(() => fs.symlink("missing.txt", link))
+
+          const err = yield* fail({ filePath: link, oldString: "", newString: "x" })
+
+          expect(err.message).toContain(`Refusing to write ${link}: it is a symbolic link to missing.txt`)
+        }),
+      )
+    }
+  })
 })

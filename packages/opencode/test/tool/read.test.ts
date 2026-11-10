@@ -16,6 +16,7 @@ import { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
 import { ReadTool } from "../../src/tool/read"
+import { FileFacts } from "../../src/tool/file-facts"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Filesystem } from "@/util/filesystem"
@@ -296,8 +297,193 @@ if (process.platform !== "win32") {
         )
       }),
     )
+
+    it.live("names the target of a file link inside the worktree", () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true })
+        yield* put(path.join(dir, "real.txt"), "hello\n")
+        yield* Effect.promise(() => fs.symlink("real.txt", path.join(dir, "link.txt")))
+
+        const result = yield* exec(dir, { filePath: path.join(dir, "link.txt") })
+
+        expect(result.output).toContain(
+          `<type>file</type>\n<symlink>real.txt -> ${path.join(dir, "real.txt")} (inside this worktree)</symlink>\n<content>`,
+        )
+      }),
+    )
+
+    it.live("names the other git repo a file link points into", () =>
+      Effect.gen(function* () {
+        const other = yield* tmpdirScoped({ git: true })
+        const dir = yield* tmpdirScoped({ git: true })
+        const target = path.join(other, "sub", "target.txt")
+        yield* put(target, "other repo\n")
+        yield* Effect.promise(() => fs.symlink(target, path.join(dir, "link.txt")))
+        yield* Effect.promise(() => fs.symlink(path.join(other, "sub"), path.join(dir, "dir-link")))
+
+        const file = yield* exec(dir, { filePath: path.join(dir, "link.txt") })
+        const nested = yield* exec(dir, { filePath: path.join(dir, "dir-link", "target.txt") })
+
+        expect(file.output).toContain(`<symlink>${target} (outside this worktree, in git repo ${other})</symlink>`)
+        const listing = yield* exec(dir, { filePath: path.join(dir, "dir-link") })
+
+        expect(nested.output).toContain(
+          `<symlink>dir-link -> ${path.join(other, "sub")}, so this file is ${target} (outside this worktree, in git repo ${other})</symlink>`,
+        )
+        expect(listing.output).toContain(
+          `<type>directory</type>\n<symlink>${path.join(other, "sub")} (outside this worktree, in git repo ${other})</symlink>\n<entries>`,
+        )
+      }),
+    )
+
+    it.live("says when a link leads outside every git repo", () =>
+      Effect.gen(function* () {
+        const outer = yield* tmpdirScoped()
+        const dir = yield* tmpdirScoped({ git: true })
+        yield* put(path.join(outer, "plain.txt"), "x\n")
+        yield* Effect.promise(() => fs.symlink(path.join(outer, "plain.txt"), path.join(dir, "link.txt")))
+
+        const result = yield* exec(dir, { filePath: path.join(dir, "link.txt") })
+        // The temp directory itself can sit inside a repository (TMPDIR under a checkout).
+        const repo = yield* git(outer, ["rev-parse", "--show-toplevel"]).pipe(
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        )
+        const scope = repo ? `outside this worktree, in git repo ${repo}` : "outside this worktree"
+
+        expect(result.output).toContain(`<symlink>${path.join(outer, "plain.txt")} (${scope})</symlink>`)
+      }),
+    )
+
+    it.live("marks links in a directory listing", () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true })
+        yield* put(path.join(dir, "real.txt"), "x")
+        yield* put(path.join(dir, "sub", "a.txt"), "x")
+        yield* Effect.promise(() => fs.symlink("real.txt", path.join(dir, "link.txt")))
+        yield* Effect.promise(() => fs.symlink("sub", path.join(dir, "sub-link")))
+        yield* Effect.promise(() => fs.symlink("nowhere.txt", path.join(dir, "dangling.txt")))
+
+        const result = yield* exec(dir, { filePath: dir })
+
+        expect(result.output).toContain("link.txt -> real.txt\n")
+        expect(result.output).toContain("sub-link/ -> sub\n")
+        expect(result.output).toContain("dangling.txt -> nowhere.txt (missing)\n")
+        expect(result.output).toContain("\nreal.txt\n")
+        expect(result.output).toContain("\nsub/\n")
+      }),
+    )
   })
 }
+
+describe("tool.read file facts", () => {
+  it.instance("adds only the byte size to an ordinary LF file", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "plain.txt")
+      yield* put(filepath, "hello\nworld\n")
+
+      const result = yield* run({ filePath: filepath })
+
+      expect(result.output).toBe(
+        `<path>${filepath}</path>\n<type>file</type>\n<content>\n1: hello\n2: world\n\n(End of file - total 2 lines, 12 bytes)\n</content>`,
+      )
+    }),
+  )
+
+  it.instance("shows the byte size when output is cut by lines or bytes", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const lines = path.join(test.directory, "lines.txt")
+      const big = path.join(test.directory, "big.txt")
+      yield* put(lines, "a\nb\nc\n")
+      yield* put(big, `${"x".repeat(80)}\n`.repeat(1000))
+
+      const byLines = yield* run({ filePath: lines, limit: 1 })
+      const byBytes = yield* run({ filePath: big })
+
+      expect(byLines.output).toContain("(Showing lines 1-1 of 3, 6 bytes total. Use offset=2 to continue.)")
+      expect(byBytes.output).toMatch(
+        /\(Output capped at 50 KB\. Showing lines 1-\d+ of a 81000-byte file\. Use offset=\d+ to continue\.\)/,
+      )
+    }),
+  )
+
+  it.instance("names line endings that are not plain LF", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const read = Effect.fn("ReadToolTest.endings")(function* (name: string, content: string) {
+        const filepath = path.join(test.directory, name)
+        yield* put(filepath, content)
+        return (yield* run({ filePath: filepath })).output
+      })
+
+      expect(yield* read("crlf.txt", "a\r\nb\r\n")).toContain(
+        "<type>file</type>\n<line-endings>crlf</line-endings>\n<content>",
+      )
+      expect(yield* read("mixed.txt", "a\r\nb\nc\n")).toContain("<line-endings>mixed (crlf, lf)</line-endings>")
+      expect(yield* read("cr.txt", "a\rb\r")).toContain("<line-endings>cr</line-endings>")
+      expect(yield* read("lf.txt", "a\nb\n")).not.toContain("<line-endings>")
+    }),
+  )
+
+  it.instance("names a CRLF split across stream chunks as CRLF", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "split.txt")
+      yield* put(filepath, "a\r\nb\r\n")
+
+      const fs = yield* FSUtil.Service
+      const result = yield* run({ filePath: filepath }).pipe(
+        Effect.provideService(
+          FSUtil.Service,
+          FSUtil.Service.of({
+            ...fs,
+            stream: (file, options) =>
+              fs
+                .stream(file, options)
+                .pipe(Stream.flatMap((chunk) => Stream.fromIterable(Array.from(chunk, (byte) => Uint8Array.of(byte))))),
+          }),
+        ),
+      )
+
+      expect(result.output).toContain("<line-endings>crlf</line-endings>")
+    }),
+  )
+
+  it.instance("names a byte order mark", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const utf8 = path.join(test.directory, "bom.txt")
+      const utf16 = path.join(test.directory, "wide.txt")
+      yield* put(utf8, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("hi\n")]))
+      yield* put(utf16, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("hi\n", "utf16le")]))
+
+      const result = yield* run({ filePath: utf8 })
+      const exit = yield* run({ filePath: utf16 }).pipe(Effect.exit)
+
+      expect(result.output).toContain("<type>file</type>\n<encoding>UTF-8 with BOM</encoding>\n<content>\n1: hi\n")
+      expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
+        `Cannot read binary file: ${utf16} (encoding: UTF-16 LE with BOM)`,
+      )
+    }),
+  )
+
+  it.instance("records what it read so a later change on disk is detected", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "watched.txt")
+      yield* put(filepath, "one\n")
+
+      yield* run({ filePath: filepath })
+      const before = FileFacts.changed(ctx.sessionID, filepath)
+      yield* Effect.promise(() => fs.utimes(filepath, new Date(2000, 0, 1), new Date(2000, 0, 1)))
+
+      expect(before).toBe(false)
+      expect(FileFacts.changed(ctx.sessionID, filepath)).toBe(true)
+      expect(FileFacts.changed(SessionID.make("ses_other"), filepath)).toBe(false)
+    }),
+  )
+})
 
 describe("tool.read env file permissions", () => {
   const cases: [string, boolean][] = [

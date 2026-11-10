@@ -1,9 +1,10 @@
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { WriteTool } from "../../src/tool/write"
+import { FileFacts } from "../../src/tool/file-facts"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
@@ -334,6 +335,107 @@ describe("tool.write", () => {
 
         const result = yield* run({ filePath: filepath, content: "export const Button = () => {}" })
         expect(result.title).toEndWith(path.join("src", "components", "Button.tsx"))
+      }),
+    )
+  })
+
+  describe("file facts", () => {
+    it.instance("reports the byte size it wrote", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const result = yield* run({ filePath: path.join(test.directory, "sized.txt"), content: "Hello, World!" })
+
+        expect(result.output).toStartWith("Wrote file successfully (13 bytes).")
+      }),
+    )
+
+    if (process.platform !== "win32") {
+      it.instance("writes through a link and names where the content went", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const real = path.join(test.directory, "real.txt")
+          const link = path.join(test.directory, "link.txt")
+          yield* Effect.promise(() => fs.writeFile(real, "old"))
+          yield* Effect.promise(() => fs.symlink("real.txt", link))
+
+          const result = yield* run({ filePath: link, content: "new" })
+
+          expect(result.output).toStartWith(`Wrote file successfully: ${link} -> ${real} (3 bytes).`)
+          expect(yield* Effect.promise(() => fs.readFile(real, "utf-8"))).toBe("new")
+          expect((yield* Effect.promise(() => fs.lstat(link))).isSymbolicLink()).toBe(true)
+        }),
+      )
+
+      it.instance("refuses a dangling link and names the file it would create", () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const link = path.join(test.directory, "dangling.txt")
+          const target = path.join(test.directory, "missing.txt")
+          yield* Effect.promise(() => fs.symlink("missing.txt", link))
+
+          const exit = yield* run({ filePath: link, content: "x" }).pipe(Effect.exit)
+
+          expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
+            `Refusing to write ${link}: it is a symbolic link to missing.txt (${target}), which does not exist. Write to ${target} to create it.`,
+          )
+          expect(
+            yield* Effect.promise(() =>
+              fs.access(target).then(
+                () => true,
+                () => false,
+              ),
+            ),
+          ).toBe(false)
+        }),
+      )
+    }
+
+    it.instance("refuses to overwrite a file that changed on disk since it was read", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* Effect.promise(() => fs.writeFile(filepath, "seen"))
+        FileFacts.remember(ctx.sessionID, filepath)
+        yield* Effect.promise(() => fs.writeFile(filepath, "user edit"))
+
+        const exit = yield* run({ filePath: filepath, content: "model" }).pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(FileFacts.STALE)
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe("user edit")
+      }),
+    )
+
+    it.instance("treats a touched file of the same size as changed", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "touched.txt")
+        yield* Effect.promise(() => fs.writeFile(filepath, "same"))
+        FileFacts.remember(ctx.sessionID, filepath)
+        yield* Effect.promise(() => fs.utimes(filepath, new Date(2000, 0, 1), new Date(2000, 0, 1)))
+
+        const exit = yield* run({ filePath: filepath, content: "model" }).pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+      }),
+    )
+
+    it.instance("keeps its own writes fresh and leaves unread files unguarded", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "own.txt")
+        yield* Effect.promise(() => fs.writeFile(filepath, "seen"))
+        FileFacts.remember(ctx.sessionID, filepath)
+
+        yield* run({ filePath: filepath, content: "first write" })
+        yield* run({ filePath: filepath, content: "second write" })
+        yield* Effect.promise(() => fs.writeFile(filepath, "outside"))
+        const other = yield* run(
+          { filePath: filepath, content: "other session" },
+          { ...ctx, sessionID: SessionID.make("ses_never-read") },
+        )
+
+        expect(other.output).toStartWith("Wrote file successfully")
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe("other session")
       }),
     )
   })

@@ -6,6 +6,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ApplyPatchTool } from "../../src/tool/apply_patch"
+import { FileFacts } from "../../src/tool/file-facts"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Format } from "../../src/format"
@@ -594,4 +595,82 @@ EOF`
       { git: true },
     )
   }
+
+  describe("file facts", () => {
+    it.instance("refuses to patch a file that changed on disk since it was read", () =>
+      Effect.gen(function* () {
+        const { ctx } = makeCtx()
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* writeText(filepath, "alpha\n")
+        FileFacts.remember(ctx.sessionID, filepath)
+        yield* writeText(filepath, "alpha\nuser\n")
+
+        yield* expectFailure(
+          execute({ patchText: "*** Begin Patch\n*** Update File: stale.txt\n@@\n-alpha\n+beta\n*** End Patch" }, ctx),
+          FileFacts.STALE,
+        )
+        yield* expectFailure(
+          execute({ patchText: "*** Begin Patch\n*** Delete File: stale.txt\n*** End Patch" }, ctx),
+          FileFacts.STALE,
+        )
+        expect(yield* readText(filepath)).toBe("alpha\nuser\n")
+      }),
+    )
+
+    it.instance("patches a file again after its own write", () =>
+      Effect.gen(function* () {
+        const { ctx } = makeCtx()
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "own.txt")
+        yield* writeText(filepath, "alpha\n")
+        FileFacts.remember(ctx.sessionID, filepath)
+
+        yield* execute(
+          { patchText: "*** Begin Patch\n*** Update File: own.txt\n@@\n-alpha\n+beta\n*** End Patch" },
+          ctx,
+        )
+        yield* execute(
+          { patchText: "*** Begin Patch\n*** Update File: own.txt\n@@\n-beta\n+gamma\n*** End Patch" },
+          ctx,
+        )
+
+        expect(yield* readText(filepath)).toBe("gamma\n")
+      }),
+    )
+
+    if (process.platform !== "win32") {
+      it.instance("names the real file when patching through a link", () =>
+        Effect.gen(function* () {
+          const { ctx } = makeCtx()
+          const test = yield* TestInstance
+          const real = path.join(test.directory, "real.txt")
+          yield* writeText(real, "alpha\n")
+          yield* Effect.promise(() => fs.symlink("real.txt", path.join(test.directory, "link.txt")))
+
+          const result = yield* execute(
+            { patchText: "*** Begin Patch\n*** Update File: link.txt\n@@\n-alpha\n+beta\n*** End Patch" },
+            ctx,
+          )
+
+          expect(result.output).toContain(`link.txt -> ${real}`)
+          expect(yield* readText(real)).toBe("beta\n")
+        }),
+      )
+
+      it.instance("refuses to add a file through a dangling link", () =>
+        Effect.gen(function* () {
+          const { ctx } = makeCtx()
+          const test = yield* TestInstance
+          yield* Effect.promise(() => fs.symlink("missing.txt", path.join(test.directory, "dangling.txt")))
+
+          yield* expectFailure(
+            execute({ patchText: "*** Begin Patch\n*** Add File: dangling.txt\n+x\n*** End Patch" }, ctx),
+            "it is a symbolic link to missing.txt",
+          )
+          yield* expectReadFailure(path.join(test.directory, "missing.txt"))
+        }),
+      )
+    }
+  })
 })

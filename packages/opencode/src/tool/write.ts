@@ -13,6 +13,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
+import { FileFacts } from "./file-facts"
 import * as Bom from "@/util/bom"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
@@ -43,7 +44,11 @@ export const WriteTool = Tool.define(
             : path.join(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
+          const link = FileFacts.link(filepath, instance)
+          if (link?.missing && link.path === filepath) return yield* Effect.fail(new Error(FileFacts.dangling(link)))
           const exists = yield* fs.existsSafe(filepath)
+          if (exists && FileFacts.changed(ctx.sessionID, filepath))
+            return yield* Effect.fail(new Error(FileFacts.STALE))
           const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "" }
           const next = Bom.split(params.content)
           const desiredBom = source.bom || next.bom
@@ -71,7 +76,11 @@ export const WriteTool = Tool.define(
             event: exists ? "change" : "add",
           })
 
-          let output = "Wrote file successfully."
+          FileFacts.remember(ctx.sessionID, filepath)
+          const size = FileFacts.bytes(Number((yield* fs.stat(filepath)).size))
+          let output = link
+            ? `Wrote file successfully: ${filepath} -> ${link.real} (${size}).`
+            : `Wrote file successfully (${size}).`
           yield* lsp.touchFile(filepath, "document")
           const diagnostics = yield* lsp.diagnostics()
           const normalizedFilepath = FSUtil.normalizePath(filepath)
