@@ -459,7 +459,7 @@ const layer = Layer.effect(
             }
             yield* ensureToolCall(value)
             const input = isRecord(value.input) ? value.input : { value: value.input }
-            yield* updateToolCall(value.id, (match) => ({
+            const call = yield* updateToolCall(value.id, (match) => ({
               ...match,
               tool: value.name,
               state:
@@ -474,6 +474,9 @@ const layer = Layer.effect(
                 ? { ...value.providerMetadata, providerExecuted: true }
                 : value.providerMetadata,
             }))
+            // The provider has already run its own tools (e.g. OpenAI's hosted tool_search) by the time we
+            // see the call, so a doom_loop ask can neither stop nor change them; it would only block the turn.
+            if (call?.metadata?.providerExecuted) return
 
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
