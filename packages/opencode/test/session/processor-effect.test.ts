@@ -26,6 +26,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { LLMEvent } from "@opencode-ai/llm"
+import { Permission } from "@/permission"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -225,6 +226,37 @@ const fragmentFailureLLM = Layer.succeed(
 )
 const fragmentFailureEnv = LayerNode.compile(root, [...replacements, [LLM.node, fragmentFailureLLM]])
 const itFragmentFailure = testEffect(fragmentFailureEnv)
+
+function repeatedToolCalls(name: string, providerExecuted: boolean) {
+  const asks: string[] = []
+  const llm = Layer.succeed(
+    LLM.Service,
+    LLM.Service.of({
+      stream: () =>
+        Stream.make(
+          LLMEvent.stepStart({ index: 0 }),
+          ...["call-1", "call-2", "call-3"].flatMap((id) => [
+            LLMEvent.toolInputStart({ id, name }),
+            LLMEvent.toolCall({ id, name, input: { paths: ["webfetch"] }, providerExecuted }),
+            ...(providerExecuted
+              ? [LLMEvent.toolResult({ id, name, result: { type: "json", value: { tools: [] } }, providerExecuted })]
+              : []),
+          ]),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ),
+    }),
+  )
+  const permission = Layer.mock(Permission.Service, {
+    ask: (input) => Effect.sync(() => void asks.push(input.permission)),
+  })
+  return {
+    asks,
+    it: testEffect(LayerNode.compile(root, [...replacements, [LLM.node, llm], [Permission.node, permission]])),
+  }
+}
+const hostedSearches = repeatedToolCalls("tool_search", true)
+const clientCalls = repeatedToolCalls("lookup", false)
 
 const boot = Effect.fn("test.boot")(function* () {
   const processors = yield* SessionProcessor.Service
@@ -1165,6 +1197,57 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
         expect(seen).toContain(MessageV2.Event.PartUpdated.type)
         expect(seen).toContain(Session.Event.Error.type)
         expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+      }),
+    { config: cfg },
+  ),
+)
+
+const processRepeatedCalls = (dir: string) =>
+  Effect.gen(function* () {
+    const { processors, session, provider } = yield* boot()
+    const chat = yield* session.create({})
+    const parent = yield* user(chat.id, "repeat")
+    const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+    const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+    const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+    yield* handle.process({
+      user: {
+        id: parent.id,
+        sessionID: chat.id,
+        role: "user",
+        time: parent.time,
+        agent: parent.agent,
+        model: { providerID: ref.providerID, modelID: ref.modelID },
+      } satisfies SessionV1.User,
+      sessionID: chat.id,
+      model: mdl,
+      agent: agent(),
+      system: [],
+      messages: [{ role: "user", content: "repeat" }],
+      tools: {},
+    })
+    return (yield* MessageV2.parts(msg.id)).filter((part): part is SessionV1.ToolPart => part.type === "tool")
+  })
+
+hostedSearches.it.live("session.processor effect tests skip doom_loop for repeated provider-executed calls", () =>
+  provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const calls = yield* processRepeatedCalls(dir)
+        expect(calls.map((part) => part.metadata?.providerExecuted)).toEqual([true, true, true])
+        expect(hostedSearches.asks).toEqual([])
+      }),
+    { config: cfg },
+  ),
+)
+
+clientCalls.it.live("session.processor effect tests ask doom_loop for repeated identical client calls", () =>
+  provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const calls = yield* processRepeatedCalls(dir)
+        expect(calls).toHaveLength(3)
+        expect(clientCalls.asks).toEqual(["doom_loop"])
       }),
     { config: cfg },
   ),
