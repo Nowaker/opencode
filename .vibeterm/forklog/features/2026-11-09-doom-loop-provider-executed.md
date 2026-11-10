@@ -48,6 +48,7 @@ Coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.t
 ## Timeline
 
 - 2026-11-09 [`ses_e3d3aa52effeG1KLcRHIKZ6FDU`](../sessions/2026-11-09-doom-loop-provider-executed.md) - initial build. Evidence: `beb7eba846`, merge `5a845affb9`, vt-410 on both hosts.
+- 2026-11-10 [`ses_e3b76f3eaffe6Ydg2S8MTeZa64`](../sessions/2026-11-10-permission-defer-reply.md) - re-verified: the same block now also catches a deferred ask after the provider-executed return. Evidence: `processor-effect.test.ts` on `8940e84418`.
 
 ## Current maintenance notes
 
