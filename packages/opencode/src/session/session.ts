@@ -329,6 +329,17 @@ export const ForkInput = Schema.Struct({
     }),
   ),
   unsettled: Schema.optional(ForkUnsettled),
+  parentID: Schema.optional(
+    SessionID.annotate({
+      description: "Session the copy belongs to as a child, the way a subagent's session does. A top-level session when omitted.",
+    }),
+  ),
+  title: Schema.optional(
+    Schema.String.annotate({ description: "Title of the copy. Defaults to the source's title with a fork number." }),
+  ),
+  permission: Schema.optional(
+    PermissionV1.Ruleset.annotate({ description: "Permission rules of the copy, as session.create takes them. None when omitted." }),
+  ),
 })
 export type ForkInput = Schema.Schema.Type<typeof ForkInput>
 export const GetInput = SessionID
@@ -763,9 +774,11 @@ const layer: Layer.Layer<
       const original = yield* get(input.sessionID)
       if (input.id && Option.isSome(yield* get(input.id).pipe(Effect.option)))
         return yield* Effect.die(new Error(`Session already exists: ${input.id}`))
-      const title = getForkedTitle(original.title)
+      const title = input.title ?? getForkedTitle(original.title)
       const session = yield* createNext({
         id: input.id,
+        parentID: input.parentID,
+        permission: input.permission,
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
