@@ -27,6 +27,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Permission } from "@/permission"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -227,7 +228,7 @@ const fragmentFailureLLM = Layer.succeed(
 const fragmentFailureEnv = LayerNode.compile(root, [...replacements, [LLM.node, fragmentFailureLLM]])
 const itFragmentFailure = testEffect(fragmentFailureEnv)
 
-function repeatedToolCalls(name: string, providerExecuted: boolean) {
+function repeatedToolCalls(name: string, providerExecuted: boolean, deferWith?: string) {
   const asks: string[] = []
   const llm = Layer.succeed(
     LLM.Service,
@@ -248,7 +249,11 @@ function repeatedToolCalls(name: string, providerExecuted: boolean) {
     }),
   )
   const permission = Layer.mock(Permission.Service, {
-    ask: (input) => Effect.sync(() => void asks.push(input.permission)),
+    ask: (input) =>
+      Effect.gen(function* () {
+        asks.push(input.permission)
+        if (deferWith) return yield* new PermissionV1.DeferredError({ feedback: deferWith })
+      }),
   })
   return {
     asks,
@@ -257,6 +262,8 @@ function repeatedToolCalls(name: string, providerExecuted: boolean) {
 }
 const hostedSearches = repeatedToolCalls("tool_search", true)
 const clientCalls = repeatedToolCalls("lookup", false)
+const DOOM_LOOP_FEEDBACK = "You called lookup with identical input 3 times in a row. Change approach."
+const deferredLoop = repeatedToolCalls("lookup", false, DOOM_LOOP_FEEDBACK)
 
 const boot = Effect.fn("test.boot")(function* () {
   const processors = yield* SessionProcessor.Service
@@ -1210,7 +1217,7 @@ const processRepeatedCalls = (dir: string) =>
     const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
     const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
     const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
-    yield* handle.process({
+    const result = yield* handle.process({
       user: {
         id: parent.id,
         sessionID: chat.id,
@@ -1226,14 +1233,18 @@ const processRepeatedCalls = (dir: string) =>
       messages: [{ role: "user", content: "repeat" }],
       tools: {},
     })
-    return (yield* MessageV2.parts(msg.id)).filter((part): part is SessionV1.ToolPart => part.type === "tool")
+    return {
+      result,
+      error: handle.message.error,
+      calls: (yield* MessageV2.parts(msg.id)).filter((part): part is SessionV1.ToolPart => part.type === "tool"),
+    }
   })
 
 hostedSearches.it.live("session.processor effect tests skip doom_loop for repeated provider-executed calls", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
-        const calls = yield* processRepeatedCalls(dir)
+        const calls = (yield* processRepeatedCalls(dir)).calls
         expect(calls.map((part) => part.metadata?.providerExecuted)).toEqual([true, true, true])
         expect(hostedSearches.asks).toEqual([])
       }),
@@ -1245,9 +1256,25 @@ clientCalls.it.live("session.processor effect tests ask doom_loop for repeated i
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
-        const calls = yield* processRepeatedCalls(dir)
+        const calls = (yield* processRepeatedCalls(dir)).calls
         expect(calls).toHaveLength(3)
         expect(clientCalls.asks).toEqual(["doom_loop"])
+      }),
+    { config: cfg },
+  ),
+)
+
+deferredLoop.it.live("session.processor effect tests fail only the repeated call when doom_loop is deferred", () =>
+  provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const run = yield* processRepeatedCalls(dir)
+        expect(deferredLoop.asks).toEqual(["doom_loop"])
+        expect(run.error).toBeUndefined()
+        expect(run.result).toBe("continue")
+        const third = run.calls.find((part) => part.callID === "call-3")
+        expect(third?.state.status).toBe("error")
+        expect(third?.state.status === "error" ? third.state.error : undefined).toBe(DOOM_LOOP_FEEDBACK)
       }),
     { config: cfg },
   ),

@@ -35,10 +35,18 @@ export const Request = Schema.Struct({
 }).annotate({ identifier: "PermissionRequest" })
 export type Request = typeof Request.Type
 
-export const Reply = Schema.Literals(["once", "always", "reject"])
+export const Reply = Schema.Literals(["once", "always", "reject", "defer"]).annotate({
+  description:
+    "once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn",
+})
 export type Reply = typeof Reply.Type
 
-export const ReplyBody = Schema.Struct({ reply: Reply, message: Schema.optional(Schema.String) }).annotate({
+export const ReplyMessage = Schema.String.annotate({
+  description:
+    "Feedback for the model. With reject it follows a note that the user rejected the call; with defer it is the whole error text",
+})
+
+export const ReplyBody = Schema.Struct({ reply: Reply, message: Schema.optional(ReplyMessage) }).annotate({
   identifier: "PermissionReplyBody",
 })
 export type ReplyBody = typeof ReplyBody.Type

@@ -497,14 +497,23 @@ const layer = Layer.effect(
             }
 
             const agent = yield* agents.get(ctx.assistantMessage.agent)
-            yield* permission.ask({
-              permission: "doom_loop",
-              patterns: [value.name],
-              sessionID: ctx.assistantMessage.sessionID,
-              metadata: { tool: value.name, input },
-              always: [value.name],
-              ruleset: agent.permission,
-            })
+            // This ask runs inside the stream, so any failure escaping it ends the turn. A deferral instead
+            // fails only the repeated call, and the model reads the feedback as that call's error.
+            yield* permission
+              .ask({
+                permission: "doom_loop",
+                patterns: [value.name],
+                sessionID: ctx.assistantMessage.sessionID,
+                metadata: { tool: value.name, input },
+                always: [value.name],
+                ruleset: agent.permission,
+              })
+              .pipe(
+                Effect.catchIf(
+                  (error) => error instanceof PermissionV1.DeferredError,
+                  (error) => failToolCall(value.id, error),
+                ),
+              )
             return
           }
 

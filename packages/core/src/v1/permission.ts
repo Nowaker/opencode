@@ -18,6 +18,15 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
   }
 }
 
+// A `defer` reply: nobody refused the call, so the feedback is the whole error text, and the turn goes on.
+export class DeferredError extends Schema.TaggedErrorClass<DeferredError>()("PermissionDeferredError", {
+  feedback: Schema.String,
+}) {
+  override get message() {
+    return this.feedback
+  }
+}
+
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionDeniedError", {
   ruleset: Schema.Any,
 }) {
@@ -30,4 +39,4 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
   requestID: ID,
 }) {}
 
-export type Error = DeniedError | RejectedError | CorrectedError
+export type Error = DeniedError | RejectedError | CorrectedError | DeferredError
