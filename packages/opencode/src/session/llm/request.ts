@@ -211,7 +211,20 @@ function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission"
     Object.keys(input.tools),
     Permission.merge(input.agent.permission, input.permission ?? []),
   )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+  const tools = Record.filter(
+    input.tools,
+    (tool, k) => isToolSearch(tool) || (input.user.tools?.[k] !== false && !disabled.has(k)),
+  )
+  // OpenAI's hosted tool_search only loads the deferred tools the agent was
+  // already allowed, so permissions never strip it: an agent denying "*" (explore)
+  // would otherwise send deferred tools without it, which OpenAI rejects. It
+  // goes when no deferred tool is left.
+  const anyDeferred = Object.values(tools).some((tool) => tool.providerOptions?.["openai"]?.["deferLoading"] === true)
+  return anyDeferred ? tools : Record.filter(tools, (tool) => !isToolSearch(tool))
+}
+
+function isToolSearch(tool: Tool) {
+  return tool.type === "provider" && tool.id === "openai.tool_search"
 }
 
 export function hasToolCalls(messages: ModelMessage[]): boolean {
