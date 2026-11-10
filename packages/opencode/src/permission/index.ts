@@ -16,10 +16,15 @@ export interface Interface {
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
 }
 
+type ReplyError = PermissionV1.RejectedError | PermissionV1.CorrectedError | PermissionV1.DeferredError
+
 interface PendingEntry {
   info: PermissionV1.Request
-  deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
+  deferred: Deferred.Deferred<void, ReplyError>
 }
+
+const DEFER_FEEDBACK =
+  "This permission request was deferred: nobody has answered it yet, and it was not refused. Continue with other work."
 
 interface State {
   pending: Map<PermissionV1.ID, PendingEntry>
@@ -96,7 +101,7 @@ const layer = Layer.effect(
       }
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
-      const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
+      const deferred = yield* Deferred.make<void, ReplyError>()
       pending.set(id, { info, deferred })
       yield* events.publish(Event.Asked, info)
       return yield* Effect.ensuring(
@@ -118,6 +123,15 @@ const layer = Layer.effect(
         requestID: existing.info.id,
         reply: input.reply,
       })
+
+      // Only this request fails: a deferral refuses nothing, so the session's other asks stay pending.
+      if (input.reply === "defer") {
+        yield* Deferred.fail(
+          existing.deferred,
+          new PermissionV1.DeferredError({ feedback: input.message ?? DEFER_FEEDBACK }),
+        )
+        return
+      }
 
       if (input.reply === "reject") {
         yield* Deferred.fail(

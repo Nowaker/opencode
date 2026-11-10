@@ -198,6 +198,14 @@ When OpenCode prompts for approval, the UI offers three outcomes:
 
 The set of patterns that `always` would approve is provided by the tool (for example, bash approvals typically whitelist a safe command prefix like `git status*`).
 
+A `reject` ends the turn, and it also rejects every other request the same session is waiting on. A `reject` with a `message` lets the turn go on, and the model reads the message after a note that the user rejected the call. The session's other pending requests are still rejected without a message, so they end the turn.
+
+Clients answering over the API (`POST /permission/:requestID/reply`) have a fourth reply that the UI does not show:
+
+- `defer` — fail only this request, without refusing it. The `message` becomes the tool call's whole error text, with no note about the user. The turn continues, and the session's other pending requests stay pending. Without a `message`, the model is told the request was deferred, not refused.
+
+Use `defer` when nobody has decided yet, for example when an unattended request times out, and the model should carry on with other work.
+
 ---
 
 ## Agents

@@ -841,6 +841,83 @@ it.instance(
 )
 
 it.instance(
+  "reply - defer fails only that request, with the message as the whole error text",
+  () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2Bridge.Service
+      const replies: unknown[] = []
+      const off = yield* events.listen((event) => {
+        if (event.type === Permission.Event.Replied.type) replies.push(event.data)
+        return Effect.void
+      })
+      const a = yield* ask({
+        id: PermissionV1.ID.make("per_test4c"),
+        sessionID: SessionID.make("session_same"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      const b = yield* ask({
+        id: PermissionV1.ID.make("per_test4d"),
+        sessionID: SessionID.make("session_same"),
+        permission: "edit",
+        patterns: ["foo.ts"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(2)
+      yield* reply({
+        requestID: PermissionV1.ID.make("per_test4c"),
+        reply: "defer",
+        message: "Waiting for a human. Carry on with other work.",
+      })
+
+      const err = yield* fail(Fiber.join(a))
+      expect(err).toBeInstanceOf(PermissionV1.DeferredError)
+      expect((err as PermissionV1.DeferredError).message).toBe("Waiting for a human. Carry on with other work.")
+      expect((yield* list()).map((item) => item.id)).toEqual([PermissionV1.ID.make("per_test4d")])
+
+      yield* reply({ requestID: PermissionV1.ID.make("per_test4d"), reply: "once" })
+      yield* Fiber.join(b)
+      yield* off
+      expect(replies).toEqual([
+        { sessionID: "session_same", requestID: "per_test4c", reply: "defer" },
+        { sessionID: "session_same", requestID: "per_test4d", reply: "once" },
+      ])
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - defer without a message says nobody refused the call",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_test4e"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_test4e"), reply: "defer" })
+
+      const err = yield* fail(Fiber.join(fiber))
+      expect(err).toBeInstanceOf(PermissionV1.DeferredError)
+      expect((err as PermissionV1.DeferredError).message).not.toContain("rejected")
+    }),
+  { git: true },
+)
+
+it.instance(
   "reply - always resolves matching pending requests in same session",
   () =>
     Effect.gen(function* () {

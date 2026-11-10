@@ -1426,7 +1426,10 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           requestID: string
-          reply: "once" | "always" | "reject"
+          /**
+           * once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn
+           */
+          reply: "once" | "always" | "reject" | "defer"
         }
       }
     | {
@@ -5837,7 +5840,10 @@ export type PermissionReplied = {
   data: {
     sessionID: string
     requestID: string
-    reply: "once" | "always" | "reject"
+    /**
+     * once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn
+     */
+    reply: "once" | "always" | "reject" | "defer"
   }
 }
 
@@ -6982,7 +6988,10 @@ export type EventPermissionReplied = {
   properties: {
     sessionID: string
     requestID: string
-    reply: "once" | "always" | "reject"
+    /**
+     * once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn
+     */
+    reply: "once" | "always" | "reject" | "defer"
   }
 }
 
@@ -9508,7 +9517,13 @@ export type PermissionListResponse = PermissionListResponses[keyof PermissionLis
 
 export type PermissionReplyData = {
   body?: {
-    reply: "once" | "always" | "reject"
+    /**
+     * once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn
+     */
+    reply: "once" | "always" | "reject" | "defer"
+    /**
+     * Feedback for the model. With reject it follows a note that the user rejected the call; with defer it is the whole error text
+     */
     message?: string
   }
   path: {
@@ -10690,7 +10705,10 @@ export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnre
 
 export type PermissionRespondData = {
   body?: {
-    response: "once" | "always" | "reject"
+    /**
+     * once/always allow the call. reject refuses it and every other pending request of the session. defer fails only this call with `message` as its error text, which does not end the turn
+     */
+    response: "once" | "always" | "reject" | "defer"
   }
   path: {
     sessionID: string
