@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Cause, Clock, Duration, Effect, Layer, Option, Schedule, Schema, Semaphore, Context } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Option, Random, Schedule, Schema, Semaphore, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
@@ -42,6 +42,13 @@ interface GitResult {
   readonly text: string
   readonly stderr: string
 }
+// Waits for an index.lock held by another process: 8 retries, doubling from 25 ms up to 800 ms, each halved by
+// jitter at most, about 1.6-3.2 s in total.
+const lockRetries = 8
+const lockDelay = 25
+const lockDelayCap = 800
+const heldIndexLock = (result: GitResult) =>
+  result.code !== 0 && /index\.lock': File exists/.test(result.stderr)
 
 type State = Omit<Interface, "init">
 
@@ -91,7 +98,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const encodeTopLevelLiteralPathspecs = (files: string[]) =>
           encodeNulTerminatedPaths(files.map((file) => `:(top,literal)${file}`))
 
-        const git = Effect.fnUntraced(
+        const spawn = Effect.fnUntraced(
           function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
             const result = yield* appProcess.run(
               ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
@@ -111,6 +118,34 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
             }),
           ),
         )
+
+        // Another opencode process on the same worktree shares this store, and git fails at once when it finds
+        // their index.lock. The lock is never removed here: it belongs to a live git of that process.
+        const git = Effect.fnUntraced(function* (
+          cmd: string[],
+          opts?: { cwd?: string; env?: Record<string, string>; stdin?: string },
+        ) {
+          for (let attempt = 1; ; attempt++) {
+            const result = yield* spawn(cmd, opts)
+            if (!heldIndexLock(result)) return result
+            if (attempt > lockRetries) {
+              yield* Effect.logWarning("snapshot index.lock still held, giving up", {
+                git: state.gitdir,
+                attempts: attempt,
+              })
+              return result
+            }
+            const delay = Math.round(
+              Math.min(lockDelay * 2 ** (attempt - 1), lockDelayCap) * (yield* Random.nextBetween(0.5, 1)),
+            )
+            yield* Effect.logWarning("snapshot index.lock held by another process, retrying", {
+              git: state.gitdir,
+              attempt,
+              delay_ms: delay,
+            })
+            yield* Effect.sleep(Duration.millis(delay))
+          }
+        })
 
         const ignore = Effect.fnUntraced(function* (files: string[]) {
           if (!files.length) return new Set<string>()
