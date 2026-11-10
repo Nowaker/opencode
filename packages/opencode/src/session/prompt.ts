@@ -130,6 +130,30 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   return part.state.status === "error" && part.state.metadata?.interrupted === true
 }
 
+/*
+ * With `queued_prompts: "turn_end"`, a turn still in its tool chain reads no user input stored after its own prompt.
+ * Those prompts and notes stay in history and the loop answers them once the turn ends. A compaction or subtask
+ * request is the loop's own work rather than input, so it is never held.
+ */
+function holdForTurnEnd(msgs: SessionV1.WithParts[]) {
+  const last = MessageV2.latest(msgs).assistant
+  const step = last && msgs.findLast((msg) => msg.info.id === last.id)
+  if (!last?.finish || last.error || !step) return msgs
+  const toolCalls = step.parts.some(
+    (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
+  )
+  if (!["tool-calls", "unknown"].includes(last.finish) && !toolCalls) return msgs
+  const prompt = msgs.find((msg) => msg.info.id === last.parentID)?.info
+  if (!prompt) return msgs
+  return msgs.filter(
+    (msg) =>
+      msg.info.role !== "user" ||
+      msg.info.time.created < prompt.time.created ||
+      (msg.info.time.created === prompt.time.created && msg.info.id <= prompt.id) ||
+      msg.parts.some((part) => part.type === "compaction" || part.type === "subtask"),
+  )
+}
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID, options?: SessionAbort.CancelOptions) => Effect.Effect<void>
   readonly prompt: (
@@ -1265,10 +1289,11 @@ const layer = Layer.effect(
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
-          let msgs = pickUp(
-            sessionID,
-            yield* MessageV2.filterCompactedEffect(sessionID).pipe(Effect.provideService(Database.Service, database)),
+          const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+            Effect.provideService(Database.Service, database),
           )
+          const holding = (yield* config.get()).queued_prompts === "turn_end"
+          let msgs = pickUp(sessionID, holding ? holdForTurnEnd(history) : history)
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
@@ -1347,7 +1372,8 @@ const layer = Layer.effect(
               },
             })
             const result = yield* compaction.process({
-              messages: msgs,
+              // Held prompts go to the compaction too, which keeps them verbatim behind the summary.
+              messages: holding ? pickUp(sessionID, history) : msgs,
               parentID: task.messageID,
               sessionID,
               auto: task.auto,

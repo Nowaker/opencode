@@ -2080,6 +2080,7 @@ export type Config = {
   tool_timeout?: {
     [key: string]: number | false
   }
+  queued_prompts?: "next_step" | "turn_end"
   compaction?: {
     auto?: boolean
     prune?: boolean
