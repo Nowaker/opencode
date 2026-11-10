@@ -1,5 +1,5 @@
 import { TextareaRenderable } from "@opentui/core"
-import type { TuiClickEvent, TuiClickHandler } from "@opencode-ai/plugin/tui"
+import type { TuiClickEvent } from "@opencode-ai/plugin/tui"
 
 // IDs are clickable wherever they are drawn: session and message IDs in
 // message footers and the sidebar, and any ID in what the AI and tools wrote.
@@ -73,19 +73,19 @@ export function idUnder(cells: Cells, event: { x: number; y: number; target: Tar
   return { ...found, own: owned(target) }
 }
 
-// Plugins that act on a clicked ID, most recently added first. The first that
-// returns true takes the click; when none does, opencode copies the ID.
-export function createIdClick() {
-  const handlers: TuiClickHandler[] = []
+// Plugins that act on a click, most recently added first. The first that
+// returns true takes the click; when none does, opencode does its own thing.
+export function createClickHandlers<Event>() {
+  const handlers: ((event: Event) => boolean | void)[] = []
   return {
-    on(handler: TuiClickHandler) {
+    on(handler: (event: Event) => boolean | void) {
       handlers.push(handler)
       return () => {
         const index = handlers.indexOf(handler)
         if (index >= 0) handlers.splice(index, 1)
       }
     },
-    run(event: TuiClickEvent) {
+    run(event: Event) {
       return handlers.toReversed().some((handler) => {
         try {
           return handler(event) === true
@@ -96,6 +96,11 @@ export function createIdClick() {
       })
     },
   }
+}
+
+// A clicked ID: when no plugin takes it, opencode copies it.
+export function createIdClick() {
+  return createClickHandlers<TuiClickEvent>()
 }
 
 export type IdClick = ReturnType<typeof createIdClick>

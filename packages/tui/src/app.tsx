@@ -74,6 +74,7 @@ import { TuiConfigProvider, useTuiConfig, type TuiConfig } from "./config"
 import { createTuiApiAdapters } from "./plugin/adapters"
 import { copyText, onClick } from "./ui/click"
 import { createIdClick, idUnder } from "./ui/id-click"
+import { createDirectoryClick, DirectoryClickContext } from "./ui/directory-click"
 import { createTuiApi } from "./plugin/api"
 import { createPluginRuntime, PluginRuntimeProvider, usePluginRuntime, type TuiPluginHost } from "./plugin/runtime"
 import { CommandPaletteDialog } from "./component/command-palette"
@@ -415,6 +416,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
   const clipboard = useClipboard()
   const update = useUpdateNotification()
   const ids = createIdClick()
+  const directories = createDirectoryClick()
   // A click on an ID outside a dialog is copied. One in what the AI or a tool
   // wrote goes to the plugins that asked for it first; one drawn as this
   // session's own footer or sidebar ID is always copied. A commit hash only
@@ -456,7 +458,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
       composerSeal,
       promptSend: createPromptSend({ local, admission, sync, project }),
       Slot: pluginRuntime.Slot,
-      click: { on: ids.on },
+      click: { on: ids.on, onDirectory: directories.on },
       blocks: { register: pluginRuntime.registerBlock },
     }),
     (seal) => {
@@ -1147,7 +1149,9 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
         <box flexGrow={1} minHeight={0} flexDirection="column">
           <Switch>
             <Match when={route.data.type === "home"}>
-              <Home />
+              <DirectoryClickContext.Provider value={directories}>
+                <Home />
+              </DirectoryClickContext.Provider>
             </Match>
             <Match when={route.data.type === "session"}>
               <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>

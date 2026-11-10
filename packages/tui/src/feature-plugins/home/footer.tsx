@@ -7,6 +7,7 @@ import { useHomeSessionDestination } from "../../routes/home/session-destination
 import { TuiLayout } from "../../layout"
 import { copyText, onClick } from "../../ui/click"
 import { useClipboard } from "../../context/clipboard"
+import { useDirectoryClick } from "../../ui/directory-click"
 
 const id = "internal:home-footer"
 
@@ -15,6 +16,7 @@ function Directory(props: { api: TuiPluginApi }) {
   const destination = useHomeSessionDestination()
   const paths = useTuiPaths()
   const clipboard = useClipboard()
+  const clicks = useDirectoryClick()
   const directory = createMemo(() => {
     const selected = destination?.destination()
     if (!selected || selected.type === "new") return
@@ -32,7 +34,15 @@ function Directory(props: { api: TuiPluginApi }) {
   return (
     <Show when={dir()}>
       {(value) => (
-        <text fg={theme().textMuted} {...onClick(() => copyText(clipboard, props.api.ui.toast, directory()!))}>
+        <text
+          fg={theme().textMuted}
+          {...onClick(() => {
+            const path = directory()!
+            // A plugin may do something else with it, such as start the session in another project.
+            if (clicks?.run({ directory: path, location: "home_footer" })) return
+            copyText(clipboard, props.api.ui.toast, path)
+          })}
+        >
           {value()}
         </text>
       )}

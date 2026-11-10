@@ -619,6 +619,9 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
       on(handler) {
         return scope.track(api.click.on(handler))
       },
+      onDirectory(handler) {
+        return scope.track(api.click.onDirectory(handler))
+      },
     },
     blocks: {
       register(block) {

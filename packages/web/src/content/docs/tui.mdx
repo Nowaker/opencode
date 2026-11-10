@@ -111,7 +111,7 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 | `ctrl+p commands` | Below the prompt | Opens the command palette |
 | `esc interrupt` | Below the prompt, while the agent works | Like pressing `esc`: the first click asks for a second, and a second click within 5 seconds interrupts the agent |
 | Token, context and cost usage | Below the prompt, and the Context section of the session sidebar | Opens the status dialog (`/status`) |
-| Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path |
+| Directory | Below the prompt, the session sidebar footer, the home screen footer | Copies the directory's path. On the home screen footer, a plugin can take the click instead (see below) |
 | Model in a message footer | After `▣` and the agent below an answer | Opens the model picker with the model that turn ran on highlighted |
 | Vibeterm section | The top of a delivered prompt | Opens or closes the full delivery record; a right click copies the blocks. Never opens the message actions. See [Delivery provenance](#delivery-provenance) |
 | Apply revert | The revert card at the end of the transcript, after `/undo` | Makes the revert permanent. See [Apply revert](#apply-revert). The rest of the card asks to redo |
@@ -128,6 +128,8 @@ These parts of the screen act when you click them. Where a keybind or slash comm
 A click counts only when the mouse is pressed and released on the same cell. Dragging across any of these selects and copies its text instead, as it does elsewhere, and nothing happens on hover. A click on an ID inside a message, tool call or footer acts on the ID, not on the message or tool around it.
 
 A TUI plugin can take clicks on IDs in the transcript with `api.click.on(handler)`, for example to open the session the ID names. The handler gets `{ target: { kind: "session" | "message" | "id" | "commit", value, before }, context: { sessionID } }` and returns `true` to take the click; otherwise the ID is copied. `id` is any other prefixed ID whose body starts with a hex timestamp, as every ID opencode mints does, or a tool call ID after a `callID:` label; `before` is the text left of it on its row. `commit` is a run of 7 to 40 lowercase hex holding both a digit and a letter, which may be a git commit hash; whether it names one is the handler's question, and one no handler takes is left alone rather than copied. IDs in message footers and the sidebar always copy.
+
+A TUI plugin can take a click on the home screen footer's directory with `api.click.onDirectory(handler)`, for example to start the new session in another project. The handler gets `{ directory, location: "home_footer" }`, where `directory` is the absolute path rather than the `~`-abbreviated text shown, and returns `true` to take the click; otherwise the path is copied. Handlers run newest first, synchronously: start any work and return `true`.
 
 ---
 

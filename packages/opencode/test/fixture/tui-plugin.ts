@@ -221,6 +221,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
     },
     click: {
       on: () => () => {},
+      onDirectory: () => () => {},
     },
     blocks: {
       register: () => () => {},
