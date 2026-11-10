@@ -628,6 +628,17 @@ export type TuiClickEvent = {
 /** Return true to take the click; otherwise opencode copies the ID, and leaves a `commit` alone. */
 export type TuiClickHandler = (event: TuiClickEvent) => boolean | void
 
+/** A directory path the user clicked. */
+export type TuiDirectoryClickEvent = {
+  /** The absolute path, not the `~`-abbreviated text drawn. */
+  directory: string
+  /** Where it is drawn. `home_footer`: the home screen's footer, below the prompt a new session starts from. */
+  location: "home_footer"
+}
+
+/** Return true to take the click; otherwise opencode copies the path. */
+export type TuiDirectoryClickHandler = (event: TuiDirectoryClickEvent) => boolean | void
+
 export type TuiClick = {
   /**
    * Called for a plain click (press and release on one cell, nothing selected)
@@ -638,6 +649,13 @@ export type TuiClick = {
    * synchronously: start any async work and return true.
    */
   on: (handler: TuiClickHandler) => () => void
+  /**
+   * Called for a plain click on a directory opencode draws (see
+   * `TuiDirectoryClickEvent.location`), most recently added first, until a
+   * handler returns true. When none does, opencode copies the path. Handlers
+   * run synchronously: start any async work and return true.
+   */
+  onDirectory: (handler: TuiDirectoryClickHandler) => () => void
 }
 
 /**
