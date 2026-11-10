@@ -25,6 +25,7 @@ import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
 import { SessionStatusEvent } from "./session-status-event"
 import { SessionTodo } from "./session-todo"
+import { ShellBackgroundEvent } from "./shell-background-event"
 import { SessionV1 } from "./session-v1"
 import { TuiEvent } from "./tui-event"
 import { VcsEvent } from "./vcs-event"
@@ -79,6 +80,7 @@ export const Definitions = Event.inventory(
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
+  ...ShellBackgroundEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)
 export { Durable }

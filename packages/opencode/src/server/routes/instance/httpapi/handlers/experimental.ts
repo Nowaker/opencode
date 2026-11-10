@@ -171,6 +171,14 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return promoted.some((job) => job !== undefined)
     })
 
+    const backgroundCancel = Effect.fn("ExperimentalHttpApi.backgroundCancel")(function* (ctx: {
+      params: { jobID: string }
+    }) {
+      const job = yield* background.get(ctx.params.jobID)
+      if (job?.status !== "running") return false
+      return (yield* background.cancel(ctx.params.jobID)) !== undefined
+    })
+
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
@@ -188,6 +196,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
+      .handle("backgroundCancel", backgroundCancel)
       .handle("resource", resource)
   }),
 )

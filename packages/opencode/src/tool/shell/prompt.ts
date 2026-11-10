@@ -19,6 +19,10 @@ export function parameterSchema() {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
+    run_in_background: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Run the command in the background and return at once with its ID and output file. You are notified when it exits.",
+    }),
   })
 }
 
@@ -270,10 +274,28 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits, defaul
   }
 }
 
-export function render(name: string, platform: NodeJS.Platform, limits: Limits, defaultTimeoutMs: number) {
+/** What a foreground command still running at its timeout does: keep running in the background, or be stopped. */
+export type OnTimeout = "background" | "kill"
+
+function backgroundSection(onTimeout: OnTimeout) {
+  const moved =
+    onTimeout === "background"
+      ? " A command still running at its timeout keeps running in the background the same way instead of being stopped, unless it is a bare sleep."
+      : ""
+  return `# Background commands
+Set \`run_in_background\` to true for a command you don't need to wait on, such as a dev server, a watcher or a long build. The call returns at once with the command's ID and the file its output is written to, and you are notified when it exits, with its exit code and the end of its output. Do not poll it or sleep waiting for it; read the output file when you need it.${moved}`
+}
+
+export function render(
+  name: string,
+  platform: NodeJS.Platform,
+  limits: Limits,
+  defaultTimeoutMs: number,
+  onTimeout: OnTimeout = "background",
+) {
   const selected = profile(name, platform, limits, defaultTimeoutMs)
   return {
-    description: renderPrompt(DESCRIPTION, {
+    description: [renderPrompt(DESCRIPTION, {
       intro: selected.intro,
       os: platform,
       shell: name,
@@ -285,7 +307,7 @@ export function render(name: string, platform: NodeJS.Platform, limits: Limits, 
       gitCommandRestriction: selected.gitCommandRestriction,
       createPrInstruction: selected.createPrInstruction,
       createPrExample: selected.createPrExample,
-    }),
+    }), backgroundSection(onTimeout)].join("\n\n"),
     parameters: parameterSchema(),
   }
 }

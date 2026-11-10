@@ -160,6 +160,20 @@ export const Info = Schema.Struct({
     description:
       "When a running turn reads a prompt sent while it runs. 'next_step' (default): before its next model request, right after the current tool calls finish. 'turn_end': only after the turn ends. Applies to every prompt and note stored while the turn runs, from the TUI, the API or a plugin.",
   }),
+  bash_background: Schema.optional(
+    Schema.Struct({
+      timeout: Schema.optional(Schema.Union([PositiveInt, Schema.Literal(false)])).annotate({
+        description:
+          "Longest a bash command running in the background may run, in milliseconds counted from its start, or false for no limit; it is then stopped and reported as timed out (default: 1800000, 30 minutes).",
+      }),
+      on_timeout: Schema.optional(Schema.Literals(["background", "kill"])).annotate({
+        description:
+          "What a foreground bash command still running at its timeout does. 'background' (default): it keeps running in the background and the model is told when it exits. 'kill': it is stopped. A bare sleep is always stopped.",
+      }),
+    }),
+  ).annotate({
+    description: "Bash commands that run in the background, started with run_in_background or moved there at their timeout.",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
