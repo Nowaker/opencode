@@ -388,6 +388,25 @@ A tool that takes its own timeout per call, like `bash`, gets that timeout plus 
 
 ---
 
+### Background commands
+
+The `bash` tool runs a command in the background when the model sets `run_in_background`: the call returns at once with the command's ID and the file its output is written to. A foreground command still running at its `timeout` moves to the background the same way instead of being stopped. A bare `sleep` is always stopped. When a background command exits, the server publishes a `shell.background.exited` event with its status, exit code and the end of its output, and `POST /experimental/background/{jobID}/cancel` stops one early.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "bash_background": {
+    "timeout": 7200000,
+    "on_timeout": "background"
+  }
+}
+```
+
+- `timeout` - The longest a background command may run, in milliseconds counted from its start. It is then stopped and reported as timed out. Defaults to `1800000` (30 minutes); `false` removes the limit.
+- `on_timeout` - What a foreground command still running at its timeout does: `"background"` (default) keeps it running in the background, `"kill"` stops it.
+
+---
+
 ### Queued prompts
 
 A prompt sent while a turn is running is stored at once. The `queued_prompts` option sets when that turn reads it.

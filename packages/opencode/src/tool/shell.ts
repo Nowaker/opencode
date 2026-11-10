@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Semaphore, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -21,10 +21,22 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { BackgroundJob } from "@/background/job"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { InstanceRef } from "@/effect/instance-ref"
+import { Identifier } from "@opencode-ai/core/id/id"
+import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
 
 export { Parameters } from "./shell/prompt"
 
 const MAX_METADATA_LENGTH = 30_000
+/** A bare sleep is a wait, not work: at its timeout it is stopped, never moved to the background. */
+const BARE_SLEEP = /^sleep\s+\S+$/
+/** How much of a background command's output its exit notice carries; the rest is in its output file. */
+const EXIT_NOTICE_LINES = 40
+const EXIT_NOTICE_BYTES = 4000
+/** Background limit when `bash_background.timeout` is not set. */
+const BACKGROUND_TIMEOUT_MS = 30 * 60 * 1000
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
 const FILES = new Set([
   ...CWD,
@@ -344,6 +356,8 @@ export const ShellTool = Tool.define(
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
     const flags = yield* RuntimeFlags.Service
+    const background = yield* BackgroundJob.Service
+    const events = yield* EventV2Bridge.Service
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
@@ -432,11 +446,20 @@ export const ShellTool = Tool.define(
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
+        runInBackground: boolean
+        onTimeout: ShellPrompt.OnTimeout
+        backgroundTimeoutMs: number | false
       },
       ctx: Tool.Context,
     ) {
       const limits = yield* trunc.limits()
       const keep = limits.maxBytes * 2
+      const instance = yield* InstanceRef
+      const id = Identifier.create("bash", "ascending")
+      const startedAt = Date.now()
+      // `full`, `file` and `sink` change together while the reader appends; one lock keeps a chunk from landing in
+      // `full` after it was written out to the file.
+      const outputLock = Semaphore.makeUnsafe(1)
       let full = ""
       let last = ""
       const list: Chunk[] = []
@@ -446,6 +469,13 @@ export const ShellTool = Tool.define(
       let cut = false
       let expired = false
       let aborted = false
+      let capped = false
+      const exited: { code: number | null } = { code: null }
+      // Set once the call has returned and the command runs on in the background: its part is final, so the
+      // streaming preview stops.
+      let detached = false
+
+      const preview_ = (output: string) => (detached ? Effect.void : ctx.metadata({ metadata: { output } }))
 
       const closeSink = Effect.fnUntraced(function* () {
         const stream = sink
@@ -472,91 +502,184 @@ export const ShellTool = Tool.define(
         ).pipe(Effect.catch(() => Effect.void))
       })
 
+      /** Moves the output to a file that keeps growing, so a background command's whole output can be read later. */
+      const outputFile = () =>
+        outputLock.withPermits(1)(
+          Effect.gen(function* () {
+            if (file) return file
+            const next = yield* trunc.write(full)
+            file = next
+            sink = createWriteStream(next, { flags: "a" })
+            full = ""
+            return next
+          }),
+        )
+
+      const onChunk = (chunk: string) =>
+        outputLock.withPermits(1)(
+          Effect.gen(function* () {
+            const size = Buffer.byteLength(chunk, "utf-8")
+            list.push({ text: chunk, size })
+            used += size
+            while (used > keep && list.length > 1) {
+              const item = list.shift()
+              if (!item) break
+              used -= item.size
+              cut = true
+            }
+
+            last = preview(last + chunk)
+
+            if (file) {
+              sink?.write(chunk)
+              return
+            }
+            full += chunk
+            if (Buffer.byteLength(full, "utf-8") <= limits.maxBytes) return
+            const next = yield* trunc.write(full)
+            file = next
+            cut = true
+            sink = createWriteStream(next, { flags: "a" })
+            full = ""
+          }),
+        ).pipe(Effect.andThen(() => preview_(last)))
+
+      const backgroundCap = Effect.gen(function* () {
+        yield* background.waitForPromotion(id)
+        if (input.backgroundTimeoutMs === false) return yield* Effect.never
+        const left = Math.max(0, input.backgroundTimeoutMs - (Date.now() - startedAt))
+        yield* Effect.sleep(`${left} millis`)
+      })
+
+      const publishExited = (exit: Exit.Exit<string, unknown>) =>
+        Effect.gen(function* () {
+          const job = yield* background.get(id)
+          if (job?.metadata?.background !== true) return
+          const status = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+            ? "cancelled"
+            : capped
+              ? "timeout"
+              : exited.code === 0
+                ? "completed"
+                : "failed"
+          const raw = list.map((item) => item.text).join("")
+          yield* events.publish(ShellBackgroundEvent.Exited, {
+            sessionID: ctx.sessionID,
+            id,
+            command: input.command,
+            status,
+            ...(exited.code === null ? {} : { exitCode: exited.code }),
+            durationMs: Math.max(0, Date.now() - startedAt),
+            outputPath: file,
+            output: tail(raw, EXIT_NOTICE_LINES, EXIT_NOTICE_BYTES).text,
+          })
+        }).pipe(
+          Effect.provideService(InstanceRef, instance),
+          Effect.catchCause((cause) => Effect.logError("shell background exit event failed", { id, cause })),
+        )
+
+      // The process runs inside a background job rather than the call's own scope, so a command can keep running
+      // after the call returns. In the foreground the call waits for it and the job is invisible.
+      const runProcess = Effect.scoped(
+        Effect.gen(function* () {
+          yield* Effect.addFinalizer(closeSink)
+          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          const reader = yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.all), onChunk))
+          const ended = yield* Effect.raceFirst(
+            handle.exitCode.pipe(Effect.map((exitCode) => ({ kind: "exit" as const, code: exitCode }))),
+            backgroundCap.pipe(Effect.map(() => ({ kind: "capped" as const, code: null }))),
+          ).pipe(Effect.onInterrupt(() => handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.ignore)))
+          if (ended.kind === "capped") {
+            capped = true
+            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+          }
+          exited.code = ended.code
+          yield* Fiber.join(reader).pipe(Effect.timeoutOption("1 second"), Effect.ignore)
+          return ""
+        }),
+      ).pipe(Effect.onExit(publishExited))
+
       yield* ctx.metadata({
         metadata: {
           output: "",
         },
       })
 
-      const code: number | null = yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* Effect.addFinalizer(closeSink)
-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+      const started = Effect.fnUntraced(function* (reason: "requested" | "timeout") {
+        const outputPath = yield* outputFile()
+        detached = true
+        yield* events.publish(ShellBackgroundEvent.Started, {
+          sessionID: ctx.sessionID,
+          messageID: ctx.messageID,
+          callID: ctx.callID ?? "",
+          id,
+          command: input.command,
+          outputPath,
+          reason,
+          timeoutMs: input.backgroundTimeoutMs === false ? null : input.backgroundTimeoutMs,
+        })
+        return outputPath
+      })
 
-          yield* Effect.forkScoped(
-            Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
-              const size = Buffer.byteLength(chunk, "utf-8")
-              list.push({ text: chunk, size })
-              used += size
-              while (used > keep && list.length > 1) {
-                const item = list.shift()
-                if (!item) break
-                used -= item.size
-                cut = true
-              }
+      const notice = (outputPath: string) =>
+        `Output is being written to: ${outputPath}. You will be notified when it exits; do not poll it or sleep waiting for it.`
 
-              last = preview(last + chunk)
+      yield* background.start({
+        id,
+        type: ShellID.ToolID,
+        title: input.command,
+        metadata: {
+          parentSessionId: ctx.sessionID,
+          messageID: ctx.messageID,
+          callID: ctx.callID,
+          command: input.command,
+          ...(input.runInBackground ? { background: true } : {}),
+        },
+        run: runProcess,
+      })
 
-              if (file) {
-                sink?.write(chunk)
-              } else {
-                full += chunk
-                if (Buffer.byteLength(full, "utf-8") > limits.maxBytes) {
-                  return trunc.write(full).pipe(
-                    Effect.andThen((next) =>
-                      Effect.sync(() => {
-                        file = next
-                        cut = true
-                        sink = createWriteStream(next, { flags: "a" })
-                        full = ""
-                      }),
-                    ),
-                    Effect.andThen(
-                      ctx.metadata({
-                        metadata: {
-                          output: last,
-                        },
-                      }),
-                    ),
-                  )
-                }
-              }
+      if (input.runInBackground) {
+        const outputPath = yield* started("requested")
+        return {
+          title: input.command,
+          metadata: {
+            output: "",
+            exit: null,
+            truncated: false,
+            background: true,
+            jobId: id,
+            outputPath,
+          },
+          output: `Command running in background with ID: ${id}. ${notice(outputPath)}`,
+        }
+      }
 
-              return ctx.metadata({
-                metadata: {
-                  output: last,
-                },
-              })
-            }),
-          )
+      const abort = Effect.callback<void>((resume) => {
+        if (ctx.abort.aborted) return resume(Effect.void)
+        const handler = () => resume(Effect.void)
+        ctx.abort.addEventListener("abort", handler, { once: true })
+        return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
+      })
 
-          const abort = Effect.callback<void>((resume) => {
-            if (ctx.abort.aborted) return resume(Effect.void)
-            const handler = () => resume(Effect.void)
-            ctx.abort.addEventListener("abort", handler, { once: true })
-            return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
-          })
+      const outcome = yield* Effect.raceAll([
+        background.wait({ id }).pipe(Effect.map(() => "exit" as const)),
+        abort.pipe(Effect.map(() => "abort" as const)),
+        Effect.sleep(`${input.timeout + 100} millis`).pipe(Effect.map(() => "timeout" as const)),
+      ]).pipe(Effect.onInterrupt(() => (detached ? Effect.void : background.cancel(id).pipe(Effect.asVoid))))
 
-          const timeout = Effect.sleep(`${input.timeout + 100} millis`)
-
-          const exit = yield* Effect.raceAll([
-            handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
-            abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
-            timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
-          ])
-
-          if (exit.kind === "abort") {
-            aborted = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
-          }
-          if (exit.kind === "timeout") {
-            expired = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
-          }
-
-          return exit.kind === "exit" ? exit.code : null
-        }),
-      ).pipe(Effect.orDie)
+      let movedTo: string | undefined
+      if (outcome === "abort") {
+        aborted = true
+        yield* background.cancel(id)
+      }
+      if (outcome === "timeout") {
+        if (input.onTimeout === "background" && !BARE_SLEEP.test(input.command.trim())) {
+          if (yield* background.promote(id)) movedTo = yield* started("timeout")
+        } else {
+          expired = true
+          yield* background.cancel(id)
+        }
+      }
 
       const meta: string[] = []
       if (expired) {
@@ -565,17 +688,22 @@ export const ShellTool = Tool.define(
         )
       }
       if (aborted) meta.push("User aborted the command")
-      const raw = list.map((item) => item.text).join("")
-      const end = tail(raw, limits.maxLines, limits.maxBytes)
+      if (movedTo) {
+        meta.push(
+          `The command was still running after the timeout of ${input.timeout} ms, so it moved to the background as ${id} instead of being stopped. ${notice(movedTo)}`,
+        )
+      }
+      const snapshot = yield* outputLock.withPermits(1)(Effect.sync(() => list.map((item) => item.text).join("")))
+      const end = tail(snapshot, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true
       if (!file && end.cut) {
-        file = yield* trunc.write(raw)
+        file = yield* trunc.write(snapshot)
       }
 
       let output = end.text
       if (!output) output = "(no output)"
 
-      if (cut && file) {
+      if (cut && file && !movedTo) {
         output = `...output truncated...\n\nFull output saved to: ${file}\n\n` + output
       }
 
@@ -586,9 +714,9 @@ export const ShellTool = Tool.define(
         title: input.command,
         metadata: {
           output: last || preview(output),
-          exit: code,
+          exit: movedTo ? null : exited.code,
           truncated: cut,
-          ...(cut && file ? { outputPath: file } : {}),
+          ...(movedTo ? { background: true, jobId: id, outputPath: movedTo } : cut && file ? { outputPath: file } : {}),
         },
         output,
       }
@@ -600,7 +728,8 @@ export const ShellTool = Tool.define(
         const shell = Shell.acceptable(cfg.shell)
         const name = Shell.name(shell)
         const limits = yield* trunc.limits()
-        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs)
+        const onTimeout = cfg.bash_background?.on_timeout ?? "background"
+        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs, onTimeout)
         yield* Effect.logInfo("shell tool using shell", { shell })
 
         return {
@@ -636,6 +765,9 @@ export const ShellTool = Tool.define(
                   cwd,
                   env: yield* shellEnv(ctx, cwd),
                   timeout,
+                  runInBackground: params.run_in_background === true,
+                  onTimeout,
+                  backgroundTimeoutMs: cfg.bash_background?.timeout ?? BACKGROUND_TIMEOUT_MS,
                 },
                 ctx,
               )

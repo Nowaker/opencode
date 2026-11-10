@@ -93,6 +93,8 @@ export type Event =
   | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
+  | EventShellBackgroundStarted
+  | EventShellBackgroundExited
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -1632,6 +1634,34 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
+    | {
+        id: string
+        type: "shell.background.started"
+        properties: {
+          sessionID: string
+          messageID: string
+          callID: string
+          id: string
+          command: string
+          outputPath: string
+          reason: "requested" | "timeout"
+          timeoutMs: number
+        }
+      }
+    | {
+        id: string
+        type: "shell.background.exited"
+        properties: {
+          sessionID: string
+          id: string
+          command: string
+          status: "completed" | "failed" | "timeout" | "cancelled"
+          exitCode?: number
+          durationMs: number
+          outputPath: string
+          output: string
+        }
+      }
     | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
@@ -2081,6 +2111,13 @@ export type Config = {
     [key: string]: number | false
   }
   queued_prompts?: "next_step" | "turn_end"
+  bash_background?: {
+    /**
+     * Longest a bash command running in the background may run, in milliseconds counted from its start, or false for no limit; it is then stopped and reported as timed out (default: 1800000, 30 minutes).
+     */
+    timeout?: number | false
+    on_timeout?: "background" | "kill"
+  }
   compaction?: {
     auto?: boolean
     prune?: boolean
@@ -3035,6 +3072,8 @@ export type V2Event =
   | WorktreeFailed
   | ServerConnected
   | GlobalDisposed
+  | ShellBackgroundStarted
+  | ShellBackgroundExited
 
 export type V2EventStream = string
 
@@ -6213,6 +6252,54 @@ export type GlobalDisposed = {
   }
 }
 
+export type ShellBackgroundStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    messageID: string
+    callID: string
+    id: string
+    command: string
+    outputPath: string
+    reason: "requested" | "timeout"
+    timeoutMs: number
+  }
+}
+
+export type ShellBackgroundExited = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.exited"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    id: string
+    command: string
+    status: "completed" | "failed" | "timeout" | "cancelled"
+    exitCode?: number
+    durationMs: number
+    outputPath: string
+    output: string
+  }
+}
+
 export type QuestionV2Request = {
   id: string
   sessionID: string
@@ -7163,6 +7250,36 @@ export type EventGlobalDisposed = {
   }
 }
 
+export type EventShellBackgroundStarted = {
+  id: string
+  type: "shell.background.started"
+  properties: {
+    sessionID: string
+    messageID: string
+    callID: string
+    id: string
+    command: string
+    outputPath: string
+    reason: "requested" | "timeout"
+    timeoutMs: number
+  }
+}
+
+export type EventShellBackgroundExited = {
+  id: string
+  type: "shell.background.exited"
+  properties: {
+    sessionID: string
+    id: string
+    command: string
+    status: "completed" | "failed" | "timeout" | "cancelled"
+    exitCode?: number
+    durationMs: number
+    outputPath: string
+    output: string
+  }
+}
+
 export type CredentialOAuth = {
   type: "oauth"
   methodID: string
@@ -8103,6 +8220,38 @@ export type ExperimentalSessionBackgroundResponses = {
 
 export type ExperimentalSessionBackgroundResponse =
   ExperimentalSessionBackgroundResponses[keyof ExperimentalSessionBackgroundResponses]
+
+export type ExperimentalBackgroundCancelData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/background/{jobID}/cancel"
+}
+
+export type ExperimentalBackgroundCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ExperimentalBackgroundCancelError =
+  ExperimentalBackgroundCancelErrors[keyof ExperimentalBackgroundCancelErrors]
+
+export type ExperimentalBackgroundCancelResponses = {
+  /**
+   * Whether a running job was stopped
+   */
+  200: boolean
+}
+
+export type ExperimentalBackgroundCancelResponse =
+  ExperimentalBackgroundCancelResponses[keyof ExperimentalBackgroundCancelResponses]
 
 export type ExperimentalResourceListData = {
   body?: never

@@ -10,6 +10,8 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Session } from "@/session/session"
 import { SessionAbort } from "@/session/abort"
 import { SessionRunState } from "@/session/run-state"
+import { BackgroundJob } from "@/background/job"
+import { ShellID } from "@/tool/shell/id"
 import { SessionStatus } from "@/session/status"
 import { MessageV2 } from "@/session/message-v2"
 import { MessageID } from "@/session/schema"
@@ -23,6 +25,7 @@ const it = testEffect(
     MessageV2.node,
     SessionProjector.node,
     SessionRunState.node,
+    BackgroundJob.node,
     SessionStatus.node,
     EventV2.node,
     Database.node,
@@ -180,3 +183,20 @@ for (const first of ["cancel", "dispose"] as const) {
     }),
   )
 }
+
+it.instance("cancel leaves a background bash command running and stops the session's other background jobs", () =>
+  Effect.gen(function* () {
+    const runners = yield* SessionRunState.Service
+    const background = yield* BackgroundJob.Service
+    const { session } = yield* setup
+    const metadata = { parentSessionId: session.id, background: true }
+    yield* background.start({ id: "bash_cancel_test", type: ShellID.ToolID, metadata, run: Effect.never })
+    yield* background.start({ id: "task_cancel_test", type: "task", metadata, run: Effect.never })
+
+    yield* runners.cancel(session.id, { requester: "tui" })
+
+    expect((yield* background.get("bash_cancel_test"))?.status).toBe("running")
+    expect((yield* background.get("task_cancel_test"))?.status).toBe("cancelled")
+    yield* background.cancel("bash_cancel_test")
+  }),
+)
