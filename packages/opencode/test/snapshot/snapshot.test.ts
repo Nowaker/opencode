@@ -5,8 +5,11 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import fs from "fs/promises"
 import path from "path"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, Logger } from "effect"
 import { Snapshot } from "../../src/snapshot"
+import { Global } from "@opencode-ai/core/global"
+import { Hash } from "@opencode-ai/core/util/hash"
+import { existsSync } from "fs"
 import {
   disposeAllInstances,
   provideInstance,
@@ -14,7 +17,7 @@ import {
   TestInstance,
   tmpdirScoped,
 } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const it = testEffect(
   Layer.mergeAll(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])), testInstanceStoreLayer),
@@ -1214,5 +1217,66 @@ it.instance(
     for (let i = 0; i < base.length; i++) expect(yield* readText(base[i])).toBe(`base-${i}`)
     for (const file of fresh) expect(yield* exists(file)).toBe(false)
   }),
+  { git: true },
+)
+
+const snapshotStore = Effect.fn("SnapshotTest.snapshotStore")(function* (worktree: string) {
+  const root = path.join(Global.Path.data, "snapshot")
+  const projects = yield* Effect.promise(() => fs.readdir(root))
+  const gitdir = projects.map((project) => path.join(root, project, Hash.fast(worktree))).find((dir) => existsSync(dir))
+  if (!gitdir) throw new Error(`no snapshot store for ${worktree}`)
+  return gitdir
+})
+
+it.instance(
+  "track waits for an index.lock another process holds, and leaves that lock alone",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const lock = path.join(yield* snapshotStore(tmp.path), "index.lock")
+      yield* write(lock, "")
+      yield* write(`${tmp.path}/a.txt`, "changed while the store was locked")
+      const retries: unknown[] = []
+      const capture = Logger.make((options) => {
+        const parts = Array.isArray(options.message) ? options.message : [options.message]
+        if (parts[0] === "snapshot index.lock held by another process, retrying") retries.push(parts[1])
+      })
+      const fiber = yield* snapshot
+        .track()
+        .pipe(Effect.provideService(Logger.CurrentLoggers, new Set([capture])), Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.sync(() => (retries.length ? true : undefined)),
+        "track did not retry the held index.lock",
+      )
+      expect(yield* exists(lock)).toBe(true)
+      yield* rm(lock)
+
+      const hash = yield* Fiber.join(fiber)
+      expect(hash).toBeTruthy()
+      expect((yield* snapshot.patch(before)).files).toEqual([fwd(tmp.path, "a.txt")])
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "two processes snapshotting the same worktree at once both get a snapshot",
+  withTrackedSnapshot(({ tmp, snapshot }) =>
+    Effect.gen(function* () {
+      // A second, independent Snapshot service has its own in-process store lock, like another opencode process.
+      yield* Effect.gen(function* () {
+        const other = yield* Snapshot.Service
+        expect(other).not.toBe(snapshot)
+        for (let round = 0; round < 15; round++) {
+          yield* Effect.forEach(
+            Array.from({ length: 200 }, (_, i) => i),
+            (i) => write(`${tmp.path}/many/${i}.txt`, `${round}-${i}`),
+            { concurrency: 16, discard: true },
+          )
+          const hashes = yield* Effect.all([snapshot.track(), other.track()], { concurrency: 2 })
+          expect(hashes.every(Boolean)).toBe(true)
+        }
+      }).pipe(Effect.provide(Layer.fresh(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])))))
+    }),
+  ),
   { git: true },
 )
