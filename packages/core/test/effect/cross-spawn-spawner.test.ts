@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Exit, Stream } from "effect"
+import { Deferred, Effect, Exit, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -224,6 +224,26 @@ describe("cross-spawn spawner", () => {
         const out = yield* decodeByteStream(handle.stdout)
         yield* handle.exitCode
         expect(out).toBe("a b c")
+      }),
+    )
+
+    fx.effect(
+      "input the command closed its stdin against is not an uncaught error",
+      Effect.gen(function* () {
+        if (process.platform === "win32") return
+
+        const uncaught: unknown[] = []
+        const record = (err: unknown) => uncaught.push(err)
+        process.on("uncaughtException", record)
+        yield* Effect.addFinalizer(() => Effect.sync(() => process.off("uncaughtException", record)))
+        const closed = yield* Deferred.make<void>()
+        const stdin = Stream.fromEffect(Deferred.await(closed).pipe(Effect.as(Buffer.from("unread input\n"))))
+        const handle = yield* ChildProcess.make("sh", ["-c", "exec 0<&-; echo closed; exec sleep 30"], { stdin })
+        expect(yield* decodeByteStream(handle.stdout.pipe(Stream.take(1)))).toBe("closed")
+        yield* Deferred.succeed(closed, undefined)
+        for (let turn = 0; turn < 20; turn++) yield* Effect.promise(() => new Promise((done) => setImmediate(done)))
+        yield* handle.kill()
+        expect(uncaught).toEqual([])
       }),
     )
   })
