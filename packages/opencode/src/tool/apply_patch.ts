@@ -7,6 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Patch } from "../patch"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { assertExternalDirectoryEffect } from "./external-directory"
+import { FileFacts } from "./file-facts"
 import { trimDiff } from "./edit"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -72,9 +73,16 @@ export const ApplyPatchTool = Tool.define(
       for (const hunk of hunks) {
         const filePath = path.resolve(instance.directory, hunk.path)
         yield* assertExternalDirectoryEffect(ctx, filePath)
+        if (hunk.type !== "add" && FileFacts.changed(ctx.sessionID, filePath)) {
+          return yield* Effect.fail(new Error(`apply_patch verification failed: ${filePath}: ${FileFacts.STALE}`))
+        }
 
         switch (hunk.type) {
           case "add": {
+            const link = FileFacts.link(filePath, instance)
+            if (link?.missing && link.path === filePath) {
+              return yield* Effect.fail(new Error(`apply_patch verification failed: ${FileFacts.dangling(link)}`))
+            }
             const oldContent = ""
             const newContent =
               hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`
@@ -253,6 +261,7 @@ export const ApplyPatchTool = Tool.define(
           if (yield* format.file(edited)) {
             yield* Bom.syncFile(afs, edited, change.bom)
           }
+          FileFacts.remember(ctx.sessionID, edited)
           yield* events.publish(FileSystem.Event.Edited, { file: edited })
         }
       }
@@ -279,7 +288,9 @@ export const ApplyPatchTool = Tool.define(
           return `D ${path.relative(instance.worktree, change.filePath).replaceAll("\\", "/")}`
         }
         const target = change.movePath ?? change.filePath
-        return `M ${path.relative(instance.worktree, target).replaceAll("\\", "/")}`
+        const link = FileFacts.link(target, instance)
+        const via = link ? ` -> ${link.real}` : ""
+        return `M ${path.relative(instance.worktree, target).replaceAll("\\", "/")}${via}`
       })
       let output = `Success. Updated the following files:\n${summaryLines.join("\n")}`
 

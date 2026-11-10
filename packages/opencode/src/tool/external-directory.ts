@@ -55,7 +55,7 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
 // Resolve every symlink on the way to target, including a dangling final link,
 // because writing through it creates the file it points at. Missing trailing
 // components are kept as written.
-function resolveTarget(target: string, hops = 0): string {
+export function resolveTarget(target: string, hops = 0): string {
   if (existsSync(target)) return realpathSync(target)
   const parent = path.dirname(target)
   if (parent === target || hops > MAX_SYMLINK_HOPS) return target

@@ -8,6 +8,7 @@ import { OwnerQuiescence } from "@/owner/quiescence"
 import DESCRIPTION from "./read.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
+import { FileFacts } from "./file-facts"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 
@@ -115,9 +116,13 @@ export const ReadTool = Tool.define<
           if (item.type === "directory") return item.name + "/"
           if (item.type !== "symlink") return item.name
 
-          const target = yield* fs.stat(path.join(filepath, item.name)).pipe(Effect.catch(() => Effect.void))
-          if (target?.type === "Directory") return item.name + "/"
-          return item.name
+          const entry = path.join(filepath, item.name)
+          const link = yield* fs.readLink(entry).pipe(Effect.option)
+          const arrow = Option.isSome(link) ? ` -> ${link.value}` : ""
+          const target = yield* fs.stat(entry).pipe(Effect.catch(() => Effect.void))
+          if (!target) return `${item.name}${arrow} (missing)`
+          if (target.type === "Directory") return `${item.name}/${arrow}`
+          return `${item.name}${arrow}`
         }),
         { concurrency: "unbounded" },
       ).pipe(Effect.map((items: string[]) => items.sort((a, b) => a.localeCompare(b))))
@@ -147,6 +152,7 @@ export const ReadTool = Tool.define<
       const start = opts.offset - 1
       const raw: string[] = []
       const flags = { bytes: 0, count: 0, cut: false, more: false, done: false }
+      const endings = FileFacts.lineEndings()
 
       // Note: prefer manual TextDecoder over Stream.decodeText — when the source stream
       // ends without flushing, decodeText drops the final unterminated line. We also
@@ -156,6 +162,7 @@ export const ReadTool = Tool.define<
       const decoder = new TextDecoder("utf-8")
       yield* fs.stream(filepath).pipe(
         Stream.map((bytes) => decoder.decode(bytes, { stream: true })),
+        Stream.tap((text) => Effect.sync(() => endings.feed(text))),
         Stream.splitLines,
         Stream.runForEach((text) =>
           Effect.gen(function* () {
@@ -185,7 +192,14 @@ export const ReadTool = Tool.define<
         Effect.catchTag("ReadStop", () => Effect.void),
       )
 
-      return { raw, count: flags.count, cut: flags.cut, more: flags.more, offset: opts.offset }
+      return {
+        raw,
+        count: flags.count,
+        cut: flags.cut,
+        more: flags.more,
+        offset: opts.offset,
+        endings: endings.label(),
+      }
     })
 
     const isBinaryFile = (filepath: string, bytes: Uint8Array) => {
@@ -277,12 +291,14 @@ export const ReadTool = Tool.define<
         const start = offset - 1
         const sliced = items.slice(start, start + limit)
         const truncated = start + sliced.length < items.length
+        const link = FileFacts.link(filepath, instance)
 
         return {
           title,
           output: [
             `<path>${filepath}</path>`,
             `<type>directory</type>`,
+            ...(link ? [`<symlink>${FileFacts.describe(link, filepath, instance, "directory")}</symlink>`] : []),
             `<entries>`,
             sliced.join("\n"),
             truncated
@@ -307,7 +323,9 @@ export const ReadTool = Tool.define<
       }
 
       const loaded = yield* instruction.resolve(ctx.messages, filepath, ctx.messageID)
-      const sample = yield* readSample(filepath, Number(stat.size), SAMPLE_BYTES)
+      FileFacts.remember(ctx.sessionID, filepath)
+      const size = Number(stat.size)
+      const sample = yield* readSample(filepath, size, SAMPLE_BYTES)
 
       const mime = sniffAttachmentMime(sample, FSUtil.mimeType(filepath))
       const isImage = SUPPORTED_IMAGE_MIMES.has(mime)
@@ -333,8 +351,10 @@ export const ReadTool = Tool.define<
         }
       }
 
+      const encoding = FileFacts.encoding(sample)
       if (isBinaryFile(filepath, sample)) {
-        return yield* Effect.fail(new Error(`Cannot read binary file: ${filepath}`))
+        const note = encoding?.startsWith("UTF-16") ? ` (encoding: ${encoding})` : ""
+        return yield* Effect.fail(new Error(`Cannot read binary file: ${filepath}${note}`))
       }
 
       const file = yield* lines(filepath, { limit: params.limit ?? DEFAULT_READ_LIMIT, offset: params.offset || 1 })
@@ -344,18 +364,26 @@ export const ReadTool = Tool.define<
         )
       }
 
-      let output = [`<path>${filepath}</path>`, `<type>file</type>`, "<content>\n"].join("\n")
+      const link = FileFacts.link(filepath, instance)
+      let output = [
+        `<path>${filepath}</path>`,
+        `<type>file</type>`,
+        ...(link ? [`<symlink>${FileFacts.describe(link, filepath, instance)}</symlink>`] : []),
+        ...(file.endings ? [`<line-endings>${file.endings}</line-endings>`] : []),
+        ...(encoding ? [`<encoding>${encoding}</encoding>`] : []),
+        "<content>\n",
+      ].join("\n")
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")
 
       const last = file.offset + file.raw.length - 1
       const next = last + 1
       const truncated = file.more || file.cut
       if (file.cut) {
-        output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${file.offset}-${last}. Use offset=${next} to continue.)`
+        output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${file.offset}-${last} of a ${size}-byte file. Use offset=${next} to continue.)`
       } else if (file.more) {
-        output += `\n\n(Showing lines ${file.offset}-${last} of ${file.count}. Use offset=${next} to continue.)`
+        output += `\n\n(Showing lines ${file.offset}-${last} of ${file.count}, ${FileFacts.bytes(size)} total. Use offset=${next} to continue.)`
       } else {
-        output += `\n\n(End of file - total ${file.count} lines)`
+        output += `\n\n(End of file - total ${file.count} lines, ${FileFacts.bytes(size)})`
       }
       output += "\n</content>"
 

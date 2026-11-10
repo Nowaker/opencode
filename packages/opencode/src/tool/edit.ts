@@ -16,6 +16,7 @@ import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
+import { FileFacts } from "./file-facts"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Bom from "@/util/bom"
 
@@ -81,8 +82,10 @@ export const EditTool = Tool.define(
             ? params.filePath
             : path.join(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filePath)
+          const link = FileFacts.link(filePath, instance)
 
           let diff = ""
+          let stale = false
           let contentOld = ""
           let contentNew = ""
           yield* lock(filePath).withPermits(1)(
@@ -94,6 +97,7 @@ export const EditTool = Tool.define(
                     "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.",
                   )
                 }
+                if (link?.missing && link.path === filePath) throw new Error(FileFacts.dangling(link))
                 const next = Bom.split(params.newString)
                 const desiredBom = next.bom
                 contentOld = ""
@@ -123,6 +127,7 @@ export const EditTool = Tool.define(
               const info = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (!info) throw new Error(`File ${filePath} not found`)
               if (info.type === "Directory") throw new Error(`Path is a directory, not a file: ${filePath}`)
+              stale = FileFacts.changed(ctx.sessionID, filePath)
               const source = yield* Bom.readFile(afs, filePath)
               contentOld = source.text
 
@@ -130,7 +135,13 @@ export const EditTool = Tool.define(
               const old = convertToLineEnding(normalizeLineEndings(params.oldString), ending)
               const replacement = convertToLineEnding(normalizeLineEndings(params.newString), ending)
 
-              const next = Bom.split(replace(contentOld, old, replacement, params.replaceAll))
+              // When the file changed since the last read, a failed match is most likely
+              // the change itself, so say that instead of the generic no-match error.
+              const replaced = yield* Effect.try({
+                try: () => replace(contentOld, old, replacement, params.replaceAll),
+                catch: (error) => (stale ? new Error(FileFacts.STALE) : error),
+              })
+              const next = Bom.split(replaced)
               const desiredBom = source.bom || next.bom
               contentNew = next.text
 
@@ -193,7 +204,9 @@ export const EditTool = Tool.define(
             },
           })
 
-          let output = "Edit applied successfully."
+          FileFacts.remember(ctx.sessionID, filePath)
+          let output = link ? `Edit applied successfully: ${filePath} -> ${link.real}.` : "Edit applied successfully."
+          if (stale) output += `\n${FileFacts.STALE_NOTE}`
           yield* lsp.touchFile(filePath, "document")
           const diagnostics = yield* lsp.diagnostics()
           const normalizedFilePath = FSUtil.normalizePath(filePath)

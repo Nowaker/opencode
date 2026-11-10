@@ -79,6 +79,8 @@ Modify existing files using exact string replacements.
 
 This tool performs precise edits to files by replacing exact text matches. It's the primary way the LLM modifies code.
 
+If the file changed on disk since the session last read or wrote it, an edit whose text still matches goes ahead and the result says the file had changed; an edit that no longer matches fails with `File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.` Editing through a symbolic link changes the link's target, and the result names it: `Edit applied successfully: <link> -> <real path>.`
+
 ---
 
 ### write
@@ -95,6 +97,8 @@ Create new files or overwrite existing ones.
 ```
 
 Use this to allow the LLM to create new files. It will overwrite existing files if they already exist.
+
+The result gives the size written, `Wrote file successfully (23 bytes).` A path that is or runs through a symbolic link is written at its target, and the result names it: `Wrote file successfully: <link> -> <real path> (23 bytes).` Writing through a link whose target does not exist is refused and the error names the file it would create. Overwriting a file that changed on disk since the session last read or wrote it fails with `File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.` Files the session never read are not checked.
 
 :::note
 The `write` tool is controlled by the `edit` permission, which covers all file modifications (`edit`, `write`, `apply_patch`).
@@ -116,6 +120,14 @@ Read file contents from your codebase.
 ```
 
 This tool reads files and returns their contents. It supports reading specific line ranges for large files.
+
+The closing line gives the file's size in bytes, for example `(End of file - total 2 lines, 23 bytes)`. A few extra lines appear after `<type>` only when they apply:
+
+- `<symlink>` when the path, or a directory above it inside the project, is a symbolic link: the link, the real path, and whether that is inside this worktree, in another git repository (named by its root), or elsewhere.
+- `<line-endings>` when the file does not use plain LF: `crlf`, `cr`, or `mixed (crlf, lf)`.
+- `<encoding>` when the file starts with a byte order mark, for example `UTF-8 with BOM`.
+
+Directory listings show links as `name -> target`, and `name -> target (missing)` when the target does not exist.
 
 ---
 
@@ -190,6 +202,8 @@ Apply patches to files.
 ```
 
 This tool applies patch files to your codebase. Useful for applying diffs and patches from various sources.
+
+Like `write`, it refuses to change a file that changed on disk since the session last read or wrote it, and names the real path of a file it changed through a symbolic link: `M <link> -> <real path>`.
 
 When handling `tool.execute.before` or `tool.execute.after` hooks, check `input.tool === "apply_patch"` (not `"patch"`).
 
