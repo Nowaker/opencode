@@ -239,6 +239,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           messageID: ctx.payload?.messageID,
           id: ctx.payload?.id,
           unsettled: ctx.payload?.unsettled,
+          parentID: ctx.payload?.parentID,
+          title: ctx.payload?.title,
+          permission: ctx.payload?.permission,
         }),
       )
     })

@@ -10353,6 +10353,15 @@ export type SessionForkData = {
      * How to copy an assistant message that is still streaming: exclude drops it, settle copies it completed with every unfinished tool marked interrupted. Omitted copies it as is.
      */
     unsettled?: "exclude" | "settle"
+    /**
+     * Session the copy belongs to as a child, the way a subagent's session does. A top-level session when omitted.
+     */
+    parentID?: string
+    /**
+     * Title of the copy. Defaults to the source's title with a fork number.
+     */
+    title?: string
+    permission?: PermissionRuleset
   }
   path: {
     sessionID: string

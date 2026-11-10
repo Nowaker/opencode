@@ -181,4 +181,24 @@ describe("session fork", () => {
       expect((yield* sessions.messages({ sessionID: id })).length).toBe(4)
     }),
   )
+
+  it.instance("with a parent, a title and permissions, makes the copy that session's child under that title", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const turn = yield* midTurn()
+      const fork = yield* sessions.fork({
+        sessionID: turn.source.id,
+        unsettled: "exclude",
+        parentID: turn.source.id,
+        title: "review the diff (@build fork)",
+        permission: [{ permission: "question", pattern: "*", action: "deny" }],
+      })
+      const info = yield* sessions.get(fork.id)
+      expect(info.permission).toEqual([{ permission: "question", pattern: "*", action: "deny" }])
+      expect(info.parentID).toBe(turn.source.id)
+      expect(info.title).toBe("review the diff (@build fork)")
+      expect((yield* sessions.children(turn.source.id)).map((child) => child.id)).toEqual([fork.id])
+      expect(texts(yield* sessions.messages({ sessionID: fork.id }))).toEqual(["first", "first answer", "second", "third"])
+    }),
+  )
 })
