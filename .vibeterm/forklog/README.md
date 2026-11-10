@@ -134,9 +134,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Prompt external_directory for symlinks that resolve outside the project](./features/2026-11-01-symlink-external-directory.md)
 - [Leave plugin serverUrl undefined without an HTTP listener](./features/2026-11-05-honest-plugin-server-url.md)
 - [Let a plugin keep tool schemas behind the provider's tool search](./features/2026-11-07-tool-deferral-hook.md)
+- [Skip the doom_loop ask for provider-executed tool calls](./features/2026-11-09-doom-loop-provider-executed.md)
 
 ## Session records
 
+- [2026-11-09 `ses_e3d3aa52effeG1KLcRHIKZ6FDU`](./sessions/2026-11-09-doom-loop-provider-executed.md) - three identical provider-executed `tool_search` calls raised a `doom_loop` ask on m4max; the guard now skips provider-executed calls; `beb7eba846`, merged `5a845affb9`; upstreamable `a9e993aeee` on `github/v1` (`doom-loop-upstream` on `nowaker-github`, PR not opened); vt-410 on both hosts with the retry cap.
 - [2026-11-07 `ses_e940a3306ffeuueD3PBtPLwowX`](./sessions/2026-11-07-tool-deferral-hook.md) - `tool.deferral` plugin hook: per tool of every request, `defer_loading` for @ai-sdk/anthropic and @ai-sdk/openai, plus the Responses `tool_search` for OpenAI; opencode-tools `toolDeferral.*` drives it; `ac36448956`, merged `f8f7cf2e33`; vt-407 on desktop.
 - [2026-11-05 `ses_e51bbad20ffeGYfUME3WmE9Lnz`](./sessions/2026-11-05-honest-plugin-server-url.md) - `PluginInput.serverUrl` is undefined without an HTTP listener instead of a fabricated `localhost:4096` (m4max lost OMO parent wake to an orphaned serve on 4096); consumer audit: OMO safe, opencode-tools stuck-detector dereferences it but is not loaded; upstreamable `c333ffb3cc` on `github/v1` (no PR), merged as `628e9bb9ee`; vt-404 on both hosts with the retry cap.
 
