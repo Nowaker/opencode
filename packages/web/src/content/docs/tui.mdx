@@ -51,7 +51,7 @@ Click a prompt in the conversation to act on it:
 
 The two Revert actions are listed with [`revert.files`](#options)'s choice first. The conversation shows the revert at once; if the server refuses it, for example because a turn is running, it comes back and a notice says why.
 
-A prompt sent while a turn is running waits, marked **QUEUED**, until the turn reaches it. Click it and choose **Unqueue** to take it back: it leaves the queue and its text and attachments return to the prompt box, above anything typed there since. The running turn keeps going. If the turn has already picked the prompt up, nothing changes and a notice says so.
+A prompt sent while a turn is running waits, marked **QUEUED**, until the turn reads it. By default the turn reads it before its next model request: once the tool calls running at that moment finish, never in the middle of a streamed reply. So the model takes it in without ending the turn first, and the prompt is then marked **read mid-turn**. With [`queued_prompts`](/docs/config#queued-prompts) set to `"turn_end"`, the prompt stays **QUEUED** until the turn ends and is then answered as a turn of its own. Click a queued prompt and choose **Unqueue** to take it back: it leaves the queue and its text and attachments return to the prompt box, above anything typed there since. The running turn keeps going. If the turn has already picked the prompt up, nothing changes and a notice says so.
 
 ### Delivery provenance
 

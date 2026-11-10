@@ -165,6 +165,7 @@ import { secondTicker } from "../../util/ticker"
 import { onClick } from "../../ui/click"
 import { DialogModel } from "../../component/dialog-model"
 import { TranscriptFilter } from "./transcript-filter"
+import { promptDeliveries, type PromptDelivery } from "./prompt-delivery"
 import { DialogTranscriptFilter } from "./dialog-transcript-filter"
 
 addDefaultParsers(parsers.parsers)
@@ -353,13 +354,9 @@ export function Session() {
   })
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
-  const pending = createMemo(() => {
-    const completed = messages().findLastIndex((message) => message.role === "assistant" && message.time.completed)
-    const pending = messages().findLastIndex(
-      (message, index) => index > completed && message.role === "assistant" && !message.time.completed,
-    )
-    return pending === -1 ? undefined : pending
-  })
+  const deliveries = createMemo(() =>
+    promptDeliveries(messages(), (sync.data.session_status?.[route.sessionID]?.type ?? "idle") !== "idle"),
+  )
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
@@ -1764,8 +1761,7 @@ export function Session() {
                                       : undefined
                                   }
                                   queued={
-                                    pending() !== undefined &&
-                                    index() > pending()! &&
+                                    deliveries().get(message.id) === "queued" &&
                                     TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
                                   }
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
@@ -1775,7 +1771,7 @@ export function Session() {
                             }}
                             message={message as UserMessage}
                             parts={sync.data.part[message.id] ?? []}
-                            pending={pending()}
+                            delivery={deliveries().get(message.id)}
                           />
                         </Match>
                         <Match when={message.role === "assistant"}>
@@ -1888,7 +1884,7 @@ function UserMessage(props: {
   parts: Part[]
   onMouseUp: (event: MouseEvent) => void
   index: number
-  pending?: number
+  delivery?: PromptDelivery
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1907,17 +1903,14 @@ function UserMessage(props: {
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
   // A notice never reaches the model, so it is never waiting for the turn to pick it up.
-  const queued = createMemo(
-    () =>
-      props.pending !== undefined &&
-      props.index > props.pending &&
-      TranscriptFilter.userKind(props.parts) === "prompts",
-  )
+  const prompt = createMemo(() => TranscriptFilter.userKind(props.parts) === "prompts")
+  const queued = createMemo(() => props.delivery === "queued" && prompt())
+  const midTurn = createMemo(() => props.delivery === "mid-turn" && prompt())
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
   const time = createMemo(() => ctx.footer("time", "user", props.message.id))
   const messageID = createMemo(() => ctx.footer("message_id", "user", props.message.id))
-  const metadataVisible = createMemo(() => queued() || time() || messageID())
+  const metadataVisible = createMemo(() => queued() || midTurn() || time() || messageID())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
   const shown = createMemo(() => ctx.filter()[TranscriptFilter.userKind(props.parts)].shown)
@@ -1984,7 +1977,7 @@ function UserMessage(props: {
               <Show when={metadataVisible()}>
                 <text
                   ref={markOwnIds}
-                  marginTop={body() && userFooterGap(body(), files().length, time() || messageID()) ? 1 : 0}
+                  marginTop={body() && userFooterGap(body(), files().length, time() || midTurn() || messageID()) ? 1 : 0}
                   fg={theme.textMuted}
                 >
                   <Show
@@ -1999,9 +1992,12 @@ function UserMessage(props: {
                   >
                     <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
                   </Show>
+                  <Show when={midTurn()}>
+                    <span style={{ fg: theme.textMuted }}>{time() ? " · " : ""}read mid-turn</span>
+                  </Show>
                   <Show when={messageID()}>
                     <span style={{ fg: theme.textMuted }}>
-                      {queued() || time() ? " · " : ""}
+                      {queued() || midTurn() || time() ? " · " : ""}
                       {props.message.id}
                     </span>
                   </Show>

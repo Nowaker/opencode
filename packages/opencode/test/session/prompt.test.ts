@@ -1723,8 +1723,11 @@ it.instance("prompt submitted during an active run is included in the next LLM i
   }),
 )
 
-const compactDuringTurn = Effect.fn("test.compactDuringTurn")(function* (input: { queued?: string }) {
-  const { llm } = yield* useServerConfig(providerCfg)
+const compactDuringTurn = Effect.fn("test.compactDuringTurn")(function* (input: {
+  queued?: string
+  config?: Partial<ConfigV1.Info>
+}) {
+  const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), ...input.config }))
   const gate = yield* Deferred.make<void>()
   const prompt = yield* SessionPrompt.Service
   const sessions = yield* Session.Service
@@ -1811,6 +1814,25 @@ it.instance("/compact during a turn answers a prompt queued before it after the 
     const last = messages.at(-1)
     expect(last?.info.role).toBe("assistant")
     expect(last?.parts.some((part) => part.type === "text" && part.text === "after compaction")).toBe(true)
+    const answered = messages.find((msg) => msg.info.id === (last?.info.role === "assistant" && last.info.parentID))
+    expect(answered?.parts.some((part) => part.type === "text" && part.text === "queued question")).toBe(true)
+    expect(answered!.info.id > summary!.info.id).toBe(true)
+  }),
+  30_000,
+)
+
+it.instance("with queued_prompts turn_end, /compact during a turn still answers a held prompt after the summary", () =>
+  Effect.gen(function* () {
+    const { hits, messages } = yield* compactDuringTurn({
+      queued: "queued question",
+      config: { queued_prompts: "turn_end" },
+    })
+
+    expect(hits).toHaveLength(3)
+    expect(JSON.stringify(hits[1]?.body)).not.toContain("queued question")
+    expect(JSON.stringify(hits[2]?.body)).toContain("queued question")
+    const summary = messages.find((msg) => msg.info.role === "assistant" && msg.info.summary)
+    const last = messages.at(-1)
     const answered = messages.find((msg) => msg.info.id === (last?.info.role === "assistant" && last.info.parentID))
     expect(answered?.parts.some((part) => part.type === "text" && part.text === "queued question")).toBe(true)
     expect(answered!.info.id > summary!.info.id).toBe(true)
@@ -3426,6 +3448,265 @@ it.instance("a reader-only notice after a finished turn does not start another",
     expect(result.info.role).toBe("assistant")
     expect(yield* llm.calls).toBe(1)
   }),
+  { git: true },
+  30_000,
+)
+
+// Mid-turn delivery
+
+const allowAll = [{ permission: "*", pattern: "*", action: "allow" as const }]
+
+/*
+ * Starts a turn whose first model step is `first`, held open after its first streamed line until `send` has stored
+ * whatever arrives during that step, then lets the turn run to its end. `inputs` are the model requests in order.
+ */
+const sendDuringStep = <R>(input: {
+  first: ReturnType<typeof reply>
+  then: ReturnType<typeof reply>[]
+  send: (sessionID: SessionID) => Effect.Effect<Fiber.Fiber<unknown, unknown>[], unknown, R>
+  config?: Partial<ConfigV1.Info>
+}) =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), ...input.config }))
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned", permission: allowAll })
+    yield* llm.push(input.first.wait(deferredAsPromise(gate)), ...input.then)
+
+    const turn = yield* prompt
+      .prompt(queuedPrompt(chat.id, MessageID.ascending(), "do the work"))
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const sent = yield* input.send(chat.id)
+    yield* Deferred.succeed(gate, void 0)
+    const exits = yield* Effect.all([Fiber.await(turn), ...sent.map((fiber) => Fiber.await(fiber))])
+    expect(exits.every(Exit.isSuccess)).toBe(true)
+    return {
+      dir,
+      sessionID: chat.id,
+      inputs: (yield* llm.inputs).map((body) => JSON.stringify(body)),
+      messages: yield* sessions.messages({ sessionID: chat.id }),
+    }
+  })
+
+const queuePrompt = Effect.fn("test.queuePrompt")(function* (sessionID: SessionID, text: string) {
+  const prompt = yield* SessionPrompt.Service
+  const id = MessageID.ascending()
+  const fiber = yield* prompt.prompt(queuedPrompt(sessionID, id, text)).pipe(Effect.forkChild)
+  yield* stored(sessionID, id)
+  return fiber
+})
+
+const occurrences = (body: string, text: string) => body.split(text).length - 1
+
+it.instance(
+  "prompts sent while a step streams reach the next model request after its tool results, in order, in the same turn",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        first: reply().text("looking around").tool("first", { value: "a" }),
+        then: [reply().text("done").stop()],
+        send: (sessionID) => Effect.all([queuePrompt(sessionID, "queued one"), queuePrompt(sessionID, "queued two")]),
+      })
+
+      expect(run.inputs).toHaveLength(2)
+      expect(run.inputs[0]).not.toContain("queued one")
+      const next = run.inputs[1]
+      expect(next.indexOf("looking around")).toBeLessThan(next.indexOf('"role":"tool"'))
+      expect(next.indexOf('"role":"tool"')).toBeLessThan(next.indexOf("queued one"))
+      expect(next.indexOf("queued one")).toBeLessThan(next.indexOf("queued two"))
+      const answer = run.messages.at(-1)
+      const two = run.messages.find((msg) =>
+        msg.parts.some((part) => part.type === "text" && part.text === "queued two"),
+      )
+      expect(answer?.info.role === "assistant" ? answer.info.parentID : undefined).toBe(two?.info.id)
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "a prompt sent during a parallel tool batch is read once, after every result of the batch",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        first: reply().tool("first", { value: "a" }).tool("second", { value: "b" }),
+        then: [reply().text("done").stop()],
+        send: (sessionID) => Effect.all([queuePrompt(sessionID, "queued words")]),
+      })
+
+      expect(run.inputs).toHaveLength(2)
+      const next = run.inputs[1]
+      expect(occurrences(next, "queued words")).toBe(1)
+      expect(occurrences(next, '"role":"tool"')).toBe(2)
+      expect(next.lastIndexOf('"role":"tool"')).toBeLessThan(next.indexOf("queued words"))
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "a note sent without a reply during a turn is read at its next step and starts no turn of its own",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        first: reply().tool("first", { value: "a" }),
+        then: [reply().text("done").stop()],
+        send: (sessionID) =>
+          Effect.gen(function* () {
+            const prompt = yield* SessionPrompt.Service
+            yield* prompt.prompt({ ...queuedPrompt(sessionID, MessageID.ascending(), "note words"), noReply: true })
+            return []
+          }),
+      })
+
+      expect(run.inputs).toHaveLength(2)
+      expect(run.inputs[1].indexOf('"role":"tool"')).toBeLessThan(run.inputs[1].indexOf("note words"))
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance("a note sent without a reply to an idle session starts no turn, and the next turn reads it", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.text("answer")
+
+    yield* prompt.prompt({ ...queuedPrompt(chat.id, MessageID.ascending(), "note words"), noReply: true })
+    expect(yield* llm.calls).toBe(0)
+    yield* prompt.prompt(queuedPrompt(chat.id, MessageID.ascending(), "question words"))
+    expect(yield* llm.calls).toBe(1)
+    const body = JSON.stringify((yield* llm.inputs)[0])
+    expect(body.indexOf("note words")).toBeLessThan(body.indexOf("question words"))
+  }),
+)
+
+it.instance(
+  "a file attached to a prompt sent during a turn reaches the model with it",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        first: reply().tool("first", { value: "a" }),
+        then: [reply().text("done").stop()],
+        send: (sessionID) =>
+          Effect.gen(function* () {
+            const { directory } = yield* TestInstance
+            const file = path.join(directory, "attached.txt")
+            yield* writeText(file, "attached words")
+            const prompt = yield* SessionPrompt.Service
+            const id = MessageID.ascending()
+            const fiber = yield* prompt
+              .prompt({
+                ...queuedPrompt(sessionID, id, "see the file"),
+                parts: [
+                  { type: "text", text: "see the file" },
+                  { type: "file", mime: "text/plain", url: pathToFileURL(file).href, filename: "attached.txt" },
+                ],
+              })
+              .pipe(Effect.forkChild)
+            yield* stored(sessionID, id)
+            return [fiber]
+          }),
+      })
+
+      expect(run.inputs).toHaveLength(2)
+      expect(run.inputs[0]).not.toContain("attached words")
+      expect(run.inputs[1]).toContain("see the file")
+      expect(run.inputs[1]).toContain("attached words")
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "a prompt sent before an abort is not sent by the aborted turn, and the next run reads it",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned", permission: allowAll })
+      yield* llm.push(reply().tool("first", { value: "a" }).hang())
+      yield* llm.text("answer after the abort")
+
+      const turn = yield* prompt
+        .prompt(queuedPrompt(chat.id, MessageID.ascending(), "do the work"))
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* waitForBusy(chat.id)
+      const queued = yield* queuePrompt(chat.id, "queued words")
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(turn)
+      yield* Fiber.await(queued)
+      expect(yield* sentToModel("queued words")).toBe(0)
+
+      yield* prompt.loop({ sessionID: chat.id })
+      expect(yield* llm.calls).toBe(2)
+      expect(yield* sentToModel("queued words")).toBe(1)
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "with queued_prompts turn_end, a prompt sent during a tool step waits for the turn's answer and then gets its own",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        config: { queued_prompts: "turn_end" },
+        first: reply().tool("first", { value: "a" }),
+        then: [reply().text("done").stop(), reply().text("answer to the queued prompt").stop()],
+        send: (sessionID) => Effect.all([queuePrompt(sessionID, "queued words")]),
+      })
+
+      expect(run.inputs).toHaveLength(3)
+      expect(run.inputs[1]).not.toContain("queued words")
+      expect(run.inputs[2]).toContain("queued words")
+      const queued = run.messages.find((msg) =>
+        msg.parts.some((part) => part.type === "text" && part.text === "queued words"),
+      )
+      const answer = run.messages.at(-1)
+      expect(answer?.info.role === "assistant" ? answer.info.parentID : undefined).toBe(queued?.info.id)
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "with queued_prompts turn_end, a held prompt can still be unqueued after the turn passes a tool step",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), queued_prompts: "turn_end" as const }))
+      const step = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned", permission: allowAll })
+      yield* llm.push(reply().tool("first", { value: "a" }).wait(deferredAsPromise(step)))
+      yield* llm.hold("done", deferredAsPromise(gate))
+
+      const turn = yield* prompt
+        .prompt(queuedPrompt(chat.id, MessageID.ascending(), "do the work"))
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      const queuedID = MessageID.ascending()
+      const queued = yield* prompt.prompt(queuedPrompt(chat.id, queuedID, "queued words")).pipe(Effect.forkChild)
+      yield* stored(chat.id, queuedID)
+      yield* Deferred.succeed(step, void 0)
+      yield* llm.wait(2)
+
+      const removed = yield* prompt.unqueue({ sessionID: chat.id, messageID: queuedID })
+      expect(removed.info.id).toBe(queuedID)
+      yield* Deferred.succeed(gate, void 0)
+      yield* Fiber.await(turn)
+      yield* Fiber.await(queued)
+      expect(yield* llm.calls).toBe(2)
+      expect(yield* sentToModel("queued words")).toBe(0)
+    }),
   { git: true },
   30_000,
 )

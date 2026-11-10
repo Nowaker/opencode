@@ -388,6 +388,24 @@ A tool that takes its own timeout per call, like `bash`, gets that timeout plus 
 
 ---
 
+### Queued prompts
+
+A prompt sent while a turn is running is stored at once. The `queued_prompts` option sets when that turn reads it.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "queued_prompts": "turn_end"
+}
+```
+
+- `"next_step"` (default) - The turn reads it before its next model request: once the tool calls running at that moment finish, never in the middle of a streamed reply. When a model runs several tool calls at once, the prompt follows all of their results. The model takes it in without ending the turn first.
+- `"turn_end"` - The turn finishes without it, then answers it as a turn of its own.
+
+The option covers everything stored while a turn runs: prompts typed in the TUI, prompts and `noReply` notes sent over the server API or the SDK, and messages a plugin sends that way. Two prompts are read in the order they were sent. A `noReply` note never starts a turn, so on an idle session it waits for the next one. A prompt that arrives while the turn [compacts](#compaction) is kept as it is, after the summary, under either setting.
+
+---
+
 ### Models
 
 You can configure the providers and models you want to use in your OpenCode config through the `provider`, `model` and `small_model` options.

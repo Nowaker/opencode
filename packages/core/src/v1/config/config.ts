@@ -156,6 +156,10 @@ export const Info = Schema.Struct({
     description:
       "Time limits in milliseconds for tool calls, or false for no limit. A call still running past its limit is aborted and ends with an error the model sees. 'default' applies to every tool (default: 1800000, 30 minutes); any other key is a tool ID (built-in, plugin or MCP, e.g. 'bash' or 'myserver_search') and replaces every other limit for that tool. read, write, edit, grep and glob default to 600000 (10 minutes), or 'default' when that is lower. question and task have no limit unless set here.",
   }),
+  queued_prompts: Schema.optional(Schema.Literals(["next_step", "turn_end"])).annotate({
+    description:
+      "When a running turn reads a prompt sent while it runs. 'next_step' (default): before its next model request, right after the current tool calls finish. 'turn_end': only after the turn ends. Applies to every prompt and note stored while the turn runs, from the TUI, the API or a plugin.",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
