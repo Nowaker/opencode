@@ -53,6 +53,7 @@ See [the session record](../sessions/2026-11-01-symlink-external-directory.md#ve
 ## Timeline
 
 - 2026-11-01 [`ses_e6489be9fffe4C9rbuuFTkKk1E`](../sessions/2026-11-01-symlink-external-directory.md) - initial build on `github/v1`, merge into `dev-nowaker`, install on desktop and m4max. Evidence: `b6bdc91b38`, `1511b34f5a`.
+- 2026-11-10 [`ses_e3b5c833cffeNAR8nbTGc9S6Gx`](../sessions/2026-11-10-file-tool-metadata.md) - re-verified: its symlink tests pass on the merged file-metadata tree with `TMPDIR=/tmp`; `resolveTarget` is now exported and reused by `tool/file-facts.ts`, and the upstream twin `file-metadata-upstream` stacks on `b6bdc91b38`. Evidence: `e563b42081`, merge `9911a26b09`.
 
 ## Current maintenance notes
 

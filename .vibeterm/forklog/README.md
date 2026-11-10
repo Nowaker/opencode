@@ -136,9 +136,11 @@ carries every feature forward unchanged. That commit includes the full
 - [Let a plugin keep tool schemas behind the provider's tool search](./features/2026-11-07-tool-deferral-hook.md)
 - [Skip the doom_loop ask for provider-executed tool calls](./features/2026-11-09-doom-loop-provider-executed.md)
 - [Let a plugin take a click on the home footer's directory](./features/2026-11-09-home-directory-click.md)
+- [Tell the model about links, size, line endings and stale files](./features/2026-11-10-file-tool-metadata.md)
 
 ## Session records
 
+- [2026-11-10 `ses_e3b5c833cffeNAR8nbTGc9S6Gx`](./sessions/2026-11-10-file-tool-metadata.md) - file tools tell the model about links (`<symlink>` with real path and repo scope, listing arrows, `(missing)`), byte size, non-LF line endings and BOMs; writes through links name the real path, dangling links are refused; a per-session stale-read guard with Claude Code's wording; `e563b42081`, merged `9911a26b09`; upstream twin `c22174c762` on `file-metadata-upstream` (local, PR not opened); vt-421 on both hosts with the retry cap.
 - [2026-11-09 `ses_e3d8a6cc6ffegC1MnjWnwibwHN`](./sessions/2026-11-09-home-directory-click.md) - `api.click.onDirectory`: a click on the home footer's directory is offered to plugins (copied when none takes it); Vibeterm's route plugin opens its project chooser from it and moves the unsent prompt; `56d05e171b`, merged `b8933da0d6`; vt-413 on both hosts with the retry cap.
 - [2026-11-09 `ses_e3d3aa52effeG1KLcRHIKZ6FDU`](./sessions/2026-11-09-doom-loop-provider-executed.md) - three identical provider-executed `tool_search` calls raised a `doom_loop` ask on m4max; the guard now skips provider-executed calls; `beb7eba846`, merged `5a845affb9`; upstreamable `a9e993aeee` on `github/v1` (`doom-loop-upstream` on `nowaker-github`, PR not opened); vt-410 on both hosts with the retry cap.
 - [2026-11-07 `ses_e940a3306ffeuueD3PBtPLwowX`](./sessions/2026-11-07-tool-deferral-hook.md) - `tool.deferral` plugin hook: per tool of every request, `defer_loading` for @ai-sdk/anthropic and @ai-sdk/openai, plus the Responses `tool_search` for OpenAI; opencode-tools `toolDeferral.*` drives it; `ac36448956`, merged `f8f7cf2e33`; vt-407 on desktop.
