@@ -15,6 +15,7 @@ import { SessionEvent } from "@opencode/schema/session-event"
 import { SessionLegacy } from "@opencode/schema/session-legacy"
 import type { SessionID } from "@opencode/schema/session-id"
 import { AbsolutePath } from "@opencode/schema/schema"
+import { isSqlError } from "effect/sql/SqlError"
 
 export type Subscriber<D extends Event.Definition = Event.Definition> = (event: Event.Payload<D>) => Effect.Effect<void>
 export type Unsubscribe = Effect.Effect<void>
@@ -118,6 +119,12 @@ export type PublishResult<I extends readonly PublishInput[]> = {
   readonly [K in keyof I]: I[K] extends PublishInput<infer D> ? Event.Payload<D> : never
 }
 
+export interface PreparedInput<D extends Event.DurableDefinition, E, R> {
+  readonly aggregateID: string
+  readonly prepare: () => Effect.Effect<Event.Data<D>, E, R>
+  readonly options?: PublishOptions
+}
+
 /** Marker/event union emitted by `log`. */
 export type LogItem = Event.Payload | EventLog.Synced
 
@@ -153,6 +160,11 @@ export interface Interface {
     data: Event.Data<D>,
     options?: PublishOptions,
   ) => Effect.Effect<Event.Payload<D>>
+  /** Prepare durable data under the aggregate lock and inside the immediate write transaction. */
+  readonly publishPrepared: <D extends Event.DurableDefinition, E, R>(
+    definition: D,
+    input: PreparedInput<D, E, R>,
+  ) => Effect.Effect<Event.Payload<D>, E, R>
   readonly publishAll: <const I extends readonly [PublishInput, ...PublishInput[]]>(
     events: I,
   ) => Effect.Effect<PublishResult<I>>
@@ -287,9 +299,26 @@ export function configured(options?: Options) {
           }),
         )
 
+        function commitDurableEvent<P extends Event.Payload, E, R>(
+          definition: Event.DurableDefinition,
+          publication: { readonly aggregateID: string; readonly prepare: () => Effect.Effect<P, E, R> },
+          input: undefined,
+          commit?: PublishOptions["commit"],
+        ): Effect.Effect<{ readonly event: P }, E, R>
         function commitDurableEvent(
           definition: Event.Definition,
-          event: Event.Payload,
+          publication: Event.Payload,
+          input?: {
+            readonly seq: number
+            readonly aggregateID: string
+            readonly ownerID?: string
+            readonly strictOwner?: boolean
+          },
+          commit?: PublishOptions["commit"],
+        ): Effect.Effect<{ readonly event: Event.Payload } | undefined>
+        function commitDurableEvent<P extends Event.Payload, E = never, R = never>(
+          definition: Event.Definition,
+          publication: P | { readonly aggregateID: string; readonly prepare: () => Effect.Effect<P, E, R> },
           input?: {
             readonly seq: number
             readonly aggregateID: string
@@ -297,15 +326,18 @@ export function configured(options?: Options) {
             readonly strictOwner?: boolean
           },
           commit?: (seq: number) => Effect.Effect<void>,
-        ) {
+        ): Effect.Effect<{ readonly event: P } | undefined, E, R> {
           return Effect.gen(function* () {
             const durable = definition.durable
-            if (!durable) return yield* Effect.void
-            const aggregateID = yield* requireAggregateID(event.type, durable.aggregate, event.data)
+            if (!durable) return
+            const aggregateID =
+              "prepare" in publication
+                ? publication.aggregateID
+                : yield* requireAggregateID(definition.type, durable.aggregate, publication.data)
             if (input && input.aggregateID !== aggregateID) {
               yield* Effect.die(
                 new InvalidDurableEventError({
-                  type: event.type,
+                  type: definition.type,
                   message: `Aggregate mismatch: expected ${input.aggregateID}, got ${aggregateID}`,
                 }),
               )
@@ -317,6 +349,17 @@ export function configured(options?: Options) {
                   .transaction(
                     () =>
                       Effect.gen(function* () {
+                        const event = "prepare" in publication ? yield* publication.prepare() : publication
+                        if ("prepare" in publication) {
+                          const preparedID = yield* requireAggregateID(event.type, durable.aggregate, event.data)
+                          if (preparedID !== aggregateID)
+                            return yield* Effect.die(
+                              new InvalidDurableEventError({
+                                type: event.type,
+                                message: `Aggregate mismatch: expected ${aggregateID}, got ${preparedID}`,
+                              }),
+                            )
+                        }
                         const row = yield* db
                           .select({ seq: EventSequenceTable.seq, ownerID: EventSequenceTable.owner_id })
                           .from(EventSequenceTable)
@@ -395,8 +438,8 @@ export function configured(options?: Options) {
                         }
                         const committed = {
                           ...event,
-                          durable: { aggregateID, seq, version: durable.version },
-                        } as Event.Payload
+                          durable: envelope(aggregateID, seq, durable.version),
+                        }
                         const route = yield* prepareRoutes([committed])
                         for (const projector of list) {
                           yield* projector(committed)
@@ -433,7 +476,7 @@ export function configured(options?: Options) {
                       }),
                     { behavior: "immediate" },
                   )
-                  .pipe(Effect.orDie)
+                  .pipe(Effect.catchIf(isSqlError, Effect.die))
                 if (committed) {
                   committed.route()
                   yield* Effect.forEach(
@@ -507,7 +550,11 @@ export function configured(options?: Options) {
           })
         }
 
-        const makePayload = (definition: Event.Definition, data: unknown, options: PublishOptions | undefined) =>
+        const makePayload = <D extends Event.Definition>(
+          definition: D,
+          data: Event.Data<D>,
+          options: PublishOptions | undefined,
+        ) =>
           Effect.gen(function* () {
             const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
             const location = options?.global
@@ -523,13 +570,40 @@ export function configured(options?: Options) {
               type: definition.type,
               ...(location ? { location } : {}),
               data,
-            } as Event.Payload
+            } as Event.Payload<D>
           })
 
         function publish<D extends Event.Definition>(definition: D, data: Event.Data<D>, options?: PublishOptions) {
           return Effect.gen(function* () {
-            const event = (yield* makePayload(definition, data, options)) as Event.Payload<D>
+            const event = yield* makePayload(definition, data, options)
             return yield* publishEvent(definition, event, options?.commit)
+          })
+        }
+
+        function publishPrepared<D extends Event.DurableDefinition, E, R>(
+          definition: D,
+          input: PreparedInput<D, E, R>,
+        ) {
+          return Effect.gen(function* () {
+            const aggregateID = input.aggregateID
+            return yield* durableLocks.withLock(aggregateID)(
+              Effect.gen(function* () {
+                const committed = yield* commitDurableEvent(
+                  definition,
+                  {
+                    aggregateID,
+                    prepare: () =>
+                      Effect.suspend(input.prepare).pipe(
+                        Effect.flatMap((data) => makePayload(definition, data, input.options)),
+                      ),
+                  },
+                  undefined,
+                  input.options?.commit,
+                )
+                yield* notify(committed.event, true)
+                return committed.event
+              }),
+            )
           })
         }
 
@@ -892,6 +966,7 @@ export function configured(options?: Options) {
 
         return Service.of({
           publish,
+          publishPrepared,
           publishAll,
           subscribe,
           log,
