@@ -681,7 +681,9 @@ export function createSessionTimelineRowRenderer(input: {
       }
     }
 
-    return { label: message.description ?? message.text }
+    return {
+      label: message.ignored && !message.description?.trim() ? message.text : (message.description ?? message.text),
+    }
   }
 
   const Frame = (props: { row: FramedTimelineRow; grow?: boolean; children: JSX.Element }) => (

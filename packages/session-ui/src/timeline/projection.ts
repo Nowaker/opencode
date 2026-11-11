@@ -1196,5 +1196,5 @@ function isNotice(message: SessionMessageInfo): message is Notice {
 
   if (message.type !== "synthetic") return true
 
-  return !!message.description?.trim() || timelineNoticeRequired(message)
+  return !!message.ignored || !!message.description?.trim() || timelineNoticeRequired(message)
 }

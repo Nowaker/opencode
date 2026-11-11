@@ -36,3 +36,13 @@ story("renders the moved location notice as a timeline divider", async ({ mount,
   await expect(tooltipTrigger).toBeFocused()
   await expect(tooltip).toBeVisible()
 })
+
+story("labels ignored notes by description, else by their text", async ({ mount }) => {
+  const timeline = await mount("current-session-timeline-rows--conversation", { args: { scenario: "notices" } })
+  const notices = timeline.locator('[data-slot="session-timeline-notice"]')
+
+  await expect(notices.filter({ hasText: "Deploy paused for review" })).toHaveCount(1)
+  await expect(notices.filter({ hasText: "Waiting on the design sign-off" })).toHaveCount(1)
+  await expect(notices.filter({ hasText: "Reminder saved" })).toHaveCount(1)
+  await expect(timeline).not.toContainText("Full note body")
+})

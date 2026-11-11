@@ -369,6 +369,29 @@ const AgentActivityNotices = {
             text: "instructions",
             time: { created: STORY_TIME + 5 },
           },
+          {
+            id: "msg_notice_note",
+            type: "synthetic",
+            text: "Deploy paused for review",
+            ignored: true,
+            time: { created: STORY_TIME + 6 },
+          },
+          {
+            id: "msg_notice_note_blank",
+            type: "synthetic",
+            text: "Waiting on the design sign-off",
+            description: " ",
+            ignored: true,
+            time: { created: STORY_TIME + 7 },
+          },
+          {
+            id: "msg_notice_note_described",
+            type: "synthetic",
+            text: "Full note body",
+            description: "Reminder saved",
+            ignored: true,
+            time: { created: STORY_TIME + 8 },
+          },
         ],
       }}
       width="720px"
