@@ -246,4 +246,55 @@ describe.skipIf(process.platform === "win32")("tool.shell background", () => {
       ),
     30_000,
   )
+
+  /** Records the order of this file's background events, subscribed before the command starts. */
+  const watchOrder = Effect.fn("ShellBackgroundTest.watchOrder")(function* () {
+    const events = yield* EventV2Bridge.Service
+    const order: string[] = []
+    const exited = yield* Deferred.make<void>()
+    const unsubscribe = yield* events.listen((event) =>
+      Effect.gen(function* () {
+        if (event.type === ShellBackgroundEvent.Started.type) order.push("started")
+        if (event.type === ShellBackgroundEvent.Exited.type) {
+          order.push("exited")
+          yield* Deferred.succeed(exited, undefined)
+        }
+      }),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+    return { order, exited: Deferred.await(exited).pipe(Effect.timeout("20 seconds")) }
+  })
+
+  /** A Truncate whose write is slow, which widens the gap between moving a job to the background and announcing it. */
+  const slowWrite = Effect.fn("ShellBackgroundTest.slowWrite")(function* () {
+    const trunc = yield* Truncate.Service
+    return Truncate.Service.of({ ...trunc, write: (text) => Effect.sleep("3 seconds").pipe(Effect.andThen(trunc.write(text))) })
+  })
+
+  for (const [name, args] of [
+    ["run_in_background", { command: "exit 0", run_in_background: true }],
+    ["a foreground timeout", { command: "sleep 1.5; exit 0", timeout: 300 }],
+  ] as const) {
+    it.live(
+      `#given ${name} #when the command exits before its start is announced #then Started is still published before Exited`,
+      () =>
+        inProject(
+          {},
+          Effect.gen(function* () {
+            // given
+            const seen = yield* watchOrder()
+            const slow = yield* slowWrite()
+
+            // when
+            yield* runShell(args).pipe(Effect.provideService(Truncate.Service, slow))
+            yield* seen.exited
+            yield* Effect.sleep("200 millis")
+
+            // then
+            expect(seen.order).toEqual(["started", "exited"])
+          }),
+        ),
+      30_000,
+    )
+  }
 })
