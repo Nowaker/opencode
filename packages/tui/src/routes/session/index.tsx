@@ -2118,7 +2118,10 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   const actor = () => (source() === "shell" ? "Shell" : Locale.titlecase(stringValue(metadata()?.agent) ?? "Subagent"))
   const text = () => {
     if (props.message.type === "system") return props.message.description ?? "Instructions updated"
-    if (props.message.type === "synthetic") return props.message.description ?? ""
+    if (props.message.type === "synthetic")
+      return props.message.ignored && !props.message.description?.trim()
+        ? props.message.text
+        : (props.message.description ?? "")
     return ""
   }
   const description = () => (source() === "shell" ? text().replace(/\s+/g, " ").trim() : text())
