@@ -54,7 +54,11 @@ export type ServerInfoOutput = {
   readonly urls: ReadonlyArray<string>
   readonly paths: { readonly tmp: string }
   readonly capabilities?:
-    | { readonly persistentPty?: boolean | undefined; readonly sessionMetadataMergePatch?: boolean | undefined }
+    | {
+        readonly persistentPty?: boolean | undefined
+        readonly sessionMessages?: boolean | undefined
+        readonly sessionMetadataMergePatch?: boolean | undefined
+      }
     | undefined
 }
 export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>

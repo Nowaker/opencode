@@ -22,6 +22,7 @@ import { Model } from "../model.js"
 import { Mcp } from "../mcp/index.js"
 import { Session } from "../session.js"
 import { InstructionEntry } from "../session/instruction-entry.js"
+import { SessionMessagePage } from "../session/message-page.js"
 import { PersistentPty } from "../persistent-pty.js"
 import { Provider } from "../provider.js"
 import { Reference } from "../reference.js"
@@ -126,7 +127,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
 
   // Keep the instance graph's inferred types independent of Session handles.
   const context: Plugin.Context = {
-    app,
+    app: { ...app, capabilities: { sessionMessages: true } },
     location: locationInfo(),
     options: {},
     rpc: Object.assign(rpc.client, { register: rpc.register }),
@@ -607,6 +608,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
           .pipe(Effect.map((interrupted) => ({ interrupted }))),
       wait: (input) => sessions.wait(input.sessionID),
       context: (input) => sessions.context(input.sessionID),
+      messages: (input) => SessionMessagePage.list(input, sessions.messages),
       instructions: {
         entry: {
           list: Effect.fn(function* (input) {

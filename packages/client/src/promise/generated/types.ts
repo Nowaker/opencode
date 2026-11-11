@@ -6,7 +6,13 @@ export type ServerInfo = {
   hostname?: string | undefined
   urls: Array<string>
   paths: { tmp: string }
-  capabilities?: { persistentPty?: boolean | undefined; sessionMetadataMergePatch?: boolean | undefined } | undefined
+  capabilities?:
+    | {
+        persistentPty?: boolean | undefined
+        sessionMessages?: boolean | undefined
+        sessionMetadataMergePatch?: boolean | undefined
+      }
+    | undefined
 }
 
 export type PairingCode = { code: string; expires_in: number }

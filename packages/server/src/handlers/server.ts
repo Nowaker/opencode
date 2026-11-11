@@ -24,7 +24,7 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
             hostname: hostname() || undefined,
             urls: info.urls(),
             paths: info.paths,
-            capabilities: { persistentPty: PersistentPty.available, sessionMetadataMergePatch: true },
+            capabilities: { persistentPty: PersistentPty.available, sessionMetadataMergePatch: true, sessionMessages: true },
           }
         }),
       )
