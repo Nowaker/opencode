@@ -10,6 +10,7 @@ import { chmod } from "node:fs/promises"
 import { isAbsolute, join } from "path"
 import { DatabaseMigration } from "./migration.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { DatabaseGuard } from "./guard.js"
 
 const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
 type DatabaseShape = Effect.Success<typeof makeDatabase>
@@ -35,6 +36,7 @@ const databaseLayer = (lock: Effect.Effect<Semaphore.Semaphore>) =>
     Service,
     Effect.gen(function* () {
       const db = yield* makeDatabase
+      yield* DatabaseGuard.checkSchema(db, "injected SQLite client")
       // An injected Durable Object client may run under a non-workerd module condition in tests.
       const durableObject = EffectDrizzleSqlite.managesTransactionsNatively(db.$client)
 
@@ -75,7 +77,9 @@ export function layer(options: Options = { path: ":memory:" }) {
         )
       const filename = options.path ?? ":memory:"
       if (filename === ":memory:") return provide(filename)
-      const file = isAbsolute(filename) ? filename : join((yield* Global.Service).data, filename)
+      const global = yield* Global.Service
+      const file = isAbsolute(filename) ? filename : join(global.data, filename)
+      yield* DatabaseGuard.checkFile(file, global.data)
       yield* Effect.promise(() => restrictToOwner(file))
       return provide(file)
     }),
