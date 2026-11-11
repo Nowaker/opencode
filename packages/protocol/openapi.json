@@ -1653,7 +1653,7 @@
             }
           }
         },
-        "description": "Update mutable session properties.",
+        "description": "Update mutable session properties. Metadata replaces the complete record unless experimental.metadataMode is merge. Merge support is advertised by server.info capabilities.sessionMetadataMergePatch.",
         "summary": "Update session",
         "requestBody": {
           "content": {
@@ -1672,14 +1672,7 @@
                     ]
                   },
                   "metadata": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/Session.Metadata"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "$ref": "#/components/schemas/Session.Metadata"
                   },
                   "permissions": {
                     "anyOf": [
@@ -1701,6 +1694,31 @@
                       }
                     ],
                     "description": "Archive the session with true or restore it with false. Repeating the current state is a no-op."
+                  },
+                  "experimental": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "metadataMode": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": ["replace", "merge"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Experimental: may change without compatibility guarantees. Metadata updates replace the complete record by default. Select merge to apply RFC 7396 JSON Merge Patch atomically: null deletes members, objects merge recursively, and other values replace."
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -22809,6 +22827,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "sessionMetadataMergePatch": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode."
                   }
                 },
                 "additionalProperties": false

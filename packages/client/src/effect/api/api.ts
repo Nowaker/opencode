@@ -53,7 +53,9 @@ export type ServerInfoOutput = {
   readonly hostname?: string | undefined
   readonly urls: ReadonlyArray<string>
   readonly paths: { readonly tmp: string }
-  readonly capabilities?: { readonly persistentPty?: boolean | undefined } | undefined
+  readonly capabilities?:
+    | { readonly persistentPty?: boolean | undefined; readonly sessionMetadataMergePatch?: boolean | undefined }
+    | undefined
 }
 export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
 
@@ -196,6 +198,7 @@ export type SessionUpdateInput = {
   readonly metadata?: Session.Metadata | undefined
   readonly permissions?: Permission.Ruleset | undefined
   readonly archived?: boolean | undefined
+  readonly experimental?: { readonly metadataMode?: "replace" | "merge" | undefined } | undefined
 }
 export type SessionUpdateOutput = void
 export type SessionUpdateOperation<E = never> = (input: SessionUpdateInput) => Effect.Effect<SessionUpdateOutput, E>

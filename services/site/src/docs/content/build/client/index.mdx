@@ -34,6 +34,37 @@ await client.session.prompt({
 })
 ```
 
+## Update session metadata
+
+`client.session.update()` replaces the complete metadata record by default. Pass `experimental.metadataMode: "merge"` to apply an atomic [RFC 7396 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7396) through `PATCH /api/session/{sessionID}`. This selector is experimental and may change without compatibility guarantees.
+
+```ts
+const info = await client.server.info()
+if (info.capabilities?.sessionMetadataMergePatch) {
+  await client.session.update({
+    sessionID: session.id,
+    metadata: { integration: { note: "Reviewed", obsolete: null } },
+    experimental: { metadataMode: "merge" },
+  })
+}
+```
+
+- Objects merge recursively, preserving members absent from the patch.
+- A `null` member deletes that key. Arrays and scalar members replace their previous values.
+- The metadata root must be an object. An empty object leaves existing metadata unchanged in merge mode.
+- Concurrent merges of disjoint keys preserve each writer's changes, including across server processes sharing a database. Writes to the same key follow commit order.
+- The existing `session.metadata.updated` event contains the complete resulting record, including in the durable log.
+
+Omit `experimental.metadataMode` or select `"replace"` to replace the whole record, preserving literal `null` members. An empty object clears the record in replacement mode; omitting `metadata` leaves it unchanged in either mode. Creation, child and fork inheritance, and plugin metadata updates keep their existing behavior.
+
+```ts
+await client.session.update({
+  sessionID: session.id,
+  metadata: { note: null },
+  experimental: { metadataMode: "replace" },
+})
+```
+
 ## Headers and requests
 
 Pass default authentication or application headers to `OpenCode.make` with

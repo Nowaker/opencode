@@ -16,6 +16,9 @@ export const ServerInfo = Schema.Struct({
   capabilities: Schema.optional(
     Schema.Struct({
       persistentPty: Schema.optional(Schema.Boolean),
+      sessionMetadataMergePatch: Schema.optional(Schema.Boolean).annotate({
+        description: "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode.",
+      }),
     }),
   ),
 }).annotate({ identifier: "ServerInfo" })
