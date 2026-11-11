@@ -34,6 +34,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Guarded v2 fork and separate opencode2 installation](./features/2026-11-10-v2-foundation.md)
+
 - [Pending PKCE isolation and Portal-owned MCP callbacks](#portal-owned-mcp-oauth-callbacks)
 
 - [Run-owned test scratch](./features/2026-10-18-test-scratch-lifetime.md)
@@ -144,6 +146,8 @@ carries every feature forward unchanged. That commit includes the full
 - [Let a session fork be a child of another session](./features/2026-11-10-fork-as-child.md)
 
 ## Session records
+
+- [2026-11-10 W1 session](./sessions/2026-11-10-v2-foundation.md) - pin `v2-nowaker` to v2.2.7, refuse v1 databases before writes/migrations, add isolated `--v2` installer on `dev-nowaker`, publish both branches to both mirrors and verify desktop `opencode2`; m4max's build is coordinator-owned while offline.
 
 - [2026-11-10 `ses_e38409895ffeKcmQCC8COa4Jok`](./sessions/2026-11-10-defer-search-permission.md) - every GPT explore child died with "Deferred tools require tools.tool_search" from 2026-11-07: the agent permission filter in `LLMRequestPrep` stripped `tool_search` from an agent denying `*` while its allowed deferred tools kept `defer_loading`; permissions now never strip `tool_search`, which goes only when nothing is deferred; `2c4bd2a36a`, merged `cead509aa0`; vt-436 on both hosts with the retry cap.
 - [2026-11-10 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-10-bash-background.md) - `bash` runs a command in the background (`run_in_background`), moves a foreground command still running at its timeout there instead of killing it (not a bare `sleep`; `bash_background.on_timeout` "kill" restores the kill), stops a background one after `bash_background.timeout` (30 min, `false` = none), publishes `shell.background.started`/`.exited`, and `POST /experimental/background/{jobID}/cancel` stops one; a turn cancel leaves bash jobs alone; `5cc30c46fb`, merged `590273f5aa`; OMO `4d3effdffe` reports each exit and stops `bash_` ids; opencode-tools sets the 2 h limit; vt-429 on both hosts with the retry cap. Then `session.fork` takes `parentID`, `title` and `permission`, so a fork can be a child session (OMO `e16f44cb88` `task(subagent_type: "fork")`); `db917f0795`, merged `da55aead00`; vt-432 on both hosts with the retry cap.

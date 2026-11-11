@@ -7,6 +7,7 @@
 - Development branch(es): `vt-version-stamp`
 - First local commit: `8bfa57bb26`
 - Current local commit(s): `8bfa57bb26`
+- V2 installer extension: `ee1e5815cf`; see [guarded v2 foundation](./2026-11-10-v2-foundation.md).
 - Upstream base when introduced: `2406400f0a` (upstream `dev`, contains `v1.18.32`)
 - Last checked against upstream: `006d837c50` (upstream `v1`, contains `v1.19.5`)
 
@@ -81,6 +82,8 @@ ACP client info, the session `version` field, and the CLI daemon registry
 
 ## Timeline
 
+- 2026-11-10 [session record](../sessions/2026-11-10-v2-foundation.md), [ses_e3832b1b0ffe6q98OeUzhgqhjQ](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ): `--v2` builds the pinned checkout, stamps from stable v2 tags and `github/dev`, and installs only `opencode2` under isolated runtime paths. Shell tests and the desktop build pass; m4max's later build is coordinator-owned while offline.
+
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   verify base-release parsing and tracked build CLI surfaces; distinguish the
   stamp from a full artifact fingerprint in the linked inventory.
@@ -112,9 +115,7 @@ ACP client info, the session `version` field, and the CLI daemon registry
 - Every new `InstallationVersion` consumer that talks to a registry, a semver
   range or an "is this the latest release" check must use
   `InstallationBaseVersion` instead.
-- `OPENCODE_UPSTREAM_REF` (default `<OPENCODE_TAG_REMOTE>/v1`) chooses the
-  ref the merge-base is taken against. Upstream `dev` is the v2 line; never
-  point it there.
+- `OPENCODE_UPSTREAM_REF` chooses the merge-base ref. V1 defaults to `<OPENCODE_TAG_REMOTE>/v1`; `--v2` defaults to `<OPENCODE_TAG_REMOTE>/dev`. Keep each mode on its own upstream line.
 
 ### Upstream integration checklist
 
