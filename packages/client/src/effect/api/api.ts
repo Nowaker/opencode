@@ -239,6 +239,7 @@ export type SessionSyntheticInput = {
   readonly id?: SessionMessage.ID | undefined
   readonly text: string
   readonly description?: string | undefined
+  readonly ignored?: boolean | undefined
   readonly metadata?: { readonly [x: string]: unknown } | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
   readonly resume?: boolean | undefined
@@ -919,6 +920,7 @@ export type ExperimentalSessionLogOutput =
             readonly sessionID: Session.ID
             readonly text: string
             readonly description?: string | undefined
+            readonly ignored?: boolean | undefined
             readonly metadata?: { readonly [x: string]: unknown } | undefined
           }
         }

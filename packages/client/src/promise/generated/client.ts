@@ -790,6 +790,7 @@ export function make(options: ClientOptions) {
               id: input["id"],
               text: input["text"],
               description: input["description"],
+              ignored: input["ignored"],
               metadata: input["metadata"],
               delivery: input["delivery"],
               resume: input["resume"],

@@ -74,6 +74,19 @@ it.live("admits synthetic messages and compaction requests without booting or re
     expect(coldSynthetic.status).toBe(200)
     expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
 
+    const ignored = yield* post(`/api/session/${coldSession.id}/synthetic`, {
+      text: "visible only to the user",
+      ignored: true,
+      resume: true,
+    })
+    expect(ignored.status).toBe(200)
+    const ignoredBody = yield* Effect.promise(() => ignored.json())
+    expect(ignoredBody).toMatchObject({ data: { type: "synthetic", payload: { ignored: true } } })
+    expect(yield* sessions.messages({ sessionID: coldSession.id })).toMatchObject([
+      { type: "synthetic", text: "visible only to the user", ignored: true },
+    ])
+    expect((yield* sessions.inbox(coldSession.id)).map((item) => item.type)).toEqual(["synthetic"])
+
     const coldCompact = yield* post(`/api/session/${coldSession.id}/compact`, {})
     expect(coldCompact.status).toBe(200)
     expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])

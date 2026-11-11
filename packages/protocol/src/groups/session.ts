@@ -403,6 +403,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           id: SessionMessage.ID.pipe(Schema.optional),
           text: Schema.String,
           description: Schema.String.pipe(Schema.optional),
+          ignored: SessionMessage.Synthetic.fields.ignored,
           metadata: SessionMessage.Synthetic.fields.metadata,
           delivery: SessionInbox.Delivery.pipe(Schema.optional),
           resume: Schema.Boolean.pipe(Schema.optional),
@@ -413,7 +414,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         OpenApi.annotations({
           identifier: "session.synthetic",
           summary: "Add synthetic message",
-          description: "Durably admit synthetic session input and schedule execution unless resume is false.",
+          description:
+            "Durably admit synthetic session input and schedule execution unless resume is false. Ignored messages enter the transcript immediately without queuing input or scheduling execution.",
         }),
       ),
     )
