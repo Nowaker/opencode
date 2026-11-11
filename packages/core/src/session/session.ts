@@ -29,6 +29,7 @@ import { SessionShell } from "./shell.js"
 import { SessionSkill } from "./skill.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
+import { mergeMetadata } from "./metadata.js"
 
 type PromptRequest = SessionPrompt.Input & {
   id?: SessionMessage.ID
@@ -84,10 +85,19 @@ export const make = Effect.fn("Session.make")(function* () {
   })
   const setMetadata = Effect.fn("Session.setMetadata")(function* (
     sessionID: SessionSchema.ID,
-    input: { metadata: SessionSchema.Metadata },
+    input: { metadata: SessionSchema.Metadata; mode?: "merge" },
   ) {
-    yield* get(sessionID)
-    yield* bus.publish(SessionEvent.MetadataUpdated, { sessionID, metadata: input.metadata })
+    yield* bus.publishPrepared(SessionEvent.MetadataUpdated, {
+      aggregateID: sessionID,
+      prepare: () =>
+        Effect.gen(function* () {
+          const session = yield* get(sessionID)
+          return {
+            sessionID,
+            metadata: input.mode === "merge" ? mergeMetadata(session.metadata, input.metadata) : input.metadata,
+          }
+        }),
+    })
   })
   const setPermissions = Effect.fn("Session.setPermissions")(function* (
     sessionID: SessionSchema.ID,

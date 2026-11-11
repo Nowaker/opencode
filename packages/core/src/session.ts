@@ -203,6 +203,7 @@ export interface Interface {
   readonly setMetadata: (input: {
     sessionID: SessionSchema.ID
     metadata: SessionSchema.Metadata
+    mode?: "merge"
   }) => Effect.Effect<void, NotFoundError>
   readonly setPermissions: (input: {
     sessionID: SessionSchema.ID
