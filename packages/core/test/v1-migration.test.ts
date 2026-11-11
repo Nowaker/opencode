@@ -134,7 +134,7 @@ const transform = (messages: V1Migration.SourceMessage[], parts: V1Migration.Sou
 }
 
 describe("V1Migration.transformSession", () => {
-  test("maps ordinary user text, agents, ignored fields, order, and timestamps", () => {
+  test("maps ordinary user text, agents, ignored notes, order, and timestamps", () => {
     const message = user("msg_000000000001aaaaaaaaaaaaaa", {
       system: "discard",
       tools: { read: false },
@@ -165,8 +165,57 @@ describe("V1Migration.transformSession", () => {
           time: { created: 10 },
         },
       },
+      {
+        id: expect.stringMatching(/^msg_/),
+        session_id: "ses_test",
+        type: "synthetic",
+        seq: 1,
+        time_created: 10,
+        time_updated: 11,
+        data: { text: "ignored", ignored: true, time: { created: 10 } },
+      },
     ])
-    expect(result.watermark).toBe(0)
+    expect(result.watermark).toBe(1)
+  })
+
+  test.each([false, true])(
+    "preserves standalone ignored text with synthetic=%s without empty user input",
+    (synthetic) => {
+      const message = user("msg_000000000071aaaaaaaaaaaaaa")
+      const result = transform(
+        [message],
+        [part("prt_1", message.id, { type: "text", text: "User notice", ignored: true, synthetic })],
+      )
+
+      expect(result.messages).toEqual([
+        {
+          id: message.id,
+          session_id: "ses_test",
+          type: "synthetic",
+          seq: 0,
+          time_created: 10,
+          time_updated: 11,
+          data: { text: "User notice", ignored: true, time: { created: 10 } },
+        },
+      ])
+    },
+  )
+
+  test("separates ignored assistant parts from model-visible content", () => {
+    const parent = user("msg_000000000072aaaaaaaaaaaaaa")
+    const message = assistant("msg_000000000073aaaaaaaaaaaaaa", parent.id)
+    const result = transform(
+      [parent, message],
+      [
+        part("prt_1", parent.id, { type: "text", text: "Question" }),
+        part("prt_2", message.id, { type: "text", text: "Answer" }),
+        part("prt_3", message.id, { type: "text", text: "Assistant notice", ignored: true }),
+      ],
+    )
+
+    expect(result.messages.map((message) => message.type)).toEqual(["user", "assistant", "synthetic"])
+    expect(result.messages[1].data.content).toEqual([{ type: "text", text: "Answer" }])
+    expect(result.messages[2].data).toEqual({ text: "Assistant notice", ignored: true, time: { created: 20 } })
   })
 
   test("maps embedded files and deterministic placeholders without external IO", () => {
@@ -286,7 +335,7 @@ describe("V1Migration.transformSession", () => {
     ]
     const first = transform([later, mixed, all], parts)
     const second = transform([later, mixed, all], parts)
-    expect(first.messages.map((row) => row.type)).toEqual(["synthetic", "user", "synthetic", "user"])
+    expect(first.messages.map((row) => row.type)).toEqual(["synthetic", "user", "synthetic", "synthetic", "user"])
     expect(first.messages[0].id).toBe(all.id)
     expect(first.messages[2].id).not.toBe(mixed.id)
     expect(first.messages[2].id).toBe("msg_000000000004ST20Jh98kGJtjL")
@@ -294,6 +343,9 @@ describe("V1Migration.transformSession", () => {
     expect(first.messages[2].id).toMatch(/^msg_[0-9A-Za-z]{26}$/)
     expect(first.messages[2].id).toBe(second.messages[2].id)
     expect(first.messages[2].data).toEqual({ text: "hidden", time: { created: 2 } })
+    expect(first.messages[3].data).toEqual({ text: "ignored", ignored: true, time: { created: 2 } })
+    expect(first.messages[3].id).toBe(second.messages[3].id)
+    expect(first.messages[3].id).not.toBe(first.messages[2].id)
     const collision = user(first.messages[2].id, {}, 4)
     const collided = transform(
       [all, mixed, later, collision],
@@ -678,15 +730,19 @@ describe("V1Migration.transformSession", () => {
         part("prt_2", tailAssistant.id, { type: "text", text: "answer" }),
         part("prt_3", compact.id, { type: "compaction", auto: true, tail_start_id: tailUser.id }),
         part("prt_4", summary.id, { type: "text", text: "summary" }),
+        part("prt_5", tailUser.id, { type: "text", text: "ignored user note", ignored: true }),
+        part("prt_6", tailAssistant.id, { type: "text", text: "ignored assistant note", ignored: true }),
+        part("prt_7", summary.id, { type: "text", text: "ignored summary note", ignored: true }),
       ],
       existing,
     )
-    expect(result.messages[2].data).toMatchObject({
+    const checkpoint = result.messages.find((message) => message.type === "compaction")
+    expect(checkpoint?.data).toMatchObject({
       reason: "auto",
       summary: "summary",
       metadata: { recent: "[User]: question\n\n[Assistant]: answer" },
     })
-    expect(result.messages[2].data).not.toHaveProperty("recent")
+    expect(checkpoint?.data).not.toHaveProperty("recent")
     expect(result.session.agent).toBe(Agent.ID.make("existing"))
     expect(result.session.model).toEqual(existing.model)
   })
@@ -743,7 +799,7 @@ describe("V1Migration.transformSession", () => {
     expect(source[0]).toBe(good)
   })
 
-  test("retains empty ordinary messages and omits failed compactions", () => {
+  test("retains ignored notes and omits failed compactions", () => {
     const empty = user("msg_000000000034aaaaaaaaaaaaaa", {}, 1)
     const assistantMessage = assistant("msg_000000000035aaaaaaaaaaaaaa", empty.id, {}, 2)
     const compact = user("msg_000000000036aaaaaaaaaaaaaa", {}, 3)
@@ -762,8 +818,8 @@ describe("V1Migration.transformSession", () => {
         part("prt_4", failed.id, { type: "text", text: "not committed" }),
       ],
     )
-    expect(result.messages.map((row) => row.type)).toEqual(["user", "assistant"])
-    expect(result.messages[0].data).toEqual({ text: "", time: { created: 1 } })
+    expect(result.messages.map((row) => row.type)).toEqual(["synthetic", "assistant"])
+    expect(result.messages[0].data).toEqual({ text: "ignored", ignored: true, time: { created: 1 } })
     expect(result.messages[1].data).toMatchObject({ content: [], snapshot: { start: "standalone" } })
     expect(result.watermark).toBe(1)
   })
