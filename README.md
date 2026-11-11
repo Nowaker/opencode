@@ -53,6 +53,8 @@ Derived data, snapshots, logs, cache, state, bin and temporary directories use t
 
 `POST /api/session/:sessionID/synthetic` accepts `ignored: true` for a user-only note. It appends immediately without queuing input or waking execution, even with `resume: true`; provider requests and compaction exclude it. Clients display its nonempty description or its text. V1 imports preserve ignored text as these synthetic notes.
 
+The authenticated experimental endpoint `POST /api/experimental/event/replay` accepts `{ event: { id, type, created?, seq, aggregateID, data }, ownerID?, strictOwner?, publish? }`. Use the serialized durable type, for example `session.renamed.1`; `strictOwner` and `publish` default to `true`. Success returns 204, invalid events return 400, and owner or sequence conflicts return 409. Persist events on both peers and copy project/workspace prerequisites before replay; imported history still needs a transfer baseline. This API may change without compatibility guarantees.
+
 ```bash
 # YOLO
 curl -fsSL https://opencode.ai/v2/install | bash

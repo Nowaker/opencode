@@ -2392,6 +2392,24 @@ export type ExperimentalPersistentPtyConnectTokenOperation<E = never> = (
   input: ExperimentalPersistentPtyConnectTokenInput,
 ) => Effect.Effect<ExperimentalPersistentPtyConnectTokenOutput, E>
 
+export type ExperimentalEventReplayInput = {
+  readonly event: {
+    readonly id: Event.ID
+    readonly type: string
+    readonly created?: number | undefined
+    readonly seq: Event.Seq
+    readonly aggregateID: string
+    readonly data: { readonly [x: string]: Schema.Json }
+  }
+  readonly ownerID?: string | undefined
+  readonly strictOwner?: boolean | undefined
+  readonly publish?: boolean | undefined
+}
+export type ExperimentalEventReplayOutput = void
+export type ExperimentalEventReplayOperation<E = never> = (
+  input: ExperimentalEventReplayInput,
+) => Effect.Effect<ExperimentalEventReplayOutput, E>
+
 export type ExperimentalScheduleCreateInput = {
   readonly sessionID: Session.ID
   readonly name?: string | undefined
@@ -2528,6 +2546,7 @@ export interface ExperimentalApi<E = never> {
     readonly remove: ExperimentalPersistentPtyRemoveOperation<E>
     readonly connectToken: ExperimentalPersistentPtyConnectTokenOperation<E>
   }
+  readonly event: { readonly replay: ExperimentalEventReplayOperation<E> }
   readonly schedule: {
     readonly create: ExperimentalScheduleCreateOperation<E>
     readonly list: ExperimentalScheduleListOperation<E>

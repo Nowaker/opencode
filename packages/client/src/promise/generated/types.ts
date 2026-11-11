@@ -4554,6 +4554,22 @@ export type ExperimentalPersistentPtyConnectTokenInput = {
 
 export type ExperimentalPersistentPtyConnectTokenOutput = { data: PtyTicketConnectToken }["data"]
 
+export type ExperimentalEventReplayInput = {
+  readonly event: {
+    readonly id: string
+    readonly type: string
+    readonly created?: number | undefined
+    readonly seq: number
+    readonly aggregateID: string
+    readonly data: { readonly [x: string]: JsonValue }
+  }
+  readonly ownerID?: string | undefined
+  readonly strictOwner?: boolean | undefined
+  readonly publish?: boolean | undefined
+}
+
+export type ExperimentalEventReplayOutput = void
+
 export type ExperimentalMediaGetInput = { readonly hash: string }
 
 export type ExperimentalMediaGetOutput = globalThis.Uint8Array

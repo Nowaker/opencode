@@ -241,6 +241,8 @@ import type {
   ExperimentalPersistentPtyRemoveOutput,
   ExperimentalPersistentPtyConnectTokenInput,
   ExperimentalPersistentPtyConnectTokenOutput,
+  ExperimentalEventReplayInput,
+  ExperimentalEventReplayOutput,
   ExperimentalMediaGetInput,
   ExperimentalMediaGetOutput,
   ExperimentalScheduleCreateInput,
@@ -1491,6 +1493,25 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ).then((value) => value.data),
+      },
+      event: {
+        replay: (input: ExperimentalEventReplayInput, requestOptions?: RequestOptions) =>
+          request<ExperimentalEventReplayOutput>(
+            {
+              method: "POST",
+              path: `/api/experimental/event/replay`,
+              body: {
+                event: input["event"],
+                ownerID: input["ownerID"],
+                strictOwner: input["strictOwner"],
+                publish: input["publish"],
+              },
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
       },
       media: {
         get: (input: ExperimentalMediaGetInput, requestOptions?: RequestOptions) =>

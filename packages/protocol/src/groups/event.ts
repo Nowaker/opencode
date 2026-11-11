@@ -4,6 +4,35 @@ import { Location } from "@opencode/schema/location"
 import type { Definition } from "@opencode/schema/event"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
+import { ConflictError, InvalidRequestError } from "../errors.js"
+
+export const EventReplayPayload = Schema.Struct({
+  event: Schema.Struct({
+    id: Event.ID,
+    type: Schema.NonEmptyString,
+    created: Schema.optional(Schema.Finite),
+    seq: Event.Seq,
+    aggregateID: Schema.NonEmptyString,
+    data: Schema.Record(Schema.String, Schema.Json),
+  }),
+  ownerID: Schema.optional(Schema.NonEmptyString),
+  strictOwner: Schema.optional(Schema.Boolean),
+  publish: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "Event.ReplayPayload" })
+export type EventReplayPayload = typeof EventReplayPayload.Type
+
+export const EventReplayEndpoint = HttpApiEndpoint.post("event.replay", "/api/experimental/event/replay", {
+  payload: EventReplayPayload,
+  success: HttpApiSchema.NoContent,
+  error: [InvalidRequestError, ConflictError],
+}).annotateMerge(
+  OpenApi.annotations({
+    identifier: "experimental.event.replay",
+    summary: "Replay durable event",
+    description:
+      "Experimental: may change without compatibility guarantees. Project a serialized durable event at its original sequence. Exact retries are idempotent when events are persisted. publish and strictOwner default to true; ownerID identifies the source writer. Project and workspace prerequisites must already exist.",
+  }),
+)
 
 const fields = {
   id: Event.ID,

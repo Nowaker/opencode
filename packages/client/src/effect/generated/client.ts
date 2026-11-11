@@ -243,6 +243,8 @@ import type {
   ExperimentalPersistentPtyRemoveOutput,
   ExperimentalPersistentPtyConnectTokenInput,
   ExperimentalPersistentPtyConnectTokenOutput,
+  ExperimentalEventReplayInput,
+  ExperimentalEventReplayOutput,
   ExperimentalScheduleCreateInput,
   ExperimentalScheduleCreateOutput,
   ExperimentalScheduleListInput,
@@ -1583,6 +1585,19 @@ const EndpointExperimentalPersistentPtyConnectToken =
       ),
     )
 
+const EndpointExperimentalEventReplay =
+  (raw: RawClient["server.experimental"]) => (input: ExperimentalEventReplayInput) =>
+    preserveEffect<ExperimentalEventReplayOutput>()(
+      raw["event.replay"]({
+        payload: {
+          event: input["event"],
+          ownerID: input["ownerID"],
+          strictOwner: input["strictOwner"],
+          publish: input["publish"],
+        },
+      }).pipe(Effect.mapError(mapClientError)),
+    )
+
 const EndpointExperimentalScheduleCreate =
   (raw: RawClient["server.experimental"]) => (input: ExperimentalScheduleCreateInput) =>
     preserveEffect<ExperimentalScheduleCreateOutput>()(
@@ -1729,6 +1744,7 @@ const adaptGroupExperimental = (raw: RawClient["server.experimental"]) => ({
     remove: EndpointExperimentalPersistentPtyRemove(raw),
     connectToken: EndpointExperimentalPersistentPtyConnectToken(raw),
   },
+  event: { replay: EndpointExperimentalEventReplay(raw) },
   schedule: {
     create: EndpointExperimentalScheduleCreate(raw),
     list: EndpointExperimentalScheduleList(raw),
