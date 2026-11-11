@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `feat/tool-exposure-hook` (cut from `dev-nowaker`; upstreamable candidate, no PR)
 - First local commit: `ac36448956`
-- Current local commit(s): `ac36448956`, merge `f8f7cf2e33`
+- Current local commit(s): `ac36448956`, merge `f8f7cf2e33`; `2c4bd2a36a`, merge `cead509aa0`
 - Upstream base when introduced: `006d837c50` (`v1.19.5`, `github/v1`)
 - Last checked against upstream: `006d837c50`
 
@@ -38,6 +38,8 @@
 | `ac36448956` | 2026-11-07 | Tests | `tools.test.ts`: plugin and MCP tool deferred for both providers, OpenAI search added, no hook no change |
 | `ac36448956` | 2026-11-07 | Docs | `plugins.mdx` "Tool deferral" |
 | `f8f7cf2e33` | 2026-11-07 | Fork merge, no conflicts | - |
+| `2c4bd2a36a` | 2026-11-10 | The agent permission filter stripped `tool_search` while deferred tools it allowed stayed, so OpenAI rejected every explore request ("Deferred tools require tools.tool_search"); permissions now leave `tool_search` alone and drop it only when nothing is deferred ([session](../sessions/2026-11-10-defer-search-permission.md)) | `resolveTools` in `session/llm/request.ts`; `test/session/llm-request.test.ts` |
+| `cead509aa0` | 2026-11-10 | Fork merge, no conflicts | - |
 
 ## Verification
 
@@ -45,3 +47,4 @@
 - Run from source with a scratch plugin deferring all but read/write/edit/bash/glob/grep: Claude Haiku through Meridian completed webfetch, Meridian telemetry recorded 10 tools with 4 deferred (below its auto-defer threshold, so the marks were the client's); GPT-5.6 luna through Meridian called `tool_search` then webfetch.
 - Same through opencode-tools `toolDeferral.*` settings and the opencode-lazy-mcp-plugin: both providers passed.
 - Installed `1.19.5-vt-407-006d837c50` on desktop; v2 guard gate passed.
+- 2026-11-10: `llm-request.test.ts` fails on the old code (0/2) and passes with the fix; installed `1.19.5-vt-436-006d837c50` on both hosts, and a GPT explore run answered.
