@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Fiber, Semaphore, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Semaphore, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -476,6 +476,11 @@ export const ShellTool = Tool.define(
       // Set once the call has returned and the command runs on in the background: its part is final, so the
       // streaming preview stops.
       let detached = false
+      // Released once Started is published, or when the call ends without announcing one. A command can exit while
+      // its start is still being announced (moving the output to a file can take a while), and a listener that saw
+      // Exited first would then record a job that never ends, so Exited waits for it.
+      const announced = Deferred.makeUnsafe<void>()
+      yield* Effect.addFinalizer(() => Deferred.succeed(announced, undefined))
 
       const preview_ = (output: string) => (detached ? Effect.void : ctx.metadata({ metadata: { output } }))
 
@@ -557,6 +562,7 @@ export const ShellTool = Tool.define(
         Effect.gen(function* () {
           const job = yield* background.get(id)
           if (job?.metadata?.background !== true) return
+          yield* Deferred.await(announced)
           const status = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
             ? "cancelled"
             : capped
@@ -609,7 +615,7 @@ export const ShellTool = Tool.define(
         },
       })
 
-      const started = Effect.fnUntraced(function* (reason: "requested" | "timeout") {
+      const announce = Effect.fnUntraced(function* (reason: "requested" | "timeout") {
         const outputPath = yield* outputFile()
         detached = true
         yield* events.publish(ShellBackgroundEvent.Started, {
@@ -624,6 +630,8 @@ export const ShellTool = Tool.define(
         })
         return outputPath
       })
+      const started = (reason: "requested" | "timeout") =>
+        announce(reason).pipe(Effect.ensuring(Deferred.succeed(announced, undefined)))
 
       const notice = (outputPath: string) =>
         `Output is being written to: ${outputPath}. You will be notified when it exits; do not poll it or sleep waiting for it.`
@@ -762,18 +770,20 @@ export const ShellTool = Tool.define(
                 }),
               )
 
-              return yield* run(
-                {
-                  shell,
-                  command: params.command,
-                  cwd,
-                  env: yield* shellEnv(ctx, cwd),
-                  timeout,
-                  runInBackground: params.run_in_background === true,
-                  onTimeout,
-                  backgroundTimeoutMs: cfg.bash_background?.timeout ?? BACKGROUND_TIMEOUT_MS,
-                },
-                ctx,
+              return yield* Effect.scoped(
+                run(
+                  {
+                    shell,
+                    command: params.command,
+                    cwd,
+                    env: yield* shellEnv(ctx, cwd),
+                    timeout,
+                    runInBackground: params.run_in_background === true,
+                    onTimeout,
+                    backgroundTimeoutMs: cfg.bash_background?.timeout ?? BACKGROUND_TIMEOUT_MS,
+                  },
+                  ctx,
+                )
               )
             }),
         }
