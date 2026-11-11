@@ -7,6 +7,7 @@ import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import type { Event } from "@opencode-ai/schema/event"
 import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
 import { Deferred, Effect, Layer } from "effect"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -168,6 +169,32 @@ describe.skipIf(process.platform === "win32")("tool.shell background", () => {
 
           // then
           expect(result.output).toContain("shell tool terminated command after exceeding timeout 300 ms")
+        }),
+      ),
+    30_000,
+  )
+
+  it.live(
+    "#given a process that is slow to spawn #when it exits #then its duration counts from the spawn, not the call",
+    () =>
+      inProject(
+        {},
+        Effect.gen(function* () {
+          // given
+          const seen = yield* watch()
+          const spawner = yield* ChildProcessSpawner
+          const slowToSpawn = makeSpawner((command) => Effect.sleep("3 seconds").pipe(Effect.andThen(spawner.spawn(command))))
+
+          // when
+          yield* runShell({ command: "sleep 0.2; exit 3", run_in_background: true }).pipe(
+            Effect.provideService(ChildProcessSpawner, slowToSpawn),
+          )
+          const started = yield* seen.started
+          const exited = yield* seen.exited
+
+          // then
+          expect(exited).toMatchObject({ id: started.id, status: "failed", exitCode: 3 })
+          expect(exited.durationMs).toBeLessThan(3_000)
         }),
       ),
     30_000,
