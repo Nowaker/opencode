@@ -4,7 +4,7 @@ import { OwnerQuiescence } from "@/owner/quiescence"
 export interface Runner<A, E = never> {
   readonly state: State<A, E>
   readonly busy: boolean
-  readonly ensureRunning: (work: Effect.Effect<A, E>) => Effect.Effect<A, E>
+  readonly ensureRunning: (work: Effect.Effect<A, E>, again?: () => boolean) => Effect.Effect<A, E>
   readonly startShell: (work: Effect.Effect<A, E>, ready?: Latch.Latch) => Effect.Effect<A, E | Busy>
   readonly cancel: Effect.Effect<void>
   readonly cancelWith: (beforeInterrupt: () => void) => Effect.Effect<void>
@@ -17,6 +17,8 @@ interface RunHandle<A, E> {
   id: number
   done: Deferred.Deferred<A, E | Cancelled>
   fiber: Fiber.Fiber<A, E>
+  // Checks from callers that joined this run. Any that holds when the run succeeds runs the work again.
+  again: ReadonlyArray<() => boolean>
 }
 
 interface ShellHandle<A, E> {
@@ -70,27 +72,47 @@ export const make = <A, E = never>(
   const idleIfCurrent = () =>
     SynchronizedRef.modify(ref, (st) => [st._tag === "Idle" ? idle : Effect.void, st] as const).pipe(Effect.flatten)
 
-  const finishRun = (id: number, done: Deferred.Deferred<A, E | Cancelled>, exit: Exit.Exit<A, E>) =>
-    SynchronizedRef.modify(
+  /*
+   * A caller joins a running run when it has new input for it, and the run reads that input only if it has not
+   * yet made its last read. One that already has would end without it, so the run's joined checks are asked under
+   * the state lock as it succeeds: if any still holds, the same work runs again for the same callers. A caller
+   * arriving after this decision finds the runner idle and starts a run of its own.
+   */
+  const finishRun = (
+    id: number,
+    done: Deferred.Deferred<A, E | Cancelled>,
+    work: Effect.Effect<A, E>,
+    exit: Exit.Exit<A, E>,
+  ): Effect.Effect<void> =>
+    SynchronizedRef.modifyEffect(
       ref,
-      (st) =>
-        [
+      Effect.fnUntraced(function* (st) {
+        const current = st._tag === "Running" && st.run.id === id
+        if (current && Exit.isSuccess(exit) && st.run.again.some((check) => check())) {
+          const run = yield* startRun(work, done)
+          return [Effect.void, { _tag: "Running", run } as State<A, E>] as const
+        }
+        return [
           Effect.gen(function* () {
-            if (st._tag === "Running" && st.run.id === id) yield* idle
+            if (current) yield* idle
             yield* complete(done, exit)
           }),
-          st._tag === "Running" && st.run.id === id ? ({ _tag: "Idle" } as const) : st,
-        ] as const,
+          current ? ({ _tag: "Idle" } as const) : st,
+        ] as const
+      }),
     ).pipe(Effect.flatten)
 
-  const startRun = (work: Effect.Effect<A, E>, done: Deferred.Deferred<A, E | Cancelled>) =>
+  const startRun = (
+    work: Effect.Effect<A, E>,
+    done: Deferred.Deferred<A, E | Cancelled>,
+  ): Effect.Effect<RunHandle<A, E>> =>
     Effect.gen(function* () {
       const id = next()
       const fiber = yield* (opts?.prepare?.(work) ?? work).pipe(
-        Effect.onExit((exit) => finishRun(id, done, exit)),
+        Effect.onExit((exit) => finishRun(id, done, work, exit)),
         (work) => OwnerQuiescence.fork(work, scope),
       )
-      return { id, done, fiber } satisfies RunHandle<A, E>
+      return { id, done, fiber, again: [] } satisfies RunHandle<A, E>
     })
 
   const finishShell = (id: number) =>
@@ -115,12 +137,17 @@ export const make = <A, E = never>(
       yield* Fiber.interrupt(shell.fiber)
     })
 
-  const ensureRunning = (work: Effect.Effect<A, E>) =>
+  const ensureRunning = (work: Effect.Effect<A, E>, again?: () => boolean) =>
     SynchronizedRef.modifyEffect(
       ref,
       Effect.fnUntraced(function* (st) {
         switch (st._tag) {
           case "Running":
+            if (!again) return [awaitDone(st.run.done), st] as const
+            return [
+              awaitDone(st.run.done),
+              { _tag: "Running", run: { ...st.run, again: [...st.run.again, again] } },
+            ] as const
           case "ShellThenRun":
             return [awaitDone(st.run.done), st] as const
           case "Shell": {
