@@ -57,6 +57,7 @@ See [the session record](../sessions/2026-11-01-async-snapshots.md#verification)
 - 2026-11-01 [`ses_e6649eb52ffeWA5U81qVUQP5Td`](../sessions/2026-11-01-async-snapshots.md) - initial build on `github/v1`, merge into `dev-nowaker`, install on desktop and m4max. Evidence: `5890ad1411`, `6977deacde`.
 - 2026-11-05 [`ses_e552a0970ffenpqGnyRp4OwJE1`](../sessions/2026-11-05-async-snapshot-reliability.md) - 3-day reliability check on desktop and m4max, read-only: no regression in the async code, no source change. See [Reliability check 2026-11-05](#reliability-check-2026-11-05).
 - 2026-11-10 [`ses_e3b674d77ffe6z70yBg7vCW6nj`](../sessions/2026-11-10-snapshot-index-lock.md) - follow-up, no change to this feature: the hashless steps traced to cross-process `index.lock` collisions are addressed by [Wait for an index.lock another process holds in the snapshot store](./2026-11-10-snapshot-index-lock.md). Evidence: `29e7545775`, merge `3b0f177f0b`.
+- 2026-11-10 [`ses_e38278d63ffeEgUW2xNFxMfVpm`](../sessions/2026-11-10-tail-wake.md) - fix of an interaction: the run's `processor.settle` after its last history read left a 4-12 s window in which a new prompt joined the finished run and was never answered; the joined run now runs again. Evidence: `a048180f1c`, merge `c83a1896e7`.
 
 ## Reliability check 2026-11-05
 

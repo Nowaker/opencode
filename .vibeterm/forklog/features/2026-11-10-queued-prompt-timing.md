@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `mid-turn-delivery` (cut from `dev-nowaker` `9911a26b09`)
 - First local commit: `68e4a9e291`
-- Current local commit(s): `68e4a9e291`, merge `3233e3566e`
+- Current local commit(s): `68e4a9e291`, merge `3233e3566e`; tail-window fix `a048180f1c`, merge `c83a1896e7`
 - Upstream base when introduced: `006d837c50` (`v1.19.5`, `github/v1`)
 - Last checked against upstream: `006d837c50`
 
@@ -48,6 +48,7 @@ Widened by the user: "And vtns also. Generally everything that prompts into the 
 | `68e4a9e291` | 2026-11-10 | Tests | `prompt.test.ts` section "Mid-turn delivery" and "with queued_prompts turn_end, /compact during a turn ..."; `packages/tui/test/routes/session/prompt-delivery.test.ts` |
 | `68e4a9e291` | 2026-11-10 | Docs | `packages/web/src/content/docs/config.mdx` "Queued prompts", `tui.mdx` queued paragraph |
 | `3233e3566e` | 2026-11-10 | Fork merge, no conflicts | - |
+| `a048180f1c` | 2026-11-10 | A prompt stored after the run's last read (turn ended, snapshots still settling) joined the run and got its old answer; the joined run now runs again unless it read or unqueued the prompt | `again` in `Runner.ensureRunning`/`finishRun`, `packages/opencode/src/effect/runner.ts`; `drive`/`unread` in `packages/opencode/src/session/prompt.ts`; tail-window tests in `test/session/async-snapshot.test.ts` |
 
 opencode-tools `2205df613b2` sets `queued_prompts: "next_step"` from the spawn plugin's `config` hook unless the user set it, and corrects the vtps/vtns delivery wording.
 
@@ -63,9 +64,11 @@ opencode-tools `2205df613b2` sets `queued_prompts: "next_step"` from the spawn p
 ## Timeline
 
 - 2026-11-10 [`ses_e3b33afadffe7NYeYU6qMrEk6L`](../sessions/2026-11-10-queued-prompt-timing.md) - initial build. Evidence: `68e4a9e291`, merge `3233e3566e`, vt-426 on both hosts.
+- 2026-11-10 [`ses_e38278d63ffeEgUW2xNFxMfVpm`](../sessions/2026-11-10-tail-wake.md) - fix: a prompt or OMO notice stored while a finished turn's run waits for its snapshots was never answered. Evidence: `a048180f1c`, merge `c83a1896e7`, vt-441 on desktop.
 
 ## Current maintenance notes
 
+- `Runner.ensureRunning`'s `again` check must keep reading the run's `seen`/`withdrawn` sets; if `pickUp` stops marking a read prompt seen, every joined prompt reruns the loop once (harmless but wasteful), and if `turn_end` starts marking held prompts seen, held prompts stop being answered.
 - Upstream reads queued prompts the same way; only the switch, the badge and the tests are local. If upstream adds its own setting or changes `runLoop`'s per-step reload, re-check `holdForTurnEnd` and the compaction branch's `holding ? pickUp(sessionID, history) : msgs`.
 - Regenerate the SDK with `./packages/sdk/js/script/build.ts` after touching the schema description.
 

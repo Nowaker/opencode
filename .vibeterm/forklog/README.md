@@ -147,6 +147,8 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-10 `ses_e38278d63ffeEgUW2xNFxMfVpm`](./sessions/2026-11-10-tail-wake.md) - a prompt or OMO background-task notice stored after a finished turn's last history read, while the run still waited for its snapshots, joined the run and got its old answer, so nothing answered it; a joined run now runs again unless it read or unqueued the prompt (`Runner.ensureRunning` `again`, `SessionPrompt` `unread`), for `next_step` and `turn_end`, noReply notes still start nothing; `a048180f1c`, merged `c83a1896e7`; vt-441 on desktop with the retry cap, m4max pending (offline).
+
 - [2026-11-10 W1 session](./sessions/2026-11-10-v2-foundation.md) - pin `v2-nowaker` to v2.2.7, refuse v1 databases before writes/migrations, add isolated `--v2` installer on `dev-nowaker`, publish both branches to both mirrors and verify desktop `opencode2`; m4max's build is coordinator-owned while offline.
 
 - [2026-11-10 `ses_e38409895ffeKcmQCC8COa4Jok`](./sessions/2026-11-10-defer-search-permission.md) - every GPT explore child died with "Deferred tools require tools.tool_search" from 2026-11-07: the agent permission filter in `LLMRequestPrep` stripped `tool_search` from an agent denying `*` while its allowed deferred tools kept `defer_loading`; permissions now never strip `tool_search`, which goes only when nothing is deferred; `2c4bd2a36a`, merged `cead509aa0`; vt-436 on both hosts with the retry cap.
