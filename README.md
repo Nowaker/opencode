@@ -47,6 +47,8 @@
 
 This fork's `opencode2` requires an explicit `OPENCODE_DB`, for example `export OPENCODE_DB="$HOME/.local/share/opencode/opencode-v2.db"`. It refuses the v1 default `opencode.db`, aliases of that path, databases with the v1 `session`, `message` and `part` tables, and Vibeterm's v1 migration poison before opening the file for writes or applying migrations. `OPENCODE_DB=:memory:` is supported for disposable runs. Use separate config and XDG directories while testing alongside v1.
 
+The fork's servers retain durable event payloads by default, including `serve --stdio`. Set `OPENCODE_EVENTS_PERSIST=0` to keep upstream's sequence-only storage behavior; `1` or `true` explicitly enables persistence.
+
 ```bash
 # YOLO
 curl -fsSL https://opencode.ai/v2/install | bash
