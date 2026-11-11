@@ -24,7 +24,11 @@ export class Refused extends Error {
 export function checkPath(filename: string, data: string) {
   if (filename === ":memory:") return
   const file = canonical(filename)
-  const defaults = [join(data, "opencode.db"), join(Global.Path.home, ".local/share/opencode/opencode.db")]
+  const defaults = [
+    join(data, "opencode.db"),
+    join(process.env.XDG_DATA_HOME || join(Global.Path.home, ".local", "share"), "opencode", "opencode.db"),
+    join(Global.Path.home, ".local/share/opencode/opencode.db"),
+  ]
   if (
     defaults.some((defaultPath) => {
       if (file === canonical(defaultPath)) return true

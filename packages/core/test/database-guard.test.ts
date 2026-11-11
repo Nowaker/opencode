@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { layer, layerFromClient } from "@opencode/core/database/database"
 import { Global } from "@opencode/util/global"
+import { withEnv } from "./fixture/env"
 import { tmpdir } from "./fixture/tmpdir"
 
 function open(filename: string, data: string) {
@@ -35,6 +36,37 @@ describe("v2 database guard", () => {
     await (kind === "symlink" ? symlink(filename, alias) : link(filename, alias))
 
     await expect(open(alias, tmp.path)).rejects.toThrow("default OpenCode v1 database path")
+  })
+
+  test.each([
+    ["xdg", "path"],
+    ["xdg", "symlink"],
+    ["xdg", "hardlink"],
+    ["home", "path"],
+    ["home", "symlink"],
+    ["home", "hardlink"],
+  ])("refuses the legacy %s %s when v2 uses a separate data root", async (root, kind) => {
+    await using tmp = await tmpdir()
+    const home = path.join(tmp.path, "home")
+    const data = path.join(tmp.path, "xdg")
+    const legacy = path.join(root === "xdg" ? data : path.join(home, ".local", "share"), "opencode", "opencode.db")
+    const filename = kind === "path" ? legacy : path.join(tmp.path, "alias.db")
+    if (kind !== "path") await Bun.write(legacy, "")
+    if (kind === "symlink") await symlink(legacy, filename)
+    if (kind === "hardlink") await link(legacy, filename)
+
+    await Effect.runPromise(
+      withEnv({ XDG_DATA_HOME: data, OPENCODE_TEST_HOME: home }, () =>
+        Effect.promise(async () => {
+          await expect(open(filename, path.join(data, "opencode2"))).rejects.toThrow("default OpenCode v1 database path")
+          expect(await Promise.all(["-wal", "-shm"].map((suffix) => Bun.file(legacy + suffix).exists()))).toEqual([
+            false,
+            false,
+          ])
+          if (kind === "path") expect(await Bun.file(legacy).exists()).toBe(false)
+        }),
+      ),
+    )
   })
 
   test("refuses a dangling database symlink before creating its v1 default target", async () => {
