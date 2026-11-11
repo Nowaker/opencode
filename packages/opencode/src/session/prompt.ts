@@ -154,6 +154,35 @@ function holdForTurnEnd(msgs: SessionV1.WithParts[]) {
   )
 }
 
+/*
+ * Once the held turn has ended, the prompts and notes it held are what the loop answers next, but they are stored
+ * where they arrived, between that turn's tool steps. Sent in that order the request ends with the turn's own final
+ * answer and the model finds no new input: on 2026-11-11 it answered a held note with "your latest message arrived
+ * empty". Every user message stored after the prompt the ended turn answered, and placed before that turn's final
+ * step, goes after that step instead, in its stored order. This changes only what the model is sent.
+ */
+function answerAfterTurn(msgs: SessionV1.WithParts[]) {
+  const last = MessageV2.latest(msgs).assistant
+  const index = last ? msgs.findLastIndex((msg) => msg.info.id === last.id) : -1
+  if (!last?.finish || last.error || index === -1) return msgs
+  const toolCalls = msgs[index].parts.some(
+    (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
+  )
+  if (["tool-calls", "unknown"].includes(last.finish) || toolCalls) return msgs
+  const prompt = msgs.find((msg) => msg.info.id === last.parentID)?.info
+  if (!prompt) return msgs
+  const held = (msg: SessionV1.WithParts, position: number) =>
+    position < index &&
+    msg.info.role === "user" &&
+    (msg.info.time.created > prompt.time.created ||
+      (msg.info.time.created === prompt.time.created && msg.info.id > prompt.id))
+  const moved = msgs.filter(held)
+  if (moved.length === 0) return msgs
+  const kept = msgs.filter((msg, position) => !held(msg, position))
+  const after = kept.findIndex((msg) => msg.info.id === last.id) + 1
+  return [...kept.slice(0, after), ...moved, ...kept.slice(after)]
+}
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID, options?: SessionAbort.CancelOptions) => Effect.Effect<void>
   readonly prompt: (
@@ -1293,7 +1322,7 @@ const layer = Layer.effect(
             Effect.provideService(Database.Service, database),
           )
           const holding = (yield* config.get()).queued_prompts === "turn_end"
-          let msgs = pickUp(sessionID, holding ? holdForTurnEnd(history) : history)
+          let msgs = pickUp(sessionID, holding ? answerAfterTurn(holdForTurnEnd(history)) : history)
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 

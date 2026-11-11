@@ -3490,6 +3490,11 @@ const sendDuringStep = <R>(input: {
     }
   })
 
+const lastMessages = (body: string, count: number) =>
+  (JSON.parse(body) as { messages: { role: string; content: unknown }[] }).messages
+    .slice(-count)
+    .map((message) => ({ role: message.role, content: message.content }))
+
 const queuePrompt = Effect.fn("test.queuePrompt")(function* (sessionID: SessionID, text: string) {
   const prompt = yield* SessionPrompt.Service
   const id = MessageID.ascending()
@@ -3666,11 +3671,49 @@ it.instance(
       expect(run.inputs).toHaveLength(3)
       expect(run.inputs[1]).not.toContain("queued words")
       expect(run.inputs[2]).toContain("queued words")
+      // The held prompt is what the follow-up answers, so it comes after the turn it waited behind.
+      expect(lastMessages(run.inputs[2], 2)).toEqual([
+        { role: "assistant", content: "done" },
+        { role: "user", content: "queued words" },
+      ])
       const queued = run.messages.find((msg) =>
         msg.parts.some((part) => part.type === "text" && part.text === "queued words"),
       )
       const answer = run.messages.at(-1)
       expect(answer?.info.role === "assistant" ? answer.info.parentID : undefined).toBe(queued?.info.id)
+    }),
+  { git: true },
+  30_000,
+)
+
+/*
+ * 2026-11-11: a note sent during a tool step under turn_end was held, then answered once the turn ended, but the
+ * request kept it in its stored place between the turn's tool calls and ended with the turn's own answer; the model
+ * said the newest message "arrived empty".
+ */
+it.instance(
+  "with queued_prompts turn_end, a note held behind a turn reaches the follow-up after that turn's answer",
+  () =>
+    Effect.gen(function* () {
+      const run = yield* sendDuringStep({
+        config: { queued_prompts: "turn_end" },
+        first: reply().tool("first", { value: "a" }),
+        then: [reply().text("done").stop(), reply().text("answer to the note").stop()],
+        send: (sessionID) =>
+          Effect.gen(function* () {
+            const prompt = yield* SessionPrompt.Service
+            yield* prompt.prompt({ ...queuedPrompt(sessionID, MessageID.ascending(), "note words"), noReply: true })
+            return []
+          }),
+      })
+
+      expect(run.inputs).toHaveLength(3)
+      expect(run.inputs[1]).not.toContain("note words")
+      expect(occurrences(run.inputs[2], "note words")).toBe(1)
+      expect(lastMessages(run.inputs[2], 2)).toEqual([
+        { role: "assistant", content: "done" },
+        { role: "user", content: "note words" },
+      ])
     }),
   { git: true },
   30_000,
