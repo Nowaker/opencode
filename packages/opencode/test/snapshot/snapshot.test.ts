@@ -1232,9 +1232,11 @@ it.instance(
   "track waits for an index.lock another process holds, and leaves that lock alone",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
-      const lock = path.join(yield* snapshotStore(tmp.path), "index.lock")
+      const gitdir = yield* snapshotStore(tmp.path)
+      const lock = path.join(gitdir, "index.lock")
+      const content = "changed while the store was locked"
       yield* write(lock, "")
-      yield* write(`${tmp.path}/a.txt`, "changed while the store was locked")
+      yield* write(`${tmp.path}/a.txt`, content)
       const retries: unknown[] = []
       const capture = Logger.make((options) => {
         const parts = Array.isArray(options.message) ? options.message : [options.message]
@@ -1251,8 +1253,18 @@ it.instance(
       yield* rm(lock)
 
       const hash = yield* Fiber.join(fiber)
-      expect(hash).toBeTruthy()
-      expect((yield* snapshot.patch(before)).files).toEqual([fwd(tmp.path, "a.txt")])
+      if (!hash) throw new Error("track did not return a snapshot tree")
+      expect(
+        yield* Effect.promise(() => $`git --git-dir ${gitdir} show ${`${hash}:a.txt`}`.cwd(tmp.path).quiet().text()),
+      ).toBe(content)
+      expect(
+        yield* Effect.promise(() =>
+          $`git --git-dir ${gitdir} diff-tree --no-commit-id --name-only -r ${before} ${hash}`
+            .cwd(tmp.path)
+            .quiet()
+            .text(),
+        ),
+      ).toBe("a.txt\n")
     }),
   ),
   { git: true },
@@ -1262,6 +1274,7 @@ it.instance(
   "two processes snapshotting the same worktree at once both get a snapshot",
   withTrackedSnapshot(({ tmp, snapshot }) =>
     Effect.gen(function* () {
+      const gitdir = yield* snapshotStore(tmp.path)
       // A second, independent Snapshot service has its own in-process store lock, like another opencode process.
       yield* Effect.gen(function* () {
         const other = yield* Snapshot.Service
@@ -1273,7 +1286,18 @@ it.instance(
             { concurrency: 16, discard: true },
           )
           const hashes = yield* Effect.all([snapshot.track(), other.track()], { concurrency: 2 })
-          expect(hashes.every(Boolean)).toBe(true)
+          for (const hash of hashes) {
+            if (!hash) throw new Error("track did not return a snapshot tree")
+            const contents = yield* Effect.promise(() =>
+              $`git --git-dir ${gitdir} grep --no-color --no-textconv -e ^ ${hash} -- many/`
+                .cwd(tmp.path)
+                .quiet()
+                .text(),
+            )
+            expect(contents.trimEnd().split("\n")).toEqual(
+              Array.from({ length: 200 }, (_, i) => `${hash}:many/${i}.txt:${round}-${i}`).sort(),
+            )
+          }
         }
       }).pipe(Effect.provide(Layer.fresh(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])))))
     }),
