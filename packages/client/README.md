@@ -25,3 +25,21 @@ yield *
   })
 yield * client.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Hello" }) })
 ```
+
+## Synthetic notes
+
+Use `client.sessions.synthetic` to add application context or a human-visible note to an existing session. Set `ignored: true` for a note that must stay out of model input, including compaction requests and the retained conversation text rebuilt after compaction:
+
+```ts
+yield * client.sessions.synthetic({
+  sessionID,
+  text: "Deploy paused while you review the changes.",
+  ignored: true,
+})
+```
+
+Ignored notes are stored in the transcript immediately and published as `session.synthetic` events. They do not enter the inbox or start model execution, even with `resume: true` or `delivery: "queue"`. The web and terminal timelines show a nonblank `description` when supplied, otherwise the note's `text`. Transcript and event readers can still read the complete note; `ignored` controls model input, not access to the data.
+
+Omitting `ignored`, or setting it to `false`, preserves normal synthetic input: it enters the inbox, is sent to the model when delivered, and schedules execution unless `resume: false`. Use `description` to show normal synthetic context in the timeline. `resume: false` alone does not exclude input from a later model call.
+
+Supply an `id` when you need idempotent retries. For the same session and synthetic ID, the first saved payload wins, including its `ignored` value; a retry cannot turn a note into model input or replace its text. Reusing the ID for another session or a user prompt returns a conflict. The HTTP equivalent is `POST /api/session/{sessionID}/synthetic` with the same fields in its JSON body.
