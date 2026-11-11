@@ -40,6 +40,7 @@ mkdir -p "$MANAGED/packages/cli"
 printf 'original lock\n' > "$MANAGED/bun.lock"
 printf 'v1 sentinel\n' > "$INSTALL_ROOT/opencode"
 inode() { node -e 'process.stdout.write(String(require("node:fs").statSync(process.argv[1]).ino))' "$1"; }
+digest() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
 V1_INODE="$(inode "$INSTALL_ROOT/opencode")"
 
 cat > "$ROOT/bin/bun" <<'BUN'
@@ -86,6 +87,18 @@ BUN
 chmod +x "$ROOT/bin/bun"
 printf '#!/usr/bin/env bash\nexit 23\n' > "$ROOT/bin/guard"
 chmod +x "$ROOT/bin/guard"
+cat > "$ROOT/bin/probe" <<'PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 3 ]
+[ "$1" = --binary ]
+[ "$2" = "$BUILD_TEST_EXPECTED_BINARY" ]
+[ -x "$2" ]
+[ "$3" = --text ]
+[ ! -f "$BUILD_TEST_PROBE_FAILURE" ] || exit 17
+PROBE
+chmod +x "$ROOT/bin/probe"
+PROBE_OVERRIDE="$ROOT/bin/probe"
 SRC_OVERRIDE=""
 INSTALL_OVERRIDE=""
 VERSION_OVERRIDE=""
@@ -95,6 +108,8 @@ run() {
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
     OPENCODE_SRC="$SRC_OVERRIDE" OPENCODE_INSTALL="$INSTALL_OVERRIDE" \
     OPENCODE_VERSION="$VERSION_OVERRIDE" VIBETERM_V2_GUARD="$ROOT/bin/guard" \
+    VIBETERM_V2_PROBE="$PROBE_OVERRIDE" BUILD_TEST_PROBE_FAILURE="$ROOT/fail-probe" \
+    BUILD_TEST_EXPECTED_BINARY="${SRC_OVERRIDE:-$MANAGED}/packages/cli/dist/cli-native/bin/opencode" \
     XDG_DATA_HOME="$ROOT/live-data" XDG_CONFIG_HOME="$ROOT/live-config" \
     XDG_CACHE_HOME="$ROOT/live-cache" XDG_STATE_HOME="$ROOT/live-state" \
     OPENCODE_DB="$ROOT/live.db" OPENCODE_CONFIG_DIR="$ROOT/live-config" \
@@ -190,6 +205,24 @@ run --v2
 status 0
 [ "$(inode "$INSTALL_ROOT/opencode2")" != "$PREVIOUS_INODE" ]
 printf 'PASS: default v2 install uses isolated build/probes, restores lockfile and swaps only opencode2 inode\n'
+
+PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode2")"
+PREVIOUS_DIGEST="$(digest "$INSTALL_ROOT/opencode2")"
+touch "$ROOT/fail-probe"
+run --v2
+status 1
+[[ "$(<"$ROOT/error")" == *'v2 runtime probes failed'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode2")" "$PREVIOUS_INODE"
+equal "$(digest "$INSTALL_ROOT/opencode2")" "$PREVIOUS_DIGEST"
+rm "$ROOT/fail-probe"
+PROBE_OVERRIDE="$ROOT/bin/missing-probe"
+run --v2
+status 1
+[[ "$(<"$ROOT/error")" == *'vibeterm-v2-probe not found'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode2")" "$PREVIOUS_INODE"
+equal "$(digest "$INSTALL_ROOT/opencode2")" "$PREVIOUS_DIGEST"
+PROBE_OVERRIDE="$ROOT/bin/probe"
+printf 'PASS: failed or missing v2 runtime probe preserves the installed binary bytes and inode\n'
 
 SRC_OVERRIDE="$MANAGED"
 INSTALL_OVERRIDE="tmp/${ROOT##*/}/custom-opencode2"

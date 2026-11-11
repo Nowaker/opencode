@@ -307,7 +307,21 @@ v2_guard_gate() {
     return 1
   fi
 }
-if [ "$V2" = 0 ]; then v2_guard_gate || exit 1; fi
+v2_probe_gate() {
+  local probe="${VIBETERM_V2_PROBE:-$(command -v vibeterm-v2-probe || true)}"
+  if [ -z "$probe" ] || [ ! -x "$probe" ]; then
+    echo "error: vibeterm-v2-probe not found; set VIBETERM_V2_PROBE to opencode-tools'" >&2
+    echo "       vibeterm-opencode-client/bin/vibeterm-v2-probe" >&2
+    return 1
+  fi
+  echo "Proving the v2 runtime contracts against $BUILT ..."
+  if ! "$probe" --binary "$BUILT" --text; then
+    echo "error: the v2 runtime probes failed for $VERSION; NOT installing." >&2
+    echo "       Fix the failed contract before replacing opencode2." >&2
+    return 1
+  fi
+}
+if [ "$V2" = 1 ]; then v2_probe_gate || exit 1; else v2_guard_gate || exit 1; fi
 
 mkdir -p "$(dirname "$INSTALL")"
 
