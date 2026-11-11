@@ -469,6 +469,26 @@ test("renders synthetic messages with descriptions", () => {
   ])
 })
 
+test("renders ignored synthetic messages without descriptions", () => {
+  const messages: SessionMessageInfo[] = [
+    { type: "synthetic", id: "note-1", text: "User-only note", ignored: true, time: { created: 1 } },
+    {
+      type: "synthetic",
+      id: "note-2",
+      text: "Empty description",
+      description: "",
+      ignored: true,
+      time: { created: 2 },
+    },
+    { type: "synthetic", id: "context-1", text: "Model-only context", ignored: false, time: { created: 3 } },
+  ]
+
+  expect(reduceSessionRows(messages)).toEqual([
+    { type: "message", messageID: "note-1" },
+    { type: "message", messageID: "note-2" },
+  ])
+})
+
 function partChild(messageID: string, partID: string) {
   return { type: "entry" as const, entry: { type: "part" as const, ref: { messageID, partID } }, size: 1 as const }
 }

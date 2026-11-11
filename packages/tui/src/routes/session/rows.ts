@@ -269,7 +269,7 @@ export function createSessionRows(
     }),
     data.on("session.instructions.updated", message),
     data.on("session.synthetic", (event) => {
-      if (event.data.sessionID === sessionID() && event.data.description?.trim())
+      if (event.data.sessionID === sessionID() && (event.data.ignored || event.data.description?.trim()))
         appendMessage(event.id.replace(/^evt_/, "msg_"))
     }),
     data.on("session.shell.started", message),
@@ -389,7 +389,8 @@ export function reduceSessionRows(
         flushTurn(rows)
         return rows
       }
-      if (message.type === "synthetic" && !message.description?.trim()) return rows
+      // A synthetic without a description is model-only context; an ignored one is a user-only note.
+      if (message.type === "synthetic" && !message.ignored && !message.description?.trim()) return rows
       if (message.type === "compaction" && message.status !== "running")
         shownError = message.status === "failed" ? message.error : undefined
       if (message.type === "compaction" && message.status === "completed" && usage) usage.previousTurnCache = undefined

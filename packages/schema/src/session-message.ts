@@ -95,6 +95,7 @@ export const Synthetic = Schema.Struct({
   ...Base,
   text: Schema.String,
   description: Schema.String.pipe(optional),
+  ignored: Schema.Boolean.pipe(optional),
   type: Schema.tag("synthetic"),
 }).annotate({ identifier: "Session.Message.Synthetic" })
 

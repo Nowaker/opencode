@@ -288,6 +288,7 @@ export const Synthetic = Event.durable({
     ...Base,
     text: Schema.String,
     description: Schema.String.pipe(optional),
+    ignored: SessionMessage.Synthetic.fields.ignored,
     metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   },
 })

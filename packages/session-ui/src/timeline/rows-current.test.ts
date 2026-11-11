@@ -95,6 +95,23 @@ describe("current session timeline rows", () => {
     ])
   })
 
+  test("shows ignored notes whatever their description and hides model-only synthetics", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "run", time: { created: 1 } },
+      { id: "msg_context", type: "synthetic", text: "model only", time: { created: 2 } },
+      { id: "msg_bare", type: "synthetic", text: "note", ignored: true, time: { created: 3 } },
+      { id: "msg_blank", type: "synthetic", text: "note", description: " ", ignored: true, time: { created: 4 } },
+      { id: "msg_named", type: "synthetic", text: "note", description: "Saved", ignored: true, time: { created: 5 } },
+    ] satisfies SessionMessageInfo[]
+
+    expect(Timeline.constructSessionMessageRows(source, false, { type: "idle" }).rows.map(TimelineRow.key)).toEqual([
+      "user-message:msg_user",
+      "notice:msg_bare",
+      "notice:msg_blank",
+      "notice:msg_named",
+    ])
+  })
+
   test("keeps CLI notice messages between the assistant steps they surround", () => {
     const source: SessionMessageInfo[] = [
       { id: "msg_user", type: "user", text: "run", time: { created: 1 } },

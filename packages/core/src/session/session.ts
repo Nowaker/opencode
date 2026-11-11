@@ -290,6 +290,7 @@ export const make = Effect.fn("Session.make")(function* () {
         id?: SessionMessage.ID
         text: string
         description?: string
+        ignored?: boolean
         metadata?: Record<string, unknown>
         delivery?: SessionInbox.Delivery
         resume?: boolean
@@ -304,6 +305,7 @@ export const make = Effect.fn("Session.make")(function* () {
             payload: SessionInbox.SyntheticPayload.make({
               text: input.text,
               description: input.description,
+              ignored: input.ignored,
               metadata: input.metadata,
             }),
             delivery: input.delivery ?? "steer",
@@ -320,7 +322,8 @@ export const make = Effect.fn("Session.make")(function* () {
                 () => new SyntheticConflictError({ sessionID, inputID }),
               ),
             )
-          if (input.resume !== false && !(yield* get(sessionID)).revert) yield* execution.wake(sessionID)
+          if (!admitted.payload.ignored && input.resume !== false && !(yield* get(sessionID)).revert)
+            yield* execution.wake(sessionID)
           return admitted
         }),
       ),

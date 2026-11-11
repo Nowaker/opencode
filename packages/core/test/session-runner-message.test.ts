@@ -20,6 +20,23 @@ const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.
 const build = Agent.defaultID
 
 describe("toLLMMessages", () => {
+  test("omits ignored synthetic notes while preserving ordinary synthetic context", () => {
+    const messages = [undefined, false, true].map((ignored) =>
+      SessionMessage.Synthetic.make({
+        id: id(`synthetic-${ignored}`),
+        type: "synthetic",
+        text: `Synthetic ${ignored}`,
+        ignored,
+        time: { created },
+      }),
+    )
+
+    expect(toLLMMessages(messages, model)).toEqual([
+      Message.make({ id: id("synthetic-undefined"), role: "user", content: "Synthetic undefined" }),
+      Message.make({ id: id("synthetic-false"), role: "user", content: "Synthetic false" }),
+    ])
+  })
+
   test("background user shells enter model context only through their completion notification", () => {
     const shell = SessionMessage.Shell.make({
       id: id("background-shell"),

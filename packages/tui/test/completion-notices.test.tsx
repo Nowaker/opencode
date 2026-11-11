@@ -128,6 +128,91 @@ test.each([40, 120])("shell completion notices do not navigate at width %s", asy
   }
 })
 
+test("ignored synthetic notes show their description or text from history and live events", async () => {
+  await using state = await tmpdir()
+  const setup = await createTestRenderer({ width: 80, height: 24, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
+  setup.renderer.start()
+  const session = {
+    id: "ses_notes",
+    title: "Ignored notes",
+    projectID: "project",
+    location: { directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, updated: 0 },
+  }
+  const messages = [
+    { id: "user-0", type: "user", text: "Start", time: { created: 0 } },
+    { id: "note-0", type: "synthetic", text: "Note without description", ignored: true, time: { created: 1 } },
+    {
+      id: "note-1",
+      type: "synthetic",
+      text: "Note with empty description",
+      description: "",
+      ignored: true,
+      time: { created: 2 },
+    },
+    {
+      id: "note-2",
+      type: "synthetic",
+      text: "Replaced note text",
+      description: "Note description",
+      ignored: true,
+      time: { created: 3 },
+    },
+    { id: "context-0", type: "synthetic", text: "Model-only context", time: { created: 4 } },
+  ]
+  const events = createEventStream()
+  const calls = createFetch((url) => {
+    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
+    if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
+    if (url.pathname === `/api/session/${session.id}/message`) return json({ data: messages.toReversed(), cursor: {} })
+    if (url.pathname.endsWith("/inbox") || url.pathname.endsWith("/permission")) return json({ data: [] })
+    return undefined
+  }, events)
+  const server = Bun.serve({ port: 0, idleTimeout: 0, fetch: (request) => calls.fetch(request) })
+  const { run } = await import("../src/app")
+  const task = Effect.runPromise(
+    run({
+      app: { name: "test", version: "test", channel: "test" },
+      server: { endpoint: { url: server.url.toString() } },
+      config: {
+        get: async () => ({ animations: false, tabs: { mode: "off" } }),
+        update: async () => ({}),
+      },
+      packages: { prepare: async () => ({ directory: "" }) },
+      args: { sessionID: session.id },
+      terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: () => {} }),
+      log: () => {},
+    }).pipe(Effect.provide(Global.layerWith({ state: state.path })), Effect.provide(FileSystem.layerNoop({}))),
+  )
+  try {
+    await setup.waitForFrame((frame) => frame.includes("Note description"))
+    const history = setup.captureCharFrame()
+    expect(history).toContain("Note without description")
+    expect(history).toContain("Note with empty description")
+    expect(history).not.toContain("Replaced note text")
+    expect(history).not.toContain("Model-only context")
+
+    events.emit({
+      id: "evt_live_note",
+      created: 5,
+      type: "session.synthetic",
+      durable: { aggregateID: session.id, seq: 1, version: 1 },
+      data: { sessionID: session.id, text: "Live note text", ignored: true },
+    })
+    await setup.waitForFrame((frame) => frame.includes("Live note text"))
+    // A later rebuild re-reduces the projected message, so the row must survive it.
+    await setup.waitForVisualIdle()
+    expect(setup.captureCharFrame()).toContain("Live note text")
+  } finally {
+    setup.renderer.destroy()
+    await task
+    await server.stop()
+  }
+})
+
 test.each([40, 120])("subagent completion notices navigate to the child session at width %s", async (width) => {
   await using state = await tmpdir()
   const setup = await createTestRenderer({ width, height: 20, kittyKeyboard: true })

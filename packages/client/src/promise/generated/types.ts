@@ -93,7 +93,12 @@ export type SkillName = string
 
 export type SessionInboxDelivery = "steer" | "queue"
 
-export type SessionInboxSyntheticPayload = { text: string; description?: string; metadata?: { [x: string]: JsonValue } }
+export type SessionInboxSyntheticPayload = {
+  text: string
+  description?: string
+  ignored?: boolean
+  metadata?: { [x: string]: JsonValue }
+}
 
 export type SessionInboxCompactionPayload = {}
 
@@ -164,7 +169,12 @@ export type InstructionKey = string
 
 export type InstructionHash = string
 
-export type SessionInboxSyntheticPayload1 = { text: string; description?: string; metadata?: { [x: string]: any } }
+export type SessionInboxSyntheticPayload1 = {
+  text: string
+  description?: string
+  ignored?: boolean
+  metadata?: { [x: string]: any }
+}
 
 export type SessionMessageNative1 = { [x: string]: any }
 
@@ -430,6 +440,7 @@ export type SessionMessageSynthetic = {
   time: { created: number }
   text: string
   description?: string
+  ignored?: boolean
   type: "synthetic"
 }
 
@@ -1359,7 +1370,7 @@ export type SessionSynthetic = {
   type: "session.synthetic"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; text: string; description?: string; metadata?: { [x: string]: any } }
+  data: { sessionID: SessionID; text: string; description?: string; ignored?: boolean; metadata?: { [x: string]: any } }
 }
 
 export type SessionSkillActivated = {
@@ -3453,6 +3464,7 @@ export type SessionSyntheticInput = {
   readonly id?: string | null | undefined
   readonly text: string
   readonly description?: string | null | undefined
+  readonly ignored?: boolean | undefined
   readonly metadata?: { readonly [x: string]: JsonValue } | undefined
   readonly delivery?: ("steer" | "queue") | null | undefined
   readonly resume?: boolean | null | undefined

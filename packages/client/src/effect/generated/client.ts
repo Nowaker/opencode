@@ -570,6 +570,7 @@ const EndpointSessionSynthetic = (raw: RawClient["server.session"]) => (input: S
         id: input["id"],
         text: input["text"],
         description: input["description"],
+        ignored: input["ignored"],
         metadata: input["metadata"],
         delivery: input["delivery"],
         resume: input["resume"],

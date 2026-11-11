@@ -169,6 +169,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           SessionMessage.Synthetic.make({
             text: event.data.text,
             description: event.data.description,
+            ignored: event.data.ignored,
             metadata: event.data.metadata,
             id: SessionMessage.ID.fromEvent(event.id),
             type: "synthetic",

@@ -68,6 +68,7 @@ const skillInfo = Skill.Info.make({
 })
 
 const setup = Effect.fnUntraced(function* (options?: {
+  yieldAdmission?: boolean
   execution?: SessionExecution.Interface
   shell?: Layer.Layer<Shell.Service>
   skills?: (ref: Location.Ref) => Layer.Layer<Skill.Service>
@@ -148,6 +149,18 @@ const setup = Effect.fnUntraced(function* (options?: {
     // This fixture supplies only the instance services exercised by Session.
     provide: (session) => Effect.provide(servicesFor(session.location) as Layer.Layer<Instance.Services>),
   })
+  // Admission must reconcile concurrent requests even when its durable write yields, as asynchronous adapters do.
+  const admissionBus: Bus.Interface = {
+    ...bus,
+    publish: (definition, data, options) =>
+      Effect.yieldNow.pipe(Effect.andThen(bus.publish(definition, data, options))),
+  }
+  const admission = options?.yieldAdmission
+    ? yield* SessionInbox.Service.pipe(
+        Effect.provide(SessionInbox.layer.pipe(Layer.fresh)),
+        Effect.provideService(Bus.Service, admissionBus),
+      )
+    : yield* SessionInbox.Service
   const sessions = yield* Session.make().pipe(
     Effect.satisfiesServicesType<
       | Bus.Service
@@ -161,6 +174,7 @@ const setup = Effect.fnUntraced(function* (options?: {
     >(),
     Effect.provideService(Instance.Service, instances),
     Effect.provideService(SessionExecution.Service, options?.execution ?? execution),
+    Effect.provideService(SessionInbox.Service, admission),
   )
   return { sessions, instances, hooks, locations, activationWaits, resumes, wakes, db: database.db, bus, store }
 })
@@ -291,7 +305,7 @@ describe("Session-owned handles", () => {
         inputID: prompt.id,
       })
       const synthetic = yield* first.synthetic({ text: "Original completion", description: "Job", resume: false })
-      expect(yield* second.synthetic({ ...retry, id: synthetic.id })).toEqual(synthetic)
+      expect(yield* second.synthetic({ ...retry, id: synthetic.id, ignored: true })).toEqual(synthetic)
       expect(yield* first.inbox()).toEqual([prompt, synthetic])
 
       yield* SessionInbox.promote(fixture.db, fixture.bus, sessionID, "steer")
@@ -309,7 +323,9 @@ describe("Session-owned handles", () => {
       expect((yield* second.prompt({ ...retry, files: [{ uri: "file:///missing-owned-retry" }] })).payload).toEqual(
         prompt.payload,
       )
-      expect((yield* second.synthetic({ ...retry, id: synthetic.id })).payload).toEqual(synthetic.payload)
+      expect((yield* second.synthetic({ ...retry, id: synthetic.id, ignored: true })).payload).toEqual(
+        synthetic.payload,
+      )
       expect(yield* other.synthetic({ ...retry, id: synthetic.id }).pipe(Effect.flip)).toMatchObject({
         _tag: "Session.SyntheticConflictError",
         sessionID: otherID,
@@ -326,6 +342,190 @@ describe("Session-owned handles", () => {
         { id: synthetic.id, text: "Original completion", description: "Job" },
       ])
       expect(fixture.locations).toEqual([source])
+    }),
+  )
+
+  it.live("writes ignored synthetic notes immediately without inbox work or execution for every resume mode", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup()
+      const handle = fixture.sessions.forSession(sessionID)
+      const ids: SessionMessage.ID[] = []
+      for (const resume of [undefined, false, true]) {
+        const note = yield* handle.synthetic({
+          text: `Notice with resume ${resume}`,
+          description: "",
+          ignored: true,
+          metadata: { source: "user-note" },
+          delivery: "queue",
+          resume,
+        })
+        ids.push(note.id)
+        expect(yield* handle.message(note.id)).toMatchObject({
+          id: note.id,
+          type: "synthetic",
+          ...note.payload,
+          ignored: true,
+        })
+      }
+
+      expect(yield* handle.inbox()).toEqual([])
+      expect((yield* fixture.store.context(sessionID)).map((message) => message.id)).toEqual(ids)
+      expect(fixture.wakes).toEqual([])
+      expect(fixture.resumes).toEqual([])
+      expect(fixture.locations).toEqual([])
+      const events = yield* fixture.db.select().from(EventTable).all().pipe(Effect.orDie)
+      expect(events.filter((event) => event.aggregate_id === sessionID).map((event) => event.type)).toEqual([
+        Bus.versionedType(SessionEvent.Created.type, 1),
+        ...ids.map(() => Bus.versionedType(SessionEvent.Synthetic.type, 1)),
+      ])
+    }),
+  )
+
+  it.live("keeps ignored synthetic admission across concurrent retries and retained-history retries", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup({ yieldAdmission: true })
+      const handle = fixture.sessions.forSession(sessionID)
+      const input = {
+        id: SessionMessage.ID.create(),
+        text: "Original note",
+        description: "Original description",
+        metadata: { source: "original" },
+        ignored: true,
+        resume: true,
+      }
+      const [first, retry] = yield* Effect.all(
+        [handle.synthetic(input), handle.synthetic({ ...input, text: "Retry", metadata: { source: "retry" } })],
+        { concurrency: "unbounded" },
+      )
+      expect(retry).toEqual(first)
+      const events = yield* fixture.db.select().from(EventTable).all().pipe(Effect.orDie)
+      expect(events.filter((event) => event.type === Bus.versionedType(SessionEvent.Synthetic.type, 1))).toHaveLength(1)
+
+      yield* fixture.db
+        .delete(EventTable)
+        .where(eq(EventTable.type, Bus.versionedType(SessionEvent.Synthetic.type, 1)))
+        .run()
+        .pipe(Effect.orDie)
+      const retained = yield* handle.synthetic({ ...input, ignored: false, text: "Replaced?", delivery: "queue" })
+      expect(retained.payload).toEqual(first.payload)
+      expect(yield* handle.message(first.id)).toMatchObject({ ...first.payload, type: "synthetic" })
+      expect(yield* handle.inbox()).toEqual([])
+      expect(fixture.wakes).toEqual([])
+      expect(yield* fixture.sessions.forSession(otherID).synthetic(input).pipe(Effect.flip)).toMatchObject({
+        _tag: "Session.SyntheticConflictError",
+        sessionID: otherID,
+        inputID: input.id,
+      })
+      expect(yield* handle.prompt(input).pipe(Effect.flip)).toMatchObject({
+        _tag: "Session.PromptConflictError",
+        messageID: input.id,
+      })
+    }),
+  )
+
+  it.live("rejects concurrent cross-session reuse of an ignored synthetic ID", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup({ yieldAdmission: true })
+      const id = SessionMessage.ID.create()
+      const results = yield* Effect.all(
+        [sessionID, otherID].map((sessionID) =>
+          fixture.sessions.forSession(sessionID).synthetic({ id, text: "Note", ignored: true }).pipe(Effect.result),
+        ),
+        { concurrency: "unbounded" },
+      )
+      expect(results.filter((result) => result._tag === "Success")).toHaveLength(1)
+      expect(results.filter((result) => result._tag === "Failure")).toMatchObject([
+        { failure: { _tag: "Session.SyntheticConflictError", inputID: id } },
+      ])
+      expect(fixture.wakes).toEqual([])
+    }),
+  )
+
+  for (const otherSession of [false, true])
+    it.live(`reconciles ignored-note overlap between two engines with otherSession=${otherSession}`, () =>
+      Effect.gen(function* () {
+        const fixture = yield* setup()
+        const secondReady = yield* Deferred.make<void>()
+        const firstCommitted = yield* Deferred.make<void>()
+        const admission = (before: Effect.Effect<void>, after: Effect.Effect<void>) =>
+          SessionInbox.Service.pipe(
+            Effect.provide(SessionInbox.layer.pipe(Layer.fresh)),
+            Effect.provideService(Bus.Service, {
+              ...fixture.bus,
+              publish: (definition, data, options) =>
+                before.pipe(
+                  Effect.andThen(fixture.bus.publish(definition, data, options)),
+                  Effect.tap(() => after),
+                ),
+            }),
+          )
+        const first = yield* admission(
+          Deferred.await(secondReady),
+          Deferred.succeed(firstCommitted, undefined).pipe(Effect.asVoid),
+        )
+        const second = yield* admission(
+          Deferred.succeed(secondReady, undefined).pipe(Effect.andThen(Deferred.await(firstCommitted))),
+          Effect.void,
+        )
+        const id = SessionMessage.ID.create()
+        const initial = {
+          id,
+          sessionID,
+          item: {
+            type: "synthetic",
+            payload: { text: "First engine note", ignored: true, metadata: { source: "first" } },
+            delivery: "steer",
+          },
+        } satisfies Parameters<SessionInbox.Interface["admit"]>[0]
+        const results = yield* Effect.all(
+          [
+            first.admit(initial).pipe(Effect.result),
+            second
+              .admit({
+                ...initial,
+                sessionID: otherSession ? otherID : sessionID,
+                item: {
+                  type: "synthetic",
+                  payload: { text: "Second engine retry", ignored: true, metadata: { source: "second" } },
+                  delivery: "queue",
+                },
+              })
+              .pipe(Effect.result),
+          ],
+          { concurrency: "unbounded" },
+        )
+
+        expect(results[0]).toMatchObject({ _tag: "Success", success: { payload: initial.item.payload } })
+        expect(yield* Deferred.isDone(secondReady)).toBe(true)
+        expect(yield* Deferred.isDone(firstCommitted)).toBe(true)
+        expect(results[1]).toMatchObject(
+          otherSession
+            ? { _tag: "Failure", failure: { _tag: "SessionInbox.LifecycleConflict", id } }
+            : { _tag: "Success", success: { payload: initial.item.payload } },
+        )
+        expect((yield* fixture.store.message(id))?.message).toMatchObject(initial.item.payload)
+        expect(yield* SessionInbox.list(fixture.db, sessionID)).toEqual([])
+      }),
+    )
+
+  it.live("preserves a durable event ID collision without a matching ignored note as a defect", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup()
+      const id = SessionMessage.ID.create()
+      yield* fixture.bus.publish(
+        SessionEvent.Viewed,
+        { sessionID, idle: 0 },
+        { id: Event.ID.make(id.replace(/^msg_/, "evt_")) },
+      )
+
+      const result = yield* fixture.sessions
+        .forSession(sessionID)
+        .synthetic({ id, text: "No matching message", ignored: true })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(result)).toBe(true)
+      if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(Bus.InvalidDurableEventError)
+      expect(yield* fixture.store.message(id)).toBeUndefined()
     }),
   )
 

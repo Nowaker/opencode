@@ -941,6 +941,7 @@ export function createData(config: CreateDataInput) {
           type: "synthetic",
           text: event.data.text,
           description: event.data.description,
+          ignored: event.data.ignored,
           metadata: event.data.metadata,
           time: { created: event.created },
         })

@@ -1196,5 +1196,6 @@ function isNotice(message: SessionMessageInfo): message is Notice {
 
   if (message.type !== "synthetic") return true
 
-  return !!message.description?.trim() || timelineNoticeRequired(message)
+  // A synthetic without a description is model-only context; an ignored one is a user-only note.
+  return !!message.ignored || !!message.description?.trim() || timelineNoticeRequired(message)
 }

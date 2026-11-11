@@ -51,6 +51,8 @@ The fork's servers retain durable event payloads by default, including `serve --
 
 Derived data, snapshots, logs, cache, state, bin and temporary directories use the `opencode2` application namespace. Select configuration and database paths explicitly with `OPENCODE_CONFIG_DIR` and `OPENCODE_DB`. The one-shot credential import reads `auth.json` from the `opencode2` data directory, so it intentionally does not import v1's file.
 
+`POST /api/session/:sessionID/synthetic` accepts `ignored: true` for a user-only note. It appends immediately without queuing input or waking execution, even with `resume: true`; provider requests and compaction exclude it. Clients display its nonempty description or its text. V1 imports preserve ignored text as these synthetic notes.
+
 ```bash
 # YOLO
 curl -fsSL https://opencode.ai/v2/install | bash

@@ -277,8 +277,21 @@ export function transformSession(input: TransformInput): TransformResult {
   const used = new Set(messages.map((item) => item.row.id))
   const projected = messages
     .flatMap((item) => {
-      if (paired.has(item.row.id)) return []
       const owned = byMessage.get(item.row.id)?.map((part) => part.value) ?? []
+      const ignored = owned.filter((part): part is SessionV1.TextPart => part.type === "text" && part.ignored === true)
+      const onlyIgnored = ignored.length > 0 && ignored.length === owned.length && item.value.role === "user"
+      const notes = ignored.length
+        ? [
+            row(item.row, {
+              id: onlyIgnored ? item.row.id : syntheticID(`${item.row.id}:ignored`, used),
+              type: "synthetic",
+              text: ignored.map((part) => part.text).join("\n\n"),
+              ignored: true,
+              time: { created: item.row.time_created },
+            }),
+          ]
+        : []
+      if (paired.has(item.row.id) || onlyIgnored) return notes
       if (item.value.role === "user") {
         const compaction = owned.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
         if (compaction) {
@@ -288,13 +301,13 @@ export function transformSession(input: TransformInput): TransformResult {
               candidate.value.parentID === item.row.id &&
               candidate.value.summary === true,
           )
-          if (!pairedSummary) return []
+          if (!pairedSummary) return notes
           paired.add(pairedSummary.row.id)
-          if (pairedSummary.value.error || pairedSummary.value.time.completed === undefined) return []
+          if (pairedSummary.value.error || pairedSummary.value.time.completed === undefined) return notes
           const summary = pairedSummary
           const summaryText = (byMessage.get(summary.row.id) ?? [])
             .map((part) => part.value)
-            .filter((part): part is SessionV1.TextPart => part.type === "text" && part.text.length > 0)
+            .filter((part): part is SessionV1.TextPart => part.type === "text" && !part.ignored && part.text.length > 0)
             .map((part) => part.text)
             .join("\n\n")
           const tailIndex = compaction.tail_start_id
@@ -317,13 +330,14 @@ export function transformSession(input: TransformInput): TransformResult {
                 time: { created: item.row.time_created },
               },
             ),
+            ...notes,
           ]
         }
         const subtasks = owned.filter((part) => part.type === "subtask")
         const visible = owned.filter((part): part is SessionV1.TextPart => part.type === "text" && !part.ignored)
         const files = owned.filter((part): part is SessionV1.FilePart => part.type === "file")
         const agents = owned.filter((part): part is SessionV1.AgentPart => part.type === "agent")
-        if (subtasks.length > 0 && visible.length === 0 && files.length === 0 && agents.length === 0) return []
+        if (subtasks.length > 0 && visible.length === 0 && files.length === 0 && agents.length === 0) return notes
         const ordinary = visible.filter((part) => !part.synthetic)
         const synthetic = visible.filter((part) => part.synthetic)
         const attachments = files.flatMap((part) => migrateFile(part))
@@ -355,6 +369,7 @@ export function transformSession(input: TransformInput): TransformResult {
               text: synthetic.map((part) => part.text).join("\n\n"),
               time: { created: item.row.time_created },
             }),
+            ...notes,
           ]
         const user = row(item.row, {
           id: item.row.id,
@@ -364,7 +379,7 @@ export function transformSession(input: TransformInput): TransformResult {
           ...(agentAttachments.length ? { agents: agentAttachments } : {}),
           time: { created: item.row.time_created },
         })
-        if (synthetic.length === 0) return [user]
+        if (synthetic.length === 0) return [user, ...notes]
         return [
           user,
           row(item.row, {
@@ -373,9 +388,10 @@ export function transformSession(input: TransformInput): TransformResult {
             text: synthetic.map((part) => part.text).join("\n\n"),
             time: { created: item.row.time_created },
           }),
+          ...notes,
         ]
       }
-      if (item.value.role !== "assistant") return []
+      if (item.value.role !== "assistant") return notes
       const assistant = item.value
       const parent = messages.find((candidate) => candidate.row.id === assistant.parentID)
       const parentParts = parent ? (byMessage.get(parent.row.id)?.map((part) => part.value) ?? []) : []
@@ -383,8 +399,9 @@ export function transformSession(input: TransformInput): TransformResult {
         parentParts.some((part) => part.type === "subtask") &&
         owned.some((part) => part.type === "tool" && part.tool === "task")
       )
-        return []
+        return notes
       const content = owned.flatMap((part): Array<Record<string, unknown>> => {
+        if (part.type === "text" && part.ignored) return []
         if (part.type === "text")
           return [{ type: "text", text: part.text, ...(part.metadata ? { native: part.metadata } : {}) }]
         if (part.type === "reasoning")
@@ -440,6 +457,7 @@ export function transformSession(input: TransformInput): TransformResult {
             ...(assistant.time.completed === undefined ? {} : { completed: item.row.time_updated }),
           },
         }),
+        ...notes,
       ]
     })
     .map((item, seq) => ({ ...item, seq }))
@@ -1188,15 +1206,15 @@ function serializeRecent(
   return messages
     .flatMap((message) => {
       const owned = parts.get(message.row.id)?.map((part) => part.value) ?? []
-      if (message.value.role === "user")
-        return [
-          `[User]: ${owned
-            .filter((part) => part.type === "text" && !part.ignored)
-            .map((part) => (part.type === "text" ? part.text : ""))
-            .join("\n\n")}`,
-        ]
+      if (message.value.role === "user") {
+        const text = owned
+          .filter((part): part is SessionV1.TextPart => part.type === "text" && !part.ignored)
+          .map((part) => part.text)
+          .join("\n\n")
+        return text ? [`[User]: ${text}`] : []
+      }
       return owned.flatMap((part) =>
-        part.type === "text"
+        part.type === "text" && !part.ignored
           ? [`[Assistant]: ${part.text}`]
           : part.type === "reasoning" && part.text
             ? [`[Assistant reasoning]: ${part.text}`]

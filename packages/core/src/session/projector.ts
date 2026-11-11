@@ -1029,6 +1029,7 @@ const layer = Layer.effectDiscard(
             type: "synthetic",
             text: input.payload.text,
             description: input.payload.description,
+            ignored: input.payload.ignored,
             metadata: input.payload.metadata,
             time,
           })
@@ -1074,7 +1075,22 @@ const layer = Layer.effectDiscard(
         yield* InstructionState.apply(db, event.data.sessionID, event.durable.seq, event.data.delta)
       }),
     )
-    yield* bus.project(SessionEvent.Synthetic, (event) => run(db, event))
+    yield* bus.project(SessionEvent.Synthetic, (event) =>
+      Effect.gen(function* () {
+        if (event.data.ignored) {
+          const id = SessionMessage.ID.fromEvent(event.id)
+          const pending = yield* SessionInbox.find(db, id)
+          const stored = yield* db
+            .select({ id: SessionMessageTable.id })
+            .from(SessionMessageTable)
+            .where(eq(SessionMessageTable.id, id))
+            .get()
+            .pipe(Effect.orDie)
+          if (pending || stored) return yield* Effect.die(new SessionInbox.LifecycleConflict({ id }))
+        }
+        yield* run(db, event)
+      }),
+    )
     yield* bus.project(SessionEvent.Skill.Activated, (event) => run(db, event))
     yield* bus.project(SessionEvent.Shell.Started, (event) => run(db, event))
     yield* bus.project(SessionEvent.Shell.Ended, (event) => run(db, event))
