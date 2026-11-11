@@ -10354,6 +10354,10 @@ export type SessionForkData = {
      */
     unsettled?: "exclude" | "settle"
     /**
+     * Which messages to copy: all of them, or context, the part the next turn reads (from the latest compaction on, with its kept tail). Defaults to all.
+     */
+    history?: "all" | "context"
+    /**
      * Session the copy belongs to as a child, the way a subagent's session does. A top-level session when omitted.
      */
     parentID?: string

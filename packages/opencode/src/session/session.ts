@@ -320,6 +320,16 @@ export const ForkUnsettled = Schema.Literals(["exclude", "settle"]).annotate({
 })
 export type ForkUnsettled = Schema.Schema.Type<typeof ForkUnsettled>
 
+export const ForkHistory = Schema.Literals(["all", "context"]).annotate({
+  description:
+    "Which messages to copy: all of them, or context, the part the next turn reads (from the latest compaction on, with its kept tail). Defaults to all.",
+})
+export type ForkHistory = Schema.Schema.Type<typeof ForkHistory>
+
+function zeroTokens<T extends { cache: object }>(tokens: T): T {
+  return { ...tokens, input: 0, output: 0, reasoning: 0, cache: { ...tokens.cache, read: 0, write: 0 }, ...("total" in tokens && { total: 0 }) }
+}
+
 export const ForkInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
@@ -329,6 +339,7 @@ export const ForkInput = Schema.Struct({
     }),
   ),
   unsettled: Schema.optional(ForkUnsettled),
+  history: Schema.optional(ForkHistory),
   parentID: Schema.optional(
     SessionID.annotate({
       description: "Session the copy belongs to as a child, the way a subagent's session does. A top-level session when omitted.",
@@ -790,8 +801,12 @@ const layer: Layer.Layer<
       const idMap = new Map<string, MessageID>()
       const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
       const settledAt = Date.now()
+      const copied = msgs.slice(0, target < 0 ? msgs.length : target)
+      const context =
+        input.history === "context" ? new Set(MessageV2.filterCompacted([...copied].reverse()).map((msg) => msg.info.id)) : undefined
 
-      for (const msg of msgs.slice(0, target < 0 ? msgs.length : target)) {
+      for (const msg of copied) {
+        if (context && !context.has(msg.info.id)) continue
         const streaming = msg.info.role === "assistant" && !msg.info.time.completed
         if (streaming && input.unsettled === "exclude") continue
         const settle = streaming && input.unsettled === "settle"
@@ -799,8 +814,10 @@ const layer: Layer.Layer<
         idMap.set(msg.info.id, newID)
 
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
+        // The source session already counted this usage; a copy that kept it would be counted again.
         const cloned = yield* updateMessage({
           ...msg.info,
+          ...(msg.info.role === "assistant" && { cost: 0, tokens: zeroTokens(msg.info.tokens) }),
           ...(settle && { time: { ...msg.info.time, completed: settledAt } }),
           sessionID: session.id,
           id: newID,
@@ -817,6 +834,10 @@ const layer: Layer.Layer<
           }
           if (p.type === "compaction" && p.tail_start_id) {
             p.tail_start_id = idMap.get(p.tail_start_id)
+          }
+          if (p.type === "step-finish") {
+            p.cost = 0
+            p.tokens = zeroTokens(p.tokens)
           }
           yield* updatePart(p)
         }

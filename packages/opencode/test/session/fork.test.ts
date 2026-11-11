@@ -28,7 +28,12 @@ const user = Effect.fn("test.user")(function* (sessionID: SessionID, text: strin
   return message
 })
 
-const assistant = Effect.fn("test.assistant")(function* (sessionID: SessionID, parentID: MessageID, done: boolean) {
+const assistant = Effect.fn("test.assistant")(function* (
+  sessionID: SessionID,
+  parentID: MessageID,
+  done: boolean,
+  extra: Record<string, unknown> = {},
+) {
   const sessions = yield* Session.Service
   const id = MessageID.ascending()
   yield* sessions.updateMessage({
@@ -45,6 +50,7 @@ const assistant = Effect.fn("test.assistant")(function* (sessionID: SessionID, p
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     ...(done && { finish: "stop" }),
+    ...extra,
   } as unknown as SessionV1.Info)
   return id
 })
@@ -95,6 +101,23 @@ const midTurn = Effect.fn("test.midTurn")(function* () {
   })
   const queued = yield* user(source.id, "third")
   return { source, first, second, queued }
+})
+
+// A session that was compacted once: an old exchange, the compaction prompt and its summary, then a newer exchange.
+// With `tail`, the compaction kept the old exchange's answer as its tail.
+const compacted = Effect.fn("test.compacted")(function* (tail: boolean) {
+  const sessions = yield* Session.Service
+  const source = yield* sessions.create({})
+  const old = yield* user(source.id, "old")
+  const oldAnswer = yield* assistant(source.id, old.id, true)
+  yield* part(source.id, oldAnswer, { type: "text", text: "old answer" })
+  const compaction = yield* user(source.id, "compact")
+  yield* part(source.id, compaction.id, { type: "compaction", auto: true, ...(tail && { tail_start_id: oldAnswer }) })
+  const summary = yield* assistant(source.id, compaction.id, true, { summary: true })
+  yield* part(source.id, summary, { type: "text", text: "summary" })
+  const fresh = yield* user(source.id, "new")
+  yield* part(source.id, yield* assistant(source.id, fresh.id, true), { type: "text", text: "new answer" })
+  return source
 })
 
 const texts = (messages: SessionV1.WithParts[]) =>
@@ -165,6 +188,53 @@ describe("session fork", () => {
       const copy = (yield* sessions.messages({ sessionID: fork.id }))[3]
       expect(copy.info.role === "assistant" && copy.info.time.completed).toBeUndefined()
       expect(copy.parts.find((part) => part.type === "tool")).toMatchObject({ state: { status: "running" } })
+    }),
+  )
+
+  it.instance("history context copies from the latest compaction on, as the next turn reads it", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const source = yield* compacted(false)
+      const all = yield* sessions.fork({ sessionID: source.id })
+      const context = yield* sessions.fork({ sessionID: source.id, history: "context" })
+      expect(texts(yield* sessions.messages({ sessionID: all.id }))).toEqual([
+        "old", "old answer", "compact", "summary", "new", "new answer",
+      ])
+      expect(texts(yield* sessions.messages({ sessionID: context.id }))).toEqual(["compact", "summary", "new", "new answer"])
+    }),
+  )
+
+  it.instance("history context keeps the compaction's tail and points the copied compaction at it", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const source = yield* compacted(true)
+      const fork = yield* sessions.fork({ sessionID: source.id, history: "context" })
+      const messages = yield* sessions.messages({ sessionID: fork.id })
+      expect(texts(messages)).toEqual(["old answer", "compact", "summary", "new", "new answer"])
+      const compaction = messages.flatMap((message) => message.parts).find((item) => item.type === "compaction")
+      expect(compaction?.type === "compaction" && compaction.tail_start_id).toBe(messages[0].info.id)
+    }),
+  )
+
+  it.instance("zeroes the cost and tokens of copied answers and their steps, so usage is counted once", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const source = yield* sessions.create({})
+      const prompt = yield* user(source.id, "priced")
+      const tokens = { input: 1000, output: 200, reasoning: 50, cache: { read: 300, write: 10 } }
+      const answer = yield* assistant(source.id, prompt.id, true, { cost: 0.25, tokens })
+      yield* part(source.id, answer, { type: "step-finish", reason: "stop", cost: 0.25, tokens })
+      expect((yield* sessions.get(source.id)).cost).toBeGreaterThan(0)
+
+      const fork = yield* sessions.fork({ sessionID: source.id })
+      const copy = (yield* sessions.messages({ sessionID: fork.id }))[1]
+      const zero = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+      expect(copy.info.role === "assistant" && copy.info.cost).toBe(0)
+      expect(copy.info.role === "assistant" && copy.info.tokens).toMatchObject(zero)
+      const step = copy.parts.find((item) => item.type === "step-finish")
+      expect(step?.type === "step-finish" && step.cost).toBe(0)
+      expect(step?.type === "step-finish" && step.tokens).toMatchObject(zero)
+      expect((yield* sessions.get(fork.id)).cost ?? 0).toBe(0)
     }),
   )
 
