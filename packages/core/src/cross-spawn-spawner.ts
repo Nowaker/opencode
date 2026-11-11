@@ -228,11 +228,11 @@ export const make = Effect.gen(function* () {
     Effect.suspend(() => {
       let sink: Sink.Sink<void, unknown, never, PlatformError.PlatformError> = Sink.drain
       if (Predicate.isNotNull(proc.stdin)) {
-        // A child may exit without reading its stdin (git add on a held index.lock). The write then fails with
-        // EPIPE a tick after the sink stopped listening, which would throw as an uncaught exception; the exit
-        // code already reports the child's outcome.
+        // A child may exit without reading stdin (git add on a held index.lock), emitting EPIPE after the sink
+        // stopped listening. Leave active error listeners to report PlatformError; without one, only EPIPE is
+        // covered by the child's exit code.
         proc.stdin.on("error", (err: NodeJS.ErrnoException) => {
-          if (err.code !== "EPIPE") throw err
+          if (err.code !== "EPIPE" && proc.stdin?.listenerCount("error") === 1) throw err
         })
         sink = NodeSink.fromWritable({
           evaluate: () => proc.stdin!,
