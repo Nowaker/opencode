@@ -649,6 +649,43 @@ const recentWithToolOutput = (id: Session.ID, content: SessionMessage.ToolStateC
     return stored?.type === "compaction" && stored.status === "completed" ? stored.metadata?.recent : ""
   })
 
+it.effect("compaction excludes ignored synthetic notes from requests and rebuilt retained text", () =>
+  Effect.gen(function* () {
+    requests = []
+    const session = yield* insertSession(Session.ID.make("ses_ignored_compaction"))
+    const note = SessionMessage.Synthetic.make({
+      id: SessionMessage.ID.create(),
+      type: "synthetic",
+      text: "Display-only notice",
+      ignored: true,
+      time: { created: DateTime.makeUnsafe(0) },
+    })
+    const guidance = SessionMessage.Synthetic.make({
+      ...note,
+      id: SessionMessage.ID.create(),
+      text: "Model guidance",
+      ignored: false,
+    })
+    const messages = [textUser("Earlier question"), textUser("Kept question"), note, guidance]
+    yield* storeMessages(session.id, messages)
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].messages.slice(0, -1)).toEqual([
+      Message.make({ id: messages[0].id, role: "user", content: "Earlier question" }),
+      Message.make({ id: messages[1].id, role: "user", content: "Kept question" }),
+      Message.make({ id: guidance.id, role: "user", content: "Model guidance" }),
+    ])
+    const store = yield* SessionStore.Service
+    const [checkpoint] = yield* store.context(session.id)
+    expect(checkpoint).toMatchObject({
+      type: "compaction",
+      metadata: { keepID: messages[1].id, recent: "[User]: Kept question\n\n[Synthetic context]: Model guidance" },
+    })
+  }),
+)
+
 it.effect("manual compaction summarizes short context instead of no-op", () =>
   Effect.gen(function* () {
     requests = []

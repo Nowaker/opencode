@@ -3,6 +3,7 @@ export * as SessionInbox from "./inbox.js"
 import { and, asc, eq, or } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Event } from "@opencode/schema/event"
 import {
   Compaction,
   CompactionPayload,
@@ -159,6 +160,7 @@ const promotedFromMessage = Effect.fn("SessionInbox.promotedFromMessage")(functi
       payload: SyntheticPayload.make({
         text: message.text,
         description: message.description,
+        ignored: message.ignored,
         metadata: message.metadata,
       }),
     })
@@ -172,6 +174,7 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
   const database = yield* Database.Service
   const db = database.db
   const bus = yield* Bus.Service
+  const admissionLocks = KeyedMutex.makeUnsafe<SessionMessage.ID>()
 
   /** First admission wins for matching Session and type, without preparing a new payload. */
   const reconcile = Effect.fn("SessionInbox.reconcile")(function* <Type extends Item["type"]>(request: {
@@ -188,20 +191,28 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
     return existing
   })
 
-  const admit = Effect.fn("SessionInbox.admit")(function* <Type extends Item["type"]>(request: {
-    readonly id: SessionMessage.ID
-    readonly sessionID: SessionSchema.ID
-    readonly item: Item & { readonly type: Type }
-  }) {
-    const existing = yield* reconcile({ ...request, type: request.item.type, delivery: request.item.delivery })
-    if (existing !== undefined) return existing
-    const admitted = yield* bus
-      .publish(SessionEvent.InboxEnqueued, {
-        inboxID: request.id,
-        sessionID: request.sessionID,
-        item: request.item,
-      })
-      .pipe(
+  const admit = Effect.fn("SessionInbox.admit")(
+    function* <Type extends Item["type"]>(request: {
+      readonly id: SessionMessage.ID
+      readonly sessionID: SessionSchema.ID
+      readonly item: Item & { readonly type: Type }
+    }) {
+      const existing = yield* reconcile({ ...request, type: request.item.type, delivery: request.item.delivery })
+      if (existing !== undefined) return existing
+      const item: Item = request.item
+      const write: Effect.Effect<{ readonly created: number }> =
+        item.type === "synthetic" && item.payload.ignored
+          ? bus.publish(
+              SessionEvent.Synthetic,
+              { sessionID: request.sessionID, ...item.payload },
+              { id: Event.ID.make(request.id.replace(/^msg_/, "evt_")) },
+            )
+          : bus.publish(SessionEvent.InboxEnqueued, {
+              inboxID: request.id,
+              sessionID: request.sessionID,
+              item,
+            })
+      const admitted = yield* write.pipe(
         Effect.map((event) =>
           Info.make({
             id: request.id,
@@ -210,18 +221,29 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
             ...request.item,
           }),
         ),
-        Effect.catchDefect((defect) =>
-          defect instanceof LifecycleConflict
-            ? find(db, request.id).pipe(
-                Effect.flatMap((stored) => (stored === undefined ? Effect.fail(defect) : Effect.succeed(stored))),
-              )
-            : Effect.die(defect),
-        ),
+        Effect.catchDefect((defect) => {
+          if (
+            !(defect instanceof LifecycleConflict) &&
+            !(item.type === "synthetic" && item.payload.ignored && defect instanceof Bus.InvalidDurableEventError)
+          )
+            return Effect.die(defect)
+          return reconcile({ ...request, type: request.item.type, delivery: request.item.delivery }).pipe(
+            Effect.flatMap((stored) =>
+              stored !== undefined
+                ? Effect.succeed(stored)
+                : defect instanceof LifecycleConflict
+                  ? Effect.fail(defect)
+                  : Effect.die(defect),
+            ),
+          )
+        }),
       )
-    if (!matches(admitted, { ...request, type: request.item.type }))
-      return yield* new LifecycleConflict({ id: request.id })
-    return admitted
-  })
+      if (!matches(admitted, { ...request, type: request.item.type }))
+        return yield* new LifecycleConflict({ id: request.id })
+      return admitted
+    },
+    (effect, request) => admissionLocks.withLock(request.id)(effect),
+  )
 
   const admitCompaction = Effect.fn("SessionInbox.admitCompaction")(function* (input: {
     readonly id: SessionMessage.ID
