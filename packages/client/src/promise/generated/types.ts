@@ -6,7 +6,7 @@ export type ServerInfo = {
   hostname?: string | undefined
   urls: Array<string>
   paths: { tmp: string }
-  capabilities?: { persistentPty?: boolean | undefined } | undefined
+  capabilities?: { persistentPty?: boolean | undefined; sessionMetadataMergePatch?: boolean | undefined } | undefined
 }
 
 export type PairingCode = { code: string; expires_in: number }
@@ -3379,12 +3379,14 @@ export type SessionSwitchModelOutput = void
 
 export type SessionUpdateInput = {
   readonly sessionID: string
-  readonly title?: string | undefined
+  readonly title?: string | null | undefined
   readonly metadata?: { readonly [x: string]: JsonValue } | undefined
   readonly permissions?:
     | ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }>
+    | null
     | undefined
-  readonly archived?: boolean | undefined
+  readonly archived?: boolean | null | undefined
+  readonly experimental?: { readonly metadataMode?: "replace" | "merge" | null } | null | undefined
 }
 
 export type SessionUpdateOutput = void

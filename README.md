@@ -55,6 +55,8 @@ Derived data, snapshots, logs, cache, state, bin and temporary directories use t
 
 The authenticated experimental endpoint `POST /api/experimental/event/replay` accepts `{ event: { id, type, created?, seq, aggregateID, data }, ownerID?, strictOwner?, publish? }`. Use the serialized durable type, for example `session.renamed.1`; `strictOwner` and `publish` default to `true`. Success returns 204, invalid events return 400, and owner or sequence conflicts return 409. Persist events on both peers and copy project/workspace prerequisites before replay; imported history still needs a transfer baseline. This API may change without compatibility guarantees.
 
+`PATCH /api/session/:sessionID` replaces the complete metadata record by default. Set `experimental.metadataMode: "merge"` with `metadata: { vibeterm: { note: "example" } }` to update that key atomically using RFC 7396: objects merge recursively, null deletes a member, and arrays/scalars replace member values. Omitted mode or `"replace"` preserves literal null values and complete replacement. `GET /api/info` advertises support with `capabilities.sessionMetadataMergePatch: true`. Merge reads and event projection share one immediate write transaction, and the existing `session.metadata.updated.1` event retains the complete resulting record for clients and replay. Child/fork inheritance is unchanged. The experimental selector may change without compatibility guarantees.
+
 ```bash
 # YOLO
 curl -fsSL https://opencode.ai/v2/install | bash

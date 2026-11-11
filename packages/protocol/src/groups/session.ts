@@ -7,7 +7,7 @@ import { TokenUsage } from "@opencode/schema/token-usage"
 import { Money } from "@opencode/schema/money"
 import { InstructionEntry } from "@opencode/schema/instruction-entry"
 import { Project } from "@opencode/schema/project"
-import { DateTimeUtcFromMillis, NonNegativeInt, PositiveInt } from "@opencode/schema/schema"
+import { DateTimeUtcFromMillis, NonNegativeInt, PositiveInt, optional } from "@opencode/schema/schema"
 import { Event } from "@opencode/schema/event"
 import { SessionLegacy } from "@opencode/schema/session-legacy"
 import { Context, Schema, SchemaGetter, Struct } from "effect"
@@ -304,12 +304,18 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
           title: Schema.String.pipe(Schema.optional),
-          metadata: Session.Metadata.pipe(Schema.optional),
+          metadata: Session.Metadata.pipe(optional),
           permissions: Permission.Ruleset.pipe(Schema.optional),
           archived: Schema.Boolean.pipe(Schema.optional).annotate({
             description:
               "Archive the session with true or restore it with false. Repeating the current state is a no-op.",
           }),
+          experimental: Schema.Struct({
+            metadataMode: Schema.Literals(["replace", "merge"]).pipe(Schema.optional).annotate({
+              description:
+                "Metadata updates replace the complete record by default. Select merge to apply RFC 7396 JSON Merge Patch atomically: null deletes members, objects merge recursively, and other values replace.",
+            }),
+          }).pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
         error: [SessionNotFoundError, LocationNotFoundError],
@@ -317,7 +323,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         OpenApi.annotations({
           identifier: "session.update",
           summary: "Update session",
-          description: "Update mutable session properties.",
+          description:
+            "Update mutable session properties. Metadata replaces the complete record unless experimental.metadataMode is merge. Merge support is advertised by server.info capabilities.sessionMetadataMergePatch.",
         }),
       ),
     )

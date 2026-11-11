@@ -249,7 +249,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           }
           if (ctx.payload.metadata !== undefined)
             yield* session
-              .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+              .setMetadata({
+                sessionID: ctx.params.sessionID,
+                metadata: ctx.payload.metadata,
+                mode: ctx.payload.experimental?.metadataMode === "merge" ? "merge" : undefined,
+              })
               .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           if (ctx.payload.permissions !== undefined)
             yield* session
