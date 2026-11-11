@@ -4023,6 +4023,7 @@ export class Session2 extends HeyApiClient {
       messageID?: string
       id?: string
       unsettled?: "exclude" | "settle"
+      history?: "all" | "context"
       parentID?: string
       title?: string
       permission?: PermissionRuleset
@@ -4040,6 +4041,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "messageID" },
             { in: "body", key: "id" },
             { in: "body", key: "unsettled" },
+            { in: "body", key: "history" },
             { in: "body", key: "parentID" },
             { in: "body", key: "title" },
             { in: "body", key: "permission" },
