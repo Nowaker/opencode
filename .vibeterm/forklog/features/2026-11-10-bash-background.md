@@ -60,6 +60,7 @@ opencode-tools: the spawn plugin's `config` hook sets `bash_background.timeout` 
 
 - 2026-11-10 [`ses_e3b66e073ffeBjngD0B2e6LCl8`](../sessions/2026-11-10-bash-background.md) - initial build. Evidence: `5cc30c46fb`, merge `590273f5aa`.
 - 2026-11-11 [`ses_e3b66e073ffeBjngD0B2e6LCl8`](../sessions/2026-11-11-bash-exit-duration.md) - the exit event's `durationMs` runs from the spawn to the process exit, not from the call to the publish; a loaded host's slow spawn had made `sleep 5; exit 3` report 41s. Evidence: `2e8e50f138`, merge `60daedd693`.
+- 2026-11-11 [`ses_e3b66e073ffeBjngD0B2e6LCl8`](../sessions/2026-11-11-bash-event-order.md) - Exited waits until Started is published: a command that ended while its start was being announced published Exited first, and OMO's ledger then kept it as running forever. Evidence: `081451095b`, merge `34bccf2103`.
 
 ## Current maintenance notes
 

@@ -151,6 +151,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-event-order.md) - a background bash command that exited while its start was still being announced published `shell.background.exited` before `.started`, so OMO's running-jobs ledger kept 11 finished jobs and their tabs never parked; Exited now waits for Started; `081451095b`, merged `34bccf2103`; vt-459 on desktop and m4max with the retry cap.
 - [2026-11-11 `ses_e37b26ea1ffeyDu2wQLAdY0TmV`](./sessions/2026-11-11-turn-end-held-order.md) - under `queued_prompts: "turn_end"` a held prompt or note was sent in its stored place, inside the ended turn, so the follow-up request ended with the turn's own answer and the model said the note "arrived empty"; held input now goes after that answer (`answerAfterTurn`); `ed9e8785a9`, merged `85466d15f4`; vt-449 on desktop with the retry cap.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-fork-context.md) - `session.fork` takes `history: "context"` (only what the next turn reads) and zeroes every copy's cost and tokens, so a fork subagent of a long session starts small and is not counted twice; installed vt-452 on desktop and m4max.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-exit-duration.md) - a background bash exit notice reports the process's own run time (spawn to exit) instead of the time from the tool call to the event; installed vt-445 on desktop and m4max.
