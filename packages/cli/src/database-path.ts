@@ -1,13 +1,14 @@
 import path from "node:path"
-import { OPENCODE_CHANNEL } from "./version"
+import { Effect } from "effect"
+import { DatabaseGuard } from "@opencode/core/database/guard"
 
-export function databasePath(data: string) {
-  const filename =
-    process.env.OPENCODE_DB ??
-    (["latest", "dev", "beta", "next", "prod"].includes(OPENCODE_CHANNEL) ||
-    process.env.OPENCODE_DISABLE_CHANNEL_DB === "1" ||
-    process.env.OPENCODE_DISABLE_CHANNEL_DB === "true"
-      ? "opencode.db"
-      : `opencode-${OPENCODE_CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`)
-  return filename === ":memory:" ? filename : path.resolve(data, filename)
-}
+export const databasePath = Effect.fn("cli.databasePath")(function* (data: string) {
+  const configured = process.env.OPENCODE_DB
+  if (!configured)
+    return yield* Effect.die(
+      new DatabaseGuard.Refused(path.resolve(data, "opencode.db"), "OPENCODE_DB is unset or empty."),
+    )
+  const filename = configured === ":memory:" ? configured : path.resolve(data, configured)
+  yield* DatabaseGuard.checkFile(filename, data)
+  return filename
+})

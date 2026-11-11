@@ -9,7 +9,7 @@ export default Runtime.handler(
   Commands.commands.debug.commands.paths,
   Effect.fn("cli.debug.paths")(function* (input) {
     const global = yield* Global.Service
-    const paths = { ...global, db: databasePath(global.data) }
+    const paths = { ...global, db: yield* databasePath(global.data) }
     if (Option.isSome(input.name)) {
       process.stdout.write(paths[input.name.value] + EOL)
       return

@@ -112,7 +112,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           pty: { handoff },
           simulation: truthy(process.env.OPENCODE_SIMULATE),
           database: {
-            path: databasePath(global.data),
+            path: yield* databasePath(global.data),
           },
           models: {
             url: process.env.OPENCODE_MODELS_URL,
