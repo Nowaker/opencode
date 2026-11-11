@@ -5,11 +5,11 @@
 # ~/projekty/webapps/opencode-build/build.sh is a shim that execs the
 # primary checkout's copy, so the old path keeps working.
 #
-# Source tree:    the checkout this script lives in (the primary
+# v1 source tree: the checkout this script lives in (the primary
 #                 checkout ~/projekty/webapps/opencode, branch
 #                 dev-nowaker, when run through the shim).
 #                 OPENCODE_SRC overrides it, e.g. to build a worktree.
-# Install target: opencode-build/bin/opencode beside the primary
+# v1 install:    opencode-build/bin/opencode beside the primary
 #                 checkout (found through the git common dir, so a
 #                 worktree installs to the same place):
 #                 ~/projekty/webapps/opencode-build/bin/opencode on
@@ -19,7 +19,7 @@
 #                 ExecStarts from. (opencode-serve-lan.service is off-
 #                 limits and must not be restarted by this workflow.)
 #
-# Version stamp: <base>-vt-<seq>-<sha>, e.g. 1.18.32-vt-48-2406400f0a
+# v1 version: <base>-vt-<seq>-<sha>, e.g. 1.18.32-vt-48-2406400f0a
 #   - OPENCODE_VERSION overrides detection when set, verbatim.
 #   - Otherwise, version tags are fetched from OPENCODE_TAG_REMOTE
 #     (default: the upstream remote, `github`, or `upstream` where a
@@ -72,60 +72,101 @@
 # this script does not restart the units - that aborts in-flight
 # sessions and is bound by the do-not-restart-AI-side rule).
 #
-# Usage: build.sh [--print-version]
+# Usage: build.sh [--v2] [--print-version]
+#   --v2             build OPENCODE_SRC, defaulting to the primary checkout's
+#                    .vibeterm/worktrees/v2-nowaker; install bin/opencode2.
+#                    Use only v2.X.Y tags and <tag remote>/dev for the stamp.
+#                    Run the full CLI build, including the embedded app, with
+#                    a scratch HOME/XDG/database/config for all child processes.
+#                    OPENCODE_INSTALL may never alias bin/opencode from v1.
 #   --print-version  fetch tags, print the stamp this build would use, and
 #                    exit without building or installing.
+#   -h, --help       show this help (must be used alone).
+#   Options may appear in either order; duplicates and extra arguments fail.
 
 set -euo pipefail
 
 PRINT_VERSION=0
-case "${1-}" in
-  "") ;;
-  --print-version) PRINT_VERSION=1 ;;
-  -h | --help)
-    sed -n '2,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
-    exit 0
-    ;;
-  *)
-    echo "error: unknown argument: $1" >&2
-    echo "       run with --help for full usage" >&2
-    exit 2
-    ;;
-esac
-if [ "$#" -gt 1 ]; then
-  echo "error: unexpected extra argument: $2" >&2
+V2=0
+for ARG in "$@"; do
+  case "$ARG" in
+    --print-version) [ "$PRINT_VERSION" = 0 ] && { PRINT_VERSION=1; continue; } ;;
+    --v2) [ "$V2" = 0 ] && { V2=1; continue; } ;;
+    -h | --help)
+      if [ "$#" = 1 ]; then
+        sed -n '2,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+        exit 0
+      fi
+      ;;
+  esac
+  echo "error: unknown, duplicate or extra argument: $ARG" >&2
   echo "       run with --help for full usage" >&2
   exit 2
-fi
+done
+
+canonical_path() {
+  node -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    function canonical(file) {
+      if (fs.existsSync(file)) return fs.realpathSync(file);
+      if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink())
+        throw new Error("Install path contains an unresolved symlink");
+      return path.join(canonical(path.dirname(file)), path.basename(file));
+    }
+    process.stdout.write(canonical(path.resolve(process.argv[1])));
+  ' "$1"
+}
 
 SRC="${OPENCODE_SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-if [ ! -d "$SRC/packages/opencode" ]; then
+PACKAGE=opencode
+if [ "$V2" = 1 ]; then
+  PRIMARY="$(dirname "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir)")"
+  SRC="${OPENCODE_SRC:-$PRIMARY/.vibeterm/worktrees/v2-nowaker}"
+  PACKAGE=cli
+fi
+if [ ! -d "$SRC/packages/$PACKAGE" ]; then
   echo "error: opencode source not found at $SRC" >&2
   exit 1
 fi
 
 GIT_COMMON="$(git -C "$SRC" rev-parse --path-format=absolute --git-common-dir)"
 BUILD_ROOT="$(dirname "$(dirname "$GIT_COMMON")")/opencode-build"
+[ "$V2" = 0 ] || BUILD_ROOT="$(dirname "$PRIMARY")/opencode-build"
 INSTALL="${OPENCODE_INSTALL:-$BUILD_ROOT/bin/opencode}"
+if [ "$V2" = 1 ]; then
+  SRC="$(cd "$SRC" && pwd -P)"
+  INSTALL="${OPENCODE_INSTALL:-$BUILD_ROOT/bin/opencode2}"
+  if [ "$(canonical_path "$INSTALL")" = "$(canonical_path "$BUILD_ROOT/bin/opencode")" ] \
+    || [ "$INSTALL" -ef "$BUILD_ROOT/bin/opencode" ]; then
+    echo "error: v2 install target aliases the v1 binary: $INSTALL" >&2
+    exit 1
+  fi
+  INSTALL="$(canonical_path "$INSTALL")"
+fi
 if [ -z "${OPENCODE_TAG_REMOTE-}" ] && ! git -C "$SRC" remote get-url github >/dev/null 2>&1 \
   && git -C "$SRC" remote get-url upstream >/dev/null 2>&1; then
   OPENCODE_TAG_REMOTE=upstream
 fi
 TAG_REMOTE="${OPENCODE_TAG_REMOTE:-github}"
 UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/v1}"
+[ "$V2" = 0 ] || UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/dev}"
 LOCKFILE="$SRC/bun.lock"
 LOCKFILE_BACKUP=""
+V2_SCRATCH=""
 
 restore_lockfile() {
   if [ -n "$LOCKFILE_BACKUP" ] && [ -f "$LOCKFILE_BACKUP" ]; then
     cp "$LOCKFILE_BACKUP" "$LOCKFILE"
     rm -f "$LOCKFILE_BACKUP"
   fi
+  if [ -n "$V2_SCRATCH" ]; then rm -rf "$V2_SCRATCH"; fi
 }
 
 version_from_tag() {
   local tag="$1"
   if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    [ "$V2" = 0 ] || [ "${BASH_REMATCH[1]}" = 2 ] || return 1
     printf '%s.%s.%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
     return 0
   fi
@@ -134,6 +175,10 @@ version_from_tag() {
 
 fetch_version_tags() {
   if git remote get-url "$TAG_REMOTE" >/dev/null 2>&1; then
+    if [ "$V2" = 1 ]; then
+      git fetch "$TAG_REMOTE" "refs/heads/dev:refs/remotes/$TAG_REMOTE/dev" 'refs/tags/v2.*:refs/tags/v2.*'
+      return
+    fi
     git fetch "$TAG_REMOTE" --tags --prune
     return
   fi
@@ -148,12 +193,14 @@ detect_version() {
 
     local tag
     local version
-    while IFS= read -r tag; do
-      if version="$(version_from_tag "$tag")"; then
-        printf '%s\n' "$version"
-        return 0
-      fi
-    done < <(git describe --tags --exact-match --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
+    if [ "$V2" = 0 ]; then
+      while IFS= read -r tag; do
+        if version="$(version_from_tag "$tag")"; then
+          printf '%s\n' "$version"
+          return 0
+        fi
+      done < <(git describe --tags --exact-match --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
+    fi
 
     # Upstream cuts each release as a single "release: vX.Y.Z" commit on
     # top of dev, so the tag itself is never an ancestor of dev. The
@@ -161,7 +208,8 @@ detect_version() {
     local base=""
     while IFS= read -r tag; do
       if version="$(version_from_tag "$tag")" \
-        && git merge-base --is-ancestor "$tag^" HEAD 2>/dev/null; then
+        && { git merge-base --is-ancestor "$tag^" HEAD 2>/dev/null \
+          || { [ "$V2" = 1 ] && git merge-base --is-ancestor "$tag" HEAD 2>/dev/null; }; }; then
         base="$version"
         break
       fi
@@ -191,24 +239,52 @@ if [ "$PRINT_VERSION" = 1 ]; then
   exit 0
 fi
 
+run_v2() {
+  env -i PATH="$PATH" HOME="$V2_SCRATCH/home" USERPROFILE="$V2_SCRATCH/home" \
+    XDG_DATA_HOME="$V2_SCRATCH/data" XDG_CONFIG_HOME="$V2_SCRATCH/config" \
+    XDG_CACHE_HOME="$V2_SCRATCH/cache" XDG_STATE_HOME="$V2_SCRATCH/state" \
+    TMPDIR="$V2_SCRATCH/tmp" OPENCODE_DB="$V2_SCRATCH/opencode.db" \
+    OPENCODE_CONFIG_DIR="$V2_SCRATCH/config/opencode" \
+    OPENCODE_TOOLS_DATA_DIR="$V2_SCRATCH/tools" \
+    OPENCODE_PLUGINS_DATA_DIR="$V2_SCRATCH/plugins" \
+    OPENCODE_CONFIG_PROJECT_DISABLE=1 OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+    OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_VERSION="$VERSION" \
+    OPENCODE_INSTALL_METHOD=unknown "$@"
+}
+if [ "$V2" = 1 ]; then
+  mkdir -p "$SRC/.vibeterm/tmp"
+  V2_SCRATCH="$(mktemp -d "$SRC/.vibeterm/tmp/build-v2.XXXXXX")"
+  mkdir -p "$V2_SCRATCH/home" "$V2_SCRATCH/tmp"
+  trap restore_lockfile EXIT
+fi
+
 if [ -f "$LOCKFILE" ]; then
-  mkdir -p "$BUILD_ROOT"
-  LOCKFILE_BACKUP="$BUILD_ROOT/.bun.lock.before-build.$$"
+  if [ "$V2" = 1 ]; then
+    LOCKFILE_BACKUP="$V2_SCRATCH/bun.lock"
+  else
+    mkdir -p "$BUILD_ROOT"
+    LOCKFILE_BACKUP="$BUILD_ROOT/.bun.lock.before-build.$$"
+  fi
   cp "$LOCKFILE" "$LOCKFILE_BACKUP"
   trap restore_lockfile EXIT
 fi
 
 echo "Building opencode @ $VERSION from $SRC ..."
-(
-  cd "$SRC/packages/opencode"
-  OPENCODE_VERSION="$VERSION" OPENCODE_INSTALL_METHOD=unknown bun ./script/build.ts --single
-)
+if [ "$V2" = 1 ]; then
+  (cd "$SRC" && run_v2 bun install --frozen-lockfile)
+  (cd "$SRC/packages/cli" && run_v2 bun ./script/build.ts --single)
+else
+  (
+    cd "$SRC/packages/opencode"
+    OPENCODE_VERSION="$VERSION" OPENCODE_INSTALL_METHOD=unknown bun ./script/build.ts --single
+  )
+fi
 
 shopt -s nullglob
-BUILT_CANDIDATES=("$SRC"/packages/opencode/dist/opencode-*/bin/opencode)
+BUILT_CANDIDATES=("$SRC"/packages/"$PACKAGE"/dist/"$PACKAGE"-*/bin/opencode)
 shopt -u nullglob
 if [ "${#BUILT_CANDIDATES[@]}" -ne 1 ]; then
-  echo "error: expected one native binary under $SRC/packages/opencode/dist, found ${#BUILT_CANDIDATES[@]}" >&2
+  echo "error: expected one native binary under $SRC/packages/$PACKAGE/dist, found ${#BUILT_CANDIDATES[@]}" >&2
   exit 1
 fi
 BUILT="${BUILT_CANDIDATES[0]}"
@@ -231,7 +307,7 @@ v2_guard_gate() {
     return 1
   fi
 }
-v2_guard_gate || exit 1
+if [ "$V2" = 0 ]; then v2_guard_gate || exit 1; fi
 
 mkdir -p "$(dirname "$INSTALL")"
 
@@ -250,6 +326,11 @@ chmod +x "$INSTALL"
 
 echo ""
 echo "=== installed ==="
+if [ "$V2" = 1 ]; then
+  (cd "$V2_SCRATCH" && run_v2 "$INSTALL" --version)
+  echo "path: $INSTALL"
+  exit 0
+fi
 "$INSTALL" --version
 echo "path: $INSTALL"
 echo ""
