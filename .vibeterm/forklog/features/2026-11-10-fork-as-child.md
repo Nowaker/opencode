@@ -49,6 +49,7 @@ OMO `e16f44cb88` (`task(subagent_type: "fork")`) is the consumer.
 ## Timeline
 
 - 2026-11-10 [`ses_e3b66e073ffeBjngD0B2e6LCl8`](../sessions/2026-11-10-bash-background.md) - initial build. Evidence: `db917f0795`, merge `da55aead00`.
+- 2026-11-11 [`ses_e3b66e073ffeBjngD0B2e6LCl8`](../sessions/2026-11-11-fork-context.md) - `history: "context"` copies only what the next turn reads (latest compaction, its kept tail, what follows); every fork zeroes its copies' cost and tokens. Evidence: `d6ec184270`, merge `13f8d45412`.
 
 ## Current maintenance notes
 
