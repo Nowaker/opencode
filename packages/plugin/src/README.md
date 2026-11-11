@@ -114,6 +114,8 @@ Session context is mutable immediately before provider dispatch:
 
 `ctx.session.context({ sessionID })` reads the compacted model-visible window. `ctx.session.messages({ sessionID, type: "assistant", order: "desc", limit: 50 })` reads durable messages with the same input and output as `client.message.list`, including successful tool-result metadata retained before compaction. Follow `cursor.next` or `cursor.previous` with the same type filter and without `order`; the cursor carries the ordering. Reading messages does not admit input or wake the session. Hosts advertise this method with `ctx.app.capabilities?.sessionMessages` and `GET /api/info` `capabilities.sessionMessages`.
 
+`ctx.session.fork({ sessionID, before? })` exposes the ordinary Session API fork operation. It copies settled history into an independent session, with `before` selecting an exclusive message boundary. This operation has the same errors and inheritance as the HTTP Session API; native subagent `fork: true` additionally retains child ownership and restricts copied history to the parent's current context. Detect native fork, notice and timed foreground handoff support with `ctx.app.capabilities?.subagentOptions`.
+
 ```ts
 await ctx.session.hook("context", (event) => {
   event.tools.read.description = "Read a file using narrow line ranges."

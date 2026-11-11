@@ -159,6 +159,13 @@ export interface SessionRetry {
  */
 export type SessionIdleBackground =
   | {
+      readonly kind: "subagent-group"
+      readonly sessionID: Session.ID
+      readonly id: string
+      readonly total: number
+      readonly pending: number
+    }
+  | {
       readonly kind: "shell"
       readonly sessionID: Session.ID
       readonly shellID: string
@@ -216,6 +223,7 @@ export type SessionDomain = Pick<
   SessionApi,
   | "list"
   | "create"
+  | "fork"
   | "get"
   | "remove"
   | "switchAgent"

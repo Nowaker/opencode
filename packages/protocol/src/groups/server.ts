@@ -19,6 +19,9 @@ export const ServerInfo = Schema.Struct({
       sessionMessages: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can read durable session messages with the message list pagination contract.",
       }),
+      subagentOptions: Schema.optional(Schema.Boolean).annotate({
+        description: "Supports native subagent fork, completion notice policies and timed foreground handoff.",
+      }),
       sessionMetadataMergePatch: Schema.optional(Schema.Boolean).annotate({
         description: "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode.",
       }),

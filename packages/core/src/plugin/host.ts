@@ -127,7 +127,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
 
   // Keep the instance graph's inferred types independent of Session handles.
   const context: Plugin.Context = {
-    app: { ...app, capabilities: { sessionMessages: true } },
+    app: { ...app, capabilities: { sessionMessages: true, subagentOptions: true } },
     location: locationInfo(),
     options: {},
     rpc: Object.assign(rpc.client, { register: rpc.register }),
@@ -585,6 +585,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
             : { parentID: input.parentID }),
         }),
       get: (input) => sessions.get(input.sessionID),
+      fork: sessions.fork,
       remove: (input) => sessions.remove(input.sessionID),
       switchAgent: sessions.switchAgent,
       switchModel: sessions.switchModel,

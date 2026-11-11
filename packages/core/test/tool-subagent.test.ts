@@ -65,8 +65,10 @@ const executionNode = makeGlobalNode({
     Effect.gen(function* () {
       const bus = yield* Bus.Service
       const store = yield* SessionStore.Service
+      const database = yield* Database.Service
       const completed = new Set<Session.ID>()
       const complete = Effect.fn("SubagentTest.complete")(function* (sessionID: Session.ID) {
+        if ((yield* store.get(sessionID))?.fork) yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
         if (completed.has(sessionID)) return
         if ((yield* store.get(sessionID))?.title?.includes("fail")) {
           yield* new SessionRunnerModel.ModelNotSelectedError({ sessionID })
@@ -110,7 +112,7 @@ const executionNode = makeGlobalNode({
       })
     }),
   ),
-  deps: [Bus.node, SessionStore.node],
+  deps: [Bus.node, SessionStore.node, Database.node],
 })
 
 const subagentPluginSupervisor = makeLocationNode({
@@ -122,6 +124,7 @@ const subagentPluginSupervisor = makeLocationNode({
     }),
   ),
   deps: [
+    Database.node,
     Agent.node,
     Config.node,
     Model.node,
@@ -215,6 +218,26 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
+  it.live("limits resumed fork results to the new prompt when execution produces no successful assistant", () =>
+    tmpdirScoped().pipe(Effect.flatMap((dir) => Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }), model: parentModel })
+      yield* withSubagent(parent.location)
+      const execution = yield* SessionExecution.Service
+      yield* execution.resume(parent.id)
+      const locations = yield* LocationServiceMap.Service
+      const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+      const call = (input: Record<string, unknown>) => executeTool(registry, {
+        sessionID: parent.id, ...toolIdentity,
+        call: { type: "tool-call", id: crypto.randomUUID(), name: SubagentTool.name, input: { agent: "reviewer", description: "Fork review", prompt: "review", ...input } },
+      })
+      const first = yield* call({ fork: true })
+      const id = outputSessionID(first.metadata)
+      expect(first.content).toEqual([{ type: "text", text: completedOutput(id) }])
+      const continued = yield* call({ sessionID: id })
+      expect(continued.content).toEqual([{ type: "text", text: `<subagent sessionID="${id}" state="completed">\nSubagent completed without a text response.\n</subagent>` }])
+    }))),
+  )
   completionIt.live("admits one durable completion across live delivery and restart replay", () =>
     tmpdirScoped().pipe(
       Effect.flatMap((dir) =>

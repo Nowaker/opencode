@@ -10,6 +10,7 @@ export type ServerInfo = {
     | {
         persistentPty?: boolean | undefined
         sessionMessages?: boolean | undefined
+        subagentOptions?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined
@@ -1282,6 +1283,13 @@ export type SessionForked = {
     sessionID: SessionID
     parentID: SessionID
     boundary: SessionForkBoundary
+    child?: {
+      title: string
+      agent: AgentID
+      model?: ModelRef
+      context: Array<SessionMessageID>
+      recent?: { messageID: SessionMessageID; text: string }
+    }
     instructions?: { [x: InstructionKey]: InstructionHash }
     instructionEntries?: InstructionEntrySnapshot
   }

@@ -12,6 +12,8 @@ import { SessionStore } from "../store.js"
 import { ImageNotice } from "../../image/notice.js"
 import { ShellResult } from "../../shell/result.js"
 import { SubagentCompletion } from "../subagent-completion.js"
+import { SubagentGroup } from "../subagent-group.js"
+import { Database } from "../../database/database.js"
 
 const CONTINUE_AFTER_SERVER_RESTART =
   "The server restarted while you were working. Continue from where you left off without repeating completed work."
@@ -72,6 +74,7 @@ export const layer = (options?: Options) =>
       const bus = yield* Bus.Service
       const jobs = yield* Job.Service
       const sessions = yield* Session.Service
+      const db = (yield* Database.Service).db
       const scope = yield* Effect.scope
       const maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
 
@@ -171,6 +174,14 @@ export const layer = (options?: Options) =>
       ) {
         const child = yield* store.get(recovery.childSessionID)
         if (!child || child.parentID !== recovery.parentSessionID || !(yield* store.get(recovery.parentSessionID))) {
+          if (recovery.group) {
+            yield* SubagentGroup.update(db, recovery.group, { status: "cancelled", error: "Subagent session is unavailable" })
+            const state = yield* SubagentGroup.get(db, recovery.parentSessionID, recovery.group.id)
+            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: false }).pipe(
+              Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, recovery.parentSessionID)),
+              Effect.orDie,
+            )
+          }
           yield* jobs.completeBackground(background.notificationID)
           return
         }
@@ -179,6 +190,7 @@ export const layer = (options?: Options) =>
           yield* SubagentCompletion.deliver(sessions, jobs, {
             ...result,
             recovery,
+            db,
             notificationID: background.notificationID,
             resume: suspended.has(recovery.parentSessionID) ? false : undefined,
           }).pipe(Effect.orDie)
@@ -201,9 +213,12 @@ export const layer = (options?: Options) =>
           notificationID: background.notificationID,
           recovery,
           run: execution.resume(recovery.childSessionID).pipe(
-            Effect.andThen(store.context(recovery.childSessionID)),
+            Effect.andThen(store.messages({
+              sessionID: recovery.childSessionID,
+              ...(recovery.after ? { cursor: { id: recovery.after, direction: "previous" as const } } : {}),
+            })),
             Effect.map((messages) => {
-              const assistant = messages.findLast(
+              const assistant = messages.find(
                 (message) =>
                   message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
               )
@@ -222,6 +237,19 @@ export const layer = (options?: Options) =>
         resumeSuspendedSessions: Effect.gen(function* () {
           const active = yield* execution.active
           const pending = yield* jobs.pendingBackground
+          for (const group of yield* SubagentGroup.pending(db)) {
+            for (const slot of group.slots) {
+              if (slot.status !== "running" || pending.some((job) => job.notificationID === slot.generation)) continue
+              yield* SubagentGroup.update(db, { parentSessionID: group.parentSessionID, id: group.id, notificationID: group.notificationID, index: slot.index, generation: slot.generation }, {
+                status: "cancelled", error: "Subagent launch interrupted by server restart",
+              })
+            }
+            const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
+            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: false }).pipe(
+              Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, group.parentSessionID)),
+              Effect.orDie,
+            )
+          }
           const children = pending.flatMap((background) =>
             background.status === "running" && background.recovery.kind === "subagent"
               ? [background.recovery.childSessionID]
@@ -264,5 +292,5 @@ export const layer = (options?: Options) =>
 export const node = makeGlobalNode({
   service: Service,
   layer: layer(),
-  deps: [SessionStore.node, SessionExecution.node, Bus.node, Job.node, Session.node],
+  deps: [SessionStore.node, SessionExecution.node, Bus.node, Job.node, Session.node, Database.node],
 })

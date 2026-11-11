@@ -12,6 +12,7 @@ import { SessionContext } from "../context.js"
 import { SessionEvent } from "../event.js"
 import { SessionInbox } from "../inbox.js"
 import { SessionBackground } from "../background.js"
+import { SubagentGroup } from "../subagent-group.js"
 import { Job } from "../../job.js"
 import { SessionHistory } from "../history.js"
 import { SessionModelRequest } from "../model-request.js"
@@ -180,7 +181,7 @@ const layer = Layer.effect(
                 if (pending || !stepped) return DrainResult.Complete()
                 // The Session would go idle; a plugin may admit input to keep this execution working.
                 yield* restore(
-                  SessionBackground.outstanding(jobs, store, sessionID).pipe(
+                  SessionBackground.outstanding({ ...jobs, groups: SubagentGroup.pending(db) }, store, sessionID).pipe(
                     Effect.flatMap((background) => hooks.trigger("session", "experimental.idle", { sessionID, background })),
                   ),
                 )

@@ -163,7 +163,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
     .insert(SessionTable)
     .values({
       id: event.data.sessionID,
-      parent_id: null,
+      parent_id: event.data.child ? event.data.parentID : null,
       fork_session_id: event.data.parentID,
       fork_boundary: event.data.boundary,
       project_id: parent.project_id,
@@ -171,9 +171,9 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       slug: Slug.create(),
       directory: parent.directory,
       path: parent.path,
-      title: forkTitle(parent.title ?? undefined),
-      agent: parent.agent,
-      model: parent.model,
+      title: event.data.child?.title ?? forkTitle(parent.title ?? undefined),
+      agent: event.data.child?.agent ?? parent.agent,
+      model: event.data.child?.model ?? parent.model,
       metadata: parent.metadata,
       permission: parent.permission,
       version: parent.version,
@@ -196,6 +196,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
     yield* InstructionEntry.initialize(db, event.data.sessionID, event.data.instructionEntries, event.created)
 
   const forkedID = (seq: number) => SessionMessage.ID.make(`${SessionMessage.ID.fromEvent(event.id)}_${seq}`)
+  const context = event.data.child ? new Set(event.data.child.context) : undefined
   // The child stores the parent's inline media as blobs; the parent's rows are never rewritten.
   const media = yield* SessionBlob.ForkMedia
   let cursor = -1
@@ -220,7 +221,8 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       .pipe(Effect.orDie)
     if (rows.length === 0) break
 
-    const values = yield* Effect.forEach(rows, (row) =>
+    const selected = context ? rows.filter((row) => context.has(row.id)) : rows
+    const values = yield* Effect.forEach(selected, (row) =>
       Effect.gen(function* () {
         const copy = {
           id: forkedID(row.seq),
@@ -231,6 +233,12 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
           time_updated: row.time_updated,
           // Split parents' envelopes carry no content, so only unsplit parents' inline media moves here.
           data: media ? yield* SessionBlob.externalizeRow(db, row.data) : row.data,
+        }
+        if (event.data.child && row.type === "compaction") {
+          const metadata = { ...row.data.metadata }
+          delete metadata.keepID
+          if (event.data.child.recent?.messageID === row.id) metadata.recent = event.data.child.recent.text
+          return { ...copy, data: { ...copy.data, metadata } }
         }
         // A summary references the first message it kept, which the fork copied under a new ID.
         const keepID = row.type === "compaction" ? row.data.metadata?.keepID : undefined
@@ -264,7 +272,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       { discard: true },
     )
 
-    const assistantRows = rows.filter((row) => row.type === "assistant")
+    const assistantRows = selected.filter((row) => row.type === "assistant")
     if (assistantRows.length > 0) {
       const idMap = new Map(assistantRows.map((row) => [row.id, forkedID(row.seq)]))
       const storedParts = yield* Effect.forEach(DatabaseBatch.batches([...idMap.keys()], 1, 1), (ids) =>

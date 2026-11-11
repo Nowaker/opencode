@@ -4,6 +4,7 @@ import type { Kind, Status } from "@opencode/schema/job"
 import { Effect } from "effect"
 import type { Job } from "../job.js"
 import type { SessionSchema } from "./schema.js"
+import { SubagentGroup } from "./subagent-group.js"
 
 export type Lookup = {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<{ readonly parentID?: SessionSchema.ID } | undefined>
@@ -22,7 +23,7 @@ export type ListFilter = {
  * the child again, so the child's work is not finished.
  */
 export const outstanding = Effect.fnUntraced(function* (
-  jobs: Pick<Job.Interface, "runningBackground">,
+  jobs: Pick<Job.Interface, "runningBackground"> & { readonly groups?: Effect.Effect<readonly SubagentGroup.State[]> },
   store: Lookup,
   sessionID: SessionSchema.ID,
 ) {
@@ -30,7 +31,13 @@ export const outstanding = Effect.fnUntraced(function* (
   const owned = yield* Effect.filter(yield* jobs.runningBackground, (recovery) =>
     descends(store, parents, recovery.kind === "subagent" ? recovery.parentSessionID : recovery.sessionID, sessionID),
   )
-  return owned.map((recovery) => {
+  const groups = yield* Effect.filter(yield* (jobs.groups ?? Effect.succeed([])), (group) =>
+    descends(store, parents, group.parentSessionID, sessionID),
+  )
+  return [...groups.map((group) => ({
+    kind: "subagent-group" as const, sessionID: group.parentSessionID, id: group.id, total: group.total,
+    pending: group.total - group.slots.filter((slot) => slot.status !== "running").length,
+  })), ...owned.map((recovery) => {
     if (recovery.kind === "shell")
       return {
         kind: "shell" as const,
@@ -47,7 +54,7 @@ export const outstanding = Effect.fnUntraced(function* (
       agent: recovery.agent,
       description: recovery.description,
     }
-  })
+  })]
 })
 
 /** Active and unconsumed background jobs matching the requested Session, kind, status, and descendant scope. */

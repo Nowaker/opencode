@@ -6,6 +6,7 @@ import type { LayerNode } from "@opencode/util/effect/layer-node"
 import { Job } from "../job.js"
 import { Session } from "../session.js"
 import { SubagentCompletion } from "./subagent-completion.js"
+import { Database } from "../database/database.js"
 
 type Recovery = Extract<Job.Recovery, { kind: "subagent" }>
 
@@ -17,9 +18,10 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SubagentJob") {}
 
-const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Scope.Scope> = Effect.gen(function* () {
+const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Database.Service | Scope.Scope> = Effect.gen(function* () {
   const sessions = yield* Session.Service
   const jobs = yield* Job.Service
+  const db = (yield* Database.Service).db
   const scope = yield* Scope.Scope
   // Jobs and their completion observers outlive the plugin that launched them.
   // Fork with the global context too, rather than retaining the caller's location.
@@ -28,12 +30,20 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Scop
   const notifications = new Set<string>()
 
   const notify = Effect.fn("SubagentJob.notify")(function* (recovery: Recovery, startedAt: number) {
-    const key = `${recovery.childSessionID}:${startedAt}`
+    const current = yield* jobs.get(recovery.childSessionID)
+    const canonical = current?.recovery?.kind === "subagent" ? current.recovery : recovery
+    const key = current?.notificationID ?? `${recovery.childSessionID}:${startedAt}`
     if (notifications.has(key)) return
     notifications.add(key)
     yield* Effect.gen(function* () {
       const info = (yield* jobs.wait({ id: recovery.childSessionID })).info
-      if (info) yield* SubagentCompletion.deliver(sessions, jobs, { ...info, recovery })
+      if (current?.notificationID && info?.notificationID !== current.notificationID) {
+        const persisted = (yield* jobs.pendingBackground).find((job) => job.notificationID === current.notificationID)
+        if (persisted?.recovery.kind === "subagent")
+          yield* SubagentCompletion.deliver(sessions, jobs, { ...persisted, recovery: persisted.recovery, db })
+        return
+      }
+      if (info) yield* SubagentCompletion.deliver(sessions, jobs, { ...info, recovery: canonical, db })
     }).pipe(
       Effect.ensuring(Effect.sync(() => notifications.delete(key))),
       // The global context drops the caller's span annotations; delivery is the parent session's work.
@@ -52,9 +62,13 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Scop
           title: recovery.description,
           metadata: {},
           recovery,
+          ...(recovery.group ? { notificationID: recovery.group.generation } : {}),
           run: Effect.gen(function* () {
             yield* sessions.resume(recovery.childSessionID)
-            const messages = yield* sessions.messages({ sessionID: recovery.childSessionID, order: "desc", limit: 20 })
+            const messages = yield* sessions.messages({
+              sessionID: recovery.childSessionID, order: "desc", limit: 20,
+              ...(recovery.after ? { cursor: { id: recovery.after, direction: "previous" as const } } : {}),
+            })
             const assistant = messages.find(
               (message) =>
                 message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
@@ -74,5 +88,5 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Scop
 export const node: LayerNode.Provider<Service, never, typeof Node.tags.values.global> = Node.makeGlobalNode({
   service: Service,
   layer: Layer.effect(Service, make),
-  deps: [Session.node, Job.node],
+  deps: [Session.node, Job.node, Database.node],
 })

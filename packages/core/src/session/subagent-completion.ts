@@ -4,6 +4,8 @@ import { Effect } from "effect"
 import type { Job } from "../job.js"
 import type { Session } from "../session.js"
 import type { SessionMessage } from "./message.js"
+import type { Database } from "../database/database.js"
+import { SubagentGroup } from "./subagent-group.js"
 
 export const NO_TEXT = "Subagent completed without a text response."
 
@@ -24,10 +26,26 @@ export const deliver = Effect.fnUntraced(function* (
   input: Pick<Job.Info, "status" | "output" | "error" | "notificationID"> & {
     recovery: Extract<Job.Recovery, { kind: "subagent" }>
     resume?: boolean
+    db: Database.Interface["db"]
   },
 ) {
   if (input.status === "running") return
   const recovery = input.recovery
+  if (recovery.group) {
+    yield* SubagentGroup.update(input.db, recovery.group, {
+      status: input.status,
+      ...(input.output === undefined ? {} : { output: input.output }),
+      ...(input.error === undefined ? {} : { error: input.error }),
+    })
+    const state = yield* SubagentGroup.get(input.db, recovery.parentSessionID, recovery.group.id)
+    if (state) yield* deliverGroup(sessions, { db: input.db, state, resume: input.resume })
+    if (input.notificationID) yield* jobs.completeBackground(input.notificationID)
+    return
+  }
+  if (recovery.notice === "none") {
+    if (input.notificationID) yield* jobs.completeBackground(input.notificationID)
+    return
+  }
   const text =
     input.status === "completed"
       ? (input.output ?? NO_TEXT)
@@ -43,4 +61,23 @@ export const deliver = Effect.fnUntraced(function* (
     metadata: { source: "subagent", childID: recovery.childSessionID, agent: recovery.agent, state: input.status },
   })
   if (input.notificationID) yield* jobs.completeBackground(input.notificationID)
+})
+
+export const deliverGroup = Effect.fnUntraced(function* (
+  sessions: Pick<Session.Interface, "synthetic">,
+  input: { readonly db: Database.Interface["db"]; readonly state: SubagentGroup.State; readonly resume?: boolean },
+) {
+  const state = input.state
+  if (state.delivered || !SubagentGroup.ready(state)) return
+  yield* sessions.synthetic({
+    id: state.notificationID,
+    sessionID: state.parentSessionID,
+    ...(input.resume === false ? { resume: false } : {}),
+    description: `Subagent group ${state.id}`,
+    text: state.slots.toSorted((a, b) => a.index - b.index).map((slot) =>
+      `<subagent index="${slot.index}"${slot.childSessionID ? ` sessionID="${slot.childSessionID}"` : ""} state="${slot.status}" agent="${slot.agent}" description="${slot.description}">\n${slot.status === "completed" ? slot.output ?? NO_TEXT : slot.error ?? `Subagent ${slot.status}`}\n</subagent>`,
+    ).join("\n\n"),
+    metadata: { source: "subagent-group", groupID: state.id, total: state.total },
+  })
+  yield* SubagentGroup.acknowledge(input.db, state)
 })

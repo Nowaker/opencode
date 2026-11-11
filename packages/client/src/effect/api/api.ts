@@ -57,6 +57,7 @@ export type ServerInfoOutput = {
     | {
         readonly persistentPty?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
+        readonly subagentOptions?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined
@@ -787,6 +788,15 @@ export type ExperimentalSessionLogOutput =
             readonly sessionID: Session.ID
             readonly parentID: Session.ID
             readonly boundary: Session.ForkBoundary
+            readonly child?:
+              | {
+                  readonly title: string
+                  readonly agent: Agent.ID
+                  readonly model?: Model.Ref | undefined
+                  readonly context: ReadonlyArray<SessionMessage.ID>
+                  readonly recent?: { readonly messageID: SessionMessage.ID; readonly text: string } | undefined
+                }
+              | undefined
             readonly instructions?: { readonly [x: Instruction.Key]: Instruction.Hash } | undefined
             readonly instructionEntries?: InstructionEntry.Snapshot | undefined
           }

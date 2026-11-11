@@ -96,6 +96,15 @@ The install script installs OpenCode to `$HOME/.opencode/bin`.
 
 ### Agents
 
+The native `subagent` tool accepts `fork?: boolean`, `notice?: "each" | "none" | { group: { id: string, index: number, total: number } }`, and `foregroundHandoffMs?: number`. Servers advertise these options as `GET /api/info` -> `capabilities.subagentOptions: true`; server plugins read the same capability at `ctx.app.capabilities?.subagentOptions`.
+
+- `fork: true` starts a new child with a frozen copy of the calling parent's current settled context. It excludes active assistant, shell and compaction messages, retains child ownership and the requested description, and returns only output produced after the child's new prompt. It cannot be combined with `sessionID`; resume that child with `sessionID` and omit `fork`. A fork may use its calling parent's own primary agent, including on resume; ordinary subagent launches still reject primary agents. Empty parent transcripts retain the Session API's empty-fork error.
+- `notice: "each"` is the default and preserves ordinary background completion notices. `"none"` suppresses completion notices, including recovered completions after restart.
+- A group uses a parent-scoped `id`, a zero-based `index`, and a fixed positive `total`. Every slot must be invoked once. Invocation persists before agent, model, depth and permission checks, so failed launches and cancellations settle their slots. The engine admits one parent notice only after all `total` slots are terminal, including when an earlier child finishes before later slots are invoked. Duplicate slots, changed totals and reuse of a completed group ID are rejected. Uninvoked slots remain pending; plugins receive outstanding groups in `experimental.idle.background` as `{ kind: "subagent-group", sessionID, id, total, pending }`.
+- A positive `foregroundHandoffMs` returns a still-running foreground child to background execution after that duration without interrupting it. Zero or omission preserves the usual foreground wait. Completion uses the selected notice policy.
+
+Group state uses transactionally updated native KV records and existing durable Job recovery. The group notification ID persists before launch. Completion first settles slots, then admits the synthetic input using that stable ID, then acknowledges the group. A crash between admission and acknowledgment reuses the same synthetic ID; Session admission deduplicates it. Completed group identities remain until the parent is removed, preventing later invocations from reopening a delivered group.
+
 OpenCode includes two built-in agents you can switch between with the `Tab` key.
 
 - **build** - Default, full-access agent for development work

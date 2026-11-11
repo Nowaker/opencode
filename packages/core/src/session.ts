@@ -18,6 +18,7 @@ import { SessionProjector } from "./session/projector.js"
 import { SessionMessageTable } from "./session/sql.js"
 import { SessionBlob } from "./session/blob.js"
 import { SessionSchema } from "./session/schema.js"
+import { SubagentGroup } from "./session/subagent-group.js"
 import { RelativePath } from "./schema.js"
 import { Agent } from "@opencode/schema/agent"
 import type { Permission } from "@opencode/schema/permission"
@@ -100,6 +101,8 @@ type CompactInput = Parameters<Session.Handle["compact"]>[0] & { sessionID: Sess
 type ForkInput = {
   sessionID: SessionSchema.ID
   before?: SessionMessage.ID
+  /** Native subagents copy only the parent's current context and retain child ownership. */
+  child?: { readonly title: string; readonly agent: Agent.ID; readonly model?: Model.Ref }
 }
 
 export {
@@ -372,11 +375,33 @@ const layer = Layer.effect(
         // instruction-update text the initial baseline already reflects.
         // The parent's location, not the caller's, decides whether the copy's media is stored as blobs.
         const media = yield* mediaBlob(parent)
+        const context = input.child ? yield* store.context(parent.id).pipe(Effect.orDie) : []
+        const compaction = context.find((message) => message.type === "compaction" && message.status === "completed")
+        const recent = compaction?.metadata?.recent
         yield* bus
           .publish(SessionEvent.Forked, {
             sessionID,
             parentID: parent.id,
             boundary: { type: input.before ? "before" : "through", messageID: boundary.id },
+            ...(input.child
+              ? {
+                  child: {
+                    ...input.child,
+                    context: context
+                      .filter((message) =>
+                        message.type === "assistant"
+                          ? message.time.completed !== undefined
+                          : message.type === "shell" || message.type === "compaction"
+                            ? message.status !== "running"
+                            : true,
+                      )
+                      .map((message) => message.id),
+                    ...(compaction && typeof recent === "string"
+                      ? { recent: { messageID: compaction.id, text: recent } }
+                      : {}),
+                  },
+                }
+              : {}),
             ...inherited,
           })
           .pipe(Effect.provideService(SessionBlob.ForkMedia, media))
@@ -394,6 +419,7 @@ const layer = Layer.effect(
         yield* execution.interrupt(sessionID)
         yield* execution.awaitIdle(sessionID)
         yield* jobs.cancelSession(sessionID)
+        yield* SubagentGroup.remove(db, sessionID)
         yield* transport.close(sessionID)
         const children = yield* store.list({ parentID: sessionID })
         yield* Effect.forEach(children, (child) => result.remove(child.id), { concurrency: 1, discard: true })

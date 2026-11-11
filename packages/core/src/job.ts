@@ -38,6 +38,7 @@ export type Info = {
   error?: string
   metadata?: Record<string, unknown>
   notificationID?: SessionMessage.ID
+  recovery?: Recovery
 }
 
 type Active = {
@@ -304,6 +305,7 @@ export const make = Effect.gen(function* () {
                 started_at,
                 metadata: input.metadata,
                 ...(input.notificationID ? { notificationID: input.notificationID } : {}),
+                ...(input.recovery ? { recovery: input.recovery } : {}),
               },
               done,
               backgrounded,
@@ -313,6 +315,7 @@ export const make = Effect.gen(function* () {
               consumed: false,
               recovery: input.recovery,
             }
+            if (input.notificationID) yield* persistBackground(job)
             return [{ info: snapshot(job), scope }, new Map(jobs).set(input.id, job)]
           }),
         )
@@ -527,6 +530,9 @@ export const make = Effect.gen(function* () {
         const entry = [...jobs].find(([, job]) => job.info.notificationID === notificationID)
         if (!entry || entry[1].info.status === "running") return jobs
         const next = new Map(jobs)
+        if (!entry[1].isBackgrounded && !entry[1].consumed) {
+          return next.set(entry[0], { ...entry[1], info: { ...entry[1].info, notificationID: undefined } })
+        }
         next.delete(entry[0])
         return next
       }),
