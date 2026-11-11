@@ -147,6 +147,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-exit-duration.md) - a background bash exit notice reports the process's own run time (spawn to exit) instead of the time from the tool call to the event; installed vt-445 on desktop and m4max.
 - [2026-11-10 `ses_e38278d63ffeEgUW2xNFxMfVpm`](./sessions/2026-11-10-tail-wake.md) - a prompt or OMO background-task notice stored after a finished turn's last history read, while the run still waited for its snapshots, joined the run and got its old answer, so nothing answered it; a joined run now runs again unless it read or unqueued the prompt (`Runner.ensureRunning` `again`, `SessionPrompt` `unread`), for `next_step` and `turn_end`, noReply notes still start nothing; `a048180f1c`, merged `c83a1896e7`; vt-441 on desktop and vt-442 on m4max with the retry cap.
 
 - [2026-11-10 W1 session](./sessions/2026-11-10-v2-foundation.md) - pin `v2-nowaker` to v2.2.7, refuse v1 databases before writes/migrations, add isolated `--v2` installer on `dev-nowaker`, publish both branches to both mirrors and verify desktop `opencode2`; m4max's build is coordinator-owned while offline.
