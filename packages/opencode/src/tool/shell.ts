@@ -470,7 +470,9 @@ export const ShellTool = Tool.define(
       let expired = false
       let aborted = false
       let capped = false
-      const exited: { code: number | null } = { code: null }
+      // A loaded host can take many seconds to spawn, and the exit event can be published later still, so the reported
+      // duration runs from the spawn to the exit rather than from the call to the publish.
+      const exited: { code: number | null; spawnedAt?: number; at?: number } = { code: null }
       // Set once the call has returned and the command runs on in the background: its part is final, so the
       // streaming preview stops.
       let detached = false
@@ -569,7 +571,7 @@ export const ShellTool = Tool.define(
             command: input.command,
             status,
             ...(exited.code === null ? {} : { exitCode: exited.code }),
-            durationMs: Math.max(0, Date.now() - startedAt),
+            durationMs: Math.max(0, (exited.at ?? Date.now()) - (exited.spawnedAt ?? startedAt)),
             outputPath: file,
             output: tail(raw, EXIT_NOTICE_LINES, EXIT_NOTICE_BYTES).text,
           })
@@ -584,6 +586,7 @@ export const ShellTool = Tool.define(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          exited.spawnedAt = Date.now()
           const reader = yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.all), onChunk))
           const ended = yield* Effect.raceFirst(
             handle.exitCode.pipe(Effect.map((exitCode) => ({ kind: "exit" as const, code: exitCode }))),
@@ -594,6 +597,7 @@ export const ShellTool = Tool.define(
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
           }
           exited.code = ended.code
+          exited.at = Date.now()
           yield* Fiber.join(reader).pipe(Effect.timeoutOption("1 second"), Effect.ignore)
           return ""
         }),
