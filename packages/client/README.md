@@ -28,10 +28,10 @@ yield * client.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Hello" 
 
 ## Synthetic notes
 
-Use `client.sessions.synthetic` to add application context or a human-visible note to an existing session. Set `ignored: true` for a note that must stay out of model input, including compaction requests and the retained conversation text rebuilt after compaction:
+Use `client.session.synthetic` to add application context or a human-visible note to an existing session. Set `ignored: true` for a note that must stay out of model input, including compaction requests and the retained conversation text rebuilt after compaction:
 
 ```ts
-yield * client.sessions.synthetic({
+yield * client.session.synthetic({
   sessionID,
   text: "Deploy paused while you review the changes.",
   ignored: true,

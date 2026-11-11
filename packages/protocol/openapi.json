@@ -2472,7 +2472,7 @@
             }
           }
         },
-        "description": "Durably admit synthetic session input and schedule execution unless resume is false.",
+        "description": "Durably admit synthetic session input and schedule execution unless resume is false. Ignored messages enter the transcript immediately without queuing input or scheduling execution.",
         "summary": "Add synthetic message",
         "requestBody": {
           "content": {
@@ -2502,6 +2502,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "ignored": {
+                    "type": "boolean"
                   },
                   "metadata": {
                     "type": "object"
@@ -23264,6 +23267,9 @@
           "description": {
             "type": "string"
           },
+          "ignored": {
+            "type": "boolean"
+          },
           "metadata": {
             "type": "object"
           }
@@ -24133,6 +24139,9 @@
           },
           "description": {
             "type": "string"
+          },
+          "ignored": {
+            "type": "boolean"
           },
           "type": {
             "type": "string",
@@ -29470,6 +29479,9 @@
               },
               "description": {
                 "type": "string"
+              },
+              "ignored": {
+                "type": "boolean"
               },
               "metadata": {
                 "type": "object"
