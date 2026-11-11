@@ -1,5 +1,5 @@
 import { expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess } from "@opencode-ai/core/process"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -15,6 +15,7 @@ import { Session } from "@/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionStatus } from "../../src/session/status"
+import { MessageID } from "../../src/session/schema"
 import { SessionSummary } from "../../src/session/summary"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
@@ -417,4 +418,96 @@ it.live("aborting while the turn snapshot is pending leaves consistent parts and
     }, Effect.ensuring(releaseAll)),
     { git: true, config: providerCfg },
   ),
+)
+
+/*
+ * A run whose turn has ended still finishes its snapshots before it lets go of the session. A prompt stored in that
+ * window joins the run, which has already read history for the last time. Holding the step's closing snapshot keeps
+ * the run there: the turn has ended (its "exiting loop" is logged) and the run has not been released.
+ */
+const sendAsRunFinishes = (input: {
+  queued_prompts: "next_step" | "turn_end"
+  send: (
+    sessionID: Session.Info["id"],
+  ) => Effect.Effect<{ id: MessageID; fiber: Fiber.Fiber<SessionV1.WithParts, unknown> }, never, SessionPrompt.Service>
+}) =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ llm }) {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      holds.length = 0
+      const release = yield* Deferred.make<void>()
+      releases.push(release)
+      holds.push(undefined, release, release)
+      yield* llm.textMatch(asks("late words"), "late answer")
+      yield* llm.textMatch(asks("first question"), "first answer")
+
+      let exits = 0
+      const capture = Logger.make((options) => {
+        const message = Array.isArray(options.message) ? options.message[0] : options.message
+        if (message === "exiting loop") exits++
+      })
+      const session = yield* startSession("first question")
+      const loop = yield* prompt
+        .loop({ sessionID: session.id })
+        .pipe(Effect.provideService(Logger.CurrentLoggers, new Set([capture])), Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.sync(() => (exits > 0 ? true : undefined)),
+        "the turn did not end",
+      )
+      expect(loop.pollUnsafe()).toBeUndefined()
+
+      const sent = yield* input.send(session.id)
+      yield* pollWithTimeout(
+        sessions.messages({ sessionID: session.id }).pipe(
+          Effect.orDie,
+          Effect.map((msgs) => (msgs.some((msg) => msg.info.id === sent.id) ? true : undefined)),
+        ),
+        "the late input was not stored",
+      )
+      yield* Deferred.succeed(release, undefined)
+      const result = yield* Fiber.join(loop)
+      const late = yield* Fiber.join(sent.fiber)
+      return {
+        result,
+        lateID: sent.id,
+        late,
+        turns: (yield* llm.hits).filter((hit) => !asks("Generate a title")(hit)).length,
+        messages: (yield* sessions.messages({ sessionID: session.id }).pipe(Effect.orDie)).map((msg) => msg.info),
+      }
+    }, Effect.ensuring(releaseAll)),
+    { git: true, config: (url) => ({ ...providerCfg(url), queued_prompts: input.queued_prompts }) },
+  )
+
+const sendLate = (noReply: boolean) => (sessionID: Session.Info["id"]) =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const id = MessageID.ascending()
+    const fiber = yield* prompt
+      .prompt({ sessionID, messageID: id, agent: "build", noReply, parts: [{ type: "text", text: "late words" }] })
+      .pipe(Effect.forkChild)
+    return { id, fiber }
+  })
+
+for (const queued_prompts of ["next_step", "turn_end"] as const) {
+  it.live(`with queued_prompts ${queued_prompts}, a prompt stored as the run finishes its ended turn is answered`, () =>
+    Effect.gen(function* () {
+      const run = yield* sendAsRunFinishes({ queued_prompts, send: sendLate(false) })
+
+      expect(run.turns).toBe(2)
+      const answer = run.messages.at(-1)
+      expect(answer?.role === "assistant" ? answer.parentID : undefined).toBe(run.lateID)
+      expect(run.late.info.id).toBe(answer!.id)
+      expect(run.result.info.id).toBe(answer!.id)
+    }),
+  )
+}
+
+it.live("a note without a reply stored as the run finishes its ended turn starts no turn", () =>
+  Effect.gen(function* () {
+    const run = yield* sendAsRunFinishes({ queued_prompts: "next_step", send: sendLate(true) })
+
+    expect(run.turns).toBe(1)
+    expect(run.messages.at(-1)?.role).toBe("user")
+  }),
 )

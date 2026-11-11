@@ -284,6 +284,93 @@ describe("Runner", () => {
     }),
   )
 
+  // --- joining a run that may already have read its input ---
+
+  // Starts `work` and joins it with `again`, holding the first run open until the join is registered.
+  const joinRun = <E>(
+    runner: Runner.Runner<number, E>,
+    work: (gate: Deferred.Deferred<void>) => Effect.Effect<number, E>,
+    again: () => boolean,
+  ) =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>()
+      const first = yield* runner.ensureRunning(work(gate)).pipe(Effect.exit, Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      const joined = yield* runner.ensureRunning(work(gate), again).pipe(Effect.exit, Effect.forkChild)
+      yield* Effect.gen(function* () {
+        while (runner.state._tag !== "Running" || runner.state.run.again.length === 0) yield* Effect.yieldNow
+      }).pipe(Effect.timeout("1 second"))
+      return { gate, first, joined }
+    })
+
+  const counted = (calls: Ref.Ref<number>) => (gate: Deferred.Deferred<void>) =>
+    Effect.gen(function* () {
+      const n = yield* Ref.updateAndGet(calls, (n) => n + 1)
+      if (n === 1) yield* Deferred.await(gate)
+      return n
+    })
+
+  it.live(
+    "a run whose joined check holds as it ends runs again, and every caller gets the second result",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const idles = yield* Ref.make(0)
+      const runner = Runner.make<number>(s, { onIdle: Ref.update(idles, (n) => n + 1) })
+      const calls = yield* Ref.make(0)
+      const run = yield* joinRun(runner, counted(calls), () => true)
+
+      yield* Deferred.succeed(run.gate, undefined)
+      expect(yield* Fiber.join(run.first)).toEqual(Exit.succeed(2))
+      expect(yield* Fiber.join(run.joined)).toEqual(Exit.succeed(2))
+      expect(yield* Ref.get(calls)).toBe(2)
+      expect(yield* Ref.get(idles)).toBe(1)
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "a run whose joined check does not hold ends once",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<number>(s)
+      const calls = yield* Ref.make(0)
+      const run = yield* joinRun(runner, counted(calls), () => false)
+
+      yield* Deferred.succeed(run.gate, undefined)
+      expect(yield* Fiber.join(run.joined)).toEqual(Exit.succeed(1))
+      expect(yield* Ref.get(calls)).toBe(1)
+    }),
+  )
+
+  it.live(
+    "a failed or cancelled run does not run again for a joined check",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const failing = Runner.make<number, string>(s)
+      const failures = yield* Ref.make(0)
+      const failed = yield* joinRun(
+        failing,
+        (gate) =>
+          Ref.update(failures, (n) => n + 1).pipe(
+            Effect.andThen(Deferred.await(gate)),
+            Effect.andThen(Effect.fail("boom")),
+          ),
+        () => true,
+      )
+      yield* Deferred.succeed(failed.gate, undefined)
+      expect(Exit.isFailure(yield* Fiber.join(failed.joined))).toBe(true)
+      expect(yield* Ref.get(failures)).toBe(1)
+
+      const cancelling = Runner.make<number>(s, { onInterrupt: Effect.succeed(-1) })
+      const calls = yield* Ref.make(0)
+      const cancelled = yield* joinRun(cancelling, counted(calls), () => true)
+      yield* cancelling.cancel
+      expect(yield* Fiber.join(cancelled.joined)).toEqual(Exit.succeed(-1))
+      expect(yield* Ref.get(calls)).toBe(1)
+      expect(cancelling.state._tag).toBe("Idle")
+    }),
+  )
+
   // --- shell semantics ---
 
   it.live(

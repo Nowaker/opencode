@@ -1267,7 +1267,7 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
-      return yield* loop({ sessionID: input.sessionID })
+      return yield* drive(input.sessionID, message.info.id)
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1655,14 +1655,34 @@ const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
+      // A caller that stored its own input first, like a compaction request, needs it answered like a prompt.
+      const newest = yield* sessions.findMessage(input.sessionID, (msg) => msg.info.role === "user").pipe(Effect.orDie)
+      return yield* drive(input.sessionID, Option.isSome(newest) ? newest.value.info.id : undefined)
+    })
+
+    /*
+     * Runs the session's loop for a prompt stored as `messageID`, or joins the run already going. A joined run may
+     * already have read history for the last time: its turn ended, and it is only finishing its snapshots. Unless
+     * one of its reads picked the prompt up (or the prompt was unqueued), the run goes again as it ends and
+     * answers it.
+     */
+    const drive = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
       // The session stays busy until its background snapshots are recorded, including after an abort or a
       // failure, so revert and the next turn never see a finished step without its snapshot hashes.
       return yield* state.ensureRunning(
-        input.sessionID,
-        lastAssistant(input.sessionID),
-        tracked(input.sessionID, runLoop(input.sessionID).pipe(Effect.ensuring(processor.settle(input.sessionID)))),
+        sessionID,
+        lastAssistant(sessionID),
+        tracked(sessionID, runLoop(sessionID).pipe(Effect.ensuring(processor.settle(sessionID)))),
+        messageID ? unread(sessionID, messageID) : undefined,
       )
     })
+
+    // Asked when the joined run ends. A run between being started and its first read has no entry yet; it would
+    // read the prompt, but going again costs one history read, so that rare case is not told apart.
+    const unread = (sessionID: SessionID, messageID: MessageID) => {
+      const joined = runs.get(sessionID)
+      return () => !joined || (!joined.seen.has(messageID) && !joined.withdrawn.has(messageID))
+    }
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
