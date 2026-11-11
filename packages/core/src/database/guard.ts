@@ -67,10 +67,11 @@ export const checkSchema = Effect.fn("DatabaseGuard.checkSchema")(function* (
 export const checkFile = Effect.fn("DatabaseGuard.checkFile")(function* (filename: string, data: string) {
   checkPath(filename, data)
   if (filename === ":memory:" || !existsSync(filename)) return
-  // Inspect without creating the file, changing permissions, enabling WAL or applying migrations.
+  // Inspect one readonly snapshot without enabling WAL or applying migrations.
+  // SQLite may maintain WAL/SHM bookkeeping; immutable would hide WAL-only schema.
   yield* Effect.gen(function* () {
     const db = yield* EffectDrizzleSqlite.makeWithDefaults()
-    yield* checkSchema(db, filename)
+    yield* db.$client.withTransaction(checkSchema(db, filename))
   }).pipe(Effect.provide(sqliteLayer({ filename, readonly: true, disableWAL: true })), Effect.scoped, Effect.orDie)
 })
 
