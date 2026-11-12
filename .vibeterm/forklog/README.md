@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Slow animation frames in an unfocused TUI](./features/2026-11-11-unfocused-redraw-throttle.md)
 - [Atomic session metadata merge on v2](./features/2026-11-10-v2-metadata-merge.md)
 - [Durable v2 events and authenticated replay](./features/2026-11-10-v2-event-replay.md)
 - [User-visible ignored synthetic notes on v2](./features/2026-11-10-v2-ignored-notes.md)
