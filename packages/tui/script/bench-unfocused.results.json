@@ -1,0 +1,53 @@
+{
+  "buildGuardPassedAt": "2026-11-12T01:02:11.440Z",
+  "machine": "m4max",
+  "platform": "darwin-arm64",
+  "opencodeBase": "1c41f7829be",
+  "opentuiBase": "v0.4.5",
+  "terminal": "140x40 real PTY client on a throwaway tmux socket, focus-events on",
+  "measurement": "pipe-pane byte counts and synchronized-output frame endings over 3.2-second windows; content latency from mutation to captured pane bytes",
+  "notes": [
+    "The baseline uses the unpatched published OpenTUI 0.4.5 renderer. The fixture requests focus reporting explicitly for the baseline.",
+    "The changed binary requests focus reporting itself. Window selection generates the focus-out and focus-in reports.",
+    "The first frame in an unfocused window can include the content acknowledgement sent at the focus transition.",
+    "The changed binary was built by .vibeterm/build.sh with OPENCODE_INSTALL pointing into scratch; the v2 migration guard passed.",
+    "The fixture adds a real registered spinner and a live renderable to the full OpenCode TUI; it makes no provider requests."
+  ],
+  "baseline": {
+    "spinner": {
+      "focused": { "bytes": 5003, "seconds": 3.203858125, "bytesPerSecond": 1561.5547895086643, "frames": 60 },
+      "unfocused": { "bytes": 5121, "seconds": 3.202888084, "bytesPerSecond": 1598.8694783254873, "frames": 61 },
+      "restored": { "bytes": 5133, "seconds": 3.201893708, "bytesPerSecond": 1603.1138033018055, "frames": 61 },
+      "contentLatencyMs": 35.821533203125
+    },
+    "live": {
+      "focused": { "bytes": 13063, "seconds": 3.2019465, "bytesPerSecond": 4079.705891400749, "frames": 156 },
+      "unfocused": { "bytes": 14047, "seconds": 3.208614125, "bytesPerSecond": 4377.902562527677, "frames": 166 },
+      "restored": { "bytes": 12042, "seconds": 3.204182792, "bytesPerSecond": 3758.212555808521, "frames": 142 },
+      "contentLatencyMs": 13.343017578125
+    },
+    "assertions": "failed: unfocused writes must fall by at least 80%"
+  },
+  "changed": {
+    "version": "1.19.5-vt-unfocused",
+    "binary": "/Volumes/projects/nowaker/opencode-tools/.vibeterm/tmp/opencode/opencode-unfocused",
+    "spinner": {
+      "focused": { "bytes": 4925, "seconds": 3.20760025, "bytesPerSecond": 1535.415767597599, "frames": 57 },
+      "unfocused": { "bytes": 451, "seconds": 3.200813875, "bytesPerSecond": 140.90166364328198, "frames": 4 },
+      "restored": { "bytes": 5445, "seconds": 3.200475583, "bytesPerSecond": 1701.3096518911955, "frames": 63 },
+      "contentLatencyMs": 6.4794921875
+    },
+    "live": {
+      "focused": { "bytes": 15187, "seconds": 3.201265125, "bytesPerSecond": 4744.061927704288, "frames": 175 },
+      "unfocused": { "bytes": 456, "seconds": 3.200999334, "bytesPerSecond": 142.45551230095944, "frames": 4 },
+      "restored": { "bytes": 15039, "seconds": 3.205632125, "bytesPerSecond": 4691.43039923834, "frames": 172 },
+      "contentLatencyMs": 5.328369140625
+    },
+    "normalFrameBudgetMs": 16.666666666666668,
+    "assertions": "passed: output reduction, approximately one animation frame per second, focus-in restoration, and content within one normal frame"
+  },
+  "reproduce": {
+    "directory": "packages/tui",
+    "command": "OPENCODE_TOOLS_ROOT=/Volumes/projects/nowaker/opencode-tools OPENCODE_REDRAW_BINARY=/Volumes/projects/nowaker/opencode-tools/.vibeterm/tmp/opencode/opencode-unfocused OPENCODE_REDRAW_EXPECT_THROTTLE=1 bun script/bench-unfocused.ts"
+  }
+}

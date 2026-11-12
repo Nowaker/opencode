@@ -34,6 +34,246 @@ index 701d70dea2174e98ab56f4d614e678e868561479..c4b73d0825c4b46a99e5ec4f2811a40a
    findVirtualExtmarkContaining(offset) {
      for (const extmark of this.extmarks.values()) {
        if (extmark.virtual && offset >= extmark.start && offset < extmark.end) {
+diff --git a/chunk-bun-tkm837n2.js b/chunk-bun-tkm837n2.js
+index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe07277f42 100644
+--- a/chunk-bun-tkm837n2.js
++++ b/chunk-bun-tkm837n2.js
+@@ -7063,6 +7063,7 @@ class CliRenderer extends EventEmitter5 {
+   _onDestroy;
+   themeModeState;
+   _terminalFocusState = null;
++  unfocusedFps;
+   sequenceHandlers = [];
+   prependedInputHandlers = [];
+   shouldRestoreModesOnNextFocus = false;
+@@ -7136,6 +7137,7 @@ Captured external output:
+     super();
+     this.stdin = stdin;
+     this.stdout = stdout;
++    this.unfocusedFps = config.unfocusedFps;
+     this._usesProcessStdout = stdout === process.stdout;
+     this.realStdoutWrite = stdout.write;
+     const lib = resolveRenderLib();
+@@ -7519,7 +7521,11 @@ Captured external output:
+       return;
+     }
+     if (this._isRunning) {
+-      if (!this.rendering && !this.renderTimeout && !this.ordinaryFrameWaitingForFeed) {
++      if (!this.rendering && !this.ordinaryFrameWaitingForFeed) {
++        if (this._terminalFocusState === false && this.unfocusedFps !== undefined && this.renderTimeout) {
++          this.clock.clearTimeout(this.renderTimeout);
++          this.renderTimeout = null;
++        }
+         this.scheduleRenderTimer();
+       }
+       return;
+@@ -7622,6 +7628,14 @@ Captured external output:
+   get targetFps() {
+     return this._targetFps;
+   }
++  get terminalFocused() {
++    return this._terminalFocusState;
++  }
++  get continuousFrameTime() {
++    if (this._terminalFocusState !== false || this.unfocusedFps === undefined)
++      return this.targetFrameTime;
++    return Math.max(this.targetFrameTime, 1000 / this.unfocusedFps);
++  }
+   set targetFps(targetFps) {
+     this._targetFps = targetFps;
+     this.targetFrameTime = 1000 / this._targetFps;
+@@ -8654,6 +8668,8 @@ Captured external output:
+       startupCursorCprActive
+     });
+     this.lib.setupTerminal(this.rendererPtr, this._screenMode === "alternate-screen");
++    if (this.unfocusedFps !== undefined)
++      this.writeOut("\x1B[?1004h");
+     this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
+     if (this.debugOverlay.enabled) {
+       this.lib.setDebugOverlay(this.rendererPtr, true, this.debugOverlay.corner);
+@@ -8775,10 +8791,17 @@ Captured external output:
+     if (sequence === "\x1B[I") {
+       if (this.shouldRestoreModesOnNextFocus) {
+         this.lib.restoreTerminalModes(this.rendererPtr);
++        if (this.unfocusedFps !== undefined)
++          this.writeOut("\x1B[?1004h");
+         this.shouldRestoreModesOnNextFocus = false;
+       }
+       if (this._terminalFocusState !== true) {
+         this._terminalFocusState = true;
++        if (this.unfocusedFps !== undefined && this._isRunning && !this.rendering && this.renderTimeout) {
++          this.clock.clearTimeout(this.renderTimeout);
++          this.renderTimeout = null;
++          this.requestRender();
++        }
+         this.emit("focus" /* FOCUS */);
+       }
+       return true;
+@@ -9338,6 +9361,8 @@ Captured external output:
+     this.stdinParser?.reset();
+     this.stdin.removeListener("data", this.stdinListener);
+     this.themeModeState.cancelRefresh();
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004l");
+     this.lib.suspendRenderer(this.rendererPtr);
+     if (this.stdin.setRawMode) {
+       this.stdin.setRawMode(false);
+@@ -9364,6 +9389,8 @@ Captured external output:
+       this.lib.resumeRenderer(this.rendererPtr);
+     }
+     this.suspendedNonAltSurfacePreserved = false;
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004h");
+     this.flushPendingSplitOutputBeforeTransition(false, { allowSuspended: true, allowPassthrough: true });
+     if (this._screenMode === "split-footer" && this._splitHeight > 0) {
+       this.syncSplitFooterState();
+@@ -9425,6 +9452,8 @@ Captured external output:
+     if (this._destroyCleanupPrepared)
+       return;
+     this._destroyCleanupPrepared = true;
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004l");
+     if (this._usesProcessStdout) {
+       process.removeListener("SIGWINCH", this.sigwinchHandler);
+     }
+@@ -9650,7 +9679,7 @@ Captured external output:
+             this.collectStatSample(overallFrameTime);
+           }
+           if (this._isRunning || this.immediateRerenderRequested) {
+-            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.targetFrameTime;
++            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.continuousFrameTime;
+             const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
+             this.immediateRerenderRequested = false;
+             this.renderTimeout = this.clock.setTimeout(() => {
+@@ -9664,7 +9693,7 @@ Captured external output:
+         } else if (nativeStatus === "blocked") {
+           const overallFrameTime = performance.now() - overallStart;
+           if (this._isRunning || this.immediateRerenderRequested) {
+-            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.targetFrameTime;
++            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.continuousFrameTime;
+             const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
+             this.immediateRerenderRequested = false;
+             this.renderTimeout = this.clock.setTimeout(() => {
+diff --git a/chunk-node-51kpf0mz.js b/chunk-node-51kpf0mz.js
+index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f682520d266 100644
+--- a/chunk-node-51kpf0mz.js
++++ b/chunk-node-51kpf0mz.js
+@@ -7062,6 +7062,7 @@ class CliRenderer extends EventEmitter5 {
+   _onDestroy;
+   themeModeState;
+   _terminalFocusState = null;
++  unfocusedFps;
+   sequenceHandlers = [];
+   prependedInputHandlers = [];
+   shouldRestoreModesOnNextFocus = false;
+@@ -7135,6 +7136,7 @@ Captured external output:
+     super();
+     this.stdin = stdin;
+     this.stdout = stdout;
++    this.unfocusedFps = config.unfocusedFps;
+     this._usesProcessStdout = stdout === process.stdout;
+     this.realStdoutWrite = stdout.write;
+     const lib = resolveRenderLib();
+@@ -7518,7 +7520,11 @@ Captured external output:
+       return;
+     }
+     if (this._isRunning) {
+-      if (!this.rendering && !this.renderTimeout && !this.ordinaryFrameWaitingForFeed) {
++      if (!this.rendering && !this.ordinaryFrameWaitingForFeed) {
++        if (this._terminalFocusState === false && this.unfocusedFps !== undefined && this.renderTimeout) {
++          this.clock.clearTimeout(this.renderTimeout);
++          this.renderTimeout = null;
++        }
+         this.scheduleRenderTimer();
+       }
+       return;
+@@ -7621,6 +7627,14 @@ Captured external output:
+   get targetFps() {
+     return this._targetFps;
+   }
++  get terminalFocused() {
++    return this._terminalFocusState;
++  }
++  get continuousFrameTime() {
++    if (this._terminalFocusState !== false || this.unfocusedFps === undefined)
++      return this.targetFrameTime;
++    return Math.max(this.targetFrameTime, 1000 / this.unfocusedFps);
++  }
+   set targetFps(targetFps) {
+     this._targetFps = targetFps;
+     this.targetFrameTime = 1000 / this._targetFps;
+@@ -8653,6 +8667,8 @@ Captured external output:
+       startupCursorCprActive
+     });
+     this.lib.setupTerminal(this.rendererPtr, this._screenMode === "alternate-screen");
++    if (this.unfocusedFps !== undefined)
++      this.writeOut("\x1B[?1004h");
+     this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
+     if (this.debugOverlay.enabled) {
+       this.lib.setDebugOverlay(this.rendererPtr, true, this.debugOverlay.corner);
+@@ -8774,10 +8790,17 @@ Captured external output:
+     if (sequence === "\x1B[I") {
+       if (this.shouldRestoreModesOnNextFocus) {
+         this.lib.restoreTerminalModes(this.rendererPtr);
++        if (this.unfocusedFps !== undefined)
++          this.writeOut("\x1B[?1004h");
+         this.shouldRestoreModesOnNextFocus = false;
+       }
+       if (this._terminalFocusState !== true) {
+         this._terminalFocusState = true;
++        if (this.unfocusedFps !== undefined && this._isRunning && !this.rendering && this.renderTimeout) {
++          this.clock.clearTimeout(this.renderTimeout);
++          this.renderTimeout = null;
++          this.requestRender();
++        }
+         this.emit("focus" /* FOCUS */);
+       }
+       return true;
+@@ -9337,6 +9360,8 @@ Captured external output:
+     this.stdinParser?.reset();
+     this.stdin.removeListener("data", this.stdinListener);
+     this.themeModeState.cancelRefresh();
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004l");
+     this.lib.suspendRenderer(this.rendererPtr);
+     if (this.stdin.setRawMode) {
+       this.stdin.setRawMode(false);
+@@ -9363,6 +9388,8 @@ Captured external output:
+       this.lib.resumeRenderer(this.rendererPtr);
+     }
+     this.suspendedNonAltSurfacePreserved = false;
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004h");
+     this.flushPendingSplitOutputBeforeTransition(false, { allowSuspended: true, allowPassthrough: true });
+     if (this._screenMode === "split-footer" && this._splitHeight > 0) {
+       this.syncSplitFooterState();
+@@ -9424,6 +9451,8 @@ Captured external output:
+     if (this._destroyCleanupPrepared)
+       return;
+     this._destroyCleanupPrepared = true;
++    if (this.unfocusedFps !== undefined && this._terminalIsSetup)
++      this.writeOut("\x1B[?1004l");
+     if (this._usesProcessStdout) {
+       process.removeListener("SIGWINCH", this.sigwinchHandler);
+     }
+@@ -9649,7 +9678,7 @@ Captured external output:
+             this.collectStatSample(overallFrameTime);
+           }
+           if (this._isRunning || this.immediateRerenderRequested) {
+-            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.targetFrameTime;
++            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.continuousFrameTime;
+             const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
+             this.immediateRerenderRequested = false;
+             this.renderTimeout = this.clock.setTimeout(() => {
+@@ -9663,7 +9692,7 @@ Captured external output:
+         } else if (nativeStatus === "blocked") {
+           const overallFrameTime = performance.now() - overallStart;
+           if (this._isRunning || this.immediateRerenderRequested) {
+-            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.targetFrameTime;
++            const targetFrameTime = this.immediateRerenderRequested ? this.minTargetFrameTime : this.continuousFrameTime;
+             const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
+             this.immediateRerenderRequested = false;
+             this.renderTimeout = this.clock.setTimeout(() => {
 diff --git a/chunk-node-q0cwyvm9.js b/chunk-node-q0cwyvm9.js
 index be7df0e11bc6eac9ac8aacacdf2a4686670f09e1..39a9a428700d041c109f4a53bb3a4fd0094e53ee 100644
 --- a/chunk-node-q0cwyvm9.js
@@ -70,3 +310,32 @@ index be7df0e11bc6eac9ac8aacacdf2a4686670f09e1..39a9a428700d041c109f4a53bb3a4fd0
    findVirtualExtmarkContaining(offset) {
      for (const extmark of this.extmarks.values()) {
        if (extmark.virtual && offset >= extmark.start && offset < extmark.end) {
+diff --git a/renderer.d.ts b/renderer.d.ts
+index 56a8dc98d3697f8fa9748c18bf761301b0002267..9b21e8f5a763980bb534dd45e19425986d3fff5b 100644
+--- a/renderer.d.ts
++++ b/renderer.d.ts
+@@ -25,6 +25,7 @@ export interface CliRendererConfig {
+     forwardEnvKeys?: string[];
+     debounceDelay?: number;
+     targetFps?: number;
++    unfocusedFps?: number;
+     maxFps?: number;
+     memorySnapshotInterval?: number;
+     useThread?: boolean;
+@@ -316,6 +317,7 @@ export declare class CliRenderer extends EventEmitter implements RenderContext {
+     private _onDestroy?;
+     private themeModeState;
+     private _terminalFocusState;
++    private readonly unfocusedFps;
+     private sequenceHandlers;
+     private prependedInputHandlers;
+     private shouldRestoreModesOnNextFocus;
+@@ -402,6 +404,8 @@ export declare class CliRenderer extends EventEmitter implements RenderContext {
+     get terminalHeight(): number;
+     get useThread(): boolean;
+     get targetFps(): number;
++    get terminalFocused(): boolean | null;
++    private get continuousFrameTime();
+     set targetFps(targetFps: number);
+     get maxFps(): number;
+     set maxFps(maxFps: number);

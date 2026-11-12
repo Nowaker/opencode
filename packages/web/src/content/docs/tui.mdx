@@ -25,6 +25,10 @@ Once you're in the TUI, you can prompt it with a message.
 Give me a quick summary of the codebase.
 ```
 
+### Animations in background panes
+
+When the terminal reports that OpenCode has lost focus, spinner updates and continuous animations slow to about one frame per second. Selecting the pane again restores their normal rate. Streamed text, new messages, and dialogs still request an immediate frame while the pane is unfocused. This reduces output from hidden tmux panes; tmux must have `focus-events on` to report pane changes. Terminals that do not send focus reports keep the normal animation rate.
+
 ### When a prompt fails to send
 
 The prompt clears as soon as you press Enter, but the TUI keeps what you sent until the server has stored it. If the send takes longer than a moment, the status line below the prompt shows **Sending prompt**.
