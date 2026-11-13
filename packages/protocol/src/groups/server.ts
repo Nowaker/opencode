@@ -19,6 +19,9 @@ export const ServerInfo = Schema.Struct({
       jobControl: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can list owned background Jobs and cancel directly owned native shell and image Jobs.",
       }),
+      jobResults: Schema.optional(Schema.Boolean).annotate({
+        description: "Plugins can read owned native Job outcomes and wait without cancelling execution.",
+      }),
       childCancellation: Schema.optional(Schema.Boolean).annotate({
         description: "Parent-scoped child cancellation reports settled, requested, terminal, or unsupported ownership.",
       }),

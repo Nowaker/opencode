@@ -124,6 +124,8 @@ With `ctx.app.capabilities?.jobControl`, use `yield* ctx.job.list({ parentSessio
 
 The [native form controls](../README.md#runtime-hooks) apply to both SDKs. When `ctx.app.capabilities?.formControl` is true, use `yield* ctx.form.list({ sessionID })`, `yield* ctx.form.get({ sessionID, formID })`, `yield* ctx.form.reply({ sessionID, formID, answer })` or `yield* ctx.form.cancel({ sessionID, formID, message })`. Omit list's input to read every pending form in the current Location. Effect results retain the canonical native Form types and raw result shapes.
 
+With `ctx.app.capabilities?.jobResults`, `yield* ctx.job.result({ parentID, jobID, wait: true })` returns the raw native Job identity/state plus available `output` and `error` strings. Omit `wait` for a current nonblocking read. The persisted parent/recovery owner is checked first. Interrupting this Effect stops only the reader, leaving the independent Job running. Native retention and unsupported local waiting follow the [result contract](../../../../README.md#installation); reading does not acknowledge completion notices.
+
 ```ts
 yield *
   ctx.session.hook("context", (event) =>

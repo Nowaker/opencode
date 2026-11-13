@@ -10,6 +10,7 @@ export type ServerInfo = {
     | {
         persistentPty?: boolean | undefined
         jobControl?: boolean | undefined
+        jobResults?: boolean | undefined
         childCancellation?: boolean | undefined
         sessionMessages?: boolean | undefined
         subagentOptions?: boolean | undefined

@@ -1,6 +1,6 @@
 export * as JobControl from "./control.js"
 
-import type { CancelInput, CancelResult, OwnedListInput, Info } from "@opencode/schema/job"
+import type { CancelInput, CancelResult, OwnedListInput, Info, ResultInput, Result } from "@opencode/schema/job"
 import { ID } from "@opencode/schema/shell"
 import { desc, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -15,16 +15,27 @@ import { SessionStore } from "../session/store.js"
 import { SessionSchema } from "../session/schema.js"
 import { Shell } from "../shell.js"
 import { JobTable } from "./sql.js"
+import { JobList } from "./list.js"
 
 export class MissingError extends Schema.TaggedError<MissingError>()("Job.NotFoundError", { jobID: Schema.String }) {}
 export class ParentMismatchError extends Schema.TaggedError<ParentMismatchError>()("Job.ParentMismatchError", {
   parentID: SessionSchema.ID,
   jobID: Schema.String,
 }) {}
+export class WaitUnavailableError extends Schema.TaggedError<WaitUnavailableError>()("Job.WaitUnavailableError", {
+  jobID: Schema.String,
+}) {
+  override get message() {
+    return `The Job has no matching local execution to wait for: ${this.jobID}`
+  }
+}
 
 export interface Interface {
   readonly list: (input: OwnedListInput) => Effect.Effect<{ readonly data: readonly Info[] }, NotFoundError>
   readonly cancel: (input: CancelInput) => Effect.Effect<CancelResult, MissingError | ParentMismatchError>
+  readonly result: (
+    input: ResultInput,
+  ) => Effect.Effect<Result, MissingError | ParentMismatchError | WaitUnavailableError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/JobControl") {}
@@ -39,7 +50,16 @@ const layer = Layer.effect(
     const settle = yield* Cancellation.make
     const owned = Effect.fnUntraced(function* (input: CancelInput) {
       const row = yield* db
-        .select()
+        .select({
+          id: JobTable.id,
+          notification_id: JobTable.notification_id,
+          session_id: JobTable.session_id,
+          recovery: JobTable.recovery,
+          status: JobTable.status,
+          title: JobTable.title,
+          time_created: JobTable.time_created,
+          time_updated: JobTable.time_updated,
+        })
         .from(JobTable)
         .where(eq(JobTable.id, input.jobID))
         .orderBy(desc(JobTable.time_created), desc(JobTable.notification_id))
@@ -51,6 +71,54 @@ const layer = Layer.effect(
       return row
     })
     return Service.of({
+      result: Effect.fn("JobControl.result")(function* (input) {
+        const row = yield* owned(input)
+        const local = yield* jobs.get(input.jobID)
+        if (local?.notificationID === row.notification_id) {
+          const captured = input.wait ? (yield* jobs.wait({ id: input.jobID })).info : local
+          if (!captured) return yield* new MissingError({ jobID: input.jobID })
+          if (captured.notificationID !== row.notification_id || (input.wait && captured.status === "running"))
+            return yield* new WaitUnavailableError({ jobID: input.jobID })
+          return {
+            ...JobList.toItem({
+              id: row.id,
+              status: captured.status,
+              title: captured.title ?? row.title,
+              started: captured.started_at,
+              completed: captured.completed_at,
+              recovery: row.recovery,
+            }),
+            ...(captured.output === undefined ? {} : { output: captured.output }),
+            ...(captured.error === undefined ? {} : { error: captured.error }),
+          }
+        }
+        const durable = yield* db
+          .select({
+            status: JobTable.status,
+            output: JobTable.output,
+            error: JobTable.error,
+            updated: JobTable.time_updated,
+          })
+          .from(JobTable)
+          .where(eq(JobTable.notification_id, row.notification_id))
+          .get()
+          .pipe(Effect.orDie)
+        if (!durable) return yield* new MissingError({ jobID: input.jobID })
+        if (input.wait && durable.status === "running")
+          return yield* new WaitUnavailableError({ jobID: input.jobID })
+        return {
+          ...JobList.toItem({
+            id: row.id,
+            status: durable.status,
+            title: row.title,
+            started: row.time_created,
+            completed: durable.status === "running" ? undefined : durable.updated,
+            recovery: row.recovery,
+          }),
+          ...(durable.output === null ? {} : { output: durable.output }),
+          ...(durable.error === null ? {} : { error: durable.error }),
+        }
+      }),
       list: Effect.fn("JobControl.list")(function* (input) {
         if (!(yield* store.get(input.parentSessionID)))
           return yield* new NotFoundError({ sessionID: input.parentSessionID })

@@ -57,6 +57,7 @@ export type ServerInfoOutput = {
     | {
         readonly persistentPty?: boolean | undefined
         readonly jobControl?: boolean | undefined
+        readonly jobResults?: boolean | undefined
         readonly childCancellation?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
         readonly subagentOptions?: boolean | undefined

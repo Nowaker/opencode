@@ -16,7 +16,7 @@ export type Live = {
   readonly recovery?: Recovery
 }
 
-function toItem(input: {
+export function toItem(input: {
   readonly id: string
   readonly status: Job.Status
   readonly title?: string | null

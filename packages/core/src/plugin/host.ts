@@ -151,6 +151,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         subagentOptions: true,
         childCancellation: true,
         jobControl: true,
+        jobResults: true,
         pluginConfiguration: true,
         compactionSummary: true,
         sessionMetadataMergePatch: true,

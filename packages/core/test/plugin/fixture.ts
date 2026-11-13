@@ -22,6 +22,7 @@ import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { Integration } from "@opencode/core/integration"
 import { Job } from "@opencode/core/job"
 import { JobControl } from "@opencode/core/job/control"
+import { Instance } from "@opencode/core/instance/service"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
@@ -31,6 +32,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Provider } from "@opencode/core/provider"
 import { Session } from "@opencode/core/session"
+import { SessionStore } from "@opencode/core/session/store"
 import { SharedCache } from "@opencode/core/shared-cache"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { PersistentPty } from "@opencode/core/persistent-pty"
@@ -120,9 +122,11 @@ export const makePluginTestLayer = (permission = permissionLayer, generate = gen
       Integration.node,
       Job.node,
       JobControl.node,
+      Instance.node,
       KV.node,
       Mcp.node,
       Session.node,
+      SessionStore.node,
       SharedCache.node,
       InstructionEntry.node,
       PersistentPty.node,

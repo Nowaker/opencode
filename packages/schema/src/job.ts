@@ -72,3 +72,17 @@ export const Info = Schema.Union([Shell, Subagent, Image]).pipe(
   Schema.annotate({ identifier: "Job.Info" }),
 )
 export type Info = typeof Info.Type
+
+export const ResultInput = Schema.Struct({
+  ...CancelInput.fields,
+  wait: optional(Schema.Boolean),
+}).annotate({ identifier: "Job.ResultInput" })
+export interface ResultInput extends Schema.Schema.Type<typeof ResultInput> {}
+
+const ResultFields = { output: optional(Schema.String), error: optional(Schema.String) }
+export const Result = Schema.Union([
+  Schema.Struct({ ...Shell.fields, ...ResultFields }),
+  Schema.Struct({ ...Subagent.fields, ...ResultFields }),
+  Schema.Struct({ ...Image.fields, ...ResultFields }),
+]).pipe(Schema.toTaggedUnion("kind"), Schema.annotate({ identifier: "Job.Result" }))
+export type Result = typeof Result.Type

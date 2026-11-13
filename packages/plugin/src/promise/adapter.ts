@@ -654,6 +654,14 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             cancel: adaptApiMethod(ExperimentalEndpoints["job.cancel"], host.job.cancel),
+            result: (input, options) =>
+              Effect.runPromiseWith(runtime)(
+                Schema.decodeUnknownEffect(Job.ResultInput)(input).pipe(
+                  Effect.flatMap(host.job.result),
+                  Effect.flatMap(Schema.encodeUnknownEffect(Job.Result)),
+                ),
+                { signal: options?.signal },
+              ),
           },
           form: {
             list: (input) =>

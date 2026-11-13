@@ -186,6 +186,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
     job: {
       list: overrides.job?.list ?? (() => Effect.die("unused job.list")),
       cancel: overrides.job?.cancel ?? (() => Effect.die("unused job.cancel")),
+      result: overrides.job?.result ?? (() => Effect.die("unused job.result")),
     },
     session: {
       hook: overrides.session?.hook ?? (() => Effect.die("unused session.hook")),
