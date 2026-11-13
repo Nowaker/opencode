@@ -1,3 +1,4 @@
+import { ClientError } from "@opencode/client/promise"
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useClient } from "../context/client"
 import { useTheme } from "../context/theme"
@@ -18,11 +19,18 @@ export function MigrationOverlay() {
   onMount(async () => {
     await Bun.sleep(1_000)
     void (async () => {
-      while (true) {
-        const status = await client.api.experimental.migration.v1.status({ signal: abort.signal })
-        setProgress(status.status === "running" ? status.progress : undefined)
-        if (status.status === "completed") return
-        if (status.status === "error") throw new Error(status.error)
+      while (!abort.signal.aborted) {
+        // A read the server never answered says nothing about the migration; the connection
+        // reports the outage, and the next read goes through the reconnected client.
+        const status = await client.api.experimental.migration.v1.status({ signal: abort.signal }).catch((error) => {
+          if (error instanceof ClientError && error.reason === "Transport") return undefined
+          throw error
+        })
+        if (status) {
+          setProgress(status.status === "running" ? status.progress : undefined)
+          if (status.status === "completed") return
+          if (status.status === "error") throw new Error(status.error)
+        }
         await Bun.sleep(1_000)
       }
     })().catch((error) => {

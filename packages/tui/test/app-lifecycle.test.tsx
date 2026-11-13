@@ -2845,3 +2845,88 @@ test.each([44, 100])(
   15_000,
 )
 
+test("migration status reads lost while the server is down resume after reconnect without a failure toast", async () => {
+  await using state = await tmpdir()
+  const shown = Promise.withResolvers<void>()
+  const failed = Promise.withResolvers<void>()
+  const reconnected = Promise.withResolvers<void>()
+  const running = Promise.withResolvers<void>()
+  const completed = Promise.withResolvers<void>()
+  let streams = 0
+  let migration: "down" | "running" | "completed" = "down"
+  await using setup = await createAppFixture({
+    state: state.path,
+    fetch: async (url) => {
+      if (url.pathname === "/api/event" && ++streams === 2) {
+        migration = "running"
+        reconnected.resolve()
+      }
+      if (url.pathname !== "/api/experimental/migration/v1") return undefined
+      if (migration === "down") {
+        // Fail only behind the unrelated toast, so a failure toast would visibly replace it.
+        await shown.promise
+        failed.resolve()
+        // An errored body resets the socket, so the client rejects with ClientError("Transport").
+        return new Response(new ReadableStream({ start: (controller) => controller.error() }))
+      }
+      if (migration === "running") {
+        migration = "completed"
+        running.resolve()
+        return json({ status: "running", progress: { label: "Migrating sessions", numerator: 1, denominator: 2 } })
+      }
+      completed.resolve()
+      return json({ status: "completed" })
+    },
+  })
+  await setup.ready
+  // The toast handler ignores events until the launch location is known.
+  await setup.waitForFrame((frame) => frame.includes("packages/tui:main"))
+  setup.events.emit({
+    id: "evt_unrelated_toast",
+    created: 1,
+    type: "tui.toast.show",
+    location: { directory },
+    data: { title: "Unrelated notice", message: "Keep me", variant: "info", duration: 60_000 },
+  })
+  await setup.waitForFrame((frame) => frame.includes("Keep me"))
+  shown.resolve()
+
+  await failed.promise
+  setup.events.disconnect()
+  await reconnected.promise
+  await setup.waitForFrame((frame) => frame.includes("Keep me"))
+  expect(setup.captureCharFrame()).not.toContain("Data migration failed")
+
+  await running.promise
+  await setup.waitForFrame((frame) => frame.includes("Migrating sessions 1/2"))
+  await completed.promise
+  await setup.waitForFrame((frame) => !frame.includes("Migrating sessions") && frame.includes("Keep me"))
+  expect(setup.captureCharFrame()).not.toContain("Data migration failed")
+})
+
+test("returned migration error stays reported across reconnect", async () => {
+  await using state = await tmpdir()
+  const read = Promise.withResolvers<void>()
+  const reconnected = Promise.withResolvers<void>()
+  let streams = 0
+  await using setup = await createAppFixture({
+    state: state.path,
+    fetch: (url) => {
+      if (url.pathname === "/api/event" && ++streams === 2) reconnected.resolve()
+      if (url.pathname !== "/api/experimental/migration/v1") return undefined
+      read.resolve()
+      return json({ status: "error", error: "Disk full during migration" })
+    },
+  })
+  await setup.ready
+  await read.promise
+  await setup.waitForFrame(
+    (frame) => frame.includes("Data migration failed") && frame.includes("Disk full during migration"),
+  )
+
+  setup.events.disconnect()
+  await reconnected.promise
+  await setup.flush()
+  expect(setup.captureCharFrame()).toContain("Data migration failed")
+  expect(setup.captureCharFrame()).toContain("Disk full during migration")
+})
