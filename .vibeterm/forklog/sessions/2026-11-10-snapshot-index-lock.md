@@ -68,6 +68,21 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
   .vibeterm/forklog/sessions/2026-11-10-snapshot-index-lock.md
 ```
 
+## Live check 2026-11-13
+
+Measured by coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv) over 2026-11-10T10:00Z to 2026-11-13T10:00Z, with the 2026-11-05 method (`opencode.log`, its draining files and the daily archives, deduplicated; finished assistant messages in 12-hour chunks through `vt_message_time_created_id_idx`).
+
+| | desktop | m4max |
+|---|---|---|
+| `index.lock` collisions (first retry, `attempt=1`) | 367 | 78 |
+| ... that ended in `still held, giving up` | 4 | 0 |
+| `failed to add snapshot files` naming `index.lock` | 1 | 0 |
+| `snapshot failed` | 0 | 0 |
+
+- Desktop DB: 83,578 step-finish parts, 120 without a hash (0.144%, against 0.31% in the 2026-11-05 window A). 114 of the 120 are in scratch and demo directories (`~/projekty/tmp/vibeterm/opencode-omo-demos`, `/tmp/...`, `~/projekty/tmp/vibeterm/perm-op13`); the other 6 are 4 in `~/projekty/dreamhost`, 1 in `~/projekty/modern/worldmodern` and 1 in one more session.
+- Not a lock failure: 926 of desktop's 940 `failed to add snapshot files` lines (2026-11-11 03:00Z to 2026-11-12 06:22Z) are `'tmp/w4-proof-FFDPTt/project/' does not have a commit checked out`, a scratch repository with no commit nested in `opencode-omo-demos`. One such embedded repository makes every snapshot `git add` in that worktree fail.
+- Verdict: the retry turns almost every collision into a settled snapshot, with no regression. The upstream branch `snapshot-lock-upstream` stays queued as `pr-queue/03-snapshot-lock.md`.
+
 ## Unknowns and blocked verification
 
-- The live reduction in hashless steps is not measured yet; it needs a few days of logs on both hosts (`snapshot index.lock held by another process, retrying` vs `still held, giving up`).
+- None for the lock retry. The embedded-repository `git add` failure above is a separate, unfixed issue.
