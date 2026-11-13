@@ -108,7 +108,7 @@ export const layer = Layer.effect(
                       if (error instanceof ToolFailure) return error
                       if (error instanceof Permission.BlockedError)
                         return new ToolFailure({ message: error.message, error })
-                      if (error instanceof Permission.CorrectedError)
+                      if (error instanceof Permission.CorrectedError || error instanceof Permission.DeferredError)
                         return new ToolFailure({ message: error.feedback, error })
                       return new ToolFailure({ message: `Unable to execute ${name(tool.server, tool.name)}`, error })
                     }),

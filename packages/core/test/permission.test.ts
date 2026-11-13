@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Deferred, Effect, Fiber, Layer, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -365,6 +365,76 @@ describe("Permission", () => {
     }),
   )
 
+  const replyCases: ReadonlyArray<Omit<Permission.ReplyInput, "requestID"> & { tag?: string; cascade?: boolean }> = [
+    { reply: "defer", message: "Wait for the owner\nKeep these bytes.", tag: "Permission.DeferredError" },
+    { reply: "defer", message: "", tag: "Permission.DeferredError" },
+    { reply: "defer", tag: "Permission.DeferredError" },
+    { reply: "reject", scope: "request", message: "Use staging\nExactly.", tag: "Permission.CorrectedError" },
+    { reply: "reject", scope: "request", tag: "Permission.DeclinedError" },
+    { reply: "reject", message: "Correct the whole batch", tag: "Permission.CorrectedError", cascade: true },
+    { reply: "reject", tag: "Permission.DeclinedError", cascade: true },
+    { reply: "reject", message: "", tag: "Permission.DeclinedError", cascade: true },
+    { reply: "once" },
+  ]
+  for (const row of replyCases) {
+    it.effect(
+      `settles ${row.reply}/${row.scope ?? "default"}/${JSON.stringify(row.message)} without unrelated grants`,
+      () =>
+        Effect.gen(function* () {
+          yield* setup()
+          yield* setup([], Session.ID.make("ses_other"))
+          const selected = yield* waitForRequest()
+          const sibling = yield* waitForRequest({ id: Permission.ID.create("per_sibling") })
+          const other = yield* waitForRequest({
+            id: Permission.ID.create("per_other"),
+            sessionID: Session.ID.make("ses_other"),
+          })
+
+          expect(yield* selected.service.reply({ requestID: selected.request.id, ...row })).toBeUndefined()
+
+          const exit = yield* Fiber.await(selected.fiber)
+          if (row.tag === undefined) expect(Exit.isSuccess(exit)).toBe(true)
+          if (row.tag !== undefined) {
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isFailure(exit)) {
+              const reason = exit.cause.reasons[0]
+              const error = Cause.isFailReason(reason)
+                ? reason.error
+                : Cause.isDieReason(reason)
+                  ? reason.defect
+                  : undefined
+              expect(error).toMatchObject({ _tag: row.tag })
+              if (row.tag !== "Permission.DeclinedError") {
+                expect(Cause.isFailReason(reason)).toBe(true)
+                expect(error).toMatchObject({
+                  feedback:
+                    row.message ??
+                    "This permission request was deferred: nobody has answered it yet, and it was not refused. Continue with other work.",
+                  message:
+                    row.message ??
+                    "This permission request was deferred: nobody has answered it yet, and it was not refused. Continue with other work.",
+                })
+              }
+            }
+          }
+          if (row.cascade) expect(Exit.isFailure(yield* Fiber.await(sibling.fiber))).toBe(true)
+          if (!row.cascade) expect(sibling.fiber.pollUnsafe()).toBeUndefined()
+          expect(other.fiber.pollUnsafe()).toBeUndefined()
+          expect((yield* selected.service.list()).map((item) => item.id)).toEqual(
+            row.cascade ? [other.request.id] : [sibling.request.id, other.request.id],
+          )
+          const saved = yield* PermissionSaved.Service
+          expect(yield* saved.list()).toEqual([])
+          expect(
+            yield* selected.service.reply({ requestID: selected.request.id, reply: "defer" }).pipe(Effect.flip),
+          ).toMatchObject({
+            _tag: "Permission.NotFoundError",
+            requestID: selected.request.id,
+          })
+        }),
+    )
+  }
+
   it.effect("stores and removes saved resources for a project", () =>
     Effect.gen(function* () {
       yield* setup()
@@ -394,6 +464,29 @@ describe("Permission", () => {
       yield* service.assert(assertion({ id: Permission.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])
+    }),
+  )
+
+  it.effect("always grants matching pending asks across sessions and saves the approved resources", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      yield* setup([], Session.ID.make("ses_other"))
+      const selected = yield* waitForRequest({ save: ["src/*"] })
+      const sibling = yield* waitForRequest({ id: Permission.ID.create("per_sibling"), resources: ["src/sibling.ts"] })
+      const other = yield* waitForRequest({
+        id: Permission.ID.create("per_other"),
+        sessionID: Session.ID.make("ses_other"),
+        resources: ["src/other.ts"],
+      })
+
+      yield* selected.service.reply({ requestID: selected.request.id, reply: "always" })
+
+      yield* Fiber.join(selected.fiber)
+      yield* Fiber.join(sibling.fiber)
+      yield* Fiber.join(other.fiber)
+      expect(yield* selected.service.list()).toEqual([])
+      const saved = yield* PermissionSaved.Service
+      expect(yield* saved.list()).toMatchObject([{ action: "read", resource: "src/*", projectID: Project.ID.global }])
     }),
   )
 

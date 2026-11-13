@@ -298,8 +298,13 @@ const transformTools = (registry: Tool.Interface, tools: Readonly<Record<string,
   registry.transform((editor) =>
     Object.entries(tools).forEach(([name, tool]) => editor.add({ ...tool, name, options: options ?? tool.options })),
   )
+const NativePermissions = Context.Reference<boolean>("test/SessionRunner/NativePermissions", {
+  defaultValue: () => false,
+})
 const layer = Layer.unwrap(
-  Effect.map(RunnerState, (state) => {
+  Effect.gen(function* () {
+    const state = yield* RunnerState
+    const nativePermissions = yield* NativePermissions
     const modelTransport = Layer.succeed(
       SessionModelTransport.Service,
       SessionModelTransport.Service.of({
@@ -446,7 +451,7 @@ const layer = Layer.unwrap(
       Location.node.replace(Location.boundNode({ directory: AbsolutePath.make("/project") })),
       SkillInstructions.node.replace(skillInstructions),
       ReferenceInstructions.node.replace(referenceInstructions),
-      Permission.node.replace(permission),
+      ...(nativePermissions ? [] : [Permission.node.replace(permission)]),
       Config.node.replace(config),
       PluginSupervisor.node.replace(Layer.empty),
       Plugin.node.replace(Layer.mock(Plugin.Service, { awaitActivation: Effect.suspend(() => state.activationHook) })),
@@ -512,6 +517,7 @@ const layer = Layer.unwrap(
         Agent.node,
         Model.node,
         Tool.node,
+        Permission.node,
         PluginHooks.node,
         Job.node,
         echoNode,
@@ -5719,6 +5725,105 @@ describe("SessionRunnerLLM", () => {
       { type: "assistant", finish: "stop" },
     ])
   })
+
+  const nativePermission = testEffect(layer.pipe(Layer.provide(Layer.succeed(NativePermissions, true))))
+  const replies: ReadonlyArray<{ reply: "defer" | "reject"; scope?: "request"; message?: string }> = [
+    { reply: "defer" },
+    { reply: "defer", message: "Do independent work\nExactly." },
+    { reply: "defer", message: "" },
+    { reply: "reject", scope: "request", message: "Use another route" },
+    { reply: "reject" },
+  ]
+  for (const reply of replies)
+    nativePermission.effect(
+      `native permission reply ${JSON.stringify(reply)} preserves runner continuation semantics`,
+      () =>
+        Effect.gen(function* () {
+          const s = yield* setup
+          const service = yield* Permission.Service
+          const agents = yield* Agent.Service
+          yield* agents.transform((editor) =>
+            editor.update(Agent.ID.make("build"), (agent) => {
+              agent.permissions = [{ action: "deploy", resource: "*", effect: "ask" }]
+            }),
+          )
+          yield* insertSession(otherSessionID)
+          const sibling = yield* service.ask({ sessionID, action: "deploy", resources: ["sibling"] })
+          const other = yield* service.ask({ sessionID: otherSessionID, action: "deploy", resources: ["other"] })
+          const requestID = Permission.ID.create()
+          const ready = yield* Deferred.make<void>()
+          yield* s.bus.subscribe(Permission.Event.Asked).pipe(
+            Stream.filter((event) => event.data.id === requestID),
+            Stream.runForEach(() => Deferred.succeed(ready, undefined)),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+          const registry = yield* Tool.Service
+          yield* transformTools(
+            registry,
+            {
+              permitted: {
+                name: "permitted",
+                description: "Request deployment approval",
+                input: Schema.Struct({}),
+                output: Schema.Struct({}),
+                execute: (_input, context) =>
+                  service
+                    .assert({
+                      id: requestID,
+                      action: "deploy",
+                      resources: ["target"],
+                      ...Permission.invocation(context),
+                    })
+                    .pipe(
+                      Effect.as({ output: {}, content: "Granted" }),
+                      Effect.mapError((error) => new Tool.Error({ message: "Unable to deploy", error })),
+                    ),
+              },
+            },
+            { codemode: false },
+          )
+          yield* s.admit("Request approval and keep doing independent work")
+          yield* s.llm.push(
+            [
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.toolCall({ id: "call-permitted", name: "permitted", input: {} }),
+              LLMEvent.toolCall({ id: "call-independent", name: "echo", input: { text: "Independent result" } }),
+              LLMEvent.stepFinish({ index: 0, reason: { normalized: "tool-calls" } }),
+            ],
+            TestLLM.stop(),
+          )
+          const run = yield* s.resume.pipe(Effect.exit, Effect.forkScoped)
+          yield* Deferred.await(ready)
+
+          yield* service.reply({ requestID, ...reply })
+
+          const outcome = yield* Fiber.join(run)
+          const decline = reply.reply === "reject" && reply.scope === undefined
+          expect(s.requests).toHaveLength(decline ? 1 : 2)
+          expect(outcome._tag).toBe(decline ? "Failure" : "Success")
+          expect((yield* service.list()).map((request) => request.id)).toEqual(
+            decline ? [other.id] : [sibling.id, other.id],
+          )
+          expect(yield* s.context).toMatchObject([
+            Expected.user("Request approval and keep doing independent work"),
+            Expected.assistant({}, [
+              Expected.failedTool(
+                { id: "call-permitted" },
+                {
+                  error: {
+                    message: decline
+                      ? "The user declined this tool call"
+                      : (reply.message ??
+                        "This permission request was deferred: nobody has answered it yet, and it was not refused. Continue with other work."),
+                  },
+                },
+              ),
+              Expected.completedTool({ id: "call-independent" }, {}),
+            ]),
+            ...(decline ? [] : [{ type: "assistant", finish: "stop" }]),
+          ])
+        }),
+    )
 
   scenario("returns configured permission denials to the model and continues", function* (s) {
     const registry = yield* Tool.Service

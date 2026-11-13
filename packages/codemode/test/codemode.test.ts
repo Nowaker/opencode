@@ -10,6 +10,19 @@ class HostError extends Schema.TaggedError<HostError>()("HostError", {
 }) {}
 
 describe("CodeMode host failure boundary", () => {
+  test("preserves empty host failure messages", async () => {
+    const result = await run(
+      Tool.make({
+        description: "Fail with an intentional empty message",
+        input: Schema.Struct({}),
+        output: Schema.String,
+        execute: () => Effect.fail(new Error("")),
+      }),
+    )
+
+    expect(result.ok ? undefined : result.error).toStrictEqual({ kind: "ToolFailure", message: "" })
+  })
+
   test("preserves explicit tool failures", async () => {
     const result = await run(
       Tool.make({

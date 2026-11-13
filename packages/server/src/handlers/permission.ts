@@ -3,10 +3,15 @@ import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionSaved } from "@opencode/core/permission/saved"
 import { Session } from "@opencode/core/session"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { Api } from "../api"
-import { ConflictError, PermissionNotFoundError, PermissionSavedNotFoundError } from "@opencode/protocol/errors"
+import {
+  ConflictError,
+  InvalidRequestError,
+  PermissionNotFoundError,
+  PermissionSavedNotFoundError,
+} from "@opencode/protocol/errors"
 import { locationErrors, response, sessionInfo } from "../location"
 import { missingSession } from "./session-error"
 
@@ -76,9 +81,20 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.reply",
         Effect.fn(function* (ctx) {
+          const reply = yield* Schema.decodeUnknownEffect(Permission.ReplySelection)(ctx.payload).pipe(
+            Effect.catchTag(
+              "SchemaError",
+              () => new InvalidRequestError({ message: "Scope is only valid for reject" }),
+            ),
+          )
           const owned = yield* requireOwnedRequest(ctx.params.sessionID, ctx.params.requestID)
           yield* owned.permission
-            .reply({ requestID: ctx.params.requestID, reply: ctx.payload.decision, message: ctx.payload.message })
+            .reply({
+              requestID: ctx.params.requestID,
+              reply: reply.decision,
+              scope: reply.scope,
+              message: reply.message,
+            })
             .pipe(Effect.catchTag("Permission.NotFoundError", () => missingRequest(ctx.params.requestID)))
           return HttpApiSchema.NoContent.make()
         }),

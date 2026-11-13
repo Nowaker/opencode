@@ -3114,40 +3114,57 @@ it.effect("does not call MCP when permission is blocked", () =>
   }),
 )
 
-it.effect("returns permission feedback instead of calling MCP", () =>
-  Effect.gen(function* () {
-    calls = 0
-    assertion = yield* Deferred.make<Permission.AssertInput>()
-    decision = Effect.fail(new Permission.CorrectedError({ feedback: "Search the docs folder instead" }))
-    const registry = yield* Tool.Service
-    const registration = yield* McpTool.Service
-    yield* registration.flush
-    const toolSet = yield* registry.snapshot()
+for (const error of [
+  new Permission.CorrectedError({ feedback: "Search the docs folder instead" }),
+  new Permission.DeferredError({ feedback: "Keep working elsewhere\nExactly." }),
+  new Permission.DeferredError({ feedback: "" }),
+])
+  it.effect(`returns permission feedback ${error._tag}/${JSON.stringify(error.feedback)} instead of calling MCP`, () =>
+    Effect.gen(function* () {
+      calls = 0
+      assertion = yield* Deferred.make<Permission.AssertInput>()
+      decision = Effect.fail(error)
+      const registry = yield* Tool.Service
+      const registration = yield* McpTool.Service
+      yield* registration.flush
+      const toolSet = yield* registry.snapshot()
 
-    const execution = yield* toolSet.execute({
-      sessionID: Session.ID.make("ses_mcp_corrected"),
-      ...toolIdentity,
-      call: {
-        type: "tool-call",
-        id: "call_mcp_corrected",
-        name: "execute",
-        input: { code: "return await tools.demo.search({})" },
-      },
-    })
-    expect(execution.content).toEqual([{ type: "text", text: "Search the docs folder instead" }])
-    expect(
-      yield* executeTool(registry, {
+      const execution = yield* toolSet.execute({
         sessionID: Session.ID.make("ses_mcp_corrected"),
         ...toolIdentity,
-        call: { type: "tool-call", id: "call_mcp_corrected_direct", name: "direct_lookup", input: {} },
-      }),
-    ).toEqual({
-      status: "error",
-      error: { type: "permission.rejected", message: "Search the docs folder instead" },
-    })
-    expect(calls).toBe(0)
-  }),
-)
+        call: {
+          type: "tool-call",
+          id: "call_mcp_corrected",
+          name: "execute",
+          input: { code: "return await tools.demo.search({})" },
+        },
+      })
+      expect(execution.content).toEqual([{ type: "text", text: error.feedback }])
+      expect(
+        yield* toolSet
+          .execute({
+            sessionID: Session.ID.make("ses_mcp_corrected"),
+            ...toolIdentity,
+            call: { type: "tool-call", id: "call_mcp_feedback_raw", name: "direct_lookup", input: {} },
+          })
+          .pipe(Effect.flip),
+      ).toMatchObject({ message: error.feedback, error })
+      expect(
+        yield* executeTool(registry, {
+          sessionID: Session.ID.make("ses_mcp_corrected"),
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call_mcp_corrected_direct", name: "direct_lookup", input: {} },
+        }),
+      ).toEqual({
+        status: "error",
+        error: {
+          type: error instanceof Permission.DeferredError ? "permission.deferred" : "permission.rejected",
+          message: error.feedback,
+        },
+      })
+      expect(calls).toBe(0)
+    }),
+  )
 
 for (const modern of [false, true]) {
   testEffect(Layer.empty).live(`integration policy denies MCP startup (${modern ? "modern" : "legacy"})`, () =>

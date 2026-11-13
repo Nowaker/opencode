@@ -47,6 +47,13 @@ export const ServerInfo = Schema.Struct({
       formControl: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can list pending native forms and read, answer or cancel forms owned by a session.",
       }),
+      permissionDefer: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Supports decision: defer on permission replies with exact optional feedback and no reject cascade.",
+      }),
+      permissionRejectIsolation: Schema.optional(Schema.Boolean).annotate({
+        description: "Supports scope: request on reject permission replies to leave sibling requests pending.",
+      }),
     }),
   ),
 }).annotate({ identifier: "ServerInfo" })

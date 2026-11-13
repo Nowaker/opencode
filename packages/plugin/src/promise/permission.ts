@@ -25,7 +25,8 @@ export type PermissionDomain = Pick<PermissionApi, "list" | "get" | "reply"> & {
   /**
    * Evaluates the session's permission rules and, when approval is required, prompts the user and
    * waits for the reply. Resolves when allowed. A deny rule or a rejection with feedback rejects with
-   * a `Tool.Error` carrying the reason. A plain rejection rejects with an error that ends the current
+   * a `Tool.Error` carrying the reason. A deferral does the same without refusing permission.
+   * A plain rejection rejects with an error that ends the current
    * step; rethrow it rather than returning it as tool output.
    */
   readonly assert: (input: typeof AssertInput.Encoded) => Promise<void>

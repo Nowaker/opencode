@@ -18,6 +18,8 @@ const PermissionEffect = Permission.Effect
 export { PermissionEffect as Effect }
 export { Rule, Ruleset } from "@opencode/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
+const DEFER_FEEDBACK =
+  "This permission request was deferred: nobody has answered it yet, and it was not refused. Continue with other work."
 
 export const ID = Permission.ID
 export type ID = typeof ID.Type
@@ -30,6 +32,7 @@ export type Request = typeof Request.Type
 
 export const Reply = Permission.Reply
 export type Reply = typeof Reply.Type
+export const ReplySelection = Permission.ReplySelection
 
 export interface AssertInput extends Omit<Request, "id" | "message"> {
   readonly id?: ID
@@ -46,6 +49,7 @@ export const invocation = (context: Pick<Tool.Context, "sessionID" | "agent" | "
 export interface ReplyInput {
   readonly requestID: ID
   readonly reply: Reply
+  readonly scope?: "request"
   readonly message?: string
 }
 
@@ -74,6 +78,14 @@ export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permis
   }
 }
 
+export class DeferredError extends Schema.TaggedError<DeferredError>()("Permission.DeferredError", {
+  feedback: Schema.String,
+}) {
+  override get message() {
+    return this.feedback
+  }
+}
+
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
   rules: Permission.Ruleset,
   permission: Schema.String,
@@ -89,7 +101,7 @@ export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Permissi
   requestID: ID,
 }) {}
 
-export type Error = BlockedError | CorrectedError
+export type Error = BlockedError | CorrectedError | DeferredError
 
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
   return (
@@ -126,7 +138,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pe
 interface Pending {
   readonly request: Request
   readonly agent?: Agent.ID
-  readonly deferred: Deferred.Deferred<void, DeclinedError | CorrectedError>
+  readonly deferred: Deferred.Deferred<void, DeclinedError | CorrectedError | DeferredError>
 }
 
 const layer = Layer.effect(
@@ -229,7 +241,7 @@ const layer = Layer.effect(
     const create = (request: Request, agent?: Agent.ID) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
-          const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError>()
+          const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError | DeferredError>()
           const item = { request, agent, deferred }
           if (closed) {
             yield* Deferred.fail(deferred, new DeclinedError())
@@ -273,8 +285,8 @@ const layer = Layer.effect(
               // Deliberate defect tunnel: leaves wrap execution in blanket `mapError`, which
               // must not convert a user's decline into model-facing tool output. The decline
               // resurfaces as a typed failure at SessionModelRequest.executeTool. A decline
-              // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
-              // it into ToolFailure and the model continues.
+              // WITH feedback (CorrectedError), and a deferral (DeferredError), intentionally
+              // stay typed so the leaf can turn them into ToolFailure and the model continues.
               Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
               Effect.ensuring(
                 Effect.sync(() => {
@@ -314,12 +326,19 @@ const layer = Layer.effect(
             reply: input.reply,
           })
 
+          if (input.reply === "defer") {
+            yield* Deferred.fail(existing.deferred, new DeferredError({ feedback: input.message ?? DEFER_FEEDBACK }))
+            pending.delete(input.requestID)
+            return
+          }
+
           if (input.reply === "reject") {
             yield* Deferred.fail(
               existing.deferred,
               input.message ? new CorrectedError({ feedback: input.message }) : new DeclinedError(),
             )
             pending.delete(input.requestID)
+            if (input.scope === "request") return
             for (const [id, item] of pending) {
               if (item.request.sessionID !== existing.request.sessionID) continue
               yield* bus.publish(Permission.Event.Replied, {

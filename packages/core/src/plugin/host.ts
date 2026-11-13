@@ -157,6 +157,8 @@ export const make = Effect.fn("PluginHost.make")(function* (
         sessionMetadataMergePatch: true,
         syntheticAppend: true,
         formControl: true,
+        permissionDefer: true,
+        permissionRejectIsolation: true,
       },
     },
     job: jobControl,
@@ -500,9 +502,15 @@ export const make = Effect.fn("PluginHost.make")(function* (
       list: (input) => permission.forSession(input.sessionID),
       get: sessionPermission,
       reply: (input) =>
-        sessionPermission(input).pipe(
+        Schema.decodeUnknownEffect(Permission.ReplySelection)(input).pipe(
+          Effect.andThen(() => sessionPermission(input)),
           Effect.andThen(() =>
-            permission.reply({ requestID: input.requestID, reply: input.decision, message: input.message }),
+            permission.reply({
+              requestID: input.requestID,
+              reply: input.decision,
+              scope: input.scope,
+              message: input.message,
+            }),
           ),
         ),
       // Plain rejections stay defects, as for built-in tools, so they end the step.
@@ -511,6 +519,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
           Effect.catchTags({
             "Permission.BlockedError": (error) => Effect.fail(new Tool.Error({ message: error.message, error })),
             "Permission.CorrectedError": (error) => Effect.fail(new Tool.Error({ message: error.feedback, error })),
+            "Permission.DeferredError": (error) => Effect.fail(new Tool.Error({ message: error.feedback, error })),
             "Session.NotFoundError": (error) =>
               Effect.fail(new Tool.Error({ message: `Session not found: ${error.sessionID}`, error })),
           }),

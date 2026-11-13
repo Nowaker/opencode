@@ -8,6 +8,7 @@ import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/http-api"
 import {
   ConflictError,
+  InvalidRequestError,
   LocationNotFoundError,
   PermissionNotFoundError,
   PermissionSavedNotFoundError,
@@ -141,19 +142,17 @@ export const makePermissionGroup = <
     .add(
       HttpApiEndpoint.post("session.permission.reply", "/api/session/:sessionID/permission/:requestID/reply", {
         params: { sessionID: Session.ID, requestID: Permission.ID },
-        payload: Schema.Struct({
-          decision: Permission.Reply,
-          message: Schema.String.pipe(Schema.optional),
-        }),
+        payload: Permission.ReplyPayload,
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, PermissionNotFoundError],
+        error: [SessionNotFoundError, PermissionNotFoundError, InvalidRequestError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
           OpenApi.annotations({
             identifier: "session.permission.reply",
             summary: "Reply to pending permission request",
-            description: "Respond to a pending permission request owned by a session.",
+            description:
+              "Respond to a pending permission request owned by a session. Defer settles only this request and returns feedback without refusing permission. Reject cascades to the session's pending requests unless scope is request. Scope is valid only for reject.",
           }),
         ),
     )

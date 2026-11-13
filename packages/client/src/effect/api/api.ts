@@ -66,6 +66,8 @@ export type ServerInfoOutput = {
         readonly sessionMetadataMergePatch?: boolean | undefined
         readonly syntheticAppend?: boolean | undefined
         readonly formControl?: boolean | undefined
+        readonly permissionDefer?: boolean | undefined
+        readonly permissionRejectIsolation?: boolean | undefined
       }
     | undefined
 }
@@ -1992,6 +1994,7 @@ export type PermissionReplyInput = {
   readonly sessionID: Session.ID
   readonly requestID: Permission.ID
   readonly decision: Permission.Reply
+  readonly scope?: "request" | undefined
   readonly message?: string | undefined
 }
 export type PermissionReplyOutput = void

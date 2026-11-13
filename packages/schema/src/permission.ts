@@ -39,8 +39,27 @@ export const Request = Schema.Struct({
 }).annotate({ identifier: "Permission.Request" })
 export interface Request extends Schema.Schema.Type<typeof Request> {}
 
-export const Reply = Schema.Literals(["once", "always", "reject"]).annotate({ identifier: "Permission.Reply" })
+export const Reply = Schema.Literals(["once", "always", "reject", "defer"]).annotate({ identifier: "Permission.Reply" })
 export type Reply = typeof Reply.Type
+
+// Direct Effect replies preserve the endpoint's explicit-undefined optionals.
+export const ReplyPayload = Schema.Struct({
+  decision: Reply,
+  scope: Schema.optional(Schema.Literal("request")),
+  message: Schema.optional(Schema.String),
+}).annotate({ identifier: "Permission.ReplyPayload" })
+export interface ReplyPayload extends Schema.Schema.Type<typeof ReplyPayload> {}
+
+// Codegen flattens Struct payloads; native boundaries enforce the reject-only selector with this union.
+export const ReplySelection = Schema.Union([
+  Schema.Struct({ ...ReplyPayload.fields, decision: Schema.Literal("reject") }),
+  Schema.Struct({
+    ...ReplyPayload.fields,
+    decision: Schema.Literals(["once", "always", "defer"]),
+    scope: Schema.optional(Schema.Never),
+  }),
+]).annotate({ identifier: "Permission.ReplySelection" })
+export type ReplySelection = typeof ReplySelection.Type
 
 const Asked = ephemeral({ type: "permission.asked", schema: Request.fields })
 const Replied = ephemeral({

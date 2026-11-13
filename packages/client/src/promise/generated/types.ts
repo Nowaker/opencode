@@ -19,6 +19,8 @@ export type ServerInfo = {
         sessionMetadataMergePatch?: boolean | undefined
         syntheticAppend?: boolean | undefined
         formControl?: boolean | undefined
+        permissionDefer?: boolean | undefined
+        permissionRejectIsolation?: boolean | undefined
       }
     | undefined
 }
@@ -326,7 +328,7 @@ export type CommandInfo = { name: string; description?: string }
 
 export type RpcOutput = { output?: any }
 
-export type PermissionReply = "once" | "always" | "reject"
+export type PermissionReply = "once" | "always" | "reject" | "defer"
 
 export type PtyID = string
 
@@ -4324,7 +4326,8 @@ export type PermissionGetOutput = { data: PermissionRequest }["data"]
 export type PermissionReplyInput = {
   readonly sessionID: string
   readonly requestID: string
-  readonly decision: "once" | "always" | "reject"
+  readonly decision: "once" | "always" | "reject" | "defer"
+  readonly scope?: "request" | undefined
   readonly message?: string | undefined
 }
 

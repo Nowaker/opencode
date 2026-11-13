@@ -470,7 +470,7 @@ export const make = <R>(
         return Effect.fail(
           toolError(
             Cause.prettyErrors(cause)
-              .map((error) => (error.cause ? Formatter.format(error) : error.message || error.name))
+              .map((error) => (error.cause ? Formatter.format(error) : error.message))
               .join("\n"),
           ),
         )
