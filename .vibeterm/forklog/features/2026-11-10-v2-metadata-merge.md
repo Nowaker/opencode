@@ -2,10 +2,10 @@
 
 ## Identity
 
-- Status: active; desktop installed and verified. Mac vt-9 is PENDING on the host file-notification repair.
+- Status: active; desktop and m4max installed and verified as vt-19, including plugin merge parity. The historical Mac notification failure below was repaired before its later gates.
 - Source integration branch: `v2-nowaker`; this provenance is tracked only on `dev-nowaker`.
-- Development branch: `metadata-merge`.
-- First and current local commit: `8c859a94ca013bb2c26782e0f41dc0acaa17b89a`.
+- Development branches: `metadata-merge`, then `synthetic-append` for plugin parity.
+- First local commit: `8c859a94ca013bb2c26782e0f41dc0acaa17b89a`. Plugin parity: `838da4b2f00fecc3031104e7394d4983fe343403`.
 - Upstream base when introduced: `v2.2.7`; fork parent `1f6d9fb8c1e844e4bd5e78770f50b02b19063c3d`.
 - Last checked against upstream: the candidate's existing upstream base; no separate upstream refresh.
 
@@ -18,7 +18,7 @@ TBD - original human wording is not quoted in this record. Decision 18 is record
 - Concurrent merge writers retain unrelated top-level and nested metadata keys.
 - Omitted or explicit replacement mode retains complete replacement and literal null values.
 - The existing durable event and client reducer retain full-record replacement semantics.
-- Child creation, fork inheritance, transfers/imports and plugin updates retain their current behavior. Message/tool metadata is outside this change.
+- Child creation, fork inheritance and transfers/imports retain their current behavior. Plugin updates retain replacement by default and honor the explicit merge selector. Message/tool metadata is outside this change.
 
 ## Rationale and constraints
 
@@ -32,6 +32,7 @@ TBD - original human wording is not quoted in this record. Decision 18 is record
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `8c859a94ca` | 2026-11-10 | Prepared durable publication and opt-in metadata merge, Protocol/HTTP capability and regenerated clients | `Bus.publishPrepared`, `Session.setMetadata`, `experimental.metadataMode`, `session.metadata.updated.1` |
+| `838da4b2f0` | 2026-11-13 | Forward plugin merge selection to the same atomic owner and advertise it in plugin app capabilities | `PluginHost` session update, `ctx.app.capabilities.sessionMetadataMergePatch` |
 
 ## Writer audit
 
@@ -40,7 +41,7 @@ TBD - original human wording is not quoted in this record. Decision 18 is record
 | Core `session.ts` interface and `session/session.ts` setter | Changed: optional merge selection; both modes read the session under prepared publication. |
 | Server session PATCH | Changed: passes merge only when explicitly selected. |
 | Protocol and generated Promise/Effect clients | Changed: optional selector and advertised capability. |
-| Plugin host `session.update`, Promise/Effect plugin session APIs | Unchanged: existing calls use default complete replacement. |
+| Plugin host `session.update`, Promise/Effect plugin session APIs | Explicit `experimental.metadataMode: "merge"` uses the atomic Session owner; omitted/default or explicit replacement stays complete replacement. |
 | Core/session and HTTP creation, child metadata inheritance | Unchanged: initialization or explicit complete override. |
 | Session fork and its projector | Unchanged: copy parent metadata. |
 | Transfer import/export, HTTP import and redaction | Unchanged: transfer the complete record. |
@@ -67,6 +68,7 @@ TBD - original human wording is not quoted in this record. Decision 18 is record
 
 ## Timeline and maintenance
 
+- 2026-11-13 [W1 plugin parity and installed proof](../sessions/2026-11-13-v2-plugin-controls.md#immediate-append-and-plugin-metadata-parity) fixes the host dropping the existing merge selector. The six Promise/Effect mode cases reproduce the lost sibling key before correction and pass afterward. Both hosts install source `7da31d898a`, including parity commit `838da4b2f0`, as vt-19 through separate 12/12 gates; installed RPC verifies both capabilities and the merge/default-replace outcomes.
 - 2026-11-10 [W4 session record](../sessions/2026-11-10-v2-patches.md), [session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e37e57935ffeTjd0whAV8iFPzQ): decision 18, atomic publication design, source/HTTP regressions, both-mirror publication and desktop vt-9 installation/demo. At 2026-11-11 09:04 UTC the coordinator requests this combined record now and holds the Mac vt-9 build until its fseventsd fault is repaired; no gate is bypassed.
 - Recheck `Bus.publishPrepared` transaction ownership, typed preparation errors and post-commit notification on an upstream bump. Regenerate clients from `packages/client`; preserve default replacement and rerun the concurrent installed-binary probe.
 

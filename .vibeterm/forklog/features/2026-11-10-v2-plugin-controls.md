@@ -3,7 +3,7 @@
 ## Identity
 
 - Status: active. Source integration: `v2-nowaker`; provenance: `dev-nowaker`.
-- Development branches: `plugin-messages`, `subagent-notices`, `child-cancellation`.
+- Development branches: `plugin-messages`, `subagent-notices`, `child-cancellation`, `synthetic-append`.
 - First local commit: `457cab7c5e`. Native subagent commits: `de4fe36eee`, `1d2ebb120e`. Cancellation commit: `ea2e468b53`.
 - Upstream base: `v2.2.7`, `fedc6f208aa2bd54c1019227214568083f6380ad`. These changes have no Vibeterm runtime dependency; they are candidates for the upstream v2 line, with no upstream PR claimed here.
 
@@ -30,6 +30,8 @@ The W1 assignment adds the native APIs OMO needs for context forks, completion n
 - Both cancellation APIs return `cancelled` only after actual execution and cleanup settle, `terminal` with the existing terminal state, `requested` while accepted cleanup exceeds one second, or `unsupported` when the actual owner or native stop cannot be controlled. Accepted work continues in the host scope after caller deadlines. A nonlocal recovery claim is not an owner lease and remains unsupported.
 - `Job.awaitIdle` includes native stop settlement registered before terminal publication, even for earlier waiters and consumed completion notices. Failed cleanup remains observable. `Shell.stop` captures the native process handle before command removal and awaits physical exit; repeated calls during SIGTERM escalation cannot claim terminal cancellation.
 - Shared contracts live in Schema and Protocol; Promise/Effect adapters and generated clients preserve the same result union. Regenerate from `packages/client` after contract edits; never hand-edit generated output.
+- `ctx.session.synthetic({ sessionID, mode: "append", text, id?, description?, metadata?, ignored? })` returns the real `{ id }` in both plugin runtimes; HTTP wraps it as `{ data: { id } }`. Capability: `syntheticAppend`. `SessionInbox.append` publishes the existing durable synthetic event immediately without inbox admission, wake, interruption, steering or a provider-turn allowance reset. Append rejects `resume` and `delivery`, including null controls; omitted mode retains the existing admission contract.
+- Append leaves an already-dispatched provider request unchanged. A later natural step may read the visible append; the API does not freeze an active execution's future history. Ignored append stays excluded from model and compaction input. Retried matching synthetic IDs retain the first payload; inbox-owned, foreign-session and non-synthetic identities conflict before effects. The projector also enforces ownership for direct durable replay.
 
 ## Verification
 
@@ -42,6 +44,7 @@ The W1 assignment adds the native APIs OMO needs for context forks, completion n
 
 ## Timeline
 
+- 2026-11-13 [W1 append and metadata follow-on](../sessions/2026-11-13-v2-plugin-controls.md#immediate-append-and-plugin-metadata-parity) publishes `838da4b2f0` and `7da31d898a` above W13's compaction stage, preserving every sibling capability. Both hosts independently build and install vt-19 through 12/12 gates. The linked session owns the separate installed RPC/HTTP receipts and controller demo; `formControl` remains a separate follow-on.
 - 2026-11-13 [W12 configuration-stage delivery](../sessions/2026-11-11-plugin-configuration.md) preserves these capabilities and passes their focused plugin regressions while adding the awaited configuration stage. The coordinator-assigned combined source `72527fce0c` is independently built and installed as vt-15 on desktop and m4max after separate 12/12 mandatory gates. This closes the Mac host-build gap; W1's direct native API demonstration remains the behavior receipt above.
 - 2026-11-10 [foundation session](../sessions/2026-11-10-v2-foundation.md) established the guarded v2 base used by these APIs.
 - 2026-11-13 [delivery session](../sessions/2026-11-13-v2-plugin-controls.md), [W1](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ), resumed the paused work, closed review findings, and integrated the native and cancellation patches without rewriting `v2-nowaker`. That record owns mirror and installed-runtime receipts.

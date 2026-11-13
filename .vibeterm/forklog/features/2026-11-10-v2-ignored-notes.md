@@ -11,7 +11,7 @@
 ## Behavior and stable seams
 
 - `SessionMessage.Synthetic`, `SessionInbox.SyntheticPayload` and the `session.synthetic` durable event carry optional `ignored: boolean`. The public synthetic endpoint carries the same field.
-- `packages/core/src/session/inbox.ts`: ignored synthetic admission publishes the transcript event immediately, with no inbox row. First admission wins on retried IDs; cross-session or cross-type reuse remains a conflict.
+- `packages/core/src/session/inbox.ts`: ignored synthetic admission and explicit `mode: "append"` publish the transcript event immediately, with no inbox row. First admission wins on retried IDs; cross-session or cross-type reuse remains a conflict. Explicit append also permits visible synthetic context with the same immediate-publication contract.
 - `packages/core/src/session/session.ts`: an ignored note never wakes execution, even when `resume: true` is requested or a retry changes the request's payload.
 - `message-updater.ts`, the Session projector and the client's Solid data projection preserve `ignored` on persisted and live messages.
 - `runner/to-llm-message.ts` emits no model message for the note. `recent-text.ts` excludes it from retained compaction text; compaction's provider lowering uses the same model conversion.
@@ -35,4 +35,5 @@
 
 ## Timeline
 
+- 2026-11-13 [W1 immediate append follow-on](../sessions/2026-11-13-v2-plugin-controls.md#immediate-append-and-plugin-metadata-parity), source `7da31d898a`, adds the explicit `syntheticAppend` mode without changing ignored/default admission. Both hosts install vt-19 through separate 12/12 gates. Real idle/busy plugin and HTTP proof observes immediate native events and history, no inbox or new inference, unchanged held provider requests and ignored-text exclusion from a later normal prompt.
 - 2026-11-10 [W4 session record](../sessions/2026-11-10-v2-patches.md), [source session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e37e57935ffeTjd0whAV8iFPzQ): restore persisted user-only notes across admission, provider conversion, compaction, migration and clients.
