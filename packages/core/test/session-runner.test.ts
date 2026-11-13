@@ -77,7 +77,21 @@ import { SessionSystemPrompt } from "@opencode/core/session/system-prompt"
 import { ID, Model } from "@opencode/core/model"
 import { Location } from "@opencode/core/location"
 import { Provider } from "@opencode/core/provider"
-import { Cause, Context, DateTime, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream, Tracer } from "effect"
+import {
+  Cause,
+  Context,
+  DateTime,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Queue,
+  Schema,
+  Scope,
+  Stream,
+  Tracer,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -1466,6 +1480,86 @@ describe("SessionRunnerLLM", () => {
 
     expect(s.requests).toHaveLength(3)
     expect(userTexts(s.requests[2])).toContain("Background work completed")
+  })
+
+  scenario("synthetic append preserves an active request and reaches idle without another inference", function* (s) {
+    const execution = yield* SessionExecution.Service
+    yield* s.llm.push(TestLLM.text("Original answer", "original-answer"), TestLLM.text("Later answer", "later-answer"))
+    yield* s.admit("Original prompt")
+    const run = yield* s.resumePaused
+    expect(yield* execution.isActive(sessionID)).toBe(true)
+    const dispatched = JSON.stringify(s.requests[0])
+
+    const visible = yield* s.session.synthetic({
+      sessionID,
+      mode: "append",
+      text: "Visible appended result",
+      ignored: false,
+    })
+    const ignored = yield* s.session.synthetic({
+      sessionID,
+      mode: "append",
+      text: "Ignored appended result",
+      ignored: true,
+    })
+
+    expect(yield* s.inbox).toEqual([])
+    const appended = (yield* s.messages).filter((message) => message.type === "synthetic")
+    expect(appended).toHaveLength(2)
+    expect(appended).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: visible.id, text: "Visible appended result", ignored: false }),
+        expect.objectContaining({ id: ignored.id, text: "Ignored appended result", ignored: true }),
+      ]),
+    )
+    expect(s.requests).toHaveLength(1)
+    expect(JSON.stringify(s.requests[0])).toBe(dispatched)
+    expect(yield* execution.isActive(sessionID)).toBe(true)
+    yield* run.finish
+    yield* s.session.wait(sessionID)
+    expect(s.requests).toHaveLength(1)
+    expect(yield* execution.isActive(sessionID)).toBe(false)
+    expect((yield* s.messages).filter((message) => message.type === "assistant")).toMatchObject([{ finish: "stop" }])
+    const events = yield* recordedEventTypes(sessionID)
+    expect(events.filter((type) => type === "session.inbox.enqueued.1")).toHaveLength(1)
+    expect(events.filter((type) => type === "session.inbox.delivered.1")).toHaveLength(1)
+    expect(events).not.toContain("session.execution.interrupted.1")
+
+    yield* s.runPrompt("Later ordinary prompt")
+    expect(s.requests).toHaveLength(2)
+    expect(userTexts(s.requests[1])).toContain("Visible appended result")
+    expect(userTexts(s.requests[1])).not.toContain("Ignored appended result")
+  })
+
+  scenario("natural continuation reads visible append without resetting the configured step allowance", function* (s) {
+    const agents = yield* Agent.Service
+    yield* agents.transform((editor) =>
+      editor.update(Agent.defaultID, (agent) => {
+        agent.steps = 2
+      }),
+    )
+    yield* s.llm.push(
+      TestLLM.toolCall("append-tool", "echo", { text: "Continue naturally" }),
+      TestLLM.text("Finished at limit", "append-limit"),
+    )
+    yield* s.admit("Use one tool")
+    const run = yield* s.resumePaused
+    yield* s.session.synthetic({ sessionID, mode: "append", text: "Visible during natural continuation" })
+    yield* s.session.synthetic({
+      sessionID,
+      mode: "append",
+      text: "Ignored during natural continuation",
+      ignored: true,
+    })
+    yield* run.finish
+
+    expect(s.requests).toHaveLength(2)
+    expect(userTexts(s.requests[0])).not.toContain("Visible during natural continuation")
+    expect(userTexts(s.requests[1])).toContain("Visible during natural continuation")
+    expect(userTexts(s.requests[1])).not.toContain("Ignored during natural continuation")
+    expect(s.requests[1]?.toolChoice).toMatchObject({ type: "none" })
+    expect(s.executions).toEqual(["Continue naturally"])
+    expect(yield* s.inbox).toEqual([])
   })
 
   scenario("streams one request with registry definitions from chronological user history", function* (s) {

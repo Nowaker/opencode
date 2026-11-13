@@ -1,7 +1,7 @@
 export * as Session from "./session.js"
 export * from "./session/schema.js"
 
-import { DateTime, Effect, Layer, Context, Option, Stream } from "effect"
+import { DateTime, Effect, Layer, Context, Option, Schema, Stream } from "effect"
 import { LLMClient } from "@opencode/ai/effect"
 import { ListAnchor, ListCursor, ListFilter } from "@opencode/schema/session"
 import { and, desc, eq } from "drizzle-orm"
@@ -252,9 +252,15 @@ export interface Interface {
   readonly cancelChild: (
     input: SessionSchema.CancelChildInput,
   ) => Effect.Effect<SessionSchema.CancelChildResult, NotFoundError | ParentMismatchError>
-  readonly synthetic: (
-    input: Parameters<Session.Handle["synthetic"]>[0] & { sessionID: SessionSchema.ID },
-  ) => ReturnType<Session.Handle["synthetic"]>
+  readonly synthetic: {
+    (
+      input: SessionSchema.SyntheticAdmission & { sessionID: SessionSchema.ID },
+    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
+    (
+      input: SessionSchema.SyntheticAppend & { sessionID: SessionSchema.ID },
+    ): Effect.Effect<SessionSchema.SyntheticAppendResult, NotFoundError | SyntheticConflictError | Schema.SchemaError>
+    (input: SessionSchema.SyntheticInput & { sessionID: SessionSchema.ID }): ReturnType<Session.Handle["synthetic"]>
+  }
   readonly revert: {
     readonly stage: (input: {
       sessionID: SessionSchema.ID
@@ -291,6 +297,18 @@ const layer = Layer.effect(
     const environments = yield* SessionEnvironment.Service
     const locations = yield* LocationServiceMap.Service
     const sessions = yield* Session.make()
+    function synthetic(
+      input: SessionSchema.SyntheticAdmission & { sessionID: SessionSchema.ID },
+    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
+    function synthetic(
+      input: SessionSchema.SyntheticAppend & { sessionID: SessionSchema.ID },
+    ): Effect.Effect<SessionSchema.SyntheticAppendResult, NotFoundError | SyntheticConflictError | Schema.SchemaError>
+    function synthetic(
+      input: SessionSchema.SyntheticInput & { sessionID: SessionSchema.ID },
+    ): ReturnType<Session.Handle["synthetic"]>
+    function synthetic(input: SessionSchema.SyntheticInput & { sessionID: SessionSchema.ID }) {
+      return sessions.forSession(input.sessionID).synthetic(input)
+    }
     const cancelChild = yield* SessionChildCancellation.make
     const mediaBlob = (session: SessionSchema.Info) => SessionBlob.enabledFor(instances, session)
     const isDurableSessionEvent = (item: Bus.LogItem): item is SessionEvent.DurableEvent =>
@@ -563,7 +581,7 @@ const layer = Layer.effect(
           .pipe(Effect.catchTag("Session.SyntheticConflictError", Effect.die))
       }),
       resume: (sessionID) => sessions.forSession(sessionID).resume(),
-      synthetic: (input) => sessions.forSession(input.sessionID).synthetic(input),
+      synthetic,
       interrupt: (sessionID, options) => sessions.forSession(sessionID).interrupt(options),
       cancelChild,
       revert: {

@@ -533,6 +533,48 @@ describe("SessionProjector", () => {
     }),
   )
 
+  for (const ignored of [undefined, false, true]) {
+    for (const collision of ["pending", "projected"] as const) {
+      it.effect(`rolls back replayed synthetic collisions with ${collision} IDs (ignored: ${ignored})`, () =>
+        Effect.gen(function* () {
+          const db = yield* seedSession()
+          const bus = yield* Bus.Service
+          const inbox = yield* SessionInbox.Service
+          const store = yield* SessionStore.Service
+          const id = SessionMessage.ID.create()
+          if (collision === "pending")
+            yield* inbox.admit({
+              id,
+              sessionID,
+              item: { type: "synthetic", delivery: "queue", payload: { text: "Pending original" } },
+            })
+          if (collision === "projected") yield* db.insert(SessionMessageTable).values(assistantRow(id, 0)).run()
+          const messages = yield* store.messages({ sessionID })
+          const pending = yield* inbox.list(sessionID)
+          const events = yield* db.select().from(EventTable).all()
+
+          const result = yield* bus
+            .replay({
+              id: Event.ID.make(id.replace(/^msg_/, "evt_")),
+              type: "session.synthetic.1",
+              aggregateID: sessionID,
+              seq: collision === "pending" ? 1 : 0,
+              data: { sessionID, text: "Conflicting replay", ...(ignored === undefined ? {} : { ignored }) },
+            })
+            .pipe(
+              Effect.catchDefect((defect) => Effect.fail(defect)),
+              Effect.flip,
+            )
+
+          expect(result).toBeInstanceOf(SessionInbox.LifecycleConflict)
+          expect(yield* store.messages({ sessionID })).toEqual(messages)
+          expect(yield* inbox.list(sessionID)).toEqual(pending)
+          expect(yield* db.select().from(EventTable).all()).toEqual(events)
+        }),
+      )
+    }
+  }
+
   it.effect("projects retry state and clears it at the next step or execution terminal", () =>
     Effect.gen(function* () {
       const db = yield* seedSession()

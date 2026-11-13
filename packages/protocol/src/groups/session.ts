@@ -406,23 +406,15 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
     .add(
       HttpApiEndpoint.post("session.synthetic", "/api/session/:sessionID/synthetic", {
         params: { sessionID: Session.ID },
-        payload: Schema.Struct({
-          id: SessionMessage.ID.pipe(Schema.optional),
-          text: Schema.String,
-          description: Schema.String.pipe(Schema.optional),
-          ignored: SessionMessage.Synthetic.fields.ignored,
-          metadata: SessionMessage.Synthetic.fields.metadata,
-          delivery: SessionInbox.Delivery.pipe(Schema.optional),
-          resume: Schema.Boolean.pipe(Schema.optional),
-        }),
-        success: Schema.Struct({ data: SessionInbox.Synthetic }),
-        error: [ConflictError, SessionNotFoundError],
+        payload: Session.SyntheticInput,
+        success: Schema.Struct({ data: Session.SyntheticResult }),
+        error: [ConflictError, SessionNotFoundError, InvalidRequestError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.synthetic",
           summary: "Add synthetic message",
           description:
-            "Durably admit synthetic session input and schedule execution unless resume is false. Ignored messages enter the transcript immediately without queuing input or scheduling execution.",
+            "Durably admit synthetic input by default and schedule execution unless resume is false. With mode: append, immediately append history without inbox input or execution changes and return only its message ID; resume and delivery are forbidden. Ignored messages are excluded from model requests and compaction. Append support is advertised by syntheticAppend.",
         }),
       ),
     )

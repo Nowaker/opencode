@@ -1,6 +1,6 @@
 export * as Session from "./session.js"
 
-import { DateTime, Effect, Fiber, Scope } from "effect"
+import { DateTime, Effect, Fiber, Schema, Scope } from "effect"
 import type { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
 import type { Permission } from "@opencode/schema/permission"
@@ -293,38 +293,23 @@ export const make = Effect.fn("Session.make")(function* () {
     yield* get(sessionID)
     yield* execution.resume(sessionID)
   })
-  const synthetic = Effect.fn("Session.synthetic")(
-    (
-      sessionID: SessionSchema.ID,
-      input: {
-        id?: SessionMessage.ID
-        text: string
-        description?: string
-        ignored?: boolean
-        metadata?: Record<string, unknown>
-        delivery?: SessionInbox.Delivery
-        resume?: boolean
-      },
-    ) =>
-      Effect.uninterruptible(
-        Effect.gen(function* () {
-          yield* get(sessionID)
-          const inputID = input.id ?? SessionMessage.ID.create()
-          const admittedInput = {
-            type: "synthetic",
-            payload: SessionInbox.SyntheticPayload.make({
-              text: input.text,
-              description: input.description,
-              ignored: input.ignored,
-              metadata: input.metadata,
-            }),
-            delivery: input.delivery ?? "steer",
-          } satisfies SessionInbox.Item
-          const admitted = yield* admission
-            .admit({
+  const synthetic = Effect.fn("Session.synthetic")((sessionID: SessionSchema.ID, input: SessionSchema.SyntheticInput) =>
+    Effect.uninterruptible(
+      Effect.gen(function* () {
+        yield* get(sessionID)
+        const inputID = input.id ?? SessionMessage.ID.create()
+        if (input.mode === "append") {
+          const append = yield* Schema.decodeUnknownEffect(Schema.toType(SessionSchema.SyntheticAppend))(input)
+          return yield* admission
+            .append({
               id: inputID,
               sessionID,
-              item: admittedInput,
+              payload: {
+                text: append.text,
+                description: append.description,
+                ignored: append.ignored,
+                metadata: append.metadata,
+              },
             })
             .pipe(
               Effect.catchTag(
@@ -332,11 +317,31 @@ export const make = Effect.fn("Session.make")(function* () {
                 () => new SyntheticConflictError({ sessionID, inputID }),
               ),
             )
-          if (!admitted.payload.ignored && input.resume !== false && !(yield* get(sessionID)).revert)
-            yield* execution.wake(sessionID)
-          return admitted
-        }),
-      ),
+        }
+        const admittedInput = {
+          type: "synthetic",
+          payload: SessionInbox.SyntheticPayload.make({
+            text: input.text,
+            description: input.description,
+            ignored: input.ignored,
+            metadata: input.metadata,
+          }),
+          delivery: input.delivery ?? "steer",
+        } satisfies SessionInbox.Item
+        const admitted = yield* admission
+          .admit({
+            id: inputID,
+            sessionID,
+            item: admittedInput,
+          })
+          .pipe(
+            Effect.catchTag("SessionInbox.LifecycleConflict", () => new SyntheticConflictError({ sessionID, inputID })),
+          )
+        if (!admitted.payload.ignored && input.resume !== false && !(yield* get(sessionID)).revert)
+          yield* execution.wake(sessionID)
+        return admitted
+      }),
+    ),
   )
   const interrupt = Effect.fn("Session.interrupt")(
     (sessionID: SessionSchema.ID, options?: { readonly resume?: boolean }) =>
@@ -408,7 +413,16 @@ export const make = Effect.fn("Session.make")(function* () {
     const switchModel = operations.switchModel.bind(undefined, sessionID)
     const inbox = operations.inbox.bind(undefined, sessionID)
     const prompt = operations.prompt.bind(undefined, sessionID)
-    const synthetic = operations.synthetic.bind(undefined, sessionID)
+    function synthetic(
+      input: SessionSchema.SyntheticAdmission,
+    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
+    function synthetic(
+      input: SessionSchema.SyntheticAppend,
+    ): Effect.Effect<SessionSchema.SyntheticAppendResult, NotFoundError | SyntheticConflictError | Schema.SchemaError>
+    function synthetic(input: SessionSchema.SyntheticInput): ReturnType<typeof operations.synthetic>
+    function synthetic(input: SessionSchema.SyntheticInput) {
+      return operations.synthetic(sessionID, input)
+    }
     const shell = operations.shell.bind(undefined, sessionID)
     const skill = operations.skill.bind(undefined, sessionID)
     const compact = operations.compact.bind(undefined, sessionID)

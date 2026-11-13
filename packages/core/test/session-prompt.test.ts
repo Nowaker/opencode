@@ -1379,6 +1379,180 @@ describe("Session.prompt", () => {
     }),
   )
 
+  for (const ignored of [undefined, false, true]) {
+    it.effect(
+      `immediately appends synthetic history and its native event without admission or execution (ignored: ${ignored})`,
+      () =>
+        Effect.gen(function* () {
+          yield* setup
+          const session = yield* Session.Service
+          const calls = [wakeCalls.length, executionCalls.length, interruptCalls.length]
+          const result = yield* session.synthetic({
+            sessionID,
+            id: ignored === false ? messageID : undefined,
+            mode: "append",
+            text: "Immediate completion",
+            description: "Completed job",
+            ignored,
+            metadata: { job: "append-test" },
+          })
+
+          expect(Object.keys(result)).toEqual(["id"])
+          if (ignored === false) expect(result.id).toBe(messageID)
+          expect(yield* session.messages({ sessionID })).toMatchObject([
+            {
+              id: result.id,
+              type: "synthetic",
+              text: "Immediate completion",
+              description: "Completed job",
+              ...(ignored === undefined ? {} : { ignored }),
+              metadata: { job: "append-test" },
+            },
+          ])
+          expect(yield* session.inbox(sessionID)).toEqual([])
+          const events = yield* session.log({ sessionID }).pipe(Stream.runCollect)
+          expect(events).toHaveLength(2)
+          expect(events[0]).toMatchObject({
+            id: result.id.replace(/^msg_/, "evt_"),
+            type: "session.synthetic",
+            data: {
+              sessionID,
+              text: "Immediate completion",
+              description: "Completed job",
+              ...(ignored === undefined ? {} : { ignored }),
+              metadata: { job: "append-test" },
+            },
+          })
+          expect(events[0]).not.toHaveProperty("data.inboxID")
+          expect([wakeCalls.length, executionCalls.length, interruptCalls.length]).toEqual(calls)
+        }),
+    )
+  }
+
+  it.effect("append retries retain the first projected synthetic payload without publishing or admitting again", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const input = {
+        sessionID,
+        id: messageID,
+        mode: "append" as const,
+        text: "First",
+        ignored: false,
+        metadata: { first: true },
+      }
+      const results = yield* Effect.all(
+        [session.synthetic(input), session.synthetic({ ...input, text: "Second", ignored: true })],
+        { concurrency: "unbounded" },
+      )
+      const retry = yield* session.synthetic({ ...input, text: "Third", metadata: { first: false } })
+      const admission = yield* session.synthetic({
+        sessionID,
+        id: messageID,
+        text: "Fourth",
+        ignored: true,
+        resume: false,
+      })
+
+      expect(results).toEqual([{ id: messageID }, { id: messageID }])
+      expect(retry).toEqual({ id: messageID })
+      expect(admission).toMatchObject({
+        id: messageID,
+        type: "synthetic",
+        payload: { text: "First", ignored: false, metadata: { first: true } },
+      })
+      expect(yield* session.messages({ sessionID })).toMatchObject([
+        { id: messageID, text: "First", ignored: false, metadata: { first: true } },
+      ])
+      expect(yield* admittedCount).toBe(0)
+      expect(yield* eventCount("session.synthetic.1")).toBe(1)
+    }),
+  )
+
+  it.effect("append adopts an already promoted synthetic admission without fabricating delivery", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const database = yield* Database.Service
+      yield* session.synthetic({ sessionID, id: messageID, text: "Admitted first", resume: false })
+      yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
+
+      expect(yield* session.synthetic({ sessionID, id: messageID, mode: "append", text: "Append retry" })).toEqual({
+        id: messageID,
+      })
+      expect(yield* session.messages({ sessionID })).toMatchObject([{ id: messageID, text: "Admitted first" }])
+      expect(yield* eventCount("session.synthetic.1")).toBe(0)
+      expect(yield* eventCount("session.inbox.delivered.1")).toBe(1)
+    }),
+  )
+
+  for (const collision of ["pending", "user", "assistant", "other-session"] as const) {
+    it.effect(`refuses append ID reuse by ${collision} without projection or execution side effects`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* Session.Service
+        const database = yield* Database.Service
+        if (collision === "pending")
+          yield* session.synthetic({ sessionID, id: messageID, text: "Pending first", resume: false })
+        if (collision === "user") {
+          const bus = yield* Bus.Service
+          yield* session.prompt({ sessionID, id: messageID, text: "User first", resume: false })
+          yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
+        }
+        if (collision === "assistant")
+          yield* database.db.insert(SessionMessageTable).values(assistantRow(messageID, 0)).run()
+        if (collision === "other-session") {
+          const other = yield* session.create({ location: { directory: AbsolutePath.make("/project") } })
+          yield* session.synthetic({ sessionID: other.id, id: messageID, mode: "append", text: "Other first" })
+        }
+        const messages = yield* session.messages({ sessionID })
+        const inbox = yield* session.inbox(sessionID)
+        const events = yield* session.log({ sessionID }).pipe(Stream.runCollect)
+        const calls = [wakeCalls.length, executionCalls.length, interruptCalls.length]
+
+        const error = yield* session
+          .synthetic({ sessionID, id: messageID, mode: "append", text: "Conflicting append" })
+          .pipe(Effect.flip)
+
+        expect(error).toMatchObject({ _tag: "Session.SyntheticConflictError", inputID: messageID })
+        expect(yield* session.messages({ sessionID })).toEqual(messages)
+        expect(yield* session.inbox(sessionID)).toEqual(inbox)
+        expect(yield* session.log({ sessionID }).pipe(Stream.runCollect)).toEqual(events)
+        expect([wakeCalls.length, executionCalls.length, interruptCalls.length]).toEqual(calls)
+      }),
+    )
+  }
+
+  it.effect("serializes concurrent same-ID append and admission without admitting and appending two inputs", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const [append, admission] = yield* Effect.all(
+        [
+          session.synthetic({ sessionID, id: messageID, mode: "append", text: "Append first" }).pipe(Effect.exit),
+          session.synthetic({ sessionID, id: messageID, text: "Admission first", resume: false }),
+        ],
+        { concurrency: "unbounded" },
+      )
+
+      expect(admission.id).toBe(messageID)
+      const messages = yield* session.messages({ sessionID })
+      const inbox = yield* session.inbox(sessionID)
+      expect(messages.length + inbox.length).toBe(1)
+      if (append._tag === "Success") {
+        expect(append.value).toEqual({ id: messageID })
+        expect(messages).toMatchObject([{ id: messageID, text: "Append first" }])
+        expect(inbox).toEqual([])
+        expect(yield* eventCount("session.inbox.enqueued.1")).toBe(0)
+        return
+      }
+      expect(messages).toEqual([])
+      expect(inbox).toMatchObject([{ id: messageID, payload: { text: "Admission first" } }])
+      expect(yield* eventCount("session.synthetic.1")).toBe(0)
+    }),
+  )
+
   it.effect("reconciles synthetic retries from the promoted message regardless of payload", () =>
     Effect.gen(function* () {
       yield* setup

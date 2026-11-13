@@ -396,16 +396,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           const data = yield* session
             .synthetic({
-              id: ctx.payload.id,
+              ...ctx.payload,
               sessionID: ctx.params.sessionID,
-              text: ctx.payload.text,
-              description: ctx.payload.description,
-              ignored: ctx.payload.ignored,
-              metadata: ctx.payload.metadata,
-              delivery: ctx.payload.delivery,
-              resume: ctx.payload.resume,
             })
             .pipe(
+              Effect.catchTag("SchemaError", () => new InvalidRequestError({ message: "Invalid synthetic append" })),
               Effect.catchTag("Session.NotFoundError", missingSession),
               Effect.catchTag("Session.SyntheticConflictError", (error) =>
                 Effect.fail(

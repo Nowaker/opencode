@@ -63,6 +63,7 @@ export type ServerInfoOutput = {
         readonly pluginConfiguration?: boolean | undefined
         readonly compactionSummary?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
+        readonly syntheticAppend?: boolean | undefined
       }
     | undefined
 }
@@ -253,10 +254,11 @@ export type SessionSyntheticInput = {
   readonly description?: string | undefined
   readonly ignored?: boolean | undefined
   readonly metadata?: { readonly [x: string]: unknown } | undefined
+  readonly mode?: "append" | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
   readonly resume?: boolean | undefined
 }
-export type SessionSyntheticOutput = SessionInbox.Synthetic
+export type SessionSyntheticOutput = Session.SyntheticResult
 export type SessionSyntheticOperation<E = never> = (
   input: SessionSyntheticInput,
 ) => Effect.Effect<SessionSyntheticOutput, E>

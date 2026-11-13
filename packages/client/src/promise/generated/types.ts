@@ -16,6 +16,7 @@ export type ServerInfo = {
         pluginConfiguration?: boolean | undefined
         compactionSummary?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
+        syntheticAppend?: boolean | undefined
       }
     | undefined
 }
@@ -441,6 +442,8 @@ export type PluginInfo = { id?: PluginID; source: PluginSource; features: Plugin
 export type SessionForkBoundary =
   | { type: "before"; messageID: SessionMessageID }
   | { type: "through"; messageID: SessionMessageID }
+
+export type SessionSyntheticAppendResult = { id: SessionMessageID }
 
 export type SessionMessageAgentSelected = {
   id: SessionMessageID
@@ -1163,6 +1166,8 @@ export type SessionInboxUserPayload1 = {
   skills?: Array<PromptSkillAttachment>
   metadata?: { [x: string]: any }
 }
+
+export type SessionSyntheticResult = SessionInboxSynthetic | SessionSyntheticAppendResult
 
 export type SessionMessageToolStateCompleted = {
   status: "completed"
@@ -3496,11 +3501,12 @@ export type SessionSyntheticInput = {
   readonly description?: string | null | undefined
   readonly ignored?: boolean | undefined
   readonly metadata?: { readonly [x: string]: JsonValue } | undefined
+  readonly mode?: "append" | undefined
   readonly delivery?: ("steer" | "queue") | null | undefined
   readonly resume?: boolean | null | undefined
 }
 
-export type SessionSyntheticOutput = { data: SessionInboxSynthetic }["data"]
+export type SessionSyntheticOutput = { data: SessionSyntheticResult }["data"]
 
 export type SessionShellInput = {
   readonly sessionID: string

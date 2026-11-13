@@ -144,6 +144,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         pluginConfiguration: true,
         compactionSummary: true,
         sessionMetadataMergePatch: true,
+        syntheticAppend: true,
       },
     },
     job: jobControl,

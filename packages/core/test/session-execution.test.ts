@@ -18,6 +18,7 @@ import { SessionExecution } from "@opencode/core/session/execution"
 import { SessionRestart } from "@opencode/core/session/execution/restart"
 import { SessionEvent } from "@opencode/core/session/event"
 import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionSchema } from "@opencode/core/session/schema"
 import { SessionMessage } from "@opencode/core/session/message"
 import { SessionRunner } from "@opencode/core/session/runner/index"
 import { SessionInboxTable, SessionTable } from "@opencode/core/session/sql"
@@ -1389,12 +1390,22 @@ function buildExecution(
       Session.Service,
       Effect.gen(function* () {
         const execution = yield* SessionExecution.Service
+        function synthetic(
+          input: SessionSchema.SyntheticAdmission & { sessionID: Session.ID },
+        ): Effect.Effect<SessionInbox.Synthetic, Session.NotFoundError | Session.SyntheticConflictError>
+        function synthetic(
+          input: SessionSchema.SyntheticAppend & { sessionID: Session.ID },
+        ): ReturnType<typeof sessions.synthetic>
+        function synthetic(input: Parameters<typeof sessions.synthetic>[0]): ReturnType<typeof sessions.synthetic>
+        function synthetic(input: Parameters<typeof sessions.synthetic>[0]) {
+          if (input.mode === "append") return sessions.synthetic(input)
+          return sessions
+            .synthetic({ ...input, resume: false })
+            .pipe(Effect.tap(() => (input.resume === false ? Effect.void : execution.wake(input.sessionID))))
+        }
         return Session.Service.of({
           ...sessions,
-          synthetic: (input) =>
-            sessions
-              .synthetic({ ...input, resume: false })
-              .pipe(Effect.tap(() => (input.resume === false ? Effect.void : execution.wake(input.sessionID)))),
+          synthetic,
         })
       }),
     )

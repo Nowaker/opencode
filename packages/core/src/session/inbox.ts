@@ -245,6 +245,38 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
     (effect, request) => admissionLocks.withLock(request.id)(effect),
   )
 
+  const append = Effect.fn("SessionInbox.append")(
+    function* (request: PendingRef & { readonly payload: SyntheticPayload }) {
+      const reconcileAppend = Effect.fnUntraced(function* () {
+        // A pending admission is not an immediate append, even when its Session and type match.
+        if (yield* find(db, request.id)) return yield* new LifecycleConflict({ id: request.id })
+        const stored = yield* promotedFromMessage(db, request.sessionID, request.id, "steer")
+        if (stored && stored.type !== "synthetic") return yield* new LifecycleConflict({ id: request.id })
+        return stored
+      })
+      if (yield* reconcileAppend()) return { id: request.id }
+      yield* bus
+        .publish(
+          SessionEvent.Synthetic,
+          { sessionID: request.sessionID, ...request.payload },
+          { id: Event.ID.make(request.id.replace(/^msg_/, "evt_")) },
+        )
+        .pipe(
+          Effect.catchDefect((defect) => {
+            if (!(defect instanceof LifecycleConflict) && !(defect instanceof Bus.InvalidDurableEventError))
+              return Effect.die(defect)
+            return reconcileAppend().pipe(
+              Effect.flatMap((stored) =>
+                stored ? Effect.void : defect instanceof LifecycleConflict ? Effect.fail(defect) : Effect.die(defect),
+              ),
+            )
+          }),
+        )
+      return { id: request.id }
+    },
+    (effect, request) => admissionLocks.withLock(request.id)(effect),
+  )
+
   const admitCompaction = Effect.fn("SessionInbox.admitCompaction")(function* (input: {
     readonly id: SessionMessage.ID
     readonly sessionID: SessionSchema.ID
@@ -307,6 +339,7 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
     list: (sessionID: SessionSchema.ID) => list(db, sessionID),
     reconcile,
     admit,
+    append,
     admitCompaction,
     cancel,
     steer,

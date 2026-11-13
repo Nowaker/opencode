@@ -16,6 +16,8 @@ import { TokenUsage } from "./token-usage.js"
 import { Revert } from "./session-revert.js"
 import { SessionFork } from "./session-fork.js"
 import { Cancellation } from "./cancellation.js"
+import { SessionMessage } from "./session-message.js"
+import { SessionInbox } from "./session-inbox.js"
 
 export const ID = SessionID
 export type ID = SessionID
@@ -32,6 +34,50 @@ export interface CancelChildInput extends Schema.Schema.Type<typeof CancelChildI
 
 export const CancelChildResult = Cancellation.Result
 export type CancelChildResult = typeof CancelChildResult.Type
+
+const SyntheticFields = {
+  // Preserve the existing HTTP codec's nullable optionals rather than tightening default admission.
+  id: SessionMessage.ID.pipe(Schema.optional),
+  text: SessionMessage.Synthetic.fields.text,
+  description: Schema.String.pipe(Schema.optional),
+  ignored: SessionMessage.Synthetic.fields.ignored,
+  metadata: SessionMessage.Synthetic.fields.metadata,
+}
+
+export const SyntheticAdmission = Schema.Struct({
+  ...SyntheticFields,
+  mode: Schema.optionalKey(Schema.Never),
+  delivery: SessionInbox.Delivery.pipe(Schema.optional),
+  resume: Schema.Boolean.pipe(Schema.optional),
+}).annotate({ identifier: "Session.SyntheticAdmission" })
+export interface SyntheticAdmission extends Schema.Schema.Type<typeof SyntheticAdmission> {}
+
+export const SyntheticAppend = Schema.Struct({
+  ...SyntheticFields,
+  mode: Schema.Literal("append"),
+  // These fields must reject queue controls rather than silently stripping them at decoding boundaries.
+  delivery: Schema.optionalKey(Schema.Never),
+  resume: Schema.optionalKey(Schema.Never),
+}).annotate({ identifier: "Session.SyntheticAppend" })
+export interface SyntheticAppend extends Schema.Schema.Type<typeof SyntheticAppend> {}
+
+export const SyntheticInput = Schema.Struct({
+  ...SyntheticFields,
+  mode: Schema.Literal("append").pipe(optional),
+  delivery: SessionInbox.Delivery.pipe(Schema.optional),
+  resume: Schema.Boolean.pipe(Schema.optional),
+}).annotate({ identifier: "Session.SyntheticInput" })
+export interface SyntheticInput extends Schema.Schema.Type<typeof SyntheticInput> {}
+
+export const SyntheticAppendResult = Schema.Struct({ id: SessionMessage.ID }).annotate({
+  identifier: "Session.SyntheticAppendResult",
+})
+export interface SyntheticAppendResult extends Schema.Schema.Type<typeof SyntheticAppendResult> {}
+
+export const SyntheticResult = Schema.Union([SessionInbox.Synthetic, SyntheticAppendResult]).annotate({
+  identifier: "Session.SyntheticResult",
+})
+export type SyntheticResult = typeof SyntheticResult.Type
 
 export { Revert }
 export const ForkBoundary = SessionFork.Boundary

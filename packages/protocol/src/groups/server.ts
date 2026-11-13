@@ -38,6 +38,9 @@ export const ServerInfo = Schema.Struct({
       sessionMetadataMergePatch: Schema.optional(Schema.Boolean).annotate({
         description: "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode.",
       }),
+      syntheticAppend: Schema.optional(Schema.Boolean).annotate({
+        description: "Supports mode: append on session.synthetic without inbox admission or execution changes.",
+      }),
     }),
   ),
 }).annotate({ identifier: "ServerInfo" })
