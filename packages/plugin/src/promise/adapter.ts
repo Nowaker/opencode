@@ -1,4 +1,5 @@
 import { Tool } from "@opencode/schema/tool"
+import { Job } from "@opencode/schema/job"
 import type { Rpc } from "@opencode/schema/rpc"
 import type { OpenCodeEvent } from "@opencode/client"
 import type { RpcCallOptions, RpcEventPayload, SelectedEvent, SubscribeOptions } from "@opencode/client/promise/api"
@@ -620,6 +621,16 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
           },
+          job: {
+            list: (input) =>
+              run(
+                Schema.decodeUnknownEffect(Job.OwnedListInput)(input).pipe(
+                  Effect.flatMap(host.job.list),
+                  Effect.flatMap(Schema.encodeUnknownEffect(Schema.Struct({ data: Schema.Array(Job.Info) }))),
+                ),
+              ),
+            cancel: adaptApiMethod(ExperimentalEndpoints["job.cancel"], host.job.cancel),
+          },
           session: {
             hook: (name, callback, options) =>
               register(
@@ -641,6 +652,7 @@ export function fromPromise(plugin: Plugin) {
             update: adaptApiMethod(SessionEndpoints["session.update"], host.session.update),
             move: adaptApiMethod(SessionEndpoints["session.move"], host.session.move),
             wait: adaptApiMethod(SessionEndpoints["session.wait"], host.session.wait),
+            cancelChild: adaptApiMethod(SessionEndpoints["session.cancelChild"], host.session.cancelChild),
             context: adaptApiMethod(SessionEndpoints["session.context"], host.session.context),
             messages: adaptApiMethod(MessageEndpoints["session.messages"], host.session.messages),
             instructions: {

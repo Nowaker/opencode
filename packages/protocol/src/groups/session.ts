@@ -833,6 +833,20 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         }),
       ),
     )
+    .add(
+      HttpApiEndpoint.post("session.cancelChild", "/api/experimental/session/:parentID/children/:sessionID/cancel", {
+        params: Session.CancelChildInput,
+        success: Session.CancelChildResult,
+        error: [SessionNotFoundError, ConflictError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "experimental.session.cancelChild",
+          summary: "Cancel a child session",
+          description:
+            "Experimental: may change without compatibility guarantees. Checks the persisted parent before stopping local execution. Cancelled means execution and Job cleanup settled; requested means cleanup continues. A child owned by another process returns unsupported without changing its Job.",
+        }),
+      ),
+    )
     .annotateMerge(
       OpenApi.annotations({
         title: "session",

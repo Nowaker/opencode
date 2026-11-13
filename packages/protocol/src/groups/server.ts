@@ -16,6 +16,12 @@ export const ServerInfo = Schema.Struct({
   capabilities: Schema.optional(
     Schema.Struct({
       persistentPty: Schema.optional(Schema.Boolean),
+      jobControl: Schema.optional(Schema.Boolean).annotate({
+        description: "Plugins can list owned background Jobs and cancel directly owned native shell and image Jobs.",
+      }),
+      childCancellation: Schema.optional(Schema.Boolean).annotate({
+        description: "Parent-scoped child cancellation reports settled, requested, terminal, or unsupported ownership.",
+      }),
       sessionMessages: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can read durable session messages with the message list pagination contract.",
       }),

@@ -176,6 +176,10 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       transform: () => Effect.die("unused websearch.transform"),
       reload: () => Effect.die("unused websearch.reload"),
     },
+    job: {
+      list: overrides.job?.list ?? (() => Effect.die("unused job.list")),
+      cancel: overrides.job?.cancel ?? (() => Effect.die("unused job.cancel")),
+    },
     session: {
       hook: overrides.session?.hook ?? (() => Effect.die("unused session.hook")),
       list: overrides.session?.list ?? (() => Effect.die("unused session.list")),
@@ -194,6 +198,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       synthetic: overrides.session?.synthetic ?? (() => Effect.die("unused session.synthetic")),
       interrupt: overrides.session?.interrupt ?? (() => Effect.die("unused session.interrupt")),
       wait: overrides.session?.wait ?? (() => Effect.die("unused session.wait")),
+      cancelChild: overrides.session?.cancelChild ?? (() => Effect.die("unused session.cancelChild")),
       context: overrides.session?.context ?? (() => Effect.die("unused session.context")),
       messages: overrides.session?.messages ?? (() => Effect.die("unused session.messages")),
       instructions: overrides.session?.instructions ?? {

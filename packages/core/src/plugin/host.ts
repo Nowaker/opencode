@@ -16,6 +16,7 @@ import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
 import { IntegrationConnection } from "../integration/connection.js"
 import { KV } from "../kv.js"
+import { JobControl } from "../job/control.js"
 import { Location } from "../location.js"
 import { LocationServiceMap } from "../location-service-map.js"
 import { Model } from "../model.js"
@@ -62,6 +63,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
   const bus = yield* Bus.Service
   const integration = yield* Integration.Service
   const kv = yield* KV.Service
+  const jobControl = yield* JobControl.Service
   const mcp = yield* Mcp.Service
   const location = yield* Location.Service
   const reference = yield* Reference.Service
@@ -127,7 +129,11 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
 
   // Keep the instance graph's inferred types independent of Session handles.
   const context: Plugin.Context = {
-    app: { ...app, capabilities: { sessionMessages: true, subagentOptions: true } },
+    app: {
+      ...app,
+      capabilities: { sessionMessages: true, subagentOptions: true, childCancellation: true, jobControl: true },
+    },
+    job: jobControl,
     location: locationInfo(),
     options: {},
     rpc: Object.assign(rpc.client, { register: rpc.register }),
@@ -608,6 +614,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
           .interrupt(input.sessionID, { resume: input.resume })
           .pipe(Effect.map((interrupted) => ({ interrupted }))),
       wait: (input) => sessions.wait(input.sessionID),
+      cancelChild: sessions.cancelChild,
       context: (input) => sessions.context(input.sessionID),
       messages: (input) => SessionMessagePage.list(input, sessions.messages),
       instructions: {
@@ -644,6 +651,7 @@ export const requirements = LayerNode.group([
   Bus.node,
   Integration.node,
   KV.node,
+  JobControl.node,
   Mcp.node,
   Location.node,
   Reference.node,

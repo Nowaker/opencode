@@ -1,4 +1,5 @@
 export * as SessionSchema from "@opencode/schema/session"
+export { CancelChildInput, CancelChildResult } from "@opencode/schema/session"
 
 import { Session } from "@opencode/schema/session"
 

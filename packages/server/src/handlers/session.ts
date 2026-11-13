@@ -64,6 +64,15 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       )
 
     return handlers
+      .handle("session.cancelChild", (ctx) =>
+        session.cancelChild(ctx.params).pipe(
+          Effect.catchTag("Session.NotFoundError", missingSession),
+          Effect.catchTag(
+            "Session.ParentMismatchError",
+            (error) => new ConflictError({ resource: error.sessionID, message: error.message }),
+          ),
+        ),
+      )
       .handle(
         "session.list",
         Effect.fn(function* (ctx) {

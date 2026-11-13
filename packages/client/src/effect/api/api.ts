@@ -56,6 +56,8 @@ export type ServerInfoOutput = {
   readonly capabilities?:
     | {
         readonly persistentPty?: boolean | undefined
+        readonly jobControl?: boolean | undefined
+        readonly childCancellation?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
         readonly subagentOptions?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
@@ -492,6 +494,9 @@ export interface SessionApi<E = never> {
 
   /** @deprecated Use `client.experimental.session.log`. Removed in the next minor. */
   readonly log: ExperimentalSessionLogOperation<E>
+
+  /** @deprecated Use `client.experimental.session.cancelChild`. Removed in the next minor. */
+  readonly cancelChild: ExperimentalSessionCancelChildOperation<E>
 }
 
 export type ExperimentalSessionStatsInput = {
@@ -1448,6 +1453,12 @@ export type ExperimentalSessionLogOperation<E = never> = (
   input: ExperimentalSessionLogInput,
 ) => Stream.Stream<ExperimentalSessionLogOutput, E>
 
+export type ExperimentalSessionCancelChildInput = { readonly parentID: Session.ID; readonly sessionID: Session.ID }
+export type ExperimentalSessionCancelChildOutput = Session.CancelChildResult
+export type ExperimentalSessionCancelChildOperation<E = never> = (
+  input: ExperimentalSessionCancelChildInput,
+) => Effect.Effect<ExperimentalSessionCancelChildOutput, E>
+
 export interface ExperimentalSessionApi<E = never> {
   readonly stats: ExperimentalSessionStatsOperation<E>
   readonly import: ExperimentalSessionImportOperation<E>
@@ -1462,6 +1473,7 @@ export interface ExperimentalSessionApi<E = never> {
     }
   }
   readonly log: ExperimentalSessionLogOperation<E>
+  readonly cancelChild: ExperimentalSessionCancelChildOperation<E>
 }
 
 export type MessageListInput = {
@@ -2550,6 +2562,12 @@ export type ExperimentalJobListOperation<E = never> = (
   input?: ExperimentalJobListInput,
 ) => Effect.Effect<ExperimentalJobListOutput, E>
 
+export type ExperimentalJobCancelInput = { readonly parentID: Session.ID; readonly jobID: string }
+export type ExperimentalJobCancelOutput = Session.CancelChildResult
+export type ExperimentalJobCancelOperation<E = never> = (
+  input: ExperimentalJobCancelInput,
+) => Effect.Effect<ExperimentalJobCancelOutput, E>
+
 export interface ExperimentalApi<E = never> {
   readonly persistentPty: {
     readonly read: ExperimentalPersistentPtyReadOperation<E>
@@ -2580,7 +2598,7 @@ export interface ExperimentalApi<E = never> {
     readonly update: ExperimentalArtifactsUpdateOperation<E>
     readonly delete: ExperimentalArtifactsDeleteOperation<E>
   }
-  readonly job: { readonly list: ExperimentalJobListOperation<E> }
+  readonly job: { readonly list: ExperimentalJobListOperation<E>; readonly cancel: ExperimentalJobCancelOperation<E> }
 }
 
 export type ShellListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
@@ -2922,6 +2940,15 @@ export type SessionLogOutput = ExperimentalSessionLogOutput
 
 /** @deprecated Use `ExperimentalSessionLogOperation`. Removed in the next minor. */
 export type SessionLogOperation<E = never> = ExperimentalSessionLogOperation<E>
+
+/** @deprecated Use `ExperimentalSessionCancelChildInput`. Removed in the next minor. */
+export type SessionCancelChildInput = ExperimentalSessionCancelChildInput
+
+/** @deprecated Use `ExperimentalSessionCancelChildOutput`. Removed in the next minor. */
+export type SessionCancelChildOutput = ExperimentalSessionCancelChildOutput
+
+/** @deprecated Use `ExperimentalSessionCancelChildOperation`. Removed in the next minor. */
+export type SessionCancelChildOperation<E = never> = ExperimentalSessionCancelChildOperation<E>
 
 /** @deprecated Use `ExperimentalGenerateTextInput`. Removed in the next minor. */
 export type GenerateTextInput = ExperimentalGenerateTextInput

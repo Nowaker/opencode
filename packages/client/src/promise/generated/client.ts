@@ -103,6 +103,8 @@ import type {
   ExperimentalSessionInstructionsEntryRemoveOutput,
   ExperimentalSessionLogInput,
   ExperimentalSessionLogOutput,
+  ExperimentalSessionCancelChildInput,
+  ExperimentalSessionCancelChildOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
@@ -273,6 +275,8 @@ import type {
   ExperimentalArtifactsViewOutput,
   ExperimentalJobListInput,
   ExperimentalJobListOutput,
+  ExperimentalJobCancelInput,
+  ExperimentalJobCancelOutput,
   ShellListInput,
   ShellListOutput,
   ShellCreateInput,
@@ -1176,6 +1180,17 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ),
+        cancelChild: (input: ExperimentalSessionCancelChildInput, requestOptions?: RequestOptions) =>
+          request<ExperimentalSessionCancelChildOutput>(
+            {
+              method: "POST",
+              path: `/api/experimental/session/${encodeURIComponent(input.parentID)}/children/${encodeURIComponent(input.sessionID)}/cancel`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 404, 409],
+              empty: false,
+            },
+            requestOptions,
+          ),
       },
       generate: {
         text: (input: ExperimentalGenerateTextInput, requestOptions?: RequestOptions) =>
@@ -1724,6 +1739,17 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ).then((value) => value.data),
+        cancel: (input: ExperimentalJobCancelInput, requestOptions?: RequestOptions) =>
+          request<ExperimentalJobCancelOutput>(
+            {
+              method: "POST",
+              path: `/api/experimental/job/${encodeURIComponent(input.parentID)}/${encodeURIComponent(input.jobID)}/cancel`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 404, 409],
+              empty: false,
+            },
+            requestOptions,
+          ),
       },
       migration: {
         v1: {
@@ -2740,6 +2766,8 @@ export function make(options: ClientOptions) {
       },
       /** @deprecated Use `client.experimental.session.log`. Removed in the next minor. */
       log: client.experimental.session.log,
+      /** @deprecated Use `client.experimental.session.cancelChild`. Removed in the next minor. */
+      cancelChild: client.experimental.session.cancelChild,
     },
     /** @deprecated Use `client.experimental.generate`. Removed in the next minor. */
     generate: {

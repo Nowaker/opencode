@@ -109,6 +109,8 @@ import type {
   ExperimentalSessionInstructionsEntryRemoveOutput,
   ExperimentalSessionLogInput,
   ExperimentalSessionLogOutput,
+  ExperimentalSessionCancelChildInput,
+  ExperimentalSessionCancelChildOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
@@ -271,6 +273,8 @@ import type {
   ExperimentalArtifactsDeleteOutput,
   ExperimentalJobListInput,
   ExperimentalJobListOutput,
+  ExperimentalJobCancelInput,
+  ExperimentalJobCancelOutput,
   ShellListInput,
   ShellListOutput,
   ShellCreateInput,
@@ -884,6 +888,14 @@ const EndpointExperimentalSessionLog = (raw: RawClient["server.session"]) => (in
     ),
   )
 
+const EndpointExperimentalSessionCancelChild =
+  (raw: RawClient["server.session"]) => (input: ExperimentalSessionCancelChildInput) =>
+    preserveEffect<ExperimentalSessionCancelChildOutput>()(
+      raw["session.cancelChild"]({ params: { parentID: input["parentID"], sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+      ),
+    )
+
 const adaptGroupExperimentalSession = (raw: RawClient["server.session"]) => ({
   stats: EndpointExperimentalSessionStats(raw),
   import: EndpointExperimentalSessionImport(raw),
@@ -898,6 +910,7 @@ const adaptGroupExperimentalSession = (raw: RawClient["server.session"]) => ({
     },
   },
   log: EndpointExperimentalSessionLog(raw),
+  cancelChild: EndpointExperimentalSessionCancelChild(raw),
 })
 
 const EndpointMessageList = (raw: RawClient["server.message"]) => (input: MessageListInput) =>
@@ -1732,6 +1745,13 @@ const EndpointExperimentalJobList = (raw: RawClient["server.experimental"]) => (
     ),
   )
 
+const EndpointExperimentalJobCancel = (raw: RawClient["server.experimental"]) => (input: ExperimentalJobCancelInput) =>
+  preserveEffect<ExperimentalJobCancelOutput>()(
+    raw["job.cancel"]({ params: { parentID: input["parentID"], jobID: input["jobID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
 const adaptGroupExperimental = (raw: RawClient["server.experimental"]) => ({
   persistentPty: {
     read: EndpointExperimentalPersistentPtyRead(raw),
@@ -1762,7 +1782,7 @@ const adaptGroupExperimental = (raw: RawClient["server.experimental"]) => ({
     update: EndpointExperimentalArtifactsUpdate(raw),
     delete: EndpointExperimentalArtifactsDelete(raw),
   },
-  job: { list: EndpointExperimentalJobList(raw) },
+  job: { list: EndpointExperimentalJobList(raw), cancel: EndpointExperimentalJobCancel(raw) },
 })
 
 const EndpointShellList = (raw: RawClient["server.shell"]) => (input?: ShellListInput) =>
@@ -2049,6 +2069,8 @@ const adaptClient = (raw: RawClient) => {
       },
       /** @deprecated Use `client.experimental.session.log`. Removed in the next minor. */
       log: client.experimental.session.log,
+      /** @deprecated Use `client.experimental.session.cancelChild`. Removed in the next minor. */
+      cancelChild: client.experimental.session.cancelChild,
     },
     /** @deprecated Use `client.experimental.generate`. Removed in the next minor. */
     generate: {

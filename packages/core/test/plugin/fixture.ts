@@ -21,6 +21,7 @@ import { Generate } from "@opencode/core/generate"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { Integration } from "@opencode/core/integration"
 import { Job } from "@opencode/core/job"
+import { JobControl } from "@opencode/core/job/control"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
@@ -118,6 +119,7 @@ export const makePluginTestLayer = (permission = permissionLayer, generate = gen
       InstructionDiscovery.node,
       Integration.node,
       Job.node,
+      JobControl.node,
       KV.node,
       Mcp.node,
       Session.node,

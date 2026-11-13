@@ -3,6 +3,20 @@ export * as Job from "./job.js"
 import { Schema } from "effect"
 import { optional } from "./schema.js"
 import { SessionID } from "./session-id.js"
+import { Cancellation } from "./cancellation.js"
+
+export const CancelInput = Schema.Struct({ parentID: SessionID, jobID: Schema.String }).annotate({
+  identifier: "Job.CancelInput",
+})
+export interface CancelInput extends Schema.Schema.Type<typeof CancelInput> {}
+export const CancelResult = Cancellation.Result
+export type CancelResult = typeof CancelResult.Type
+
+export const OwnedListInput = Schema.Struct({
+  parentSessionID: SessionID,
+  descendants: optional(Schema.Boolean),
+}).annotate({ identifier: "Job.OwnedListInput" })
+export interface OwnedListInput extends Schema.Schema.Type<typeof OwnedListInput> {}
 
 export const Kind = Schema.Literals(["shell", "subagent", "image"]).annotate({ identifier: "Job.Kind" })
 export type Kind = typeof Kind.Type

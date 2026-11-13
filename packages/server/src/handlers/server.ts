@@ -29,6 +29,8 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
               sessionMetadataMergePatch: true,
               sessionMessages: true,
               subagentOptions: true,
+              childCancellation: true,
+              jobControl: true,
             },
           }
         }),

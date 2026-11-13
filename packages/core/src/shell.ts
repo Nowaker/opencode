@@ -50,6 +50,7 @@ type Active = {
   // Resolves with the terminal Info once the command exits, times out, or is killed. A wait
   // started after termination resolves immediately from the already-completed deferred.
   done: Deferred.Deferred<Info, NotFoundError>
+  stop: Effect.Effect<void, AppProcess.AppProcessError>
   timeoutFiber?: Fiber.Fiber<void>
   timeout?: (duration: number) => Effect.Effect<void>
 }
@@ -87,6 +88,8 @@ export interface Interface {
   readonly timeout: (id: Shell.ID, duration: number) => Effect.Effect<Shell.Info, NotFoundError>
   readonly output: (id: Shell.ID, input?: Shell.OutputInput) => Effect.Effect<Shell.Output, NotFoundError>
   readonly remove: (id: Shell.ID) => Effect.Effect<void, NotFoundError>
+  /** Captures the native process before removal; resolves only after the process exits. */
+  readonly stop: (id: Shell.ID) => Effect.Effect<void, NotFoundError | AppProcess.AppProcessError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Shell") {}
@@ -363,6 +366,24 @@ const layer = () =>
                 newlines: 0,
                 lineStarts: [0, 0],
                 done: Deferred.makeUnsafe<Info, NotFoundError>(),
+                stop: handle.isRunning.pipe(
+                  Effect.flatMap((running) =>
+                    running
+                      ? handle
+                          .kill({ forceKillAfter: Duration.seconds(3) })
+                          .pipe(
+                            Effect.catch((error) =>
+                              handle.isRunning.pipe(
+                                Effect.flatMap((active) => (active ? Effect.fail(error) : Effect.void)),
+                              ),
+                            ),
+                          )
+                      : Effect.void,
+                  ),
+                  Effect.andThen(Effect.exit(handle.exitCode)),
+                  Effect.asVoid,
+                  Effect.mapError((cause) => new AppProcess.AppProcessError({ command: invocation.command, cause })),
+                ),
               }
               commands.set(id, command)
 
@@ -493,7 +514,17 @@ const layer = () =>
         return command.info
       })
 
-      return Service.of({ create, list, get, wait, result, timeout, output, remove })
+      return Service.of({
+        create,
+        list,
+        get,
+        wait,
+        result,
+        timeout,
+        output,
+        remove,
+        stop: (id) => commands.get(id)?.stop ?? Effect.fail(new NotFoundError({ id })),
+      })
     }),
   )
 

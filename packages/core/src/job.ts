@@ -44,6 +44,8 @@ export type Info = {
 type Active = {
   info: Info
   done: Deferred.Deferred<Info>
+  closed: Deferred.Deferred<boolean>
+  nativeStop?: Deferred.Deferred<boolean>
   backgrounded: Deferred.Deferred<Info>
   scope: Scope.Closeable
   blockingSessions: Map<SessionSchema.ID, number>
@@ -54,6 +56,7 @@ type Active = {
 
 type State = {
   jobs: SynchronizedRef.SynchronizedRef<Map<string, Active>>
+  closing: Map<string, Set<Deferred.Deferred<boolean>>>
   scope: Scope.Scope
 }
 
@@ -62,6 +65,7 @@ type FinishResult = {
   done?: Deferred.Deferred<Info>
   scope?: Scope.Closeable
   generation?: Scope.Closeable
+  closed?: Deferred.Deferred<boolean>
 }
 
 type BackgroundResult = {
@@ -122,7 +126,12 @@ export interface Interface {
   readonly block: (input: BlockInput) => Effect.Effect<BlockResult | undefined>
   readonly background: (id: string) => Effect.Effect<Info | undefined>
   readonly backgroundAll: (input: BackgroundAllInput) => Effect.Effect<Info[]>
-  readonly cancel: (id: string) => Effect.Effect<Info | undefined>
+  readonly cancel: (
+    id: string,
+    options?: { readonly cleanup: Effect.Effect<void, unknown> },
+  ) => Effect.Effect<Info | undefined>
+  /** Waits for scope and native cleanup; false preserves a failed stop even after notification consumption. */
+  readonly awaitIdle: (id: string) => Effect.Effect<boolean>
   readonly cancelSession: (sessionID: SessionSchema.ID) => Effect.Effect<Info[]>
   readonly pendingBackground: Effect.Effect<readonly Background[]>
   readonly runningBackground: Effect.Effect<readonly Recovery[]>
@@ -190,8 +199,23 @@ export const make = Effect.gen(function* () {
   const db = (yield* Database.Service).db
   const state: State = {
     jobs: yield* SynchronizedRef.make(new Map()),
+    closing: new Map(),
     scope: yield* Scope.Scope,
   }
+
+  const settleCleanup = Effect.fnUntraced(function* (
+    id: string,
+    closed: Deferred.Deferred<boolean>,
+    exit: Exit.Exit<void, unknown>,
+  ) {
+    yield* Deferred.succeed(closed, Exit.isSuccess(exit))
+    if (Exit.isFailure(exit)) return
+    const pending = state.closing.get(id)
+    pending?.delete(closed)
+    if (pending?.size === 0) state.closing.delete(id)
+  })
+  const close = (id: string, scope: Scope.Closeable, closed: Deferred.Deferred<boolean>) =>
+    Scope.close(scope, Exit.void).pipe(Effect.onExit((exit) => settleCleanup(id, closed, exit)))
 
   const consume = (id: string, generation: Scope.Closeable) =>
     SynchronizedRef.update(state.jobs, (jobs) => {
@@ -266,12 +290,15 @@ export const make = Effect.gen(function* () {
           },
         }
         if (status !== "cancelled") yield* persistBackground(next)
-        return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+        return [
+          { info: snapshot(next), done: job.done, scope: job.scope, closed: job.closed },
+          new Map(jobs).set(id, next),
+        ]
       }),
     )
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info)
-    if (result.scope) {
-      yield* Scope.close(result.scope, Exit.void).pipe(Effect.forkIn(state.scope, { startImmediately: true }))
+    if (result.scope && result.closed) {
+      yield* close(id, result.scope, result.closed).pipe(Effect.forkIn(state.scope, { startImmediately: true }))
     }
     return result.info
   })
@@ -287,6 +314,7 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const started_at = yield* Clock.currentTimeMillis
         const done = yield* Deferred.make<Info>()
+        const closed = yield* Deferred.make<boolean>()
         const backgrounded = yield* Deferred.make<Info>()
         const result = yield* SynchronizedRef.modifyEffect(
           state.jobs,
@@ -296,6 +324,9 @@ export const make = Effect.gen(function* () {
               return [{ info: snapshot(existing) }, jobs]
             }
             const scope = yield* Scope.fork(state.scope, "parallel")
+            const pending = state.closing.get(input.id) ?? new Set<Deferred.Deferred<boolean>>()
+            pending.add(closed)
+            state.closing.set(input.id, pending)
             const job = {
               info: {
                 id: input.id,
@@ -308,6 +339,7 @@ export const make = Effect.gen(function* () {
                 ...(input.recovery ? { recovery: input.recovery } : {}),
               },
               done,
+              closed,
               backgrounded,
               scope,
               blockingSessions: new Map<SessionSchema.ID, number>(),
@@ -450,7 +482,10 @@ export const make = Effect.gen(function* () {
       Effect.fnUntraced(function* (jobs): Effect.fn.Return<readonly [FinishResult, Map<string, Active>]> {
         const job = jobs.get(id)
         if (!job) return [{}, jobs]
-        if (job.info.status !== "running") return [{ info: snapshot(job), generation: job.scope }, jobs]
+        if (job.info.status !== "running") {
+          if (persist && job.info.status === "cancelled") yield* persistBackground(job)
+          return [{ info: snapshot(job), generation: job.scope }, jobs]
+        }
         const next = {
           ...job,
           blockingSessions: new Map<SessionSchema.ID, number>(),
@@ -462,18 +497,42 @@ export const make = Effect.gen(function* () {
         }
         if (persist) yield* persistBackground(next)
         return [
-          { info: snapshot(next), done: job.done, scope: job.scope, generation: job.scope },
+          { info: snapshot(next), done: job.done, scope: job.scope, generation: job.scope, closed: job.closed },
           new Map(jobs).set(id, next),
         ]
       }),
     )
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info)
-    if (result.scope) yield* Scope.close(result.scope, Exit.void)
+    if (result.scope && result.closed) yield* close(id, result.scope, result.closed)
     if (result.generation) yield* consume(id, result.generation)
     return result.info
   })
 
-  const cancel: Interface["cancel"] = Effect.fn("Job.cancel")((id) => cancelInternal(id, true))
+  const cancel: Interface["cancel"] = Effect.fn("Job.cancel")(function* (id, options) {
+    if (!options) return yield* cancelInternal(id, true)
+    const completion = yield* SynchronizedRef.modify(
+      state.jobs,
+      (jobs): readonly [Deferred.Deferred<boolean> | undefined, Map<string, Active>] => {
+        const job = jobs.get(id)
+        if (job?.nativeStop) return [undefined, jobs]
+        const nativeStop = Deferred.makeUnsafe<boolean>()
+        const pending = state.closing.get(id) ?? new Set<Deferred.Deferred<boolean>>()
+        pending.add(nativeStop)
+        state.closing.set(id, pending)
+        return [nativeStop, job ? new Map(jobs).set(id, { ...job, nativeStop }) : jobs]
+      },
+    )
+    return yield* cancelInternal(id, true).pipe(
+      Effect.ensuring(
+        completion
+          ? options.cleanup.pipe(
+              Effect.exit,
+              Effect.flatMap((exit) => settleCleanup(id, completion, exit)),
+            )
+          : Effect.void,
+      ),
+    )
+  })
 
   const cancelSession: Interface["cancelSession"] = Effect.fn("Job.cancelSession")(function* (sessionID) {
     const ids = [...(yield* SynchronizedRef.get(state.jobs)).values()]
@@ -547,6 +606,13 @@ export const make = Effect.gen(function* () {
     background,
     backgroundAll,
     cancel,
+    awaitIdle: Effect.fn("Job.awaitIdle")(function* (id) {
+      const job = (yield* SynchronizedRef.get(state.jobs)).get(id)
+      if (job) yield* Deferred.await(job.done)
+      const pending = [...(state.closing.get(id) ?? [])]
+      const results = yield* Effect.forEach(pending, (closed) => Deferred.await(closed))
+      return results.every((settled) => settled)
+    }),
     cancelSession,
     pendingBackground,
     runningBackground,

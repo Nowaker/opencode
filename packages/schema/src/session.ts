@@ -15,6 +15,7 @@ import { Permission } from "./permission.js"
 import { TokenUsage } from "./token-usage.js"
 import { Revert } from "./session-revert.js"
 import { SessionFork } from "./session-fork.js"
+import { Cancellation } from "./cancellation.js"
 
 export const ID = SessionID
 export type ID = SessionID
@@ -23,6 +24,14 @@ export const Metadata = SessionMetadata
 export type Metadata = SessionMetadata
 
 export const Event = SessionEvent
+
+export const CancelChildInput = Schema.Struct({ parentID: ID, sessionID: ID }).annotate({
+  identifier: "Session.CancelChildInput",
+})
+export interface CancelChildInput extends Schema.Schema.Type<typeof CancelChildInput> {}
+
+export const CancelChildResult = Cancellation.Result
+export type CancelChildResult = typeof CancelChildResult.Type
 
 export { Revert }
 export const ForkBoundary = SessionFork.Boundary

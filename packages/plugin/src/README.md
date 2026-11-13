@@ -116,6 +116,10 @@ Session context is mutable immediately before provider dispatch:
 
 `ctx.session.fork({ sessionID, before? })` exposes the ordinary Session API fork operation. It copies settled history into an independent session, with `before` selecting an exclusive message boundary. This operation has the same errors and inheritance as the HTTP Session API; native subagent `fork: true` additionally retains child ownership and restricts copied history to the parent's current context. Detect native fork, notice and timed foreground handoff support with `ctx.app.capabilities?.subagentOptions`.
 
+`await ctx.session.cancelChild({ parentID, sessionID })` uses the [experimental child cancellation contract](../../../README.md#installation). Check `ctx.app.capabilities?.childCancellation` before using it with an older host. Only `status: "cancelled"` confirms a settled stop; handle `terminal`, `requested`, and `unsupported` explicitly.
+
+With `ctx.app.capabilities?.jobControl`, use `await ctx.job.list({ parentSessionID, descendants: true })` to read `{ data: Job.Info[] }`, or omit `descendants` for direct ownership. `await ctx.job.cancel({ parentID, jobID })` follows the [native Job cancellation contract](../../../README.md#installation) for directly owned shell and image Jobs. Subagents use `ctx.session.cancelChild`.
+
 ```ts
 await ctx.session.hook("context", (event) => {
   event.tools.read.description = "Read a file using narrow line ranges."

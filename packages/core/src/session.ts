@@ -39,6 +39,7 @@ import {
   MessageDecodeError,
   MessageNotFoundError,
   NotFoundError,
+  ParentMismatchError,
   PromptConflictError,
   SkillNotFoundError,
   SyntheticConflictError,
@@ -69,6 +70,7 @@ import { Job } from "./job.js"
 import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
 import { InstructionEntry } from "./session/instruction-entry.js"
+import { SessionChildCancellation } from "./session/child-cancellation.js"
 
 // get project -> project.locations
 //
@@ -116,6 +118,7 @@ export {
   MessageDecodeError,
   MessageNotFoundError,
   NotFoundError,
+  ParentMismatchError,
   PromptConflictError,
   SkillNotFoundError,
   SyntheticConflictError,
@@ -246,6 +249,9 @@ export interface Interface {
   readonly background: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
   readonly interrupt: (sessionID: SessionSchema.ID, options?: { readonly resume?: boolean }) => Effect.Effect<boolean>
+  readonly cancelChild: (
+    input: SessionSchema.CancelChildInput,
+  ) => Effect.Effect<SessionSchema.CancelChildResult, NotFoundError | ParentMismatchError>
   readonly synthetic: (
     input: Parameters<Session.Handle["synthetic"]>[0] & { sessionID: SessionSchema.ID },
   ) => ReturnType<Session.Handle["synthetic"]>
@@ -285,6 +291,7 @@ const layer = Layer.effect(
     const environments = yield* SessionEnvironment.Service
     const locations = yield* LocationServiceMap.Service
     const sessions = yield* Session.make()
+    const cancelChild = yield* SessionChildCancellation.make
     const mediaBlob = (session: SessionSchema.Info) => SessionBlob.enabledFor(instances, session)
     const isDurableSessionEvent = (item: Bus.LogItem): item is SessionEvent.DurableEvent =>
       Object.hasOwn(SessionEvent.Durable.cases, item.type)
@@ -558,6 +565,7 @@ const layer = Layer.effect(
       resume: (sessionID) => sessions.forSession(sessionID).resume(),
       synthetic: (input) => sessions.forSession(input.sessionID).synthetic(input),
       interrupt: (sessionID, options) => sessions.forSession(sessionID).interrupt(options),
+      cancelChild,
       revert: {
         stage: (input) => sessions.forSession(input.sessionID).revert.stage(input),
         clear: (sessionID) => sessions.forSession(sessionID).revert.clear(),

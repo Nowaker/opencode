@@ -21,6 +21,7 @@ import { SessionTransfer } from "@opencode/core/session/transfer"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { ShellSelect } from "@opencode/core/shell/select"
 import { Job } from "@opencode/core/job"
+import { JobControl } from "@opencode/core/job/control"
 import { KV } from "@opencode/core/kv"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Global } from "@opencode/util/global"
@@ -63,6 +64,7 @@ const applicationServiceNodes = [
   EventLogger.node,
   httpClient,
   Job.node,
+  JobControl.node,
   Project.node,
   Project.sweepNode,
   Worktree.node,

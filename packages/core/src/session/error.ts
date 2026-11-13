@@ -11,6 +11,15 @@ export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Session.
   sessionID: SessionSchema.ID,
 }) {}
 
+export class ParentMismatchError extends Schema.TaggedError<ParentMismatchError>()("Session.ParentMismatchError", {
+  parentID: SessionSchema.ID,
+  sessionID: SessionSchema.ID,
+}) {
+  override get message() {
+    return `Session ${this.sessionID} is not a child of ${this.parentID}`
+  }
+}
+
 export class InvalidListCursorError extends Schema.TaggedError<InvalidListCursorError>()(
   "Session.InvalidListCursorError",
   {},

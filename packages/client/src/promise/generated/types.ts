@@ -9,6 +9,8 @@ export type ServerInfo = {
   capabilities?:
     | {
         persistentPty?: boolean | undefined
+        jobControl?: boolean | undefined
+        childCancellation?: boolean | undefined
         sessionMessages?: boolean | undefined
         subagentOptions?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
@@ -192,6 +194,12 @@ export type SessionMessageToolStateRunning1 = {
   input: { [x: string]: any }
   metadata: { [x: string]: JsonValue }
 }
+
+export type CancellationResult =
+  | { status: "cancelled" }
+  | { status: "terminal"; state: "completed" | "error" | "cancelled" }
+  | { status: "requested" }
+  | { status: "unsupported"; reason: string }
 
 export type ModelType = "chat" | "decision" | "image" | (string & {})
 
@@ -3266,6 +3274,10 @@ export type ArtifactNotFoundError = {
 export const isArtifactNotFoundError = (value: unknown): value is ArtifactNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ArtifactNotFoundError"
 
+export type JobNotFoundError = { readonly _tag: "JobNotFoundError"; readonly jobID: string; readonly message: string }
+export const isJobNotFoundError = (value: unknown): value is JobNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "JobNotFoundError"
+
 export type ShellNotFoundError = { readonly _tag: "ShellNotFoundError"; readonly id: string; readonly message: string }
 export const isShellNotFoundError = (value: unknown): value is ShellNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ShellNotFoundError"
@@ -3922,6 +3934,10 @@ export type ExperimentalSessionLogInput = {
 }
 
 export type ExperimentalSessionLogOutput = SessionLogItem
+
+export type ExperimentalSessionCancelChildInput = { readonly parentID: string; readonly sessionID: string }
+
+export type ExperimentalSessionCancelChildOutput = CancellationResult
 
 export type MessageListInput = {
   readonly sessionID: string
@@ -4754,6 +4770,10 @@ export type ExperimentalJobListInput = {
 
 export type ExperimentalJobListOutput = { data: Array<JobInfo> }["data"]
 
+export type ExperimentalJobCancelInput = { readonly parentID: string; readonly jobID: string }
+
+export type ExperimentalJobCancelOutput = CancellationResult
+
 export type ShellListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
 
 export type ShellListOutput = { location: LocationPublicRef; data: Array<ShellInfo1> }
@@ -4960,6 +4980,12 @@ export type SessionLogInput = ExperimentalSessionLogInput
 
 /** @deprecated Use `ExperimentalSessionLogOutput`. Removed in the next minor. */
 export type SessionLogOutput = ExperimentalSessionLogOutput
+
+/** @deprecated Use `ExperimentalSessionCancelChildInput`. Removed in the next minor. */
+export type SessionCancelChildInput = ExperimentalSessionCancelChildInput
+
+/** @deprecated Use `ExperimentalSessionCancelChildOutput`. Removed in the next minor. */
+export type SessionCancelChildOutput = ExperimentalSessionCancelChildOutput
 
 /** @deprecated Use `ExperimentalGenerateTextInput`. Removed in the next minor. */
 export type GenerateTextInput = ExperimentalGenerateTextInput

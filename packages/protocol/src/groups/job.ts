@@ -2,7 +2,7 @@ import { Job } from "@opencode/schema/job"
 import { Session } from "@opencode/schema/session"
 import { Schema, SchemaGetter } from "effect"
 import { HttpApiEndpoint, OpenApi } from "effect/http-api"
-import { InvalidRequestError, SessionNotFoundError } from "../errors.js"
+import { ConflictError, InvalidRequestError, JobNotFoundError, SessionNotFoundError } from "../errors.js"
 
 const BooleanFromString = Schema.Literals(["true", "false"]).pipe(
   Schema.decodeTo(Schema.Boolean, {
@@ -40,6 +40,18 @@ export const JobEndpoints = [
       description:
         "List active and unconsumed background jobs, optionally filtered by owning session, descendants, or kind. Experimental: may change without compatibility guarantees.",
       transform: (operation) => ({ ...operation, tags: ["experimental"] }),
+    }),
+  ),
+  HttpApiEndpoint.post("job.cancel", "/api/experimental/job/:parentID/:jobID/cancel", {
+    params: Job.CancelInput,
+    success: Job.CancelResult,
+    error: [JobNotFoundError, ConflictError],
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "experimental.job.cancel",
+      summary: "Cancel an owned native Job",
+      description:
+        "Experimental: may change without compatibility guarantees. Stops a directly owned local shell or image Job after checking its persisted recovery owner. Subagent Jobs require session.cancelChild. Cancelled confirms native execution and cleanup settled; requested means stopping continues; remote ownership returns unsupported.",
     }),
   ),
 ] as const
