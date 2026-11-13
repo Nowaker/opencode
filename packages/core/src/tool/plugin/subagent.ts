@@ -186,7 +186,8 @@ export const Plugin = {
                         message: `Session ${existing.id} is not a child of the current session`,
                       })
                     const forked = input.fork === true || existing?.fork?.sessionID === context.sessionID
-                    if (agent.mode === "primary" && !(forked && agent.id === parent.agent))
+                    const parentAgent = yield* agents.select(parent.agent)
+                    if (agent.mode === "primary" && !(forked && agent.id === parentAgent.id))
                       return yield* new ToolFailure({ message: `Agent ${input.agent} cannot run as a subagent` })
                     yield* permission
                       .assert({
@@ -199,24 +200,16 @@ export const Plugin = {
                         Effect.mapError((error) => new ToolFailure({ message: `Subagent denied: ${agent.id}`, error })),
                       )
 
-                    if (group && existing && (yield* jobs.get(existing.id))?.status === "running")
+                    const running = existing ? (yield* jobs.get(existing.id))?.status === "running" : false
+                    if (group && running)
                       return yield* new ToolFailure({ message: "A group slot cannot join an already running subagent" })
-                    const override = input.model === undefined ? undefined : yield* resolveModel(input.model)
-                    // Continuing with a different agent switches the child, mirroring create semantics
-                    // where an explicit model wins over the agent's configured model, which wins over the inherited one.
-                    if (existing !== undefined) {
-                      const switched = existing.agent !== agent.id
-                      const model = override ?? (switched ? agent.model : undefined)
-                      yield* Effect.all([
-                        switched ? sessions.switchAgent({ sessionID: existing.id, agent: agent.id }) : Effect.void,
-                        model === undefined ? Effect.void : sessions.switchModel({ sessionID: existing.id, model }),
-                      ]).pipe(
-                        Effect.mapError(
-                          (error) =>
-                            new ToolFailure({ message: `Failed to switch subagent session: ${existing.id}`, error }),
-                        ),
+                    if (group && existing)
+                      yield* SubagentGroup.claimChild(db, group, existing.id).pipe(
+                        Effect.mapError((error) => new ToolFailure({ message: error.message })),
                       )
-                    }
+                    if (!group && existing && !running && (yield* SubagentGroup.owners(db, existing.id)).length > 0)
+                      return yield* new ToolFailure({ message: "A group slot is preparing this subagent" })
+                    const override = input.model === undefined ? undefined : yield* resolveModel(input.model)
 
                     const model = override ?? agent.model ?? parent.model
                     const child =
@@ -244,41 +237,70 @@ export const Plugin = {
                       ))
 
                     const background = input.background === true
-                    if (group) yield* SubagentGroup.update(db, group, { status: "running", childSessionID: child.id })
-                    yield* context.progress({ sessionID: child.id, status: "running" })
+                    const launch = yield* subagents.admit(
+                      child.id,
+                      Effect.gen(function* () {
+                        if (group && existing && (yield* jobs.get(child.id))?.status === "running")
+                          return yield* new ToolFailure({
+                            message: "A group slot cannot join an already running subagent",
+                          })
+                        if (!group && existing && !running && (yield* SubagentGroup.owners(db, child.id)).length > 0)
+                          return yield* new ToolFailure({ message: "A group slot is preparing this subagent" })
+                        // An explicit model wins over the switched agent's model, then the inherited model.
+                        if (existing !== undefined) {
+                          const switched = existing.agent !== agent.id
+                          const model = override ?? (switched ? agent.model : undefined)
+                          yield* Effect.all([
+                            switched ? sessions.switchAgent({ sessionID: child.id, agent: agent.id }) : Effect.void,
+                            model === undefined ? Effect.void : sessions.switchModel({ sessionID: child.id, model }),
+                          ]).pipe(
+                            Effect.mapError(
+                              (error) =>
+                                new ToolFailure({ message: `Failed to switch subagent session: ${child.id}`, error }),
+                            ),
+                          )
+                        }
+                        if (group && !existing)
+                          yield* SubagentGroup.update(db, group, { status: "running", childSessionID: child.id })
+                        yield* context.progress({ sessionID: child.id, status: "running" })
 
-                    // Standard prompt admission outside the job: Job.start joining a running child skips
-                    // its run effect, and the default wake starts an idle child or steers a running one.
-                    const promptID = yield* sessions
-                      .prompt({
-                        sessionID: child.id,
-                        text:
-                          existing === undefined
-                            ? ["You are a subagent spawned by another session.", input.prompt].join("\n")
-                            : input.prompt,
-                        ...((background && existing === undefined) || group ? { resume: false } : {}),
-                      })
-                      .pipe(
-                        Effect.mapError(
-                          (error) => new ToolFailure({ message: `Failed to prompt subagent: ${child.id}`, error }),
-                        ),
-                      )
+                        // Standard prompt admission outside the job: Job.start joining a running child skips
+                        // its run effect, and the default wake starts an idle child or steers a running one.
+                        const promptID = yield* sessions
+                          .prompt({
+                            sessionID: child.id,
+                            text:
+                              existing === undefined
+                                ? ["You are a subagent spawned by another session.", input.prompt].join("\n")
+                                : input.prompt,
+                            ...((background && existing === undefined) || group ? { resume: false } : {}),
+                          })
+                          .pipe(
+                            Effect.mapError(
+                              (error) => new ToolFailure({ message: `Failed to prompt subagent: ${child.id}`, error }),
+                            ),
+                          )
 
-                    const recovery = {
-                      kind: "subagent" as const,
-                      parentSessionID: context.sessionID,
-                      childSessionID: child.id,
-                      agent: agent.name,
-                      description: input.description,
-                      ...(input.notice ? { notice: input.notice } : {}),
-                      ...(group ? { group } : {}),
-                      ...(forked ? { after: promptID.id } : {}),
-                    }
-                    const started = yield* subagents.start(recovery)
-                    if (group) yield* subagents.notify(recovery, started.started_at)
+                        const recovery = {
+                          kind: "subagent" as const,
+                          parentSessionID: context.sessionID,
+                          childSessionID: child.id,
+                          agent: agent.name,
+                          description: input.description,
+                          ...(input.notice ? { notice: input.notice } : {}),
+                          ...(group ? { group } : {}),
+                          ...(forked ? { after: promptID.id } : {}),
+                        }
+                        const started = yield* subagents.start(recovery)
+                        if (group) yield* subagents.notify(recovery, started.started_at)
+                        if (background) yield* subagents.background(recovery)
+                        return { recovery, started }
+                      }),
+                    )
+                    const recovery = launch.recovery
+                    const started = launch.started
 
                     if (background) {
-                      yield* subagents.background(recovery)
                       return backgroundResult(child.id, input.notice)
                     }
 

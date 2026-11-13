@@ -19,6 +19,7 @@ import { SessionMessageTable } from "./session/sql.js"
 import { SessionBlob } from "./session/blob.js"
 import { SessionSchema } from "./session/schema.js"
 import { SubagentGroup } from "./session/subagent-group.js"
+import { SessionHistory } from "./session/history.js"
 import { RelativePath } from "./schema.js"
 import { Agent } from "@opencode/schema/agent"
 import type { Permission } from "@opencode/schema/permission"
@@ -375,7 +376,9 @@ const layer = Layer.effect(
         // instruction-update text the initial baseline already reflects.
         // The parent's location, not the caller's, decides whether the copy's media is stored as blobs.
         const media = yield* mediaBlob(parent)
-        const context = input.child ? yield* store.context(parent.id).pipe(Effect.orDie) : []
+        const context = input.child
+          ? yield* SessionHistory.load(db, parent.id, "fork").pipe(Effect.orDie)
+          : []
         const compaction = context.find((message) => message.type === "compaction" && message.status === "completed")
         const recent = compaction?.metadata?.recent
         yield* bus

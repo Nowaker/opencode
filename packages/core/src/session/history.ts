@@ -27,9 +27,10 @@ export const encodePart = Schema.encodeSync(SessionMessage.AssistantContent)
 /**
  * Which completed compactions bound a history read. Local summaries always do. Native
  * windows do for model-neutral readers (`latest`), never for the original transcript
- * (`local`), and only when the target model can replay them.
+ * (`local`), and only when the target model can replay them. Fork snapshots retain native
+ * checkpoints with their textual fallback, bounded by the latest textual compaction.
  */
-export type Boundary = "latest" | "local" | Model.Ref
+export type Boundary = "latest" | "local" | "fork" | Model.Ref
 
 /** A completed provider compaction, which replays `native.messages` instead of a summary. */
 export const isNativeCompaction = (
@@ -47,6 +48,7 @@ const decodesWindow = (messages: unknown) => Option.isSome(decodeNativeWindow(me
 const replayable = (message: SessionMessage.Info, boundary: Boundary) =>
   !isNativeCompaction(message) ||
   boundary === "latest" ||
+  boundary === "fork" ||
   (boundary !== "local" &&
     message.model?.providerID === boundary.providerID &&
     message.model.id === boundary.id &&
@@ -72,7 +74,7 @@ const latestCompaction = Effect.fnUntraced(function* (
           : or(
               // Rows written before v2.1 hold the window in `providerContext`.
               sql`coalesce(json_extract(${SessionMessageTable.data}, '$.native.messages'), json_extract(${SessionMessageTable.data}, '$.providerContext')) is null`,
-              boundary === "local"
+              boundary === "local" || boundary === "fork"
                 ? undefined
                 : and(
                     sql`json_extract(${SessionMessageTable.data}, '$.model.providerID') = ${boundary.providerID}`,

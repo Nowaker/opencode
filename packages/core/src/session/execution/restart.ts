@@ -177,7 +177,7 @@ export const layer = (options?: Options) =>
           if (recovery.group) {
             yield* SubagentGroup.update(db, recovery.group, { status: "cancelled", error: "Subagent session is unavailable" })
             const state = yield* SubagentGroup.get(db, recovery.parentSessionID, recovery.group.id)
-            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: false }).pipe(
+            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: suspended.has(recovery.parentSessionID) ? false : undefined }).pipe(
               Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, recovery.parentSessionID)),
               Effect.orDie,
             )
@@ -213,17 +213,7 @@ export const layer = (options?: Options) =>
           notificationID: background.notificationID,
           recovery,
           run: execution.resume(recovery.childSessionID).pipe(
-            Effect.andThen(store.messages({
-              sessionID: recovery.childSessionID,
-              ...(recovery.after ? { cursor: { id: recovery.after, direction: "previous" as const } } : {}),
-            })),
-            Effect.map((messages) => {
-              const assistant = messages.find(
-                (message) =>
-                  message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
-              )
-              return SubagentCompletion.text(assistant)
-            }),
+            Effect.andThen(SubagentCompletion.read(db, recovery)),
           ),
         })
         yield* jobs.background(background.id)
@@ -237,19 +227,7 @@ export const layer = (options?: Options) =>
         resumeSuspendedSessions: Effect.gen(function* () {
           const active = yield* execution.active
           const pending = yield* jobs.pendingBackground
-          for (const group of yield* SubagentGroup.pending(db)) {
-            for (const slot of group.slots) {
-              if (slot.status !== "running" || pending.some((job) => job.notificationID === slot.generation)) continue
-              yield* SubagentGroup.update(db, { parentSessionID: group.parentSessionID, id: group.id, notificationID: group.notificationID, index: slot.index, generation: slot.generation }, {
-                status: "cancelled", error: "Subagent launch interrupted by server restart",
-              })
-            }
-            const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
-            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: false }).pipe(
-              Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, group.parentSessionID)),
-              Effect.orDie,
-            )
-          }
+          const groups = yield* SubagentGroup.pending(db)
           const children = pending.flatMap((background) =>
             background.status === "running" && background.recovery.kind === "subagent"
               ? [background.recovery.childSessionID]
@@ -273,6 +251,20 @@ export const layer = (options?: Options) =>
           )
 
           // Background completion can wake a parent, so inspect local ownership only after recovery.
+          for (const group of groups) {
+            for (const slot of group.slots) {
+              if (slot.status !== "running" || pending.some((job) => job.notificationID === slot.generation)) continue
+              yield* SubagentGroup.update(db, { parentSessionID: group.parentSessionID, id: group.id, notificationID: group.notificationID, index: slot.index, generation: slot.generation }, {
+                status: "cancelled", error: "Subagent launch interrupted by server restart",
+              })
+            }
+            const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
+            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: suspended.has(group.parentSessionID) ? false : undefined }).pipe(
+              Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, group.parentSessionID)),
+              Effect.orDie,
+            )
+          }
+
           const resumed = yield* execution.active
           yield* Effect.forEach(
             (yield* store.listSuspended()).filter((sessionID) => !resumed.has(sessionID)),

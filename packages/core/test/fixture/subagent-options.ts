@@ -18,6 +18,7 @@ import { Session } from "@opencode/core/session"
 import { SessionRestart } from "@opencode/core/session/execution/restart"
 import { SessionStore } from "@opencode/core/session/store"
 import { SessionExecution } from "@opencode/core/session/execution"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 import { SessionEvent } from "@opencode/core/session/event"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { Tool } from "@opencode/core/tool"
@@ -41,6 +42,7 @@ export const it = testEffect(
         SessionRestart.node,
         SessionStore.node,
         SessionExecution.node,
+        SubagentJob.node,
         Database.node,
         Bus.node,
       ]),

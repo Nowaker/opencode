@@ -87,12 +87,14 @@ describe("durable subagent groups", () => {
       const restart = yield* SessionRestart.Service
       yield* restart.resumeSuspendedSessions
       yield* Fiber.join(notice)
+      yield* s.llm.wait(1)
+      yield* s.sessions.wait(s.parent.id)
       const state = yield* SubagentGroup.get(s.db, s.parent.id, "restart")
       expect(state?.slots.map((slot) => slot.status)).toEqual(["cancelled", "error"])
       expect(state?.delivered).toBe(true)
-      const admitted = yield* s.sessions.inbox(s.parent.id)
+      const admitted = (yield* s.sessions.context(s.parent.id)).filter((message) => message.type === "synthetic")
       expect(admitted).toMatchObject([{ type: "synthetic", id: state?.notificationID }])
-      expect(yield* s.llm.requests()).toEqual([])
+      expect(yield* s.llm.requests()).toHaveLength(1)
       const rows = yield* s.db.select().from(KVTable).all()
       const stored = rows.find((row) => JSON.stringify(row.value).includes(failed.notificationID))
       if (!stored || !state) return yield* Effect.die("Missing durable group")
@@ -106,7 +108,8 @@ describe("durable subagent groups", () => {
         Effect.provide(SessionRestart.layer()),
         Effect.provideService(Job.Service, freshJobs),
       )
-      expect(yield* s.sessions.inbox(s.parent.id)).toEqual(admitted)
+      expect((yield* s.sessions.context(s.parent.id)).filter((message) => message.type === "synthetic")).toEqual(admitted)
+      expect(yield* s.llm.requests()).toHaveLength(1)
       expect(yield* SubagentGroup.pending(s.db)).toEqual([])
       expect(
         (yield* SubagentGroup.register(s.db, {

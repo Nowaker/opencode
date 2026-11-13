@@ -1,11 +1,14 @@
 export * as SubagentCompletion from "./subagent-completion.js"
 
 import { Effect } from "effect"
+import { and, desc, eq, sql } from "drizzle-orm"
 import type { Job } from "../job.js"
 import type { Session } from "../session.js"
 import type { SessionMessage } from "./message.js"
 import type { Database } from "../database/database.js"
 import { SubagentGroup } from "./subagent-group.js"
+import { SessionHistory } from "./history.js"
+import { SessionMessageTable } from "./sql.js"
 
 export const NO_TEXT = "Subagent completed without a text response."
 
@@ -19,6 +22,34 @@ export function text(message: SessionMessage.Info | undefined) {
       .join("\n\n") || NO_TEXT
   )
 }
+
+export const read = Effect.fn("SubagentCompletion.read")(function* (
+  db: Database.Interface["db"],
+  input: Pick<Extract<Job.Recovery, { kind: "subagent" }>, "childSessionID" | "after">,
+) {
+  const row = yield* db
+    .select()
+    .from(SessionMessageTable)
+    .where(
+      and(
+        eq(SessionMessageTable.session_id, input.childSessionID),
+        eq(SessionMessageTable.type, "assistant"),
+        sql`json_extract(${SessionMessageTable.data}, '$.time.completed') is not null`,
+        sql`json_extract(${SessionMessageTable.data}, '$.error') is null`,
+        input.after === undefined
+          ? undefined
+          : sql`${SessionMessageTable.seq} > (
+      select ${SessionMessageTable.seq} from ${SessionMessageTable}
+      where ${SessionMessageTable.session_id} = ${input.childSessionID} and ${SessionMessageTable.id} = ${input.after}
+    )`,
+      ),
+    )
+    .orderBy(desc(SessionMessageTable.seq))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  return text(row ? yield* SessionHistory.loadMessageRow(db, row) : undefined)
+})
 
 export const deliver = Effect.fnUntraced(function* (
   sessions: Pick<Session.Interface, "synthetic">,

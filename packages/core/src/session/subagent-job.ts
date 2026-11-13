@@ -7,10 +7,12 @@ import { Job } from "../job.js"
 import { Session } from "../session.js"
 import { SubagentCompletion } from "./subagent-completion.js"
 import { Database } from "../database/database.js"
+import { KeyedMutex } from "../effect/keyed-mutex.js"
 
 type Recovery = Extract<Job.Recovery, { kind: "subagent" }>
 
 export interface Interface {
+  admit: <A, E, R>(childSessionID: Recovery["childSessionID"], launch: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   start: (recovery: Recovery) => Effect.Effect<Job.Info>
   background: (recovery: Recovery) => Effect.Effect<void>
   notify: (recovery: Recovery, startedAt: number) => Effect.Effect<void>
@@ -23,6 +25,7 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
   const jobs = yield* Job.Service
   const db = (yield* Database.Service).db
   const scope = yield* Scope.Scope
+  const admissions = yield* KeyedMutex.make<Recovery["childSessionID"]>()
   // Jobs and their completion observers outlive the plugin that launched them.
   // Fork with the global context too, rather than retaining the caller's location.
   const context = yield* Effect.context<never>()
@@ -54,6 +57,7 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
   })
 
   return Service.of({
+    admit: (childSessionID, launch) => admissions.withLock(childSessionID)(launch),
     start: (recovery: Recovery) =>
       jobs
         .start({
@@ -65,15 +69,7 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
           ...(recovery.group ? { notificationID: recovery.group.generation } : {}),
           run: Effect.gen(function* () {
             yield* sessions.resume(recovery.childSessionID)
-            const messages = yield* sessions.messages({
-              sessionID: recovery.childSessionID, order: "desc", limit: 20,
-              ...(recovery.after ? { cursor: { id: recovery.after, direction: "previous" as const } } : {}),
-            })
-            const assistant = messages.find(
-              (message) =>
-                message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
-            )
-            return SubagentCompletion.text(assistant)
+            return yield* SubagentCompletion.read(db, recovery)
           }),
         })
         .pipe(Effect.setContext(context)),

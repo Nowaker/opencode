@@ -159,6 +159,43 @@ export const pending = (db: DB) =>
       Effect.orDie,
       Effect.map((rows) => rows.map((row) => decode(row.value)).filter((state) => !state.delivered)),
     )
+export const owners = (db: DB, childSessionID: SessionSchema.ID) =>
+  pending(db).pipe(
+    Effect.map((groups) =>
+      groups.flatMap((group) =>
+        group.slots.filter((slot) => slot.status === "running" && slot.childSessionID === childSessionID),
+      ),
+    ),
+  )
+
+export const claimChild = Effect.fn("SubagentGroup.claimChild")(function* (
+  db: DB,
+  token: Token,
+  childSessionID: SessionSchema.ID,
+) {
+  yield* db
+    .transaction(
+      () =>
+        Effect.gen(function* () {
+          const state = yield* read(db, token.parentSessionID, token.id)
+          const slot = state?.slots.find((slot) => slot.index === token.index && slot.generation === token.generation)
+          if (!state || state.notificationID !== token.notificationID || state.delivered || slot?.status !== "running")
+            return yield* new Conflict({ message: "Subagent group slot is no longer pending" })
+          const occupied = (yield* owners(db, childSessionID)).some((slot) => slot.generation !== token.generation)
+          if (occupied)
+            return yield* new Conflict({ message: `Subagent ${childSessionID} is already owned by a group slot` })
+          yield* write(db, {
+            ...state,
+            slots: state.slots.map((slot) =>
+              slot.generation === token.generation ? { ...slot, childSessionID } : slot,
+            ),
+          })
+        }),
+      { behavior: "immediate" },
+    )
+    .pipe(Effect.catchTag("SqlError", Effect.die))
+})
+
 export const ready = (state: State) =>
   state.slots.length === state.total && state.slots.every((slot) => slot.status !== "running")
 export const get = read
