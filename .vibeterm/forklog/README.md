@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Awaited v2 compaction summary completion](./features/2026-11-11-v2-compaction-summary.md)
 - [Awaited plugin configuration on v2](./features/2026-11-11-plugin-configuration.md)
 - [Native v2 plugin session and Job controls](./features/2026-11-10-v2-plugin-controls.md)
 - [Anthropic Meridian provider clone](./features/2026-11-12-anthropic-meridian-provider.md)
@@ -155,6 +156,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-13 W13](./sessions/2026-11-13-v2-compaction-summary.md) - awaited experimental compaction summary completion, generation/cutoff identities, local stop filtering and prior-summary projections; native ledger reader remains W10-owned.
 - [2026-11-11 W12, delivered November 13](./sessions/2026-11-11-plugin-configuration.md) - awaited mutable plugin configuration before native consumers; source approved, published to both mirrors and installed as vt-15 through 12/12 gates on desktop and m4max; native controller demo passed, W10 consumer acceptance pending.
 - [2026-11-13 W1 delivery](./sessions/2026-11-13-v2-plugin-controls.md) - reviewed native forks, grouped completion notices, durable plugin messages and parent-scoped child/Job cancellation, with source and installed-runtime evidence.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-event-order.md) - a background bash command that exited while its start was still being announced published `shell.background.exited` before `.started`, so OMO's running-jobs ledger kept 11 finished jobs and their tabs never parked; Exited now waits for Started; `081451095b`, merged `34bccf2103`; vt-459 on desktop and m4max with the retry cap.

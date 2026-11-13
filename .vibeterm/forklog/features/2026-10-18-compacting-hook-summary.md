@@ -29,7 +29,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 ## Non-goals
 
 - No-policy summaries and ordinary continuation behavior remain unchanged; a local boundary finalizes accepted narrative through the existing completion hook.
-- v2 compaction (`packages/core/src/session/compaction.ts`), which has no plugin hook.
+- V2 compaction remains a separate customization: [awaited v2 compaction summary completion](./2026-11-11-v2-compaction-summary.md).
 - An upstream PR.
 
 ## Rationale and constraints
@@ -64,6 +64,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv` for `ses_ebc8f2bc4ffehcE
 
 ## Timeline
 
+- 2026-11-13 [W13 session](../sessions/2026-11-13-v2-compaction-summary.md) adds the v2 counterpart with an awaited textual completion stage, generation/cutoff identities, prior-summary projection and pre-publication stop filtering. This is v2 delivery; no v1 source or v1 re-verification is claimed.
 - 2026-10-18 [`ses_eac9cdf26ffeEPtXV2TXi0WMOu`](../sessions/2026-10-18-fork-hook-seams.md) - initial build; field names agreed with `ses_ebc8f2bc4ffehcETvBMsNJHPhX` and `ses_eacab0c1cffepx2161EwKEzyOO`. Evidence: tests above.
 - 2026-10-31 [`ses_e6b90f99fffennKWXq3VoePII2`](../sessions/2026-10-18-fork-hook-seams.md#stream-boundary-follow-up) - root streaming boundary fix delegated by `ses_e6b9f5c6effeX2U71zc5tix97F`; branch-only delivery, no merge, push, install or live-session changes.
 
