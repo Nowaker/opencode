@@ -224,6 +224,7 @@ const OPENAI_GATEWAY: GatewayBehaviour = { smallFamilies: ["gpt-luna"], servedMo
 
 const CLONES: ({ source: string; id: string; suffix: string } & GatewayBehaviour)[] = [
   { source: "anthropic", id: "anthropic2", suffix: "alt" },
+  { source: "anthropic", id: "anthropic-meridian", suffix: "Meridian" },
   { source: "openai", id: "openai2", suffix: "alt" },
   { source: "openai", id: "openai-meridian", suffix: "Meridian", ...OPENAI_GATEWAY },
 ]

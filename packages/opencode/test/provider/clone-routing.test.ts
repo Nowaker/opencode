@@ -66,6 +66,7 @@ const it = testEffect(
 
 for (const item of [
   { source: "anthropic", clone: "anthropic2", model: "claude-sonnet-4-6", endpoint: "messages" },
+  { source: "anthropic", clone: "anthropic-meridian", model: "claude-sonnet-4-6", endpoint: "messages" },
   { source: "openai", clone: "openai2", model: "gpt-5.6-sol", endpoint: "responses" },
   { source: "openai", clone: "openai-meridian", model: "gpt-5.6-sol", endpoint: "responses" },
 ] as const) {
@@ -113,3 +114,50 @@ for (const item of [
     15000,
   )
 }
+
+// A config model keyed `<profile>/<model>` on a clone inherits the source
+// catalog's entry named by its `id` (cost, limits, variants) and keeps its own
+// headers, which is how Vibeterm pins a model to one Meridian profile.
+it.instance(
+  "a profile-keyed model on anthropic-meridian inherits the catalog model its id names",
+  Effect.gen(function* () {
+    const provider = yield* Provider.Service
+    const source = yield* provider.getModel(ProviderV2.ID.anthropic, ModelV2.ID.make("claude-sonnet-4-6"))
+    const pinned = yield* provider.getModel(
+      ProviderV2.ID.make("anthropic-meridian"),
+      ModelV2.ID.make("work/claude-sonnet-4-6"),
+    )
+    expect(pinned.api.id).toBe("claude-sonnet-4-6")
+    expect(pinned.headers).toEqual({ "x-meridian-profile": "work" })
+    expect(pinned.cost).toEqual(source.cost)
+    expect(pinned.limit).toEqual(source.limit)
+    expect(Object.keys(pinned.variants ?? {})).toEqual(Object.keys(source.variants ?? {}))
+    const listed = (yield* provider.list())[ProviderV2.ID.make("anthropic-meridian")]
+    expect(Object.keys(listed.models)).toEqual(["work/claude-sonnet-4-6"])
+
+    const language = yield* provider.getLanguage(pinned)
+    yield* Effect.promise(() =>
+      language.doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+        maxOutputTokens: 16,
+        abortSignal: AbortSignal.timeout(2000),
+      }),
+    )
+    expect(requests).toEqual([{ path: "/clone/v1/messages", model: "claude-sonnet-4-6", credential: "fixture-clone" }])
+  }),
+  {
+    config: {
+      provider: {
+        anthropic: { options: { apiKey: "fixture-source", baseURL: new URL("/source/v1", gateway.url).href } },
+        "anthropic-meridian": {
+          options: { apiKey: "fixture-clone", baseURL: new URL("/clone/v1", gateway.url).href },
+          whitelist: ["work/claude-sonnet-4-6"],
+          models: {
+            "work/claude-sonnet-4-6": { id: "claude-sonnet-4-6", headers: { "x-meridian-profile": "work" } },
+          },
+        },
+      },
+    },
+  },
+  15000,
+)
