@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Awaited plugin configuration on v2](./features/2026-11-11-plugin-configuration.md)
 - [Native v2 plugin session and Job controls](./features/2026-11-10-v2-plugin-controls.md)
 - [Anthropic Meridian provider clone](./features/2026-11-12-anthropic-meridian-provider.md)
 - [Slow animation frames in an unfocused TUI](./features/2026-11-11-unfocused-redraw-throttle.md)
@@ -154,6 +155,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-11 W12, delivered November 13](./sessions/2026-11-11-plugin-configuration.md) - awaited mutable plugin configuration before native consumers; source approved, published to both mirrors and installed as vt-15 through 12/12 gates on desktop and m4max; native controller demo passed, W10 consumer acceptance pending.
 - [2026-11-13 W1 delivery](./sessions/2026-11-13-v2-plugin-controls.md) - reviewed native forks, grouped completion notices, durable plugin messages and parent-scoped child/Job cancellation, with source and installed-runtime evidence.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-event-order.md) - a background bash command that exited while its start was still being announced published `shell.background.exited` before `.started`, so OMO's running-jobs ledger kept 11 finished jobs and their tabs never parked; Exited now waits for Started; `081451095b`, merged `34bccf2103`; vt-459 on desktop and m4max with the retry cap.
 - [2026-11-11 `ses_e37b26ea1ffeyDu2wQLAdY0TmV`](./sessions/2026-11-11-turn-end-held-order.md) - under `queued_prompts: "turn_end"` a held prompt or note was sent in its stored place, inside the ended turn, so the follow-up request ended with the turn's own answer and the model said the note "arrived empty"; held input now goes after that answer (`answerAfterTurn`); `ed9e8785a9`, merged `85466d15f4`; vt-449 on desktop with the retry cap.

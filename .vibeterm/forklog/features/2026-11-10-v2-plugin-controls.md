@@ -42,5 +42,6 @@ The W1 assignment adds the native APIs OMO needs for context forks, completion n
 
 ## Timeline
 
+- 2026-11-13 [W12 configuration-stage delivery](../sessions/2026-11-11-plugin-configuration.md) preserves these capabilities and passes their focused plugin regressions while adding the awaited configuration stage. The coordinator-assigned combined source `72527fce0c` is independently built and installed as vt-15 on desktop and m4max after separate 12/12 mandatory gates. This closes the Mac host-build gap; W1's direct native API demonstration remains the behavior receipt above.
 - 2026-11-10 [foundation session](../sessions/2026-11-10-v2-foundation.md) established the guarded v2 base used by these APIs.
 - 2026-11-13 [delivery session](../sessions/2026-11-13-v2-plugin-controls.md), [W1](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ), resumed the paused work, closed review findings, and integrated the native and cancellation patches without rewriting `v2-nowaker`. That record owns mirror and installed-runtime receipts.
