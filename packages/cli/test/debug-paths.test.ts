@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { isolatedEnv } from "./fixture/environment"
 
 describe("debug paths command", () => {
   test("is included in troubleshooting help", async () => {
@@ -14,43 +15,52 @@ describe("debug paths command", () => {
     expect(paths.stdout).toContain("opencode debug paths [flags]")
   })
 
-  test("prints resolved global paths without starting a server", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-debug-paths-"))
+  test.each(["default", "explicit"] as const)(
+    "prints resolved global paths with %s config without starting a server",
+    async (mode) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-debug-paths-"))
+      const config = mode === "explicit" ? path.join(root, "chosen-config") : undefined
 
-    try {
-      const result = await cli(["debug", "paths"], {
-        XDG_DATA_HOME: path.join(root, "data"),
-        XDG_CONFIG_HOME: path.join(root, "config"),
-        XDG_CACHE_HOME: path.join(root, "cache"),
-        XDG_STATE_HOME: path.join(root, "state"),
-      })
-      const paths = Object.fromEntries(
-        result.stdout
-          .trim()
-          .split("\n")
-          .map((line) => line.trim().split(/\s+/, 2)),
-      )
+      try {
+        const result = await cli(
+          ["debug", "paths"],
+          isolatedEnv(root, {
+            XDG_CONFIG_HOME: path.join(root, "config"),
+            OPENCODE_CONFIG_DIR: config,
+            OPENCODE_DB: ":memory:",
+          }),
+        )
+        const paths = Object.fromEntries(
+          result.stdout
+            .trim()
+            .split("\n")
+            .map((line) => line.trim().split(/\s+/, 2)),
+        )
 
-      expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" })
-      expect(paths).toMatchObject({
-        home: os.homedir(),
-        data: path.join(root, "data", "opencode"),
-        config: path.join(root, "config", "opencode"),
-        cache: path.join(root, "cache", "opencode"),
-        state: path.join(root, "state", "opencode"),
-        bin: path.join(root, "cache", "opencode", "bin"),
-        log: path.join(root, "data", "opencode", "log"),
-        repos: path.join(root, "data", "opencode", "repos"),
-      })
-      expect(paths.tmp).toBeTruthy()
-      expect(await Bun.file(path.join(root, "state", "opencode", "service-local.json")).exists()).toBe(false)
-    } finally {
-      await fs.rm(root, { recursive: true, force: true })
-    }
-  })
+        expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" })
+        expect(paths).toMatchObject({
+          home: root,
+          data: path.join(root, "data", "opencode2"),
+          config: config ?? path.join(root, "config", "opencode2"),
+          cache: path.join(root, "cache", "opencode2"),
+          state: path.join(root, "state", "opencode2"),
+          bin: path.join(root, "cache", "opencode2", "bin"),
+          log: path.join(root, "data", "opencode2", "log"),
+          repos: path.join(root, "data", "opencode2", "repos"),
+          db: ":memory:",
+        })
+        expect(paths.tmp).toBe(path.join(await fs.realpath(os.tmpdir()), "opencode2"))
+        for (const file of ["service-local.json", "service.json"]) {
+          expect(await Bun.file(path.join(root, "state", "opencode2", file)).exists()).toBe(false)
+        }
+      } finally {
+        await fs.rm(root, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
-async function cli(args: string[], env?: Record<string, string>) {
+async function cli(args: string[], env?: Record<string, string | undefined>) {
   const child = Bun.spawn([process.execPath, "run", path.join(import.meta.dir, "../src/index.ts"), ...args], {
     cwd: path.join(import.meta.dir, ".."),
     env: { ...process.env, ...env },
