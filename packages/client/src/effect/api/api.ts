@@ -61,6 +61,7 @@ export type ServerInfoOutput = {
         readonly sessionMessages?: boolean | undefined
         readonly subagentOptions?: boolean | undefined
         readonly pluginConfiguration?: boolean | undefined
+        readonly compactionSummary?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined

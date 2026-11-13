@@ -14,6 +14,7 @@ export type ServerInfo = {
         sessionMessages?: boolean | undefined
         subagentOptions?: boolean | undefined
         pluginConfiguration?: boolean | undefined
+        compactionSummary?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined

@@ -819,7 +819,11 @@ it.effect("summary updates include the retained tail in compaction hooks and the
       }),
     ]
     const context = loaded(session, messages)
-    const expected = SessionModelRequest.baseTranscript({ ...context, agent: context.agent.info }).messages
+    const expected = [
+      ...toLLMMessages([{ ...messages[0], metadata: { recent: "" } }], context.model.ref),
+      Message.user("[User]: Previous exact request"),
+      ...toLLMMessages(messages.slice(1), context.model.ref),
+    ]
     const hooks = yield* PluginHooks.Service
     yield* hooks.register("session", "compaction", (event) =>
       Effect.sync(() => {
@@ -829,7 +833,9 @@ it.effect("summary updates include the retained tail in compaction hooks and the
 
     expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
     expect(requests).toHaveLength(1)
-    expect(requests[0].messages.slice(0, -1)).toEqual(expected)
+    expect(requests[0].messages.slice(0, -1)).toEqual(
+      SessionModelRequest.baseTranscript({ ...context, agent: context.agent.info }).messages,
+    )
     expect(requests[0].messages.at(-1)?.content).toEqual([{ type: "text", text: SessionCompaction.buildPrompt(true) }])
     const store = yield* SessionStore.Service
     expect(yield* store.context(session.id)).toMatchObject([

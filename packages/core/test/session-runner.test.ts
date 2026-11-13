@@ -3488,6 +3488,33 @@ describe("SessionRunnerLLM", () => {
     })
   })
 
+  scenario("retains manual compaction usage when cancelled during summary completion", function* (s) {
+    yield* s.llm.push(TestLLM.text("Earlier answer", "summary-completion-history"))
+    yield* s.runPrompt("Earlier question")
+    yield* s.llm.push(TestLLM.textWithUsage("## Objective\n- Summary", "summary-completion", 33))
+    const entered = yield* Deferred.make<void>()
+    const hooks = yield* PluginHooks.Service
+    yield* hooks.register("session", "experimental.compaction.summary", () =>
+      Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+    )
+    const compaction = yield* s.session.compact({ sessionID })
+    const running = yield* s.resume.pipe(Effect.forkChild)
+    yield* Deferred.await(entered)
+
+    yield* s.session.interrupt(sessionID)
+    yield* Fiber.await(running)
+    expect((yield* s.messages).find((message) => message.id === compaction.id)).toMatchObject({
+      status: "failed",
+      error: { type: "aborted", message: "Compaction cancelled" },
+      tokens: { input: 33 },
+    })
+    expect(
+      (yield* recordedEventTypes(sessionID)).filter(
+        (type) => type === Bus.versionedType(SessionEvent.Compaction.Failed.type, 1),
+      ),
+    ).toHaveLength(1)
+  })
+
   scenario("settles an admitted manual compaction when pre-start resolution throws", function* (s) {
     yield* s.llm.push(TestLLM.text("Earlier answer", "text-manual-resolution-history"))
     yield* s.runPrompt("Earlier question")

@@ -15,10 +15,11 @@ import {
   type Usage,
 } from "@opencode/ai/effect"
 import type { StreamOptions } from "@opencode/ai/route"
-import type { SessionCompactionResult } from "@opencode/plugin/effect/session"
+import { isDeepStrictEqual } from "node:util"
+import type { SessionCompactionDetails, SessionCompactionResult } from "@opencode/plugin/effect/session"
 import type { SessionError } from "@opencode/schema/session-error"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Clock, Context, DateTime, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect"
+import { Cause, Clock, Context, DateTime, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
@@ -26,11 +27,14 @@ import { llmClient } from "../effect/app-node-platform.js"
 import { Instructions } from "../instructions/index.js"
 import { Model } from "../model.js"
 import { State } from "../state.js"
+import { PluginHooks } from "../plugin/hooks.js"
 import { Token } from "../util/token.js"
 import type { SessionContext } from "./context.js"
 import { SessionEvent } from "./event.js"
 import { SessionHistory } from "./history.js"
-import type { SessionMessage } from "./message.js"
+import { SessionMessage } from "./message.js"
+import { compactionDetails, compactionTail } from "./compaction-context.js"
+import { compactionStop } from "./compaction-stop.js"
 import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionRunnerRetry } from "./runner/retry.js"
@@ -90,13 +94,23 @@ type Result = {
   readonly text: string
   readonly native?: SessionMessage.Native
   readonly metadata?: Record<string, unknown>
+  readonly generation?: SessionCompactionDetails
+  readonly model?: SessionContext.Loaded["model"]["ref"]
 }
 
 type Failure = {
   readonly error: SessionError.Error
+  readonly hook?: boolean
 }
 
-type Prepared = Effect.Success<ReturnType<SessionModelRequest.Interface["compaction"]>>
+type Prepared = Effect.Success<ReturnType<SessionModelRequest.Interface["compaction"]>> & {
+  readonly splitCheckpoint?: boolean
+}
+
+type Operation = Trigger & {
+  readonly messageID?: SessionMessage.ID
+  readonly conversationModel?: SessionContext.Loaded["model"]["ref"]
+}
 
 type Streamed = {
   readonly text: string
@@ -106,6 +120,7 @@ type Streamed = {
 type Background = {
   readonly messages: ReadonlyArray<SessionMessage.Info>
   readonly usage: (usage: SessionUsage.Recorded) => void
+  readonly keepID: SessionMessage.ID
 }
 
 /** A background summary of everything before `keepID`, held until automatic compaction is due. */
@@ -260,6 +275,7 @@ export const layer = Layer.effect(
     const models = yield* SessionRunnerModel.Service
     const db = (yield* Database.Service).db
     const requests = yield* SessionModelRequest.Service
+    const hooks = yield* PluginHooks.Service
 
     const scope = yield* Scope.Scope
     const precomputed = new Map<SessionContext.Loaded["session"]["id"], Precomputed>()
@@ -319,18 +335,25 @@ export const layer = Layer.effect(
           ? Math.min(model.cap, Math.floor(total(trigger.estimate ?? estimatePrompt(context)) * SHRINK_STEPS[0]))
           : model.cap
 
-      const selected = model.context === context ? trigger : { ...trigger, context: model.context }
       // The runner opened the manual compaction's message when it delivered the `/compact` item. An automatic one
       // opens here, before any wait, so a background summary still being written shows as a running compaction.
-      if (trigger.reason !== "manual")
-        yield* bus.publish(SessionEvent.Compaction.Started, { sessionID: context.session.id, reason: "auto" })
-      const swapped = held ? yield* usePrecomputed(selected, held, budget, settings) : undefined
-      const compaction = swapped
-        ? Effect.succeed(swapped)
-        : native
+      const messageID =
+        trigger.reason === "manual"
+          ? trigger.inputID
+          : SessionMessage.ID.fromEvent(
+              (yield* bus.publish(SessionEvent.Compaction.Started, { sessionID: context.session.id, reason: "auto" }))
+                .id,
+            )
+      const selected = { ...trigger, context: model.context, messageID, conversationModel: context.model.ref }
+      const compaction = Effect.gen(function* () {
+        const swapped = held ? yield* usePrecomputed(selected, held, budget, settings) : undefined
+        if (swapped) return swapped
+        return yield* native
           ? compactNatively(selected, budget, settings.keep)
           : summarize(selected, budget, settings.keep)
+      })
       return yield* compaction.pipe(
+        Effect.flatMap((result) => complete(selected, result)),
         Effect.matchEffect({
           onSuccess: (result) => publish(selected, result),
           onFailure: (failure) => publish(selected, failure),
@@ -390,10 +413,16 @@ export const layer = Layer.effect(
 
       const model = yield* selectModel(context, settings.buffer, false)
       const usage: SessionUsage.Recorded[] = []
-      const fiber = yield* summarize({ reason: "auto", context: model.context }, model.cap, settings.keep, {
-        messages: context.messages.slice(0, anchorIndex),
-        usage: (recorded) => usage.push(recorded),
-      }).pipe(Effect.forkIn(scope))
+      const fiber = yield* summarize(
+        { reason: "auto", context: model.context, conversationModel: context.model.ref },
+        model.cap,
+        settings.keep,
+        {
+          messages: context.messages.slice(0, anchorIndex),
+          keepID: anchor.id,
+          usage: (recorded) => usage.push(recorded),
+        },
+      ).pipe(Effect.forkIn(scope))
       precomputed.set(sessionID, {
         firstID: context.messages[0]?.id,
         keepID: anchor.id,
@@ -412,13 +441,13 @@ export const layer = Layer.effect(
      * cannot be used; compaction then summarizes as usual.
      */
     const usePrecomputed = Effect.fnUntraced(function* (
-      trigger: Trigger,
+      trigger: Operation,
       held: Precomputed,
       budget: number,
       settings: Settings,
-    ): Effect.fn.Return<Result | undefined> {
+    ): Effect.fn.Return<Result | undefined, Failure> {
       const context = trigger.context
-      const index = heldIndex(held, context)
+      const index = heldIndex(held, context, trigger.conversationModel)
       const usable =
         settings.precompute &&
         trigger.reason !== "overflow" &&
@@ -431,7 +460,14 @@ export const layer = Layer.effect(
       }
 
       const exit = yield* Fiber.await(held.fiber).pipe(Effect.onInterrupt(() => Fiber.interrupt(held.fiber)))
-      if (Exit.isFailure(exit)) return undefined
+      if (Exit.isFailure(exit)) {
+        const failed = exit.cause.reasons
+          .flatMap((reason) => (Cause.isFailReason(reason) ? [reason.error] : []))
+          .find((failure) => failure.hook)
+        if (!failed) return undefined
+        held.usage.forEach((usage) => addSpent(context.session.id, usage))
+        return yield* Effect.fail(failed)
+      }
       // Background calls were billed as they finished; the compaction's message still shows what it cost.
       held.usage.forEach((usage) => addSpent(context.session.id, usage))
       return { ...exit.value, metadata: { keepID: held.keepID, ...exit.value.metadata } }
@@ -469,7 +505,7 @@ export const layer = Layer.effect(
      * plus the newest `keep` tokens of messages, referenced by their first message and sent as text.
      */
     const summarize = Effect.fnUntraced(function* (
-      trigger: Trigger,
+      trigger: Operation,
       budget: number,
       keep: number,
       background?: Background,
@@ -485,7 +521,18 @@ export const layer = Layer.effect(
       const prompt = buildPrompt(previous !== undefined, previous?.summary.includes(LEGACY_HEADING) ?? false)
       const headings = SUMMARY_TEMPLATE.split("\n").filter((line) => line.startsWith("##"))
       const filled = (text: string) => text.split("\n").some((line) => headings.includes(line.trim()))
-      const prepared = yield* prepare(context, messages, budget)
+      const details = compactionDetails({
+        messages,
+        retained: context.messages,
+        keepID: background?.keepID ?? keepID,
+        messageID: trigger.messageID,
+        reason: trigger.reason,
+        conversationModel: trigger.conversationModel ?? context.model.ref,
+        native: false,
+      })
+      const prepared = yield* prepare(context, messages, budget, undefined, details).pipe(
+        Effect.catchDefect(hookFailure),
+      )
       // Size the unchanged request with the number that decided to compact: the last response's count plus an
       // estimate of what came after it. Characters overstate a conversation whose old reasoning the provider drops.
       // A hook can still make this request larger than that count; the provider then rejects it and it is resent as
@@ -545,9 +592,15 @@ export const layer = Layer.effect(
         },
         background,
       )
-      if (!keepID) return result
-      // A compaction hook may choose its own kept range.
-      return { ...result, metadata: { keepID, ...result.metadata } }
+      return {
+        ...result,
+        model: context.model.ref,
+        generation: details,
+        metadata:
+          keepID || prepared.event.metadata || result.metadata
+            ? { ...(keepID ? { keepID } : {}), ...prepared.event.metadata, ...result.metadata }
+            : undefined,
+      }
     })
 
     /**
@@ -563,7 +616,7 @@ export const layer = Layer.effect(
      * replays on the model that made it. U = a user message as typed.
      */
     const compactNatively = Effect.fnUntraced(function* (
-      trigger: Trigger,
+      trigger: Operation,
       budget: number,
       keep: number,
     ): Effect.fn.Return<Result, Failure> {
@@ -571,7 +624,17 @@ export const layer = Layer.effect(
       if (!context.messages.some(SessionRecentText.messageToText)) return yield* Effect.fail(NOTHING_TO_COMPACT)
       const unsupported = (message: string) =>
         Effect.fail<Failure>({ error: { type: "provider.unsupported-operation", message } })
-      const prepared = yield* prepare(context, context.messages, budget, "session")
+      const details = compactionDetails({
+        messages: context.messages,
+        retained: [],
+        reason: trigger.reason,
+        messageID: trigger.messageID,
+        conversationModel: trigger.conversationModel ?? context.model.ref,
+        native: true,
+      })
+      const prepared = yield* prepare(context, context.messages, budget, "session", details).pipe(
+        Effect.catchDefect(hookFailure),
+      )
 
       const toResult = (window: ReadonlyArray<Message>, usage: Usage | undefined) =>
         spend(context.session.id, usage && SessionUsage.record(usage, context.model.cost)).pipe(
@@ -599,7 +662,14 @@ export const layer = Layer.effect(
         return unsupported(`Native compaction is not supported for ${request.model.provider}/${request.model.route.id}`)
       }
 
-      return yield* deliver(trigger, prepared, budget, send)
+      const result = yield* deliver(trigger, prepared, budget, send)
+      return {
+        ...result,
+        metadata:
+          prepared.event.metadata || result.metadata ? { ...prepared.event.metadata, ...result.metadata } : undefined,
+        generation: details,
+        model: context.model.ref,
+      }
     })
 
     /**
@@ -651,11 +721,11 @@ export const layer = Layer.effect(
               : undefined
         const request =
           unchanged ??
-          flattenAndDropOldest(shrink.history, context, target) ??
+          flattenAndDropOldest(shrink.history, context, target, prepared.splitCheckpoint) ??
           (rejections > 0
             ? undefined
             : asText
-              ? flattenAndDropOldest(shrink.history, context, Number.POSITIVE_INFINITY)
+              ? flattenAndDropOldest(shrink.history, context, Number.POSITIVE_INFINITY, prepared.splitCheckpoint)
               : shrink.history)
         if (!request) {
           return yield* Effect.fail<Failure>({
@@ -717,7 +787,12 @@ export const layer = Layer.effect(
      * detail is lost from the oldest history first and whole exchanges are omitted only as a last resort. The newest
      * exchange is never omitted; undefined when the transcript cannot fit even so.
      */
-    const flattenAndDropOldest = (request: LLMRequest, context: SessionContext.Loaded, target: number) => {
+    const flattenAndDropOldest = (
+      request: LLMRequest,
+      context: SessionContext.Loaded,
+      target: number,
+      splitCheckpoint = false,
+    ) => {
       const previous = previousCompaction(context.messages)
       const end =
         request.messages.findLastIndex(
@@ -726,12 +801,11 @@ export const layer = Layer.effect(
             message.content.some((part) => part.type === "compaction"),
         ) + 1
       const summary = previous !== undefined && !SessionHistory.isNativeCompaction(previous) ? previous : undefined
-      // TODO: Read the previous summary from the hooked request once it no longer merges summary and recent into one
-      // message. Until then it is rebuilt from storage, which drops a compaction hook's edits to that message.
-      const lead = summary
-        ? toLLMMessages([{ ...summary, metadata: { ...summary.metadata, recent: "" } }], context.model.ref)
-        : request.messages.slice(0, end)
-      const recent = summary ? SessionRecentText.kept(summary) : ""
+      const lead =
+        summary && !splitCheckpoint
+          ? toLLMMessages([{ ...summary, metadata: { ...summary.metadata, recent: "" } }], context.model.ref)
+          : request.messages.slice(0, end)
+      const recent = summary && !splitCheckpoint ? SessionRecentText.kept(summary) : ""
 
       // A user message and everything after it, up to the next one, is one exchange. Each is rendered at every level
       // once, so shortening is running arithmetic over these sizes. The previous summary's recent part is already
@@ -795,15 +869,18 @@ export const layer = Layer.effect(
     ) => {
       const sessionID = context.session.id
       const unusable = (error: SessionError.Error) => Effect.fail<Failure>({ error })
+      const stop = compactionStop(request.stop ?? [])
 
       return llm.stream(request, options).pipe(
         Stream.runFoldEffect(
           (): Streamed => ({ text: "" }),
           (streamed, event): Effect.Effect<Streamed, AIError | Failure> => {
             if (LLMEvent.is.textDelta(event)) {
-              const next = { ...streamed, text: streamed.text + event.text }
+              const text = stop.write(event.text)
+              const next = { ...streamed, text: streamed.text + text }
               if (background) return Effect.succeed(next)
-              return bus.publish(SessionEvent.Compaction.Delta, { sessionID, text: event.text }).pipe(Effect.as(next))
+              if (!text) return Effect.succeed(next)
+              return bus.publish(SessionEvent.Compaction.Delta, { sessionID, text }).pipe(Effect.as(next))
             }
 
             if (LLMEvent.is.stepFinish(event)) {
@@ -828,6 +905,7 @@ export const layer = Layer.effect(
                   new AIError({ reason: new UnknownProviderError({ message: "Compaction generation failed" }) }),
                 )
               case "length":
+                if (stop.stopped) return Effect.succeed(streamed)
                 return unusable({
                   type: "compaction.failed",
                   message: "Compaction summary reached the output token limit",
@@ -838,6 +916,19 @@ export const layer = Layer.effect(
                 return Effect.succeed(streamed)
             }
           },
+        ),
+        Effect.flatMap((streamed) =>
+          Effect.gen(function* () {
+            const suffix = stop.finish()
+            if (suffix && !background) yield* bus.publish(SessionEvent.Compaction.Delta, { sessionID, text: suffix })
+            const text = streamed.text + suffix
+            if (stop.stopped && !text.trim())
+              return yield* unusable({
+                type: "compaction.failed",
+                message: "Compaction produced no summary before the stop boundary",
+              })
+            return { text }
+          }),
         ),
       )
     }
@@ -850,24 +941,117 @@ export const layer = Layer.effect(
      * output to it would leave next to no room. A prompt the estimate undersells is rejected and shrunk like any
      * other.
      */
-    const prepare = (
+    const prepare = Effect.fnUntraced(function* (
       context: SessionContext.Loaded,
       messages: ReadonlyArray<SessionMessage.Info>,
       budget: number,
       webSocket?: "session",
-    ) => {
+      details?: SessionCompactionDetails,
+    ) {
       const base = transcript(context, messages)
-      return requests.compaction({
+      const previous = previousCompaction(messages)
+      const splitCheckpoint =
+        previous !== undefined &&
+        !SessionHistory.isNativeCompaction(previous) &&
+        (yield* hooks.has("session", "compaction", context.model.ref.providerID))
+      const recent = splitCheckpoint ? SessionRecentText.kept(previous) : ""
+      const checkpoint = splitCheckpoint
+        ? toLLMMessages([{ ...previous, metadata: { ...previous.metadata, recent: "" } }], context.model.ref)
+        : []
+      const prepared = yield* requests.compaction({
         session: context.session,
         agent: context.agent.id,
         model: context.model,
         tools: context.tools,
         system: base.system,
-        messages: base.messages,
+        messages: splitCheckpoint
+          ? [...checkpoint, ...(recent ? [Message.user(recent)] : []), ...base.messages.slice(1)]
+          : base.messages,
         webSocket,
         inputTokens: { measured: budget, estimated: 0 },
+        compaction: details,
+        previousSummary: previous?.summary,
       })
-    }
+      const edited =
+        previous && prepared.event.previousSummary !== undefined && prepared.event.previousSummary !== previous.summary
+          ? toLLMMessages(
+              [
+                {
+                  ...previous,
+                  summary: prepared.event.previousSummary,
+                  metadata: { ...previous.metadata, recent: splitCheckpoint ? "" : SessionRecentText.kept(previous) },
+                },
+              ],
+              context.model.ref,
+            )[0]
+          : undefined
+      const stop = prepared.event.stopSequences
+      const unchanged =
+        splitCheckpoint &&
+        !edited &&
+        isDeepStrictEqual(prepared.request.messages.slice(0, recent ? 2 : 1), [
+          ...toLLMMessages([{ ...previous, metadata: { ...previous.metadata, recent: "" } }], context.model.ref),
+          ...(recent ? [Message.user(recent)] : []),
+        ])
+      return {
+        ...prepared,
+        splitCheckpoint: splitCheckpoint && !unchanged,
+        request: {
+          ...prepared.request,
+          ...(unchanged
+            ? { messages: [...base.messages.slice(0, 1), ...prepared.request.messages.slice(recent ? 2 : 1)] }
+            : {}),
+          ...(edited
+            ? { messages: prepared.request.messages.map((message) => (message.id === previous?.id ? edited : message)) }
+            : {}),
+          ...(stop?.length ? { stop: [...(prepared.request.stop ?? []), ...stop] } : {}),
+        },
+      }
+    })
+
+    const hookFailure = (defect: unknown) =>
+      Effect.fail<Failure>({
+        hook: true,
+        error: { type: "compaction.failed", message: toSessionError(defect).message },
+      })
+
+    const complete = Effect.fnUntraced(function* (
+      trigger: Operation,
+      result: Result,
+    ): Effect.fn.Return<Result, Failure> {
+      if (result.native?.messages !== undefined || !result.generation || !trigger.messageID) return result
+      if (
+        !(yield* hooks.has(
+          "session",
+          "experimental.compaction.summary",
+          (result.model ?? trigger.context.model.ref).providerID,
+        ))
+      )
+        return result
+      const messages = trigger.context.messages
+      const keepID = messages.find((message) => message.id === result.metadata?.keepID)?.id
+      const retainedMessages = compactionTail(messages, keepID)
+      const kept = new Set(retainedMessages.map((message) => message.id))
+      const boundary = messages.findIndex((message) => message.id === result.generation?.boundaryID)
+      const event = yield* hooks
+        .trigger("session", "experimental.compaction.summary", {
+          ...result.generation,
+          sessionID: trigger.context.session.id,
+          messageID: trigger.messageID,
+          model: result.model ?? trigger.context.model.ref,
+          reason: trigger.reason,
+          keepID,
+          retainedMessages,
+          replacedMessageIDs: messages
+            .slice(0, boundary + 1)
+            .filter((message) => !kept.has(message.id))
+            .map((message) => message.id),
+          text: result.text,
+          metadata: { ...result.metadata },
+        })
+        .pipe(Effect.catchDefect(hookFailure))
+      return { ...result, text: event.text, metadata: event.metadata }
+    })
 
     /** A request hook supplied the summary itself, so no model call happens. */
     const fromHook = (context: SessionContext.Loaded, supplied: SessionCompactionResult, background?: Background) => {
@@ -930,7 +1114,7 @@ export const layer = Layer.effect(
         {
           sessionID,
           reason,
-          model: context.model.ref,
+          model: outcome.model ?? context.model.ref,
           native: outcome.native,
           text: outcome.text,
           ...usage,
@@ -943,13 +1127,15 @@ export const layer = Layer.effect(
     return Service.of({
       transform: state.transform,
       reload: state.reload,
-      // A manual compaction settles through its `/compact` inbox item, which the runner owns.
       compact: (trigger) =>
         compact(trigger).pipe(
           Effect.onInterrupt(() =>
-            trigger.reason === "manual"
-              ? Effect.void
-              : publish(trigger, { error: { type: "compaction.interrupted", message: "Compaction was interrupted" } }),
+            publish(trigger, {
+              error:
+                trigger.reason === "manual"
+                  ? { type: "aborted", message: "Compaction cancelled" }
+                  : { type: "compaction.interrupted", message: "Compaction was interrupted" },
+            }),
           ),
           Effect.ensuring(Effect.sync(() => spent.delete(trigger.context.session.id))),
         ),
@@ -961,17 +1147,26 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Agent.node, Bus.node, Database.node, llmClient, Model.node, SessionModelRequest.node, SessionRunnerModel.node],
+  deps: [
+    Agent.node,
+    Bus.node,
+    Database.node,
+    llmClient,
+    Model.node,
+    PluginHooks.node,
+    SessionModelRequest.node,
+    SessionRunnerModel.node,
+  ],
 })
 
 /**
  * Where the messages kept beside a held summary start, or -1 when the summary no longer describes this
  * conversation: a compaction or revert since replaced its start, or the model or instructions changed.
  */
-const heldIndex = (held: Precomputed, context: SessionContext.Loaded) => {
+const heldIndex = (held: Precomputed, context: SessionContext.Loaded, model = context.model.ref) => {
   if (held.firstID !== context.messages[0]?.id || held.initial !== Instructions.join(context.initial)) return -1
-  if (held.model.providerID !== context.model.ref.providerID || held.model.id !== context.model.ref.id) return -1
-  if (held.model.variant !== context.model.ref.variant) return -1
+  if (held.model.providerID !== model.providerID || held.model.id !== model.id) return -1
+  if (held.model.variant !== model.variant) return -1
   return context.messages.findIndex((message) => message.id === held.keepID)
 }
 

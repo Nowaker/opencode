@@ -163,14 +163,27 @@ const layer = Layer.effect(
                   ),
                 ).pipe(Effect.exit)
                 if (Exit.isFailure(compacted)) {
-                  yield* bus.publish(SessionEvent.Compaction.Failed, {
-                    sessionID,
-                    reason: "manual",
-                    error: Cause.hasInterruptsOnly(compacted.cause)
-                      ? { type: "aborted", message: "Compaction cancelled" }
-                      : { type: "compaction.failed", message: Cause.pretty(compacted.cause) },
-                    inputID: pending.id,
-                  })
+                  const unsettled = yield* db
+                    .select({ id: SessionMessageTable.id })
+                    .from(SessionMessageTable)
+                    .where(
+                      and(
+                        eq(SessionMessageTable.session_id, sessionID),
+                        eq(SessionMessageTable.id, pending.id),
+                        sql`json_extract(${SessionMessageTable.data}, '$.status') = 'running'`,
+                      ),
+                    )
+                    .get()
+                    .pipe(Effect.orDie)
+                  if (unsettled)
+                    yield* bus.publish(SessionEvent.Compaction.Failed, {
+                      sessionID,
+                      reason: "manual",
+                      error: Cause.hasInterruptsOnly(compacted.cause)
+                        ? { type: "aborted", message: "Compaction cancelled" }
+                        : { type: "compaction.failed", message: Cause.pretty(compacted.cause) },
+                      inputID: pending.id,
+                    })
                   return yield* Effect.failCause(compacted.cause)
                 }
                 force = false

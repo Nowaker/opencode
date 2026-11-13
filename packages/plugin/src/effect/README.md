@@ -110,6 +110,8 @@ yield *
 
 Hooks run sequentially in registration order. Later hooks observe mutations made by earlier hooks.
 
+The experimental [compaction summary lifecycle](../README.md#runtime-hooks) applies to both SDKs. Register `ctx.session.hook("compaction", callback)` to freeze metadata, project `previousSummary` or set `stopSequences`; register `ctx.session.hook("experimental.compaction.summary", callback)` to finalize mutable `text` and `metadata` before durable publication. Effect callbacks are awaited and defects fail compaction while preserving recorded generation usage. Test `ctx.app.capabilities?.compactionSummary` before relying on this contract.
+
 Session context is mutable immediately before provider dispatch:
 
 `ctx.session.context({ sessionID })` reads the compacted model-visible window. `ctx.session.messages({ sessionID, type: "assistant", order: "desc", limit: 50 })` reads durable messages with the same input and output as `client.message.list`, including successful tool-result metadata retained before compaction. Follow `cursor.next` or `cursor.previous` with the same type filter and without `order`; the cursor carries the ordering. Reading messages does not admit input or wake the session. Hosts advertise this method with `ctx.app.capabilities?.sessionMessages` and `GET /api/info` `capabilities.sessionMessages`.

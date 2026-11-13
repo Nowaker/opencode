@@ -10,6 +10,9 @@ import type { SessionMessage } from "@opencode/schema/session-message"
 import type { TokenUsage } from "@opencode/schema/token-usage"
 import type { JsonSchema, Types } from "effect"
 import type { ModelHooks } from "./registration.js"
+import type { SessionCompactionDetails, SessionCompactionSummary } from "../session-compaction.js"
+
+export type { SessionCompactionDetails, SessionCompactionSummary } from "../session-compaction.js"
 
 export interface SessionPrompt {
   readonly sessionID: Session.ID
@@ -48,6 +51,13 @@ export interface SessionCompactionResult {
 }
 
 export interface SessionCompaction extends SessionContext {
+  readonly compaction?: SessionCompactionDetails
+  /** Mutable prior narrative, separate from its retained recent context. Experimental. */
+  previousSummary?: string
+  /** Metadata frozen with this candidate and handed to summary completion. Experimental. */
+  metadata?: Record<string, unknown>
+  /** Local stop boundaries, enforced before publishing deltas. Experimental. */
+  stopSequences?: Array<string>
   /** Set to use this compaction and skip the model request. */
   result?: SessionCompactionResult
 }
@@ -206,6 +216,7 @@ export interface SessionHooks {
   readonly prompt: SessionPrompt
   readonly context: SessionContext
   readonly compaction: SessionCompaction
+  readonly "experimental.compaction.summary": SessionCompactionSummary
   readonly generate: SessionGenerate
   readonly title: SessionTitle
   readonly "experimental.model.resolve": SessionModelResolve

@@ -31,6 +31,10 @@ export const ServerInfo = Schema.Struct({
       pluginConfiguration: Schema.optional(Schema.Boolean).annotate({
         description: "Supports awaited activation-owned plugin configuration before native config consumers.",
       }),
+      compactionSummary: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Supports awaited experimental compaction summary completion, frozen generation context and local stop boundaries.",
+      }),
       sessionMetadataMergePatch: Schema.optional(Schema.Boolean).annotate({
         description: "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode.",
       }),

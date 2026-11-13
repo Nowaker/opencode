@@ -142,6 +142,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         childCancellation: true,
         jobControl: true,
         pluginConfiguration: true,
+        compactionSummary: true,
       },
     },
     job: jobControl,
