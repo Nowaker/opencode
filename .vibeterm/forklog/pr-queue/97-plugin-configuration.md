@@ -1,0 +1,18 @@
+# Holding - v2 awaited plugin configuration stage
+
+Status: FORK IMPLEMENTATION DELIVERED; HOLDING - not admitted to the ordered filing queue. Filing waits for Damian to clear it and for a free slot; the three-slot cap is full ([#54578](https://github.com/anomalyco/opencode/pull/54578), [#63062](https://github.com/anomalyco/opencode/pull/63062), [#63063](https://github.com/anomalyco/opencode/pull/63063)). Consumer acceptance by W10's v1 adapter is also still pending. No upstream branch has been cut or pushed for this entry, and no PR or issue was opened.
+
+- Upstream target line: `dev`. Fork base: upstream `v2.2.7`, `fedc6f208aa2bd54c1019227214568083f6380ad`.
+- Live target check: `dev` at `f91b88efac039856f284979984ac43cd93bce8f5`, `2026-11-13T19:38:20Z` (`git ls-remote`). No latest-base compatibility test or QA is claimed.
+- Fork source on `v2-nowaker`: `72527fce0c218c39619fd93d8ef78a975529bccb` (the current tip, both mirrors). Development branch: `config-stage`; original candidate `1ab8f38bb4fa707653fb31d55e810d2b582b8f16` before rebase onto entry 96.
+- API: `ctx.config.configure(callback)` in Promise and Effect plugins registers during setup; the callback gets the resolved, mutable native `Config.Info` draft and its edits apply after external setup and before the built-in provider, agent and command consumers read configuration, on top of loaded config. Each pass starts from fresh sources, preserves layered source semantics, deletions and path origins, and discards stale or failed candidates. Capability `pluginConfiguration` on `GET /api/info` and `ctx.app.capabilities`.
+- Dependency: rebased onto entry 96 (`ea2e468b53`); the conflicts were capability blocks and generated client types only. An upstream port can be cut independently from the live `dev` after resolving those.
+- Upstream head: none.
+- Verification on the fork (owner records): focused stage/activation/config/supervisor run 76 pass, 0 fail; rebased integration 59 pass, 0 fail across 13 files; five mutation controls each fail their regressions. The [narrow source gate review](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e2b329d1affeZ4eITIi5MJzNBm) approved the corrected candidate with high confidence and judged it upstreamable. Installed as vt-15 on desktop and m4max after 12/12 gates; the [v1 controller demo](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e2af0f920ffehJ2FaMuPluSLlb) showed the renamed and added providers in native inventory.
+- Open gap: W10's v1 adapter acceptance (config, model, header, tool omission and owned commands) has not run; the owner records `source approved, consumer acceptance pending W10`.
+- Evidence: [W12 session record](../sessions/2026-11-11-plugin-configuration.md), [feature record](../features/2026-11-11-plugin-configuration.md).
+- Implementation owner: [W12 ses_e35a0c9d8ffeV0Ic4uhdjveeAc](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e35a0c9d8ffeV0Ic4uhdjveeAc), under [v2 coordinator ses_e383ee7faffe6JX8m2EP26dXUC](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e383ee7faffe6JX8m2EP26dXUC). Holding recorded at the request of [ses_ef8235798ffejGr4sa22eXmVNv](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv).
+- Filing order: unassigned; entries 01-05 keep their order.
+- Next step, once cleared: wait for W10's acceptance, cut an upstream-only branch from the live `dev`, rerun the focused tests there, check upstream overlap, find or request an issue, and write the full PR body and filing command before admitting the entry.
+
+This file authorizes no implementation changes, upstream writes or route decision.

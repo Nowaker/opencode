@@ -1,15 +1,17 @@
-# Holding - v2 native subagent fork and notice mode
+# Holding - v2 native subagent fork, notice policies and foreground handoff
 
-Status: IMPLEMENTATION IN PROGRESS - not admitted to the ordered filing queue. The v2 coordinator confirmed ownership; no completed upstream-scoped head has been delivered to this queue.
+Status: FORK IMPLEMENTATION DELIVERED; HOLDING - not admitted to the ordered filing queue. Filing waits for Damian to clear it and for a free slot; the three-slot cap is full ([#54578](https://github.com/anomalyco/opencode/pull/54578), [#63062](https://github.com/anomalyco/opencode/pull/63062), [#63063](https://github.com/anomalyco/opencode/pull/63063)). No upstream branch has been cut or pushed for this entry, and no PR or issue was opened.
 
-- Upstream target line: `dev`.
-- Live target check: `611cee9d4b667b459f19ca0cbf6e76d8647535fb` at `2026-11-11T12:12:12Z` (`git ls-remote`). No upstream candidate, latest-base compatibility test or QA is claimed for this holding record.
-- Local implementation branch: `subagent-notices`, observed at `8c859a94ca013bb2c26782e0f41dc0acaa17b89a` with no implementation commits above the shared source tip at the coordinator's check.
-- Upstream head: none prepared; the local branch is not an upstream-scoped filing candidate.
-- Implementation owner: [W1 ses_e3832b1b0ffe6q98OeUzhgqhjQ](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ), confirmed by [v2 coordinator ses_e383ee7faffe6JX8m2EP26dXUC](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e383ee7faffe6JX8m2EP26dXUC) on November 11, 2026.
-- Scope reported by the owner: native subagent fork from settled parent context, notice modes `each`, `none`, and `group {id,index,total}`, plus `foregroundHandoffMs`. Parent-scoped child cancellation is a separate later candidate.
-- Latest coordinator report at `2026-11-11T12:25:28Z`: native checks report 143 passes and the implementation commit is in progress; the work also includes owner-coordinated job projection. This is ongoing fork implementation evidence, not a verified upstream candidate or permission to cut one here.
-- Filing order: unassigned; entries 01-05 retain their requested order.
-- Next step: the implementation owner supplies the finished exact candidate and QA. Then prepare an upstream-only head, docs, verified regression coverage and the full filing body before admitting it.
+- Upstream target line: `dev`. Fork base: upstream `v2.2.7`, `fedc6f208aa2bd54c1019227214568083f6380ad`.
+- Live target check: `dev` at `f91b88efac039856f284979984ac43cd93bce8f5`, `2026-11-13T19:38:20Z` (`git ls-remote`). No latest-base compatibility test or QA is claimed.
+- Fork source on `v2-nowaker` (tip `72527fce0c218c39619fd93d8ef78a975529bccb`, both mirrors): `de4fe36eeeec035688d7a0a527dfeba13764e6c8` (native forks, notice policies and groups, foreground handoff, plugin `ctx.session.fork`) and `1d2ebb120e77594294e79c7678079053d033c677` (review corrections: fork history, output selection, default agent, serialized child admission, group recovery). Development branch: `subagent-notices`.
+- API: native `subagent` gains `fork?: boolean`, `notice?: "each" | "none" | { group: { id, index, total } }` and `foregroundHandoffMs?: number`; Promise and Effect plugins gain `ctx.session.fork({ sessionID, before? })`. Capability `subagentOptions` on `GET /api/info` and `ctx.app.capabilities`. Omitted options keep current behavior.
+- Upstream head: none. `de4fe36eee` sits on 10 commits above `v2.2.7`: fork-only ones (`93f790182d`, `84e23092d9`, `d90d41a907`, `691b33c0b3`, `116b7b3b0d`, `398e98d11c`), the entry 01, 02 and 90 sources, and the entry 93 messages patch. `de4fe36eee` also edits the root README, which on `v2-nowaker` holds fork notes and must be dropped from an upstream port.
+- Verification on the fork (owner records): final admission/recovery run 9 pass, correction/native/group run 30 pass, combined rebased run 46 pass with 0 fail; [retained reviewer](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3569b951ffeQp1HZhJCMdbdod) cleared every required finding. Installed desktop proof (vt-14): two background forks received the settled ancestor marker and the parent got exactly one grouped notice. Built into vt-15 on desktop and m4max after 12/12 gates.
+- Evidence: [delivery session record](../sessions/2026-11-13-v2-plugin-controls.md), [feature record](../features/2026-11-10-v2-plugin-controls.md).
+- Implementation owner: [W1 ses_e3832b1b0ffe6q98OeUzhgqhjQ](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ), under [v2 coordinator ses_e383ee7faffe6JX8m2EP26dXUC](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e383ee7faffe6JX8m2EP26dXUC). Holding recorded at the request of [ses_ef8235798ffejGr4sa22eXmVNv](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv).
+- Related: child cancellation is the separate entry 96. Overlap with upstream [#47576](https://github.com/anomalyco/opencode/pull/47576) (experimental subagent context forking, reported by the cc-tools owner in entry 95) is not yet checked.
+- Filing order: unassigned; entries 01-05 keep their order.
+- Next step, once cleared: cut an upstream-only branch from the live `dev`, port the two commits without fork-only dependencies or the fork README, rerun the focused tests there, check upstream overlap, find or request an issue, and write the full PR body and filing command before admitting the entry.
 
-The implementation remains with its existing owner. This file authorizes no implementation changes, upstream writes or route decision.
+This file authorizes no implementation changes, upstream writes or route decision.
