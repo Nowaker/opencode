@@ -60,6 +60,7 @@ export type ServerInfoOutput = {
         readonly childCancellation?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
         readonly subagentOptions?: boolean | undefined
+        readonly pluginConfiguration?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined

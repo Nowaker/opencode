@@ -7,7 +7,11 @@ import type { Plugin as PluginDefinition } from "@opencode/plugin/effect/plugin"
 import { Context, type Effect, type Exit } from "effect"
 
 export interface Interface {
-  readonly activate: (plugins: readonly Generation[], failures?: readonly Failure[]) => Effect.Effect<void>
+  readonly activate: (
+    plugins: readonly Generation[],
+    failures?: readonly Failure[],
+    post?: readonly Generation[],
+  ) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Plugin.Info[]>
   /** An active plugin's prebuilt `./gui-experimental` bundle, or undefined when it exports none. */
   readonly gui: (id: Plugin.ID) => Effect.Effect<Plugin.GuiBundle | undefined>

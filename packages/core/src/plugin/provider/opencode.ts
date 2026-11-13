@@ -16,6 +16,7 @@ import { App } from "../../app.js"
 import { Bus } from "../../bus.js"
 import { Config } from "../../config.js"
 import { ConfigIntegration } from "../../config/integration.js"
+import { ConfigDraft } from "../../config/draft.js"
 import { ConfigProviderPlugin } from "../../config/plugin/provider.js"
 import { SkillFile } from "../../config/plugin/skill-file.js"
 import { ConsoleAccess } from "../../console-access.js"
@@ -305,17 +306,29 @@ export const OpencodePlugin = define<
     // The Console document as config layered it. Its providers apply at this plugin's position in the provider chain,
     // while the rest of the document merges through config.
     let integrated: ConfigIntegration.Document | undefined
-    const integrate = Effect.fnUntraced(function* (document: ConfigIntegration.Document | undefined) {
-      yield* config.integration?.(Integration.ID.make("opencode"), document) ?? Effect.void
+    let document: ConfigIntegration.Document | undefined
+    const syncConfiguration = Effect.fnUntraced(function* () {
+      const connection = yield* ctx.integration.connection.active("opencode")
       integrated = (yield* config.entries()).find(
         (entry): entry is ConfigIntegration.Document =>
-          entry instanceof ConfigIntegration.Document && entry.integrationID === Integration.ID.make("opencode"),
+          entry instanceof ConfigIntegration.Document &&
+          entry.integrationID === Integration.ID.make("opencode") &&
+          IntegrationConnection.key(entry.connection) === IntegrationConnection.key(connection),
       )
+      // Managed configuration commits after setup; only the committed document may enable connection resources.
+      const allowed =
+        document !== undefined &&
+        IntegrationConnection.key(snapshot.connection) === IntegrationConnection.key(connection) &&
+        (!config.integration ||
+          (integrated !== undefined && isDeepStrictEqual(ConfigDraft.origin(integrated), document)))
+      yield* syncInstructionsAndSkills(snapshot, allowed)
+      const watching = allowed && snapshot.remote?.watches === true && (yield* flags.enabled("console_watches"))
+      yield* syncWatches(watching ? snapshot.connection : undefined)
     })
     // Policies and providers ride on the snapshot, so a credential switch, disconnect, or 404 replaces them too.
     const publish = Effect.fnUntraced(function* (next: typeof snapshot) {
       // The config merges as one integration document, which config loads right after managed policies.
-      const document =
+      document =
         next.remote &&
         next.connection &&
         ConfigIntegration.make({
@@ -328,14 +341,8 @@ export const OpencodePlugin = define<
           // `make` keeps only the standard config keys, so instructions and skills stay here.
           info: next.remote,
         })
-      yield* integrate(document)
-      // Managed `integration.use: deny` makes config layer a policies-only copy, which withholds instructions,
-      // skills and event watches too. Config keeps the document it holds when handed a deep-equal one, so compare by
-      // content.
-      const allowed = document !== undefined && (!config.integration || isDeepStrictEqual(integrated, document))
-      yield* syncInstructionsAndSkills(next, allowed)
-      const watching = allowed && next.remote?.watches === true && (yield* flags.enabled("console_watches"))
-      yield* syncWatches(watching ? next.connection : undefined)
+      yield* config.integration?.(Integration.ID.make("opencode"), document) ?? Effect.void
+      yield* syncConfiguration()
     })
     // Watching starts when the console_watches flag is on and the Console's config says the workspace has event watches,
     // and stops when either no longer holds.
@@ -514,14 +521,23 @@ export const OpencodePlugin = define<
       consoleSkills.items.forEach((item) => editor.add(item.skill, item.files))
     })
 
+    const reload = Effect.all(
+      [ctx.provider.reload(), ctx.websearch.reload(), ctx.mcp.reload(), discovery.reload(), skills.reload()],
+      { concurrency: 5, discard: true },
+    )
+    const reconfigure = syncConfiguration().pipe(Effect.andThen(reload))
+    if (config.configuration) yield* config.configuration.observe(reconfigure)
+    yield* ctx.event.subscribe({ types: ["config.updated"] }).pipe(
+      Stream.filter((event) => !config.configuration?.published(event)),
+      Stream.runForEach(() => reconfigure),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
     const apply = Effect.fn("OpencodePlugin.apply")(function* (next: typeof snapshot) {
       snapshot = next
       yield* publish(next)
       yield* guard(next)
-      yield* Effect.all(
-        [ctx.provider.reload(), ctx.websearch.reload(), ctx.mcp.reload(), discovery.reload(), skills.reload()],
-        { concurrency: 5, discard: true },
-      )
+      yield* reload
     })
     const refresh = () => loading.withPermit(load().pipe(Effect.andThen(apply)))
     // Annotated: `apply` re-registers the hooks that call `check`, which would otherwise make inference circular.

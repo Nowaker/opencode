@@ -7,11 +7,15 @@ import { Plugin } from "@opencode/schema/plugin"
 import { Node } from "@opencode/util/effect/app-node"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import type { PersistentPty } from "./persistent-pty.js"
-import { Cause, Context, Effect, Exit, Latch, Layer, Logger, Queue, References, Scope, Semaphore } from "effect"
+import { Cause, Effect, Exit, Latch, Layer, Queue, Scope, Semaphore } from "effect"
 import { Bus } from "./bus.js"
 import { PluginHost } from "./plugin/host.js"
 import { type Failure, type Generation, Service } from "./plugin/service.js"
 import { State } from "./state.js"
+import type { Entry } from "@opencode/schema/config"
+import { Config } from "./config.js"
+import { ConfigurationStage } from "./plugin/configuration-stage.js"
+import { PluginActivation, type Activation } from "./plugin/activation.js"
 
 export { awaitActivation, type Failure, type Generation, type Interface, Service } from "./plugin/service.js"
 
@@ -19,6 +23,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    const config = yield* Config.Service
     const scope = yield* Scope.make()
     // One slot per requested definition in activation order, including ones whose setup failed, so
     // the prefix diff below stays index-aligned and a failed revision is not retried until it changes.
@@ -59,52 +64,44 @@ const layer = Layer.effect(
       return { code, revision: gui.revision, options: gui.options } satisfies Plugin.GuiBundle
     })
     const hostContext = yield* Effect.context<Effect.Services<ReturnType<typeof PluginHost.make>>>()
-    const load = Effect.fnUntraced(function* (plugin: Generation) {
-      const activation: Activation = { plugin, scope: yield* Scope.fork(scope) }
-      const inherit = yield* State.inherit()
-      const grouped = State.group((failure, refresh) => {
-        activation.failure = {
-          error: `Plugin disabled after ${failure.state}.transform failed. Check server logs for details.`,
-          ref: `err_${crypto.randomUUID().slice(0, 8)}`,
-        }
-        Queue.offerUnsafe(pendingFailures, {
-          plugin,
-          scope: activation.scope,
-          failure,
-          refresh,
-          ref: activation.failure.ref,
-          release: holdUnsafe(),
-        })
-      })
-      const host = yield* PluginHost.make({ list }, plugin.id).pipe(Effect.provideContext(hostContext))
-      const exit = yield* Effect.suspend(() => plugin.effect(host)).pipe(
-        grouped,
-        inherit,
-        Effect.updateContext((context: Context.Context<never>) =>
-          Context.make(Scope.Scope, activation.scope).pipe(
-            Context.add(Logger.CurrentLoggers, Context.get(context, Logger.CurrentLoggers)),
-            Context.add(References.MinimumLogLevel, Context.get(context, References.MinimumLogLevel)),
-          ),
-        ),
-        Effect.withSpan("Plugin.load", { attributes: { "plugin.id": plugin.id } }),
-        Effect.onExit((exit) =>
-          Exit.isFailure(exit) && !activation.failure ? Scope.close(activation.scope, exit) : Effect.void,
-        ),
-        Effect.exit,
+    let configurationPending = false
+    let configuredSources: readonly Entry[] | undefined
+    const requestConfiguration = Effect.suspend(() => {
+      configurationPending = true
+      return config.configuration?.request ?? Effect.void
+    })
+    const load = (plugin: Generation) =>
+      PluginActivation.load(plugin, {
+        scope,
+        list,
+        request: requestConfiguration,
+        failed: ({ activation, failure, refresh, ref }) => {
+          configurationPending = true
+          Queue.offerUnsafe(pendingFailures, {
+            plugin,
+            scope: activation.scope,
+            failure,
+            refresh,
+            ref,
+            release: holdUnsafe(),
+          })
+        },
+      }).pipe(Effect.provideContext(hostContext))
+    const configure = Effect.fn("Plugin.configure")(function* () {
+      if (!config.configuration) return
+      configuredSources = yield* ConfigurationStage.apply(
+        config.configuration,
+        Array.from(active.values()).flatMap((slot) => (slot.activation ? [slot.activation] : [])),
       )
-      if (activation.failure || Exit.isSuccess(exit)) return { activation } as const
-      yield* Effect.logWarning("failed to load plugin", {
-        "plugin.id": plugin.id,
-        cause: exit.cause,
-      })
-      return { error: Cause.pretty(exit.cause) } as const
+      configurationPending = false
     })
 
     const activate = Effect.fn("Plugin.activate")(function* (
       plugins: readonly Generation[],
       failures: readonly Failure[] = [],
+      post: readonly Generation[] = [],
     ) {
-      const definitions = plugins.map((plugin) => ({ ...plugin, id: Plugin.ID.make(plugin.id) }))
+      const definitions = [...plugins, ...post].map((plugin) => ({ ...plugin, id: Plugin.ID.make(plugin.id) }))
       const ids = new Set<Plugin.ID>()
       for (const definition of definitions) {
         if (ids.has(definition.id)) yield* Effect.die(new Error(`Duplicate plugin ID: ${definition.id}`))
@@ -128,7 +125,14 @@ const layer = Layer.effect(
                 const entry = active.get(definition.id)
                 if (entry) active.set(definition.id, { ...entry, plugin: definition })
               }
-              if (prefix === definitions.length && active.size === definitions.length) {
+              const sourceChanged =
+                config.configuration && configuredSources !== (yield* config.configuration.entries())
+              if (
+                prefix === definitions.length &&
+                active.size === definitions.length &&
+                !sourceChanged &&
+                !configurationPending
+              ) {
                 inventory = snapshot()
                 yield* publish(inventory)
                 return
@@ -148,7 +152,9 @@ const layer = Layer.effect(
                       }),
                     { discard: true },
                   )
-                  for (const definition of definitions.slice(prefix)) {
+                  for (const [index, definition] of definitions.entries()) {
+                    if (index === plugins.length) yield* configure()
+                    if (index < prefix) continue
                     const slot = previous.get(definition.id)
                     // Reordering healthy registrations does not authorize retrying a failed revision.
                     if (slot?.activation?.failure && slot.plugin.revision === definition.revision) {
@@ -181,6 +187,8 @@ const layer = Layer.effect(
                     })
                   }
 
+                  if (!post.length) yield* configure()
+
                   inventory = snapshot()
                 }),
               )
@@ -206,7 +214,12 @@ const layer = Layer.effect(
               // Failure is already recorded on its exact activation, so an old queued item
               // cannot disable a replacement and teardown need not wait for this worker.
               inventory = snapshot()
-              const refreshed = yield* State.batch(item.refresh).pipe(Effect.exit)
+              const refreshed = yield* State.batch(
+                Effect.gen(function* () {
+                  yield* item.refresh
+                  if (configurationPending) yield* configure()
+                }),
+              ).pipe(Effect.exit)
               yield* publish(inventory)
               if (Exit.isFailure(refreshed))
                 yield* Effect.logWarning("failed to refresh state after disabling plugin", {
@@ -278,14 +291,6 @@ type Slot = {
   readonly error?: string
 }
 
-// Share the activation across slot snapshots so teardown sees failures synchronously,
-// including failures discovered after activate() has captured its previous slots.
-type Activation = {
-  readonly plugin: Generation
-  readonly scope: Scope.Closeable
-  failure?: { readonly error: string; readonly ref: string }
-}
-
 type PendingFailure = {
   readonly plugin: Generation
   readonly scope: Scope.Closeable
@@ -310,5 +315,5 @@ export const node: LayerNode.Provider<Service, PersistentPty.UnavailableError, t
   Node.makeLocationNode({
     service: Service,
     layer,
-    deps: [PluginHost.requirements],
+    deps: [Config.node, PluginHost.requirements],
   })

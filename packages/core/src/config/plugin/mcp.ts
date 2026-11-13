@@ -21,7 +21,13 @@ export const register = Effect.fn("ConfigMCPPlugin.register")(function* (
   const mcp = yield* Mcp.Service
   const loaded = { entries: [] as Entry[] }
 
+  const refresh = config.entries().pipe(
+    Effect.tap((entries) => Effect.sync(() => (loaded.entries = entries))),
+    Effect.andThen(mcp.reload()),
+  )
+  if (config.configuration) yield* config.configuration.observe(refresh)
   yield* events.pipe(
+    Stream.filter((event) => !config.configuration?.published(event)),
     Stream.filter((event) => event.type === "config.updated"),
     Stream.runForEach(() =>
       config.entries().pipe(

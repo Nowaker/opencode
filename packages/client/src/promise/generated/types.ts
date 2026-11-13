@@ -13,6 +13,7 @@ export type ServerInfo = {
         childCancellation?: boolean | undefined
         sessionMessages?: boolean | undefined
         subagentOptions?: boolean | undefined
+        pluginConfiguration?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
       }
     | undefined

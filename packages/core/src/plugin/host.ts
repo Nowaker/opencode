@@ -41,6 +41,7 @@ import { Permission } from "../permission.js"
 import { PluginHooks } from "./hooks.js"
 import type { Interface } from "../plugin.js"
 import { LayerNode } from "@opencode/util/effect/layer-node"
+import type { ConfigDomain } from "@opencode/plugin/effect/config"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
 type RpcEvent = Event.Payload & {
@@ -52,7 +53,11 @@ const isRpcType = (type: string): type is RpcEvent["type"] => type.startsWith("r
 const isRpcEvent = (event: Event.Payload): event is RpcEvent => isRpcType(event.type)
 const isPublicEvent = (event: Event.Payload): event is EventManifest.ServerEvent | RpcEvent =>
   EventManifest.isServer(event) || isRpcEvent(event)
-export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interface, "list">, pluginID: string) {
+export const make = Effect.fn("PluginHost.make")(function* (
+  plugin: Pick<Interface, "list">,
+  pluginID: string,
+  config?: ConfigDomain,
+) {
   const app = yield* App.Service
   const agents = yield* Agent.Service
   const artifacts = yield* Artifact.Service
@@ -131,11 +136,20 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: Pick<Interfa
   const context: Plugin.Context = {
     app: {
       ...app,
-      capabilities: { sessionMessages: true, subagentOptions: true, childCancellation: true, jobControl: true },
+      capabilities: {
+        sessionMessages: true,
+        subagentOptions: true,
+        childCancellation: true,
+        jobControl: true,
+        pluginConfiguration: true,
+      },
     },
     job: jobControl,
     location: locationInfo(),
     options: {},
+    config: config ?? {
+      configure: () => Effect.die(new Error("Configuration registration requires plugin activation")),
+    },
     rpc: Object.assign(rpc.client, { register: rpc.register }),
     agent: {
       get: (input) => {

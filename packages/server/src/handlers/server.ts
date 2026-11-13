@@ -31,6 +31,7 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
               subagentOptions: true,
               childCancellation: true,
               jobControl: true,
+              pluginConfiguration: true,
             },
           }
         }),

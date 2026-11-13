@@ -4,7 +4,7 @@ import type { Rpc } from "@opencode/schema/rpc"
 import type { OpenCodeEvent } from "@opencode/client"
 import type { RpcCallOptions, RpcEventPayload, SelectedEvent, SubscribeOptions } from "@opencode/client/promise/api"
 import { Effect, Schema, SchemaAST, Stream } from "effect"
-import type { Scope } from "effect"
+import type { Context, Scope } from "effect"
 import { HttpApiEndpoint, HttpApiSchema } from "effect/http-api"
 import { define } from "../effect/plugin.js"
 import type { ToolFailures, ToolHooks } from "../effect/tool.js"
@@ -12,6 +12,7 @@ import { AssertInput } from "../permission.js"
 import type { Plugin } from "./plugin.js"
 import type { Info } from "./tool.js"
 import type { RpcDomain, RpcHandlers } from "./rpc.js"
+import { AsyncLocalStorage } from "node:async_hooks"
 
 type HostRegistration = { readonly dispose: Effect.Effect<void> }
 type Registration = { readonly dispose: () => Promise<void> }
@@ -77,7 +78,11 @@ const makeStreams = Effect.fn("Plugin.Event.makeStreams")(function* () {
   })) satisfies StreamAdapter
 })
 
-const rpcFromEffect = Effect.fn("Plugin.Rpc.fromEffect")(function* (host: HostRpc, streams: StreamAdapter) {
+const rpcFromEffect = Effect.fn("Plugin.Rpc.fromEffect")(function* (
+  host: HostRpc,
+  streams: StreamAdapter,
+  registrationContext: () => Context.Context<Scope.Scope>,
+) {
   const context = yield* Effect.context<Scope.Scope>()
   const run = Effect.runPromiseWith(context)
 
@@ -119,8 +124,9 @@ const rpcFromEffect = Effect.fn("Plugin.Rpc.fromEffect")(function* (host: HostRp
     )
   }
 
-  const register = (definition: Rpc.PortableDefinition, handlers: RpcHandlers<Rpc.PortableDefinition>) =>
-    run(
+  const register = (definition: Rpc.PortableDefinition, handlers: RpcHandlers<Rpc.PortableDefinition>) => {
+    const registerRun = Effect.runPromiseWith(registrationContext())
+    return registerRun(
       host.register(
         definition,
         // SAFETY: Each entry preserves its definition key; Core restores that method's erased schema and error types.
@@ -155,9 +161,12 @@ const rpcFromEffect = Effect.fn("Plugin.Rpc.fromEffect")(function* (host: HostRp
         ) as never,
       ),
     ).then((registration) => ({
-      dispose: () => run(registration.dispose),
-      events: { emit: (...args: Rpc.EventInput<Rpc.PortableDefinition>) => run(registration.events.emit(...args)) },
+      dispose: () => registerRun(registration.dispose),
+      events: {
+        emit: (...args: Rpc.EventInput<Rpc.PortableDefinition>) => registerRun(registration.events.emit(...args)),
+      },
     }))
+  }
 
   // SAFETY: Client and register implement RpcDomain from the same portable definitions and schema adapters.
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
@@ -244,11 +253,12 @@ export function fromPromise(plugin: Plugin) {
         const WebSearchEndpoints = ClientApi.groups["server.websearch"].endpoints
         const WorktreeEndpoints = ClientApi.groups["server.worktree"].endpoints
         const runtime = yield* Effect.context<Scope.Scope>()
+        const configurationRuntime = new AsyncLocalStorage<typeof runtime>()
         const streams = yield* makeStreams()
 
         // Run a hook registration on the plugin scope and resolve once it is registered.
         const register = (effect: Effect.Effect<HostRegistration, never, Scope.Scope>): Promise<Registration> =>
-          Effect.runPromiseWith(runtime)(effect).then((registration) => ({
+          Effect.runPromiseWith(configurationRuntime.getStore() ?? runtime)(effect).then((registration) => ({
             dispose: () => Effect.runPromiseWith(runtime)(registration.dispose),
           }))
 
@@ -298,6 +308,19 @@ export function fromPromise(plugin: Plugin) {
           app: host.app,
           location: host.location,
           options: host.options,
+          config: {
+            configure: (callback) =>
+              register(
+                host.config.configure((draft) =>
+                  Effect.gen(function* () {
+                    const context = yield* Effect.context<Scope.Scope>()
+                    yield* Effect.promise(() =>
+                      configurationRuntime.run(context, () => Promise.resolve(callback(draft))),
+                    )
+                  }),
+                ),
+              ),
+          },
           agent: {
             get: adaptApiMethod(AgentEndpoints["agent.get"], host.agent.get),
             list: adaptApiMethod(AgentEndpoints["agent.list"], host.agent.list),
@@ -495,7 +518,7 @@ export function fromPromise(plugin: Plugin) {
             transform: transform(host.reference),
             reload: () => run(host.reference.reload()),
           },
-          rpc: yield* rpcFromEffect(host.rpc, streams),
+          rpc: yield* rpcFromEffect(host.rpc, streams, () => configurationRuntime.getStore() ?? runtime),
           skill: {
             list: adaptApiMethod(SkillEndpoints["skill.list"], host.skill.list),
             transform: transform(host.skill),

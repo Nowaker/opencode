@@ -60,6 +60,18 @@ export function group(report: RegistrationGroup["report"]) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.provideService(effect, CurrentGroup, group)
 }
 
+/** Routes asynchronous configuration failures through the same owning registration group as transforms. */
+export const guard = Effect.fnUntraced(function* <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) {
+  const group = yield* CurrentGroup
+  return yield* effect.pipe(
+    Effect.tapCause((cause) =>
+      Effect.sync(() => {
+        if (group) disable(group, { state: name, cause: Cause.squash(cause) })
+      }),
+    ),
+  )
+})
+
 function disable(group: RegistrationGroup, failure: Failure) {
   if (group.failed) return
   group.failed = true

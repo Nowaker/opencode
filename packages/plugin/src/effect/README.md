@@ -27,6 +27,10 @@ Plugin setup registers hooks imperatively through each domain's `hook` method.
 
 Configuration supplied for the plugin is available as `ctx.options`.
 
+The fork advertises `ctx.app.capabilities?.pluginConfiguration` and `/api/info` `capabilities.pluginConfiguration` for the experimental configuration stage. Register during setup with `yield* ctx.config.configure((draft) => Effect.sync(() => { draft.default_agent = "reviewer" }))`. Activation finishes external setup before running these callbacks sequentially and awaiting their Effects, then loads the native configuration consumers. The mutable draft contains resolved document values in native fields such as `providers`, `agents`, `commands`, and the object-valued `model` selection. Each pass starts fresh, edits override loaded configuration, and `plugins` cannot be changed from this stage.
+
+Each callback runs in a child of its activation scope. A new pass disposes the previous callback scope, unloading removes its edits, and callback failure disables the owning plugin without committing partial draft changes. Source reload commits the configured view and refreshes native consumers before readiness releases. Unchanged document paths keep their original resolution base; callback-supplied paths resolve from the location directory. Deletion removes a configured command across source layers and discovered Markdown declarations. Registrations may also be removed early through `dispose`.
+
 Registrations are owned by the plugin scope. Closing the scope removes them automatically; a registration may also be removed early through `dispose`.
 
 ## Transform Hooks

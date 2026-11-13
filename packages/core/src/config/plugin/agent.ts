@@ -9,6 +9,7 @@ import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { ConfigMarkdown } from "../markdown.js"
 import { ConfigEntryObserver } from "./entry-observer.js"
+import { ConfigDraft } from "../draft.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigAgentV1 } from "../../v1/config/agent.js"
 import { ConfigMigrateV1 } from "../../v1/config/migrate.js"
@@ -52,7 +53,11 @@ export const Plugin = define({
       ).pipe(Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)))
     })
     const load = Effect.fn("ConfigAgentPlugin.load")(function* () {
-      return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
+      return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(
+        Effect.map((documents) =>
+          ConfigDraft.apply(documents.flat()).filter((entry): entry is Document => entry.type === "document"),
+        ),
+      )
     })
     const loaded = yield* ConfigEntryObserver.observeSources({
       config,

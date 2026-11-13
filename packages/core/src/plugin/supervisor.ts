@@ -13,6 +13,7 @@ import { PluginModule } from "./module.js"
 import { SdkPlugins } from "./sdk.js"
 import { PluginUpdate } from "./update.js"
 import { Watcher } from "../filesystem/watcher.js"
+import { Config } from "../config.js"
 
 const resolve = Effect.fn("PluginSupervisor.resolve")(function* (
   modules: Effect.Success<ReturnType<typeof PluginModule.make>>,
@@ -119,6 +120,8 @@ const resolve = Effect.fn("PluginSupervisor.resolve")(function* (
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* Plugin.Service
+    const config = yield* Config.Service
+    if (config.configuration) yield* config.configuration.manage
     const sdk = yield* SdkPlugins.Service
     const instance = yield* InstancePlugins.Service
     const sources = yield* ConfigPluginSource.Service
@@ -144,7 +147,7 @@ export const layer = Layer.effectDiscard(
       // Instance-bound plugins come last: later activation can override earlier
       // container writes, so the instance's explicit choices win over globals.
       const pre = [...internal.pre, ...sdk.all(), ...instance.all()]
-      const post = internal.post
+      const post: readonly Plugin.Generation[] = internal.post
       const operations = yield* sources.operations()
       // Activate everything available locally before waiting on missing package installs.
       const immediate = yield* resolve(modules, pre, post, operations, false, running)
@@ -158,8 +161,11 @@ export const layer = Layer.effectDiscard(
           : source
       const apply = (resolved: typeof immediate) =>
         registry.activate(
-          resolved.plugins.map((plugin) => (plugin.source ? { ...plugin, source: source(plugin.source) } : plugin)),
+          resolved.plugins
+            .filter((plugin) => !post.includes(plugin))
+            .map((plugin) => (plugin.source ? { ...plugin, source: source(plugin.source) } : plugin)),
           resolved.failures.map((failure) => ({ ...failure, source: source(failure.source) })),
+          resolved.plugins.filter((plugin) => post.includes(plugin)),
         )
       yield* apply(immediate)
       const resolved = immediate.pending.length
@@ -205,7 +211,12 @@ export const layer = Layer.effectDiscard(
     yield* watch(sources.changes())
     yield* watch(modules.changes())
     yield* watch(Stream.fromEffectRepeat(Effect.sleep("24 hours")))
-    yield* watch(bus.subscribe([Event.Updated, SdkPlugins.Updated]))
+    yield* watch(
+      bus
+        .subscribe([Event.Updated, SdkPlugins.Updated])
+        .pipe(Stream.filter((event) => !config.configuration?.published(event))),
+    )
+    if (config.configuration) yield* watch(config.configuration.changes())
     yield* watch(
       updates.changes().pipe(
         Stream.filter((update) => packages.has(update.target)),
@@ -235,6 +246,7 @@ export const layer = Layer.effectDiscard(
 
 const nodeDeps = [
   Plugin.node,
+  Config.node,
   SdkPlugins.node,
   InstancePlugins.node,
   ConfigPluginSource.node,

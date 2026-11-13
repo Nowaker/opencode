@@ -17,7 +17,9 @@ export const observe = Effect.fnUntraced(function* (
     Effect.tap((entries) => Effect.sync(() => (loaded.entries = entries))),
     Effect.andThen(reload),
   )
+  if (config.configuration) yield* config.configuration.observe(refresh)
   yield* event.subscribe({ types: ["config.updated"] }).pipe(
+    Stream.filter((event) => !config.configuration?.published(event)),
     Stream.runForEach(() => refresh),
     Effect.forkScoped({ startImmediately: true }),
   )
@@ -57,9 +59,12 @@ export const observeSources = Effect.fnUntraced(function* <A>(input: {
     Stream.runForEach(notify),
     Effect.forkScoped({ startImmediately: true }),
   )
-  yield* input.event
-    .subscribe({ types: ["config.updated"] })
-    .pipe(Stream.runForEach(notify), Effect.forkScoped({ startImmediately: true }))
+  if (config.configuration) yield* config.configuration.observe(reload)
+  yield* input.event.subscribe({ types: ["config.updated"] }).pipe(
+    Stream.filter((event) => !config.configuration?.published(event)),
+    Stream.runForEach(notify),
+    Effect.forkScoped({ startImmediately: true }),
+  )
   const updates = yield* PubSub.subscribe(changes)
   yield* Stream.fromSubscription(updates).pipe(
     Stream.debounce("100 millis"),

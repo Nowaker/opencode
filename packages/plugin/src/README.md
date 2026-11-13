@@ -39,6 +39,10 @@ setup: async (ctx) => {
 
 Configuration supplied for the plugin is available as `ctx.options`.
 
+The fork advertises `ctx.app.capabilities?.pluginConfiguration` and `/api/info` `capabilities.pluginConfiguration` for the experimental configuration stage. Register during setup with `await ctx.config.configure(async (draft) => { draft.default_agent = "reviewer" })`. Registration does not invoke the callback: activation first finishes external setup, then awaits callbacks sequentially before native configuration consumers load. Every pass starts from resolved document values, so edits override loaded configuration without accumulating across reloads. The draft uses native fields such as `providers`, `agents`, `commands`, and the object-valued `model` selection; it does not include runtime catalog defaults or legacy v1 aliases. Changing `plugins` is rejected because that list determines activation itself.
+
+The registration and any domain registrations made inside its callback belong to that activation. A new pass disposes the previous callback scope, unloading removes its edits, and a failed callback disables its owning plugin and discards its partial draft. Source reload commits the configured view and refreshes native consumers before activation readiness releases. Unchanged source-relative paths retain their document origin; paths supplied by a callback use the location directory. Deleting a configured command prevents an earlier declaration from reappearing, including one discovered from Markdown. Plugins using no configuration callbacks keep their ordinary loaded configuration.
+
 A registration may be removed early through `dispose`:
 
 ```ts

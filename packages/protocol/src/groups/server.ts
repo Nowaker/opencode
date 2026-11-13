@@ -28,6 +28,9 @@ export const ServerInfo = Schema.Struct({
       subagentOptions: Schema.optional(Schema.Boolean).annotate({
         description: "Supports native subagent fork, completion notice policies and timed foreground handoff.",
       }),
+      pluginConfiguration: Schema.optional(Schema.Boolean).annotate({
+        description: "Supports awaited activation-owned plugin configuration before native config consumers.",
+      }),
       sessionMetadataMergePatch: Schema.optional(Schema.Boolean).annotate({
         description: "Supports atomic RFC 7396 session metadata updates selected by experimental.metadataMode.",
       }),

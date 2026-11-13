@@ -30,6 +30,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
         },
       }),
     options: {},
+    config: overrides.config ?? { configure: () => Effect.die("unused config.configure") },
     rpc:
       overrides.rpc ??
       Object.assign(

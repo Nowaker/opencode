@@ -4,7 +4,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
 import { isDeepStrictEqual } from "node:util"
 import { applyEdits, modify, type ParseError, parse } from "jsonc-parser"
-import { Context, Effect, FiberMap, Layer, Option, PubSub, Ref, Schema, Semaphore, Stream } from "effect"
+import { Context, Effect, FiberMap, Layer, Option, PubSub, Schema, Semaphore, Stream } from "effect"
 import { Directory, Document, Info, type Patch, type Entry, Event } from "@opencode/schema/config"
 import { Credential } from "./credential.js"
 import { Bus } from "./bus.js"
@@ -24,6 +24,7 @@ import { Connection } from "@opencode/schema/connection"
 import { WellKnown } from "./wellknown.js"
 import { AppProcess } from "@opencode/util/process"
 import { ChildProcess } from "effect/process"
+import { ConfigSnapshot } from "./config/snapshot.js"
 
 export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
   return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
@@ -33,6 +34,8 @@ export function latest<K extends keyof Info>(entries: readonly Entry[], key: K):
 export interface Interface {
   /** Returns location config documents and discovery sources from lowest to highest priority. */
   readonly entries: () => Effect.Effect<Entry[]>
+  /** Internal source/commit boundary owned by serialized plugin activation. */
+  readonly configuration?: ConfigSnapshot.Configuration
   /** Compatibility roots consumed by internal compatibility plugins. */
   readonly compatibility?: () => Effect.Effect<{
     readonly claude: readonly AbsolutePath[]
@@ -91,25 +94,28 @@ export const testLayer = (
 ) =>
   Layer.effectContext(
     Effect.gen(function* () {
-      const entries = yield* Ref.make(initial)
-      const integrations = yield* Ref.make(new Map<string, ConfigIntegration.Document>())
+      const entries = yield* ConfigSnapshot.make(initial, () => Effect.void)
+      const integrations = new Map<string, ConfigIntegration.Document>()
+      let documents = initial
       const updates = yield* PubSub.unbounded<Watcher.Update>()
       const service = Test.of({
-        entries: () =>
-          Effect.all([Ref.get(integrations), Ref.get(entries)]).pipe(
-            Effect.map(([documents, entries]) => [...documents.values(), ...entries]),
-          ),
+        entries: entries.entries,
         compatibility: () => Effect.succeed(compatibility),
         changes: () => Stream.fromPubSub(updates),
-        setEntries: (next) => Ref.set(entries, next),
+        configuration: entries.configuration,
+        setEntries: (next) =>
+          Effect.suspend(() => {
+            documents = next
+            return entries.replace([...integrations.values(), ...documents], false)
+          }),
         emitChange: (update) => PubSub.publish(updates, update).pipe(Effect.asVoid),
         integration: (integrationID, document) =>
-          Ref.update(integrations, (current) => {
+          Effect.suspend(() => {
             // Like config, keeps the document it holds when handed a deep-equal one.
-            if (isDeepStrictEqual(current.get(integrationID), document)) return current
-            const next = new Map(current)
-            next.delete(integrationID)
-            return document ? next.set(integrationID, document) : next
+            if (isDeepStrictEqual(integrations.get(integrationID), document)) return Effect.void
+            integrations.delete(integrationID)
+            if (document) integrations.set(integrationID, document)
+            return entries.replace([...integrations.values(), ...documents], false)
           }),
       })
       return Context.empty().pipe(Context.add(Service, service), Context.add(Test, service))
@@ -379,7 +385,9 @@ export const layer = (options?: Options) =>
 
       const initial = yield* ConfigDiscovery.discover(options)
       let sources = initial
-      let configs = yield* load(initial)
+      const snapshot = yield* ConfigSnapshot.make(yield* load(initial), (origin) =>
+        bus.publish(Event.Updated, {}, { metadata: { configurationSnapshot: origin } }).pipe(Effect.asVoid),
+      )
       const updates = yield* PubSub.unbounded<Watcher.Update>()
       const reloads = yield* PubSub.sliding<void>(1)
       // Readiness rescans recover writes made before a watch attached.
@@ -410,10 +418,9 @@ export const layer = (options?: Options) =>
           const compatibilityChanged =
             !isDeepStrictEqual(sources.claude, discovered.claude) ||
             !isDeepStrictEqual(sources.agents, discovered.agents)
-          if (isDeepStrictEqual(configs, next) && !compatibilityChanged) return
+          if (isDeepStrictEqual(snapshot.raw(), next) && !compatibilityChanged) return
           sources = discovered
-          configs = next
-          yield* bus.publish(Event.Updated, {})
+          yield* snapshot.replace(next)
         },
         (effect) => reloadLock.withPermit(effect),
       )
@@ -490,9 +497,8 @@ export const layer = (options?: Options) =>
       )
 
       return Service.of({
-        entries: Effect.fnUntraced(function* () {
-          return configs
-        }),
+        entries: snapshot.entries,
+        configuration: snapshot.configuration,
         compatibility: () =>
           Effect.all({
             claude: Effect.filter(sources.claude, fs.isDir),

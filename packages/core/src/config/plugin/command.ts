@@ -1,7 +1,7 @@
 export * as ConfigCommandPlugin from "./command.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
-import type { Entry } from "@opencode/schema/config"
+import { Document, Info, type Entry } from "@opencode/schema/config"
 import { ConfigCommand } from "@opencode/schema/config/command"
 import { AppProcess } from "@opencode/util/process"
 import path from "path"
@@ -16,6 +16,7 @@ import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
 import { ConfigEntryObserver } from "./entry-observer.js"
+import { ConfigDraft } from "../draft.js"
 
 const decodeCommand = SchemaParser.decodeUnknownResult(ConfigCommand.Info)
 const formatIssue = SchemaIssue.makeFormatterDefault()
@@ -26,10 +27,15 @@ export const Plugin = define({
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
     const loadEntry = Effect.fnUntraced(function* (entry: Entry) {
-      if (entry.type === "document") return [{ commands: entry.info.commands }]
+      if (entry.type === "document") return [entry]
       if (entry.type !== "directory") return []
       const commands = yield* loadDirectory(fs, entry.path)
-      return [{ commands: Object.fromEntries(commands.map((command) => [command.name, command.info])) }]
+      return [
+        new Document({
+          type: "document",
+          info: new Info({ commands: Object.fromEntries(commands.map((command) => [command.name, command.info])) }),
+        }),
+      ]
     })
     const location = yield* Location.Service
     const processes = yield* AppProcess.Service
@@ -38,7 +44,13 @@ export const Plugin = define({
     const agents = yield* Agent.Service
     const subagents = yield* SubagentJob.Service
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
-      return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
+      return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(
+        Effect.map((documents) =>
+          ConfigDraft.apply(documents.flat()).flatMap((entry) =>
+            entry.type === "document" ? [{ commands: entry.info.commands }] : [],
+          ),
+        ),
+      )
     })
     const loaded = yield* ConfigEntryObserver.observeSources({
       config,
