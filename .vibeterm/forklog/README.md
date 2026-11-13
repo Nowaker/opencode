@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Anthropic Meridian provider clone](./features/2026-11-12-anthropic-meridian-provider.md)
 - [Slow animation frames in an unfocused TUI](./features/2026-11-11-unfocused-redraw-throttle.md)
 - [Atomic session metadata merge on v2](./features/2026-11-10-v2-metadata-merge.md)
 - [Durable v2 events and authenticated replay](./features/2026-11-10-v2-event-replay.md)
