@@ -143,6 +143,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         jobControl: true,
         pluginConfiguration: true,
         compactionSummary: true,
+        sessionMetadataMergePatch: true,
       },
     },
     job: jobControl,
@@ -618,7 +619,11 @@ export const make = Effect.fn("PluginHost.make")(function* (
         yield* sessions.get(input.sessionID)
         if (input.title !== undefined) yield* sessions.rename({ sessionID: input.sessionID, title: input.title })
         if (input.metadata !== undefined)
-          yield* sessions.setMetadata({ sessionID: input.sessionID, metadata: input.metadata })
+          yield* sessions.setMetadata({
+            sessionID: input.sessionID,
+            metadata: input.metadata,
+            mode: input.experimental?.metadataMode === "merge" ? "merge" : undefined,
+          })
         if (input.permissions !== undefined)
           yield* sessions.setPermissions({ sessionID: input.sessionID, permissions: input.permissions })
       }),
