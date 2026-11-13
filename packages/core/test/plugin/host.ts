@@ -69,6 +69,12 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       activate: () => Effect.die("unused credential.activate"),
     },
     event: { subscribe: events(overrides.event?.subscribe ?? (() => Stream.empty)) },
+    form: overrides.form ?? {
+      list: () => Effect.die("unused form.list"),
+      get: () => Effect.die("unused form.get"),
+      reply: () => Effect.die("unused form.reply"),
+      cancel: () => Effect.die("unused form.cancel"),
+    },
     experimental: overrides.experimental ?? {
       terminal: {
         read: () => Effect.die("unused experimental.terminal.read"),

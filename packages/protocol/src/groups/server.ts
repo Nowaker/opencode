@@ -41,6 +41,9 @@ export const ServerInfo = Schema.Struct({
       syntheticAppend: Schema.optional(Schema.Boolean).annotate({
         description: "Supports mode: append on session.synthetic without inbox admission or execution changes.",
       }),
+      formControl: Schema.optional(Schema.Boolean).annotate({
+        description: "Plugins can list pending native forms and read, answer or cancel forms owned by a session.",
+      }),
     }),
   ),
 }).annotate({ identifier: "ServerInfo" })

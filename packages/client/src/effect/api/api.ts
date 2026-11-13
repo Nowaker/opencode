@@ -64,6 +64,7 @@ export type ServerInfoOutput = {
         readonly compactionSummary?: boolean | undefined
         readonly sessionMetadataMergePatch?: boolean | undefined
         readonly syntheticAppend?: boolean | undefined
+        readonly formControl?: boolean | undefined
       }
     | undefined
 }

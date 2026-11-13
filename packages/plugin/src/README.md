@@ -128,6 +128,8 @@ Hosts advertising `ctx.app.capabilities?.compactionSummary` and `/api/info` `cap
 
 With `ctx.app.capabilities?.jobControl`, use `await ctx.job.list({ parentSessionID, descendants: true })` to read `{ data: Job.Info[] }`, or omit `descendants` for direct ownership. `await ctx.job.cancel({ parentID, jobID })` follows the [native Job cancellation contract](../../../README.md#installation) for directly owned shell and image Jobs. Subagents use `ctx.session.cancelChild`.
 
+With `ctx.app.capabilities?.formControl`, `await ctx.form.list()` returns the current Location's pending native forms as a raw array; pass `{ sessionID }` to filter by owner. `await ctx.form.get({ sessionID, formID })` returns raw `Form.Detail`, including its native state. `await ctx.form.reply({ sessionID, formID, answer })` and `await ctx.form.cancel({ sessionID, formID, message })` return void; the cancellation message is optional. Use native `frm_` IDs and `Form.Answer` records keyed by field name, including `q0`, `q1` for native questions. Each get, reply and cancel verifies the form's actual session owner; mismatched owners and missing forms fail with `Form.NotFoundError`. Invalid answers leave the form pending and fail with `Form.InvalidAnswerError`; repeated settlement fails with `Form.AlreadySettledError`. Settled details remain readable for the native ten-minute retention period and leave pending lists immediately. `GET /api/info` advertises the same optional `formControl` capability.
+
 ```ts
 await ctx.session.hook("context", (event) => {
   event.tools.read.description = "Read a file using narrow line ranges."

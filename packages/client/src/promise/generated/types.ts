@@ -17,6 +17,7 @@ export type ServerInfo = {
         compactionSummary?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
         syntheticAppend?: boolean | undefined
+        formControl?: boolean | undefined
       }
     | undefined
 }

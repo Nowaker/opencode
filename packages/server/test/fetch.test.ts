@@ -222,8 +222,9 @@ it.live("serves the HttpApi and enforces Basic auth like the Node server", () =>
       Effect.flatMap(Schema.decodeUnknownEffect(ServerInfo)),
     )
     expect(body.version).toBe("test-version")
-    expect(body.paths.tmp).toEndWith("opencode")
+    expect(body.paths.tmp).toEndWith("opencode2")
     expect(body.capabilities?.persistentPty).toBe(true)
+    expect(body.capabilities?.formControl).toBe(true)
   }),
 )
 

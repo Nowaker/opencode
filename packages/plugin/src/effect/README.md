@@ -122,6 +122,8 @@ Session context is mutable immediately before provider dispatch:
 
 With `ctx.app.capabilities?.jobControl`, use `yield* ctx.job.list({ parentSessionID, descendants: true })` to read `{ data: Job.Info[] }`, or omit `descendants` for direct ownership. `yield* ctx.job.cancel({ parentID, jobID })` follows the [native Job cancellation contract](../../../../README.md#installation) for directly owned shell and image Jobs. Subagents use `ctx.session.cancelChild`.
 
+The [native form controls](../README.md#runtime-hooks) apply to both SDKs. When `ctx.app.capabilities?.formControl` is true, use `yield* ctx.form.list({ sessionID })`, `yield* ctx.form.get({ sessionID, formID })`, `yield* ctx.form.reply({ sessionID, formID, answer })` or `yield* ctx.form.cancel({ sessionID, formID, message })`. Omit list's input to read every pending form in the current Location. Effect results retain the canonical native Form types and raw result shapes.
+
 ```ts
 yield *
   ctx.session.hook("context", (event) =>

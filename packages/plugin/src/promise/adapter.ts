@@ -1,5 +1,6 @@
 import { Tool } from "@opencode/schema/tool"
 import { Job } from "@opencode/schema/job"
+import { Form } from "@opencode/schema/form"
 import type { Rpc } from "@opencode/schema/rpc"
 import type { OpenCodeEvent } from "@opencode/client"
 import type { RpcCallOptions, RpcEventPayload, SelectedEvent, SubscribeOptions } from "@opencode/client/promise/api"
@@ -653,6 +654,20 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             cancel: adaptApiMethod(ExperimentalEndpoints["job.cancel"], host.job.cancel),
+          },
+          form: {
+            list: (input) =>
+              run(
+                Schema.decodeUnknownEffect(Schema.Struct({ sessionID: Schema.optional(Schema.String) }))(
+                  input ?? {},
+                ).pipe(
+                  Effect.flatMap(host.form.list),
+                  Effect.flatMap(Schema.encodeUnknownEffect(Schema.Array(Form.Info))),
+                ),
+              ),
+            get: adaptApiMethod(SessionEndpoints["session.form.get"], host.form.get),
+            reply: adaptApiMethod(SessionEndpoints["session.form.reply"], host.form.reply),
+            cancel: adaptApiMethod(SessionEndpoints["session.form.cancel"], host.form.cancel),
           },
           session: {
             hook: (name, callback, options) =>

@@ -37,6 +37,7 @@ import { WebSearch } from "../websearch.js"
 import { Worktree } from "../worktree.js"
 import { WorktreeStrategies } from "../worktree/strategies.js"
 import { Generate } from "../generate.js"
+import { Form } from "../form.js"
 import { Permission } from "../permission.js"
 import { PluginHooks } from "./hooks.js"
 import type { Interface } from "../plugin.js"
@@ -83,6 +84,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const hooks = yield* PluginHooks.Service
   const sessions = yield* Session.Service
   const instructionEntries = yield* InstructionEntry.Service
+  const forms = yield* Form.Service
   const persistentPty = yield* PersistentPty.Service
   const locations = yield* LocationServiceMap.Service
   const worktrees = yield* Worktree.Service
@@ -125,6 +127,14 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const decodeWorktree = Schema.decodeUnknownEffect(Worktree.Info)
   const decodeWorktrees = Schema.decodeUnknownEffect(Schema.Array(Worktree.ListEntry))
 
+  const requireOwnedForm = Effect.fn("PluginHost.requireOwnedForm")(function* (
+    input: Parameters<Plugin.Context["form"]["get"]>[0],
+  ) {
+    const form = yield* forms.get(input.formID)
+    if (form.sessionID !== input.sessionID) return yield* new Form.NotFoundError({ id: input.formID })
+    return form
+  })
+
   const listAgents = Effect.fn("PluginHost.listAgents")((ref: Location.Ref) =>
     atLocation(
       ref,
@@ -145,9 +155,25 @@ export const make = Effect.fn("PluginHost.make")(function* (
         compactionSummary: true,
         sessionMetadataMergePatch: true,
         syntheticAppend: true,
+        formControl: true,
       },
     },
     job: jobControl,
+    form: {
+      list: forms.list,
+      get: Effect.fn(function* (input) {
+        const form = yield* requireOwnedForm(input)
+        return { ...form, state: yield* forms.state(input.formID) }
+      }),
+      reply: Effect.fn(function* (input) {
+        yield* requireOwnedForm(input)
+        yield* forms.reply({ id: input.formID, answer: input.answer })
+      }),
+      cancel: Effect.fn(function* (input) {
+        yield* requireOwnedForm(input)
+        yield* forms.cancel(input.formID, { message: input.message })
+      }),
+    },
     location: locationInfo(),
     options: {},
     config: config ?? {
@@ -670,6 +696,7 @@ export const requirements = LayerNode.group([
   Model.node,
   Command.node,
   Bus.node,
+  Form.node,
   Integration.node,
   KV.node,
   JobControl.node,

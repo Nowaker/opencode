@@ -9,6 +9,7 @@ import type { AISDKDomain } from "./aisdk.js"
 import type { CommandDomain } from "./command.js"
 import type { ConfigDomain } from "./config.js"
 import type { EventDomain } from "./event.js"
+import type { FormDomain } from "./form.js"
 import type { IntegrationDomain } from "./integration.js"
 import type { JobDomain } from "./job.js"
 import type { MCPDomain } from "./mcp.js"
@@ -36,6 +37,7 @@ export interface Context {
   readonly config: ConfigDomain
   readonly credential: Pick<CredentialApi, "activate">
   readonly event: EventDomain
+  readonly form: FormDomain
   readonly experimental: {
     readonly terminal: Pick<OpenCodeClient["experimental"]["persistentPty"], "read">
     /** Stateless generation with a model and a prompt: no session, history or tools. */
