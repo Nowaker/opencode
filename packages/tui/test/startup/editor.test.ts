@@ -66,6 +66,22 @@ describe("startup editor", () => {
 })
 
 describe("startup frame", () => {
+  test.each([
+    { width: 44, column: 3 },
+    { width: 100, column: 31 },
+  ])("logo shadows stay dim without shifting terminal columns at width $width", ({ width, column }) => {
+    const frame = StartupFrame.render({
+      route: "home",
+      width,
+      height: 30,
+      text: "",
+      caret: 0,
+      anchor: 0,
+      measure,
+    })
+    expect(frame).toContain(`\x1b[13;${column}H▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀\x1b[2m▀\x1b[22m\x1b[2m▀\x1b[22m▀`)
+  })
+
   test("pasted control characters are drawn as symbols, never sent to the terminal", () => {
     const text = "a\x1b[2Jb\x07c"
     const frame = StartupFrame.render({

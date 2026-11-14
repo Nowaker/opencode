@@ -28,7 +28,10 @@ export const relinquish = "\x1b[<u\x1b[?2004l"
 export const leave = "\x1b[<u\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l"
 
 const PLACEHOLDER = "Ask anything…"
-const LOGO = logo.left.map((left, index) => `${left} ${logo.right[index]}`.replace(/[_,]/g, " ").replace(/[\^~]/g, "▀"))
+const LOGO = logo.left.map((left, index) => {
+  const line = `${left} ${logo.right[index]}`.replace(/[_,]/g, " ").replace(/\^/g, "▀")
+  return { width: line.length, text: line.replace(/~/g, "\x1b[2m▀\x1b[22m") }
+})
 
 /** The composer's box width and its text columns at a terminal width. */
 export function geometry(route: Route, width: number) {
@@ -62,7 +65,7 @@ export function render(input: Input) {
   }
 
   if (logoHeight)
-    LOGO.forEach((line, index) => put(top + index, Math.max(0, Math.floor((width - line.length) / 2)), line))
+    LOGO.forEach((line, index) => put(top + index, Math.max(0, Math.floor((width - line.width) / 2)), line.text))
   const composerTop = top + logoHeight
   put(composerTop, left, "┃")
   visible.forEach((line, index) => {
