@@ -52,6 +52,29 @@ const tools: readonly ToolFixture[] = [
   },
 ] as const
 
+for (const view of ["unified", "split"] as const) {
+  test(`renders a truncated tool patch in ${view} view without throwing`, async () => {
+    const files = parseApplyPatchFiles([
+      {
+        filePath: "/project/large.txt",
+        relativePath: "large.txt",
+        type: "update",
+        patch:
+          "--- large.txt\n+++ large.txt\n@@ -1,320 +1,320 @@\n-old\n+new\n... diff truncated: 20971520 bytes, 638 lines not stored\n",
+        additions: 320,
+        deletions: 320,
+      },
+    ])
+    expect(files).toHaveLength(1)
+    testSetup = await testRender(() => <diff diff={files[0].patch} view={view} />, { width: 100, height: 30 })
+    await testSetup.renderOnce()
+
+    const frame = testSetup.captureCharFrame()
+    expect(frame).toContain("diff truncated:")
+    expect(frame).toContain("+new")
+  })
+}
+
 function ShellOutput() {
   return (
     <box

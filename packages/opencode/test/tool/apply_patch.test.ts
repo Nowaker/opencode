@@ -87,6 +87,77 @@ const expectFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, message?: string
 const expectReadFailure = (filepath: string) => expectFailure(readText(filepath))
 
 describe("tool.apply_patch freeform", () => {
+  for (const type of ["add", "update", "delete", "move"] as const) {
+    it.instance(`bounds stored diffs when applying a 20 MiB ${type}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx, calls } = makeCtx()
+        const content = ("x".repeat(65535) + "\n").repeat(320)
+        const target = path.join(test.directory, "large.txt")
+        if (type !== "add") yield* writeText(target, type === "delete" ? content : "old\n")
+        const added = content.trimEnd().replaceAll("\n", "\n+")
+        const patchText =
+          type === "delete"
+            ? "*** Begin Patch\n*** Delete File: large.txt\n*** End Patch"
+            : type === "add"
+              ? `*** Begin Patch\n*** Add File: large.txt\n+${added}\n*** End Patch`
+              : `*** Begin Patch\n*** Update File: large.txt\n${type === "move" ? "*** Move to: moved.txt\n" : ""}@@\n-old\n+${added}\n*** End Patch`
+
+        const result = yield* execute({ patchText }, ctx)
+
+        expect(calls).toHaveLength(1)
+        for (const metadata of [result.metadata, calls[0].metadata]) {
+          expect(Buffer.byteLength(metadata.diff)).toBeLessThanOrEqual(1024 * 1024)
+          expect(metadata.diff).toContain("... diff truncated:")
+          expect(metadata.files).toHaveLength(1)
+          expect(Buffer.byteLength(metadata.files[0].patch)).toBeLessThanOrEqual(256 * 1024)
+          expect(metadata.files[0].patch).toContain("... diff truncated:")
+          expect(metadata.files[0].additions).toBe(type === "delete" ? 0 : 320)
+          expect(metadata.files[0].deletions).toBe(type === "delete" ? 320 : type === "add" ? 0 : 1)
+        }
+        expect(result.output).toBe(
+          `Success. Updated the following files:\n${type === "add" ? "A" : type === "delete" ? "D" : "M"} ${type === "move" ? "moved.txt" : "large.txt"}`,
+        )
+        if (type !== "delete") {
+          expect(yield* readText(type === "move" ? path.join(test.directory, "moved.txt") : target)).toBe(content)
+        }
+      }),
+      { git: true },
+    )
+  }
+
+  it.instance("bounds the combined diff when a patch changes many large files", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const { ctx, calls } = makeCtx()
+      const content = ("x".repeat(65535) + "\n").repeat(5)
+      const names = Array.from({ length: 6 }, (_, index) => `large-${index}.txt`)
+      for (const name of names) yield* writeText(path.join(test.directory, name), content)
+
+      const result = yield* execute(
+        {
+          patchText: ["*** Begin Patch", ...names.map((name) => `*** Delete File: ${name}`), "*** End Patch"].join(
+            "\n",
+          ),
+        },
+        ctx,
+      )
+
+      expect(calls).toHaveLength(1)
+      for (const metadata of [result.metadata, calls[0].metadata]) {
+        expect(Buffer.byteLength(metadata.diff)).toBeLessThanOrEqual(1024 * 1024)
+        expect(metadata.diff).toContain("... diff truncated:")
+        expect(metadata.files).toHaveLength(names.length)
+        for (const file of metadata.files) {
+          expect(Buffer.byteLength(file.patch)).toBeLessThanOrEqual(256 * 1024)
+          expect(file.patch).toContain("... diff truncated:")
+          expect(file.additions).toBe(0)
+          expect(file.deletions).toBe(5)
+        }
+      }
+    }),
+  )
+
   it.live("requires patchText", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()

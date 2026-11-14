@@ -7,7 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Patch } from "../patch"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { trimDiff } from "./edit"
+import { capDiff, MAX_TOTAL_DIFF_BYTES, trimDiff } from "./edit"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import DESCRIPTION from "./apply_patch.txt"
@@ -67,8 +67,6 @@ export const ApplyPatchTool = Tool.define(
         bom: boolean
       }> = []
 
-      let totalDiff = ""
-
       for (const hunk of hunks) {
         const filePath = path.resolve(instance.directory, hunk.path)
         yield* assertExternalDirectoryEffect(ctx, filePath)
@@ -79,7 +77,7 @@ export const ApplyPatchTool = Tool.define(
             const newContent =
               hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`
             const next = Bom.split(newContent)
-            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, next.text))
+            const diff = capDiff(trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, next.text)))
 
             let additions = 0
             let deletions = 0
@@ -99,7 +97,6 @@ export const ApplyPatchTool = Tool.define(
               bom: next.bom,
             })
 
-            totalDiff += diff + "\n"
             break
           }
 
@@ -130,7 +127,7 @@ export const ApplyPatchTool = Tool.define(
               return yield* Effect.fail(new Error(`apply_patch verification failed: ${error}`))
             }
 
-            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent))
+            const diff = capDiff(trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent)))
 
             let additions = 0
             let deletions = 0
@@ -154,7 +151,6 @@ export const ApplyPatchTool = Tool.define(
               bom,
             })
 
-            totalDiff += diff + "\n"
             break
           }
 
@@ -169,9 +165,11 @@ export const ApplyPatchTool = Tool.define(
               ),
             )
             const contentToDelete = source.text
-            const deleteDiff = trimDiff(createTwoFilesPatch(filePath, filePath, contentToDelete, ""))
+            const deleteDiff = capDiff(trimDiff(createTwoFilesPatch(filePath, filePath, contentToDelete, "")))
 
-            const deletions = contentToDelete.split("\n").length
+            const deletions = contentToDelete
+              ? contentToDelete.split("\n").length - (contentToDelete.endsWith("\n") ? 1 : 0)
+              : 0
 
             fileChanges.push({
               filePath,
@@ -184,11 +182,12 @@ export const ApplyPatchTool = Tool.define(
               bom: source.bom,
             })
 
-            totalDiff += deleteDiff + "\n"
             break
           }
         }
       }
+
+      const totalDiff = capDiff(fileChanges.map((change) => change.diff + "\n").join(""), MAX_TOTAL_DIFF_BYTES)
 
       // Build per-file metadata for UI rendering (used for both permission and result)
       const files = fileChanges.map((change) => ({
