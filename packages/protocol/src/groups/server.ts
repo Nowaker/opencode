@@ -49,6 +49,10 @@ export const ServerInfo = Schema.Struct({
       syntheticAppend: Schema.optional(Schema.Boolean).annotate({
         description: "Supports mode: append on session.synthetic without inbox admission or execution changes.",
       }),
+      promptTextParts: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Awaited prompt hooks can persist ordered text parts on the user message, excluding ignored text from models.",
+      }),
       formControl: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can list pending native forms and read, answer or cancel forms owned by a session.",
       }),

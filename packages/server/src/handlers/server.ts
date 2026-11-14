@@ -28,6 +28,7 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
               persistentPty: PersistentPty.available,
               sessionMetadataMergePatch: true,
               syntheticAppend: true,
+              promptTextParts: true,
               formControl: true,
               permissionDefer: true,
               permissionRejectIsolation: true,

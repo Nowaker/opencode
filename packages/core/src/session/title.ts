@@ -16,6 +16,7 @@ import type { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionUsage } from "./usage.js"
 import { SessionStore } from "./store.js"
+import { SessionUserText } from "./user-text.js"
 
 const MAX_LENGTH = 100
 const MAX_CONTEXT_LENGTH = 8_000
@@ -119,10 +120,11 @@ export const layer = Layer.effect(
       const text = !isUntitled(session)
         ? yield* store.context(session.id).pipe(
             Effect.map((messages) => {
-              const original = `Original request:\n${firstUser.text.slice(0, MAX_FIRST_MESSAGE_LENGTH)}`
+              const original = `Original request:\n${SessionUserText.text(firstUser).slice(0, MAX_FIRST_MESSAGE_LENGTH)}`
               const recent = messages
                 .flatMap((message) => {
-                  if (message.type === "user" && message.id !== firstUser.id) return [`User: ${message.text.trim()}`]
+                  if (message.type === "user" && message.id !== firstUser.id)
+                    return [`User: ${SessionUserText.text(message).trim()}`]
                   if (message.type !== "assistant") return []
                   const text = message.content
                     .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
@@ -136,9 +138,9 @@ export const layer = Layer.effect(
               const budget = MAX_CONTEXT_LENGTH - conversationPrompt("").length - prefix.length
               return conversationPrompt(`${prefix}${recent.slice(-budget)}`)
             }),
-            Effect.orElseSucceed(() => messagePrompt(firstUser.text)),
+            Effect.orElseSucceed(() => messagePrompt(SessionUserText.text(firstUser))),
           )
-        : messagePrompt(firstUser.text)
+        : messagePrompt(SessionUserText.text(firstUser))
       const selection = yield* context.selectTitle(session)
       if (!selection) return
       const title =

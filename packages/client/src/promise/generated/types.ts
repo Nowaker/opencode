@@ -21,6 +21,7 @@ export type ServerInfo = {
         compactionSummary?: boolean | undefined
         sessionMetadataMergePatch?: boolean | undefined
         syntheticAppend?: boolean | undefined
+        promptTextParts?: boolean | undefined
         formControl?: boolean | undefined
         permissionDefer?: boolean | undefined
         permissionRejectIsolation?: boolean | undefined
@@ -99,6 +100,14 @@ export type FileDiffInfo = {
 export type SessionsCursor = string
 
 export type SessionActive = { type: "running" }
+
+export type PromptTextPart = {
+  type: "text"
+  position: "before" | "after"
+  text: string
+  ignored?: boolean
+  metadata?: { [x: string]: JsonValue }
+}
 
 export type PromptBase64 = string
 
@@ -1151,6 +1160,7 @@ export type GenerateImageResult = {
 
 export type SessionInboxUserPayload = {
   text: string
+  textParts?: Array<PromptTextPart>
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
@@ -1162,6 +1172,7 @@ export type SessionMessageUser = {
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   text: string
+  textParts?: Array<PromptTextPart>
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
@@ -1170,6 +1181,7 @@ export type SessionMessageUser = {
 
 export type SessionInboxUserPayload1 = {
   text: string
+  textParts?: Array<PromptTextPart>
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>

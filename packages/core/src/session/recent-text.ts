@@ -2,6 +2,7 @@ export * as SessionRecentText from "./recent-text.js"
 
 import type { SessionMessage } from "./message.js"
 import type { SessionStored } from "./stored.js"
+import { SessionUserText } from "./user-text.js"
 
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 
@@ -30,7 +31,7 @@ export const messageToText = (message: SessionMessage.Info | SessionStored.User)
           const name = file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment")
           return `[Attached ${file.mime}: ${name}]`
         }) ?? []
-      return [...skills, `[User]: ${message.text}`, ...files].join("\n")
+      return [...skills, `[User]: ${SessionUserText.text(message)}`, ...files].join("\n")
     }
 
     case "location-switched":

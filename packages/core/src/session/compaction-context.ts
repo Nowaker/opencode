@@ -1,6 +1,7 @@
 import type { SessionCompactionDetails } from "@opencode/plugin/effect/session"
 import { SessionMessage } from "./message.js"
 import { SessionRecentText } from "./recent-text.js"
+import { SessionUserText } from "./user-text.js"
 
 export function compactionTail(messages: ReadonlyArray<SessionMessage.Info>, keepID: SessionMessage.ID | undefined) {
   const start = keepID === undefined ? -1 : messages.findIndex((message) => message.id === keepID)
@@ -11,7 +12,7 @@ export function compactionTail(messages: ReadonlyArray<SessionMessage.Info>, kee
       {
         id: message.id,
         text,
-        ...(message.type === "user" ? { role: "user" as const, rawText: message.text } : {}),
+        ...(message.type === "user" ? { role: "user" as const, rawText: SessionUserText.text(message) } : {}),
         ...(message.type === "assistant" ? { role: "assistant" as const } : {}),
       },
     ]

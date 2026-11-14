@@ -1,6 +1,6 @@
 export * as SessionPrompt from "./prompt.js"
 
-import { Base64, FileAttachment } from "@opencode/schema/prompt"
+import { Base64, FileAttachment, TextPart } from "@opencode/schema/prompt"
 import { PromptInput } from "@opencode/schema/prompt-input"
 import { SessionInbox } from "@opencode/schema/session-inbox"
 import type { Session } from "@opencode/schema/session"
@@ -50,11 +50,15 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
     }),
     metadata: structuredClone(request.input.metadata),
     delivery: request.input.delivery ?? "steer",
+    textParts: [],
   })
+  // Record decoding normalizes class instances, so validate raw hook metadata first.
+  event.textParts?.forEach((part) => {
+    if (part.metadata !== undefined) Schema.decodeUnknownSync(Schema.Json)(part.metadata)
+  })
+  const textParts = Schema.decodeUnknownSync(Schema.Array(TextPart))(event.textParts ?? [])
   const input = event.prompt
-  const files = input.files
-    ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
-    : undefined
+  const files = input.files ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 }) : undefined
   const requested = input.skills
   const selected = yield* Effect.gen(function* () {
     if (!requested?.length) return undefined
@@ -81,6 +85,7 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
     type: "user",
     payload: SessionInbox.UserPayload.make({
       text: input.text,
+      textParts: textParts.length ? textParts : undefined,
       agents: input.agents,
       files,
       skills: selected?.length ? selected : undefined,

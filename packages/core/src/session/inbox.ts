@@ -149,6 +149,7 @@ const promotedFromMessage = Effect.fn("SessionInbox.promotedFromMessage")(functi
       type: "user",
       payload: UserPayload.make({
         text: message.text,
+        textParts: message.textParts,
         files: message.files,
         agents: message.agents,
         skills: message.skills,

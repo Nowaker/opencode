@@ -15,6 +15,7 @@ import { fileURLToPath } from "url"
 import { SessionMessage } from "../message.js"
 import { SessionHistory } from "../history.js"
 import { SessionRecentText } from "../recent-text.js"
+import { SessionUserText } from "../user-text.js"
 import type { FileAttachment } from "@opencode/schema/prompt"
 
 const imageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
@@ -241,7 +242,9 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
     case "user":
       const content = [
         ...(message.skills ?? []).flatMap((skill) => (skill.text === undefined ? [] : [Message.text(skill.text)])),
-        ...(message.text === "" ? [] : [Message.text(message.text)]),
+        ...SessionUserText.parts(message)
+          .filter((text) => text !== "")
+          .map(Message.text),
         ...userAttachmentContent(message.files ?? []),
       ]
       if (content.length === 0) return []

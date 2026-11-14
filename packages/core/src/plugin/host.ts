@@ -162,6 +162,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         compactionSummary: true,
         sessionMetadataMergePatch: true,
         syntheticAppend: true,
+        promptTextParts: true,
         formControl: true,
         permissionDefer: true,
         permissionRejectIsolation: true,

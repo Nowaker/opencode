@@ -2,6 +2,7 @@ import type { ExperimentalSessionApi, MessageApi, SessionApi } from "@opencode/c
 import type { GenerationOptionsFields, Message, SystemPart } from "@opencode/ai/effect"
 import type { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
+import type { TextPart } from "@opencode/schema/prompt"
 import type { PromptInput } from "@opencode/schema/prompt-input"
 import type { Session } from "@opencode/schema/session"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
@@ -18,6 +19,8 @@ export interface SessionPrompt {
   readonly sessionID: Session.ID
   readonly messageID: SessionMessage.ID
   prompt: Types.DeepMutable<PromptInput.Prompt>
+  /** Awaited hooks edit this array in registration order. Text is projected before/after prompt.text without moving mentions. */
+  textParts?: Array<Types.DeepMutable<TextPart>>
   metadata?: Record<string, unknown>
   delivery: SessionInbox.Delivery
 }

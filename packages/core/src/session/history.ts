@@ -381,22 +381,25 @@ export const incompleteAssistants = Effect.fn("SessionHistory.incompleteAssistan
   return yield* decodeMessageRows(db, rows)
 })
 
-/** The id and text of the session's first user message. */
+/** The first user message's text fields, without hydrating attachment bytes. */
 export const firstUserMessage = Effect.fn("SessionHistory.firstUserMessage")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
 ) {
   const row = yield* db
-    .select({
-      id: SessionMessageTable.id,
-      text: sql<unknown>`json_extract(${SessionMessageTable.data}, '$.text')`,
-    })
+    .select()
     .from(SessionMessageTable)
     .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user")))
     .orderBy(asc(SessionMessageTable.seq))
     .get()
     .pipe(Effect.orDie)
-  return row && Schema.is(Schema.String)(row.text) ? { id: row.id, text: row.text } : undefined
+  if (!row) return undefined
+  const message = yield* decodeStoredUser(rowInput(row)).pipe(Effect.orDie)
+  return {
+    id: message.id,
+    text: message.text,
+    ...(message.textParts === undefined ? {} : { textParts: message.textParts }),
+  }
 })
 
 export * as SessionHistory from "./history.js"

@@ -91,9 +91,20 @@ export const SkillAttachment = Schema.Struct({
   mention: PromptMention.pipe(optional),
 }).annotate({ identifier: "Prompt.SkillAttachment" })
 
+/** Additional text on the same user message. Ignored text stays in history but never enters model context. */
+export interface TextPart extends Schema.Schema.Type<typeof TextPart> {}
+export const TextPart = Schema.Struct({
+  type: Schema.tag("text"),
+  position: Schema.Literals(["before", "after"]),
+  text: Schema.String,
+  ignored: Schema.Boolean.pipe(optional),
+  metadata: Schema.Record(Schema.String, Schema.Json).pipe(optional),
+}).annotate({ identifier: "Prompt.TextPart" })
+
 export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 export const Prompt = Schema.Struct({
   text: Schema.String,
+  textParts: Schema.Array(TextPart).pipe(optional),
   files: Schema.Array(FileAttachment).pipe(optional),
   agents: Schema.Array(AgentAttachment).pipe(optional),
   skills: Schema.Array(SkillAttachment).pipe(optional),
@@ -102,9 +113,10 @@ export const Prompt = Schema.Struct({
   .pipe(
     statics((schema) => ({
       equivalence: Schema.toEquivalence(schema),
-      fromUserMessage: (input: Pick<Prompt, "text" | "files" | "agents" | "skills">) =>
+      fromUserMessage: (input: Pick<Prompt, "text" | "textParts" | "files" | "agents" | "skills">) =>
         schema.make({
           text: input.text,
+          ...(input.textParts === undefined ? {} : { textParts: input.textParts }),
           ...(input.files === undefined ? {} : { files: input.files }),
           ...(input.agents === undefined ? {} : { agents: input.agents }),
           ...(input.skills === undefined ? {} : { skills: input.skills }),

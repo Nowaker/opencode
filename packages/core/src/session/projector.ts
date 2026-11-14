@@ -1028,6 +1028,7 @@ const layer = Layer.effectDiscard(
             type: "user",
             metadata: input.payload.metadata,
             text: input.payload.text,
+            textParts: input.payload.textParts,
             files: input.payload.files,
             agents: input.payload.agents,
             skills: input.payload.skills,

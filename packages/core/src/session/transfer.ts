@@ -251,6 +251,11 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
       ...message,
       metadata: meta,
       text: redact("text", message.id, message.text),
+      textParts: message.textParts?.map((part, index) => ({
+        ...part,
+        text: redact("text-part", `${message.id}:${index}`, part.text),
+        metadata: part.metadata === undefined ? undefined : {},
+      })),
       files: message.files?.map((file, index) => ({
         ...file,
         data: "",
