@@ -35,6 +35,7 @@ The typed `ClientError` reason `Transport` identifies a failed request rather th
 
 - 2026-11-11 [source session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e37e57935ffeTjd0whAV8iFPzQ) - began the transport-status correction and before/after visual proof.
 - 2026-11-13 [installed verification record](../sessions/2026-11-13-v2-early-input.md) - committed and published the correction, verified vt-17 recovery and later gated native distributions, preserving evidence before worktree retirement.
+- 2026-11-14 [desktop closing record](../sessions/2026-11-14-v2-early-input.md) - preserves the prior same-port recovery proof and records eight installed vt-33 startup/layout cases without stray toasts; no new outage/reconnect campaign is claimed.
 
 ## Maintenance
 
