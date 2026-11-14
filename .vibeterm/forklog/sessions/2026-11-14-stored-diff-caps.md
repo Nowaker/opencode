@@ -57,6 +57,21 @@ Suites ran one at a time without increasing their timeouts. Run from each named 
 
 ## Constraints and provenance
 
-- No binary build or installation, process restart, existing database-row edit, upstream PR or `.gitignore`/retry edit was performed. The coordinator owns binary scheduling.
+- The initial source delivery ended without a binary build or installation. The coordinator subsequently authorized the sequential installations recorded below. No process restart, existing database-row edit, upstream PR or `.gitignore`/retry edit was performed.
 - The source commits' `AI-Harness` suffix was mistakenly stamped `2590d941e58`; the session's actual harness stamp is `Vibeterm 66db936f9ac`. The tool, model, platform and full session ID identify the session correctly; protected history is preserved.
 - Managed checkouts are retired through `vt-worktree-retire` after publication; source branches and the queue head remain available.
+
+## Authorized installation
+
+The coordinator subsequently requested: "Now build and install it, one host at a time." Desktop was built and smoked before the m4max build began. Both installations use the primary `dev-nowaker` checkout and the canonical `.vibeterm/build.sh` with an explicit `VIBETERM_V2_GUARD` path; `.vibeterm/smoke.sh` verifies the installed binary without a provider call.
+
+| Host | Source checkout | Installed version | Guard gate | Smoke |
+|---|---|---|---|---|
+| desktop | `acd57f445fc29e41f10f9d74e0ce62a37823cd78` | `1.19.5-vt-478-006d837c50` | PASSED at `2026-11-14T10:29:40.071Z`, against v1 1.19.5 and v2 2.3.0 | SMOKE OK |
+| m4max | `acd57f445fc29e41f10f9d74e0ce62a37823cd78` | `1.19.5-vt-478-006d837c50` | PASSED at `2026-11-14T10:36:50.207Z`, against v1 1.19.5 and v2 2.3.0 | SMOKE OK |
+
+- Immediately before the desktop build: MemAvailable 66,468,792 kB, memory PSI full avg60 2.12, no actual build-script shell process. The broad pgrep also matched unrelated agents' prompt arguments; the anchored shell-command check distinguishes those from running builds.
+- Desktop build/install: exit 0, 3 min 29 sec, 3.1 GiB peak memory. The transient build and smoke units exited successfully and collected themselves.
+- m4max: the single build slot was free at preflight and checked again immediately before execution. `git pull --ff-only origin dev-nowaker` fast-forwarded from `e15b236d4b` to `acd57f445f`; the canonical build/install returned exit 0 in 32 sec. SSH used `-n -o BatchMode=yes -o ControlMaster=no`, and the existing dirty `.gitignore` and retry files were left alone.
+- Desktop installed-binary check: `strings` piped to `grep -Fo -- '... diff truncated:'` found the marker twice and printed `INSTALLED_CAP_MARKER_PRESENT`. The check ran from a `systemTmpScratch` directory under `/var/tmp` and removed that scratch directory afterwards.
+- No running TUI, serve unit or service was restarted; existing processes keep their original executable inode until their own restart.

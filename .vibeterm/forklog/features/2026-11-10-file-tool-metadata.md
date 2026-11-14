@@ -55,7 +55,7 @@ Coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.t
 ## Timeline
 
 - 2026-11-10 [`ses_e3b5c833cffeNAR8nbTGc9S6Gx`](../sessions/2026-11-10-file-tool-metadata.md) - initial build, vt-421 on desktop and m4max. Evidence: `e563b42081`, merge `9911a26b09`.
-- 2026-11-14 [Stored diff caps](../sessions/2026-11-14-stored-diff-caps.md), session [`ses_e26ade36cffe6IX1G9BDtSy0us`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e26ade36cffe6IX1G9BDtSy0us) - `d1fa02fa49` bounds edit/write/apply_patch permission and result previews; 143 tests pass and three package typechecks pass. Source-only upstream twin `abbf523742` is held in [queue entry 07](../pr-queue/07-stored-diff-caps.md); no binary build or restart.
+- 2026-11-14 [Stored diff caps](../sessions/2026-11-14-stored-diff-caps.md), session [`ses_e26ade36cffe6IX1G9BDtSy0us`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e26ade36cffe6IX1G9BDtSy0us) - `d1fa02fa49` bounds edit/write/apply_patch permission and result previews; 143 tests pass and three package typechecks pass. Source-only upstream twin `abbf523742` is held in [queue entry 07](../pr-queue/07-stored-diff-caps.md). The coordinator subsequently authorized sequential desktop/m4max builds: both installed `1.19.5-vt-478-006d837c50` with passing guard gates and smoke checks; no running tab or service was restarted.
 
 ## Current maintenance notes
 
