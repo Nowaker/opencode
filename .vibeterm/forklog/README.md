@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Send queued notes now](./features/2026-11-14-send-now.md)
 - [Awaited v2 compaction summary completion](./features/2026-11-11-v2-compaction-summary.md)
 - [Awaited plugin configuration on v2](./features/2026-11-11-plugin-configuration.md)
 - [Native v2 plugin session and Job controls](./features/2026-11-10-v2-plugin-controls.md)
@@ -158,6 +159,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-14 `ses_e26c1f916ffeAFy8f2KwrZeJMN`](./sessions/2026-11-14-send-now.md) - "Send now" on a queued note starts one turn that reads every unread note without rewriting or re-iding them (`POST /session/:id/send-now`, 409 busy/empty/paused, TUI first action); vibeterm-api pass-through and session-sync fired-note test in opencode-tools `441001ab6`..`9dee766d4`; `0b31166e059`, vt-481 on both hosts
 - [2026-11-13 W13](./sessions/2026-11-13-v2-compaction-summary.md) - awaited experimental compaction summary completion, generation/cutoff identities, local stop filtering and prior-summary projections; native ledger reader remains W10-owned.
 - [2026-11-11 W12, delivered November 13](./sessions/2026-11-11-plugin-configuration.md) - awaited mutable plugin configuration before native consumers; source approved, published to both mirrors and installed as vt-15 through 12/12 gates on desktop and m4max; native controller demo passed, W10 consumer acceptance pending.
 - [2026-11-13 W1 delivery](./sessions/2026-11-13-v2-plugin-controls.md) - native forks, notices, durable messages, cancellation, synthetic append, metadata, forms, Job results, permission replies, effective selection, agent request defaults, reader cancellation and atomic recovery guards; followed by ordered prompt text, scoped browser attachment and native default variants. Both hosts independently install c9ab8c9f1b as vt-33 through 12/12 gates and pass installed behavior witnesses; the record retains earlier version attribution, review corrections and owned cleanup.
