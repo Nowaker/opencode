@@ -180,7 +180,7 @@ export const {
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
-        })
+        }).catch((error) => console.error("Failed to write model state", { error }))
       }
 
       readJson<unknown>(filePath)
@@ -434,7 +434,7 @@ export const {
         state.pending = false
         void writeJsonAtomic(filePath, {
           pinned: sessionStore.pinned,
-        })
+        }).catch((error) => console.error("Failed to write session pins", { error }))
       }
 
       readJson<unknown>(filePath)
