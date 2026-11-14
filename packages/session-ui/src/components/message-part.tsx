@@ -1545,7 +1545,6 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const emptyMetadata: Record<string, any> = {}
 
   const input = () => part().state?.input ?? emptyInput
-  // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
   const taskId = createMemo(() => {
     if (part().tool !== "task") return
