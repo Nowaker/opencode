@@ -25,7 +25,7 @@ import {
 } from "solid-js"
 import { useConfig } from "../config"
 import { TuiKeybind } from "../config/keybind"
-import { resolveInteractivity, useInteractivity } from "./interactivity"
+import { InteractivityProvider, resolveInteractivity, useInteractivity } from "./interactivity"
 
 declare module "@opentui/keymap" {
   interface Command {
@@ -60,7 +60,8 @@ const Context = createContext<{
   readonly input: (id: string) => string | undefined
 }>()
 
-function Provider(props: ParentProps<{ config?: KeymapConfig }>) {
+/** `enabled: false` disables every keymap layer below, as an interactivity provider does. */
+function Provider(props: ParentProps<{ config?: KeymapConfig; enabled?: boolean }>) {
   const renderer = useRenderer()
   const config: KeymapConfig = props.config ?? useConfig().data
   const keymap = createDefaultOpenTuiKeymap(renderer)
@@ -159,7 +160,7 @@ function Provider(props: ParentProps<{ config?: KeymapConfig }>) {
           input: (id) => (invocation?.id === id ? invocation.input : undefined),
         }}
       >
-        {props.children}
+        <InteractivityProvider enabled={props.enabled ?? true}>{props.children}</InteractivityProvider>
       </Context.Provider>
     </KeymapProvider>
   )

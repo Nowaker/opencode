@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test"
-import { EmbeddedTerminalRenderable, type Renderable } from "@opentui/core"
+import { EmbeddedTerminalRenderable, TextareaRenderable, type Renderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
@@ -13,7 +13,9 @@ import { createEventStream, createFetch, directory, json } from "./fixture/tui-c
 import { tmpdir } from "./fixture/fixture"
 import { createAppFixture } from "./fixture/app"
 import { waitForHighlightedFrame } from "./fixture/frame"
-import type { PluginInfo } from "@opencode/client"
+import type { PermissionRequest, PluginInfo } from "@opencode/client"
+import { saveDraft, takeDraft } from "../src/component/prompt/draft-stash"
+import { emptyPrompt } from "../src/prompt/history"
 
 test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s", async (width) => {
   await using state = await tmpdir()
@@ -975,6 +977,392 @@ test("home startup prompt is submitted exactly once", async () => {
   await Bun.sleep(20)
   expect(bodies).toHaveLength(1)
   expect(bodies[0]).toMatchObject({ text: "HOME_READY" })
+})
+
+// The early terminal owner hands its draft to the app as a snapshot; these follow it to the composer that claims it.
+function startupServer(input: {
+  sessions?: () => Promise<Response>
+  // A session's own response, when it is not the default successful one.
+  info?: (sessionID: string) => Promise<Response> | undefined
+  permissions?: () => PermissionRequest[]
+  prompts: { path: string; body: unknown }[]
+  submitted?: () => void
+}) {
+  const cwd = process.cwd()
+  const location = { directory: cwd, project: { id: "project", directory: cwd, canonical: cwd } }
+  const info = (id: string) => ({
+    id,
+    title: `Session ${id}`,
+    projectID: "project",
+    location: { directory: cwd },
+    agent: "build",
+    model: { providerID: "provider", id: "model" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, updated: 0 },
+  })
+  return async (url: URL, request: Request) => {
+    if (url.pathname === "/api/location") return json(location)
+    if (url.pathname === "/api/fs/list") return json({ location, data: [] })
+    if (url.pathname === "/api/agent")
+      return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
+    if (url.pathname === "/api/model")
+      return json({ location, data: [{ id: "model", providerID: "provider", name: "Model", variants: [] }] })
+    if (url.pathname === "/api/provider") return json({ location, data: [{ id: "provider", name: "Provider" }] })
+    // Only the top-level session list, which --continue reads; child lists carry a parent ID.
+    if (
+      url.pathname === "/api/session" &&
+      request.method === "GET" &&
+      url.searchParams.get("parentID") === "null" &&
+      input.sessions
+    )
+      return input.sessions()
+    if (url.pathname === "/api/session" && request.method === "GET") return json({ data: [], cursor: {} })
+    if (url.pathname === "/api/session" && request.method === "POST") {
+      const body: unknown = await request.json()
+      if (typeof body !== "object" || body === null) throw new Error("Expected a session input")
+      return json({ data: { ...info("ses_new"), ...body } })
+    }
+    const prompt = /^\/api\/session\/([^/]+)\/prompt$/.exec(url.pathname)?.[1]
+    if (prompt) {
+      input.prompts.push({ path: prompt, body: await request.json() })
+      input.submitted?.()
+      return json({ data: {} })
+    }
+    const [, id, part] = /^\/api\/session\/([^/]+)(\/[a-z]+)?$/.exec(url.pathname) ?? []
+    if (!id) return undefined
+    if (part === "/message") return json({ data: [], cursor: {} })
+    if (part === "/permission") return json({ data: input.permissions?.() ?? [] })
+    if (part === "/inbox" || part === "/form") return json({ data: [] })
+    if (!part) return input.info?.(id) ?? json({ data: info(id) })
+    return undefined
+  }
+}
+
+function textareas(root: Renderable): TextareaRenderable[] {
+  return root
+    .getChildren()
+    .flatMap((item) => [...(item instanceof TextareaRenderable ? [item] : []), ...textareas(item)])
+}
+
+async function claimedPrompt(setup: Awaited<ReturnType<typeof createAppFixture>>, text: string) {
+  await setup.waitForFrame(() => {
+    const editor = setup.renderer.currentFocusedEditor
+    return editor !== null && editor.id !== "startup-composer-input" && editor.plainText === text
+  })
+  const editor = setup.renderer.currentFocusedEditor
+  if (!editor) throw new Error("expected the claimed prompt")
+  return editor
+}
+
+test("the home composer claims a startup draft with its caret and backward selection", async () => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  // "日本語 abc" with "abc" selected backwards: UTF-16 offsets 4..7 are cells 7..10 in the edit buffer.
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    startup: { text: "日本語 abc", caret: 4, anchor: 7, touched: true, submit: false },
+    fetch: startupServer({ prompts }),
+  })
+  await setup.ready
+  const prompt = await claimedPrompt(setup, "日本語 abc")
+  await setup.waitForFrame(() => prompt.hasSelection())
+  expect(prompt.getSelectedText()).toBe("abc")
+  // Shift+Left continues the same selection from its anchor, then typing replaces it.
+  setup.mockInput.pressArrow("left", { shift: true })
+  setup.mockInput.typeText("Z")
+  await setup.waitForFrame((frame) => frame.includes("日本語Z"))
+  expect(prompt.plainText).toBe("日本語Z")
+  setup.mockInput.pressBackspace()
+  await setup.waitForFrame(() => prompt.plainText === "日本語")
+  expect(prompts).toEqual([])
+  // The composer stashes its draft when the app ends; later home tests start empty.
+  setup.mockInput.pressKey("u", { ctrl: true })
+  await setup.waitForFrame(() => prompt.plainText === "")
+})
+
+test("Enter pressed before the session loaded submits the startup draft once, to that session", async () => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  const submitted = Promise.withResolvers<void>()
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    args: { sessionID: "ses_target" },
+    startup: { text: "ship it", caret: 7, anchor: 7, touched: true, submit: true },
+    fetch: startupServer({ prompts, submitted: submitted.resolve }),
+  })
+  await setup.ready
+  await Promise.race([
+    submitted.promise,
+    Bun.sleep(5000).then(() => {
+      throw new Error("the startup draft was not submitted")
+    }),
+  ])
+  await setup.waitForFrame(() => setup.renderer.currentFocusedEditor?.plainText === "")
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toMatchObject({ path: "ses_target", body: { text: "ship it" } })
+})
+
+test.each([
+  { name: "Enter then more typing withdraws the submission", keys: " more\r!", text: "draft more!", sent: false },
+  { name: "typing then Enter submits the edited draft", keys: " more\r", text: "draft more", sent: true },
+])("--continue keeps the draft in the startup editor until its session is known: $name", async (input) => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  const submitted = Promise.withResolvers<void>()
+  const sessions = Promise.withResolvers<void>()
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    args: { continue: true },
+    startup: { text: "draft", caret: 5, anchor: 5, touched: true, submit: false },
+    fetch: startupServer({
+      prompts,
+      submitted: submitted.resolve,
+      sessions: () => sessions.promise.then(() => json({ data: [{ id: "ses_last" }], cursor: {} })),
+    }),
+  })
+  await setup.ready
+  // The placeholder session route mounts its composer meanwhile; it must not take the draft or the keys.
+  await setup.waitForFrame(() => setup.renderer.currentFocusedEditor?.id === "startup-composer-input")
+  for (const char of input.keys) {
+    if (char === "\r") setup.mockInput.pressEnter()
+    else setup.mockInput.typeText(char)
+  }
+  await setup.waitForFrame((frame) => frame.includes(input.text))
+  expect(setup.renderer.currentFocusedEditor?.id).toBe("startup-composer-input")
+  sessions.resolve()
+  if (input.sent) {
+    await Promise.race([
+      submitted.promise,
+      Bun.sleep(5000).then(() => {
+        throw new Error("the startup draft was not submitted")
+      }),
+    ])
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toMatchObject({ path: "ses_last", body: { text: input.text } })
+    return
+  }
+  await claimedPrompt(setup, input.text)
+  expect(prompts).toEqual([])
+})
+
+test.each([
+  { lookup: "empty", startup: { text: "日本語 abc", caret: 4, anchor: 7, touched: true, submit: false } },
+  { lookup: "rejected", startup: { text: "plan", caret: 4, anchor: 4, touched: true, submit: true } },
+])("--continue hands the draft home when the placeholder failed before the $lookup lookup", async (input) => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  const submitted = Promise.withResolvers<void>()
+  const sessions = Promise.withResolvers<void>()
+  const placeholder = Promise.withResolvers<void>()
+  const requested = Promise.withResolvers<void>()
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    args: { continue: true },
+    startup: input.startup,
+    fetch: startupServer({
+      prompts,
+      submitted: submitted.resolve,
+      sessions: () =>
+        sessions.promise.then(() =>
+          input.lookup === "empty"
+            ? json({ data: [], cursor: {} })
+            : json({ message: "lookup failed" }, { status: 500 }),
+        ),
+      info: (id) => {
+        if (id !== "dummy") return
+        requested.resolve()
+        return placeholder.promise.then(() => json({ message: "Session not found" }, { status: 404 }))
+      },
+    }),
+  })
+  await setup.ready
+  // The placeholder session fails and its route goes home, mounting the home composer, while the lookup is held.
+  await requested.promise
+  placeholder.resolve()
+  await setup.waitFor(() => textareas(setup.renderer.root).some((item) => item.id !== "startup-composer-input"), {
+    maxPasses: 120,
+  })
+  // Any editor's text or cursor change clears OpenTUI's one renderer-wide selection, as the composers mounting
+  // underneath do; the draft keeps the selection the user made.
+  setup.renderer.clearSelection()
+  sessions.resolve()
+  if (input.startup.submit) {
+    await Promise.race([
+      submitted.promise,
+      Bun.sleep(5000).then(() => {
+        throw new Error("the startup draft was not submitted")
+      }),
+    ])
+    expect(prompts).toHaveLength(1)
+    // Home submits into a session it creates, never the placeholder.
+    expect(prompts[0]).toMatchObject({ body: { text: "plan" } })
+    expect(prompts[0]?.path).not.toBe("dummy")
+    return
+  }
+  const prompt = await claimedPrompt(setup, input.startup.text)
+  await setup.waitForFrame(() => prompt.hasSelection())
+  expect(prompt.getSelectedText()).toBe("abc")
+  setup.mockInput.typeText("Z")
+  await setup.waitForFrame(() => prompt.plainText === "日本語 Z")
+  expect(prompts).toEqual([])
+  // The composer stashes its draft when the app ends; later home tests start empty.
+  setup.mockInput.pressKey("u", { ctrl: true })
+  await setup.waitForFrame(() => prompt.plainText === "")
+})
+
+test.each([
+  {
+    name: "its backward selection",
+    startup: { text: "日本語 abc", caret: 4, anchor: 7, touched: true, submit: false },
+  },
+  { name: "its explicit Enter", startup: { text: "ship it", caret: 7, anchor: 7, touched: true, submit: true } },
+])("a startup draft parked behind a permission keeps $name for the session composer", async (input) => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  const submitted = Promise.withResolvers<void>()
+  const permission = {
+    id: "per_startup",
+    sessionID: "ses_parked",
+    action: "shell",
+    resources: ["echo parked"],
+  } satisfies PermissionRequest
+  let pending: PermissionRequest[] = [permission]
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    args: { sessionID: "ses_parked" },
+    startup: input.startup,
+    fetch: startupServer({ prompts, submitted: submitted.resolve, permissions: () => pending }),
+  })
+  await setup.ready
+  // The session shows the permission instead of a composer, so the draft leaves the startup editor.
+  await setup.waitForFrame((frame) => frame.includes("Permission required"))
+  expect(prompts).toEqual([])
+  pending = []
+  setup.events.emit({
+    id: "evt_startup_permission",
+    created: 1,
+    type: "permission.replied",
+    location: { directory: process.cwd() },
+    data: { sessionID: "ses_parked", requestID: permission.id, reply: "once" },
+  })
+  if (input.startup.submit) {
+    await Promise.race([
+      submitted.promise,
+      Bun.sleep(5000).then(() => {
+        throw new Error("the parked draft was not submitted")
+      }),
+    ])
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toMatchObject({ path: "ses_parked", body: { text: "ship it" } })
+    return
+  }
+  const prompt = await claimedPrompt(setup, input.startup.text)
+  await setup.waitForFrame(() => prompt.hasSelection())
+  expect(prompt.getSelectedText()).toBe("abc")
+  setup.mockInput.pressArrow("left", { shift: true })
+  setup.mockInput.typeText("Z")
+  await setup.waitForFrame(() => prompt.plainText === "日本語Z")
+  expect(prompts).toEqual([])
+  setup.mockInput.pressKey("u", { ctrl: true })
+  await setup.waitForFrame(() => prompt.plainText === "")
+})
+
+test.each([
+  { name: "untouched is submitted once", touched: false, text: "SEED", sent: true },
+  { name: "edited is kept and not submitted", touched: true, text: "SEED edited", sent: false },
+])("a --prompt seed in the startup editor $name", async (input) => {
+  await using state = await tmpdir()
+  const prompts: { path: string; body: unknown }[] = []
+  const submitted = Promise.withResolvers<void>()
+  await using setup = await createAppFixture({
+    state: state.path,
+    config: { animations: false, tabs: { mode: "off" } },
+    args: { sessionID: "ses_target", prompt: "SEED" },
+    startup: {
+      text: input.text,
+      caret: input.text.length,
+      anchor: input.text.length,
+      touched: input.touched,
+      submit: false,
+    },
+    fetch: startupServer({ prompts, submitted: submitted.resolve }),
+  })
+  await setup.ready
+  if (input.sent) {
+    await Promise.race([
+      submitted.promise,
+      Bun.sleep(5000).then(() => {
+        throw new Error("the --prompt seed was not submitted")
+      }),
+    ])
+    await setup.waitForFrame(() => setup.renderer.currentFocusedEditor?.plainText === "")
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toMatchObject({ path: "ses_target", body: { text: "SEED" } })
+    return
+  }
+  await claimedPrompt(setup, input.text)
+  expect(prompts).toEqual([])
+})
+
+test.each([
+  { name: "untouched", edited: false },
+  { name: "explicitly cleared", edited: true },
+])("a native startup draft that is $name keeps its intent across composer remounts", async (input) => {
+  await using state = await tmpdir()
+  const id = "ses_native_edit_history"
+  const saved = "SAVED DRAFT"
+  const expected = input.edited ? "" : saved
+  const sessions = Promise.withResolvers<void>()
+  const prompts: { path: string; body: unknown }[] = []
+  saveDraft(id, { prompt: { ...emptyPrompt(), text: saved }, cursor: saved.length })
+  try {
+    {
+      await using setup = await createAppFixture({
+        state: state.path,
+        config: { animations: false, tabs: { mode: "off" } },
+        args: { continue: true },
+        startup: { text: "", caret: 0, anchor: 0, touched: false, submit: false },
+        fetch: startupServer({
+          prompts,
+          sessions: () => sessions.promise.then(() => json({ data: [{ id }], cursor: {} })),
+        }),
+      })
+      try {
+        await setup.ready
+        await setup.waitForFrame(() => setup.renderer.currentFocusedEditor?.id === "startup-composer-input")
+        const temporary = setup.renderer.currentFocusedEditor
+        if (!(temporary instanceof TextareaRenderable)) throw new Error("Expected the native startup textarea")
+        if (input.edited) {
+          setup.mockInput.typeText("discard")
+          await setup.waitForFrame(() => temporary.plainText === "discard")
+          for (let index = 0; index < "discard".length; index++) setup.mockInput.pressBackspace()
+          await setup.waitForFrame(() => temporary.plainText === "")
+        }
+        sessions.resolve()
+        await claimedPrompt(setup, expected)
+      } finally {
+        sessions.resolve()
+      }
+    }
+    await using remounted = await createAppFixture({
+      state: state.path,
+      config: { animations: false, tabs: { mode: "off" } },
+      args: { sessionID: id },
+      fetch: startupServer({ prompts }),
+    })
+    await remounted.ready
+    const prompt = await claimedPrompt(remounted, expected)
+    expect(prompt.plainText).toBe(expected)
+    expect(prompts).toEqual([])
+  } finally {
+    takeDraft(id)
+  }
 })
 
 test.each([false, true])("uses the resolved launch directory for new prompts (fallback: %s)", async (fallback) => {

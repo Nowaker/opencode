@@ -4,6 +4,8 @@ import path from "node:path"
 import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
+import { StartupComposer } from "../../src/startup/composer"
+import type { StartupInput } from "../../src/startup/index"
 import { tmpdir } from "./fixture"
 import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 
@@ -17,6 +19,8 @@ export async function createAppFixture(
     fetch?: FetchHandler
     // A renderer whose owner already set up its terminal, such as the simulation renderer.
     setup?: TestRendererSetup
+    // A draft the startup input handed over, as the early terminal owner would.
+    startup?: StartupInput.Snapshot
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -50,7 +54,18 @@ export async function createAppFixture(
         },
       },
       packages: { prepare: async () => ({ directory: "" }) },
-      terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
+      terminalHandoff: async () => ({
+        renderer: setup.renderer,
+        mode: "dark",
+        complete: ready.resolve,
+        startup: input.startup
+          ? StartupComposer.create(setup.renderer, {
+              route: input.args?.sessionID || input.args?.continue ? "session" : "home",
+              snapshot: input.startup,
+              resume: () => {},
+            })
+          : undefined,
+      }),
       args: input.args ?? {},
       log: () => {},
     }).pipe(

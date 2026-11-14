@@ -1,6 +1,8 @@
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { run } from "@opencode/tui"
+import type { StartupInput } from "@opencode/tui/startup"
+import { StartupComposer } from "@opencode/tui/startup/composer"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Config } from "../../config"
@@ -16,12 +18,17 @@ import { OpenCode } from "@opencode/client/promise"
 import { findSession } from "../../session-target"
 import { errorMessage } from "../../util/error"
 
-export default Runtime.handler(Commands, (input) =>
+/** The default command. `early` is the startup input that owns the terminal until the TUI's renderer adopts it. */
+export const make = (early: StartupInput.Handle | undefined) =>
+  Runtime.handler(Commands, (input) => handle(input, early))
+
+const handle = (input: Runtime.Input<typeof Commands>, early: StartupInput.Handle | undefined) =>
   Effect.gen(function* () {
     const requestedDirectory = Option.getOrUndefined(input.directory)
     const requestedServer = Option.getOrUndefined(input.server)
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
-    const preflight = UpdatePreflight.make()
+    yield* Effect.addFinalizer(() => Effect.sync(() => early?.close()))
+    const preflight = UpdatePreflight.make(early)
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
     const serviceStarts = yield* Queue.unbounded<{
       readonly reason: "missing" | "version-mismatch"
@@ -39,11 +46,12 @@ export default Runtime.handler(Commands, (input) =>
       onStart: (reason, previousVersion) => {
         Queue.offerUnsafe(serviceStarts, { reason, previousVersion })
         if (reason === "version-mismatch" && preflight.begin(previousVersion)) return
-        process.stderr.write(
+        const text =
           reason === "version-mismatch"
-            ? "Restarting background server (version mismatch)...\n"
-            : "Starting background server...\n",
-        )
+            ? "Restarting background server (version mismatch)..."
+            : "Starting background server..."
+        if (early) return early.status(text)
+        process.stderr.write(text + "\n")
       },
     }).pipe(
       Effect.tapError(() =>
@@ -143,7 +151,7 @@ export default Runtime.handler(Commands, (input) =>
         prepare: (spec, install = true) => runPromise(install ? npm.add(spec) : npm.resolve(spec)),
       },
       environment: requestedServer === undefined ? Env.session() : undefined,
-      terminalHandoff: () => preflight.finish(),
+      terminalHandoff: (options) => (early ? StartupComposer.adopt(early, options) : preflight.finish()),
       log: (level, message, tags) => {
         const effect =
           level === "debug"
@@ -156,5 +164,4 @@ export default Runtime.handler(Commands, (input) =>
         runFork(effect)
       },
     }).pipe(Effect.provide(LayerNode.compile(Global.node)))
-  }),
-)
+  })

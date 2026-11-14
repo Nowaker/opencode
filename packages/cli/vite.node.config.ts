@@ -256,7 +256,56 @@ export type NodeBuildInput = {
   readonly target: NodeTarget
 }
 
+/**
+ * The executable's JavaScript is four files. The SEA main (`opencode.mjs`, with the prelude) only starts the default
+ * TUI's early input; the CLI, its loader and the early-input worker are assets it loads from the extracted asset
+ * directory. Separate builds keep that boundary: `inlineDynamicImports` would evaluate a lazily imported CLI along
+ * with the entry.
+ */
+export const cliAsset = "opencode-main.mjs"
+export const nodeAssetBundles = [
+  { entry: "src/startup-worker.ts", key: "startup-worker.mjs" },
+  { entry: "src/node/loader.ts", key: "opencode-loader.mjs" },
+] as const
+
+// Assets load as ordinary modules outside the SEA main, so they bring their own CommonJS globals.
+const assetBanner = `import __cjs_mod__ from "node:module"
+const __filename = import.meta.filename
+const __dirname = import.meta.dirname
+const require = __cjs_mod__.createRequire(import.meta.url)`
+
+const define = (input: Omit<NodeBuildInput, "assetHash">) => ({
+  OPENCODE_VERSION: JSON.stringify(input.version),
+  OPENCODE_CLI_NAME: JSON.stringify("opencode2-node"),
+  OPENCODE_CHANNEL: JSON.stringify(input.channel),
+  OPENCODE_ARTIFACT: JSON.stringify("cli-node"),
+  ...(input.highlights ? { OPENCODE_RELEASE_HIGHLIGHTS: JSON.stringify(input.highlights) } : {}),
+  OPENCODE_LIBC: input.target.platform === "linux" ? JSON.stringify("glibc") : "undefined",
+  FFF_LIBC: input.target.platform === "linux" ? JSON.stringify("gnu") : "undefined",
+  "process.env.WS_NO_BUFFER_UTIL": JSON.stringify("1"),
+})
+
+const build = (entry: string, outDir: string, file: string, banner: string) => ({
+  ssr: entry,
+  target: "node26",
+  outDir,
+  emptyOutDir: false,
+  minify: true,
+  rollupOptions: { output: output(file, banner) },
+})
+
+/** The SEA main: the prelude and the bootstrap that starts early input before importing the CLI asset. */
 export function mainConfig(input: NodeBuildInput): UserConfig {
+  return defineConfig({
+    root: dir,
+    resolve,
+    define: define(input),
+    ssr: { noExternal: true },
+    build: build("src/node/index.ts", "dist-node", "opencode.mjs", nodePrelude(input)),
+  })
+}
+
+export function cliConfig(input: Omit<NodeBuildInput, "assetHash">): UserConfig {
   return defineConfig({
     root: dir,
     plugins: [
@@ -274,27 +323,23 @@ export function mainConfig(input: NodeBuildInput): UserConfig {
     ],
     resolve,
     esbuild: { jsx: "automatic" },
-    define: {
-      OPENCODE_VERSION: JSON.stringify(input.version),
-      OPENCODE_CLI_NAME: JSON.stringify("opencode2-node"),
-      OPENCODE_CHANNEL: JSON.stringify(input.channel),
-      OPENCODE_ARTIFACT: JSON.stringify("cli-node"),
-      ...(input.highlights ? { OPENCODE_RELEASE_HIGHLIGHTS: JSON.stringify(input.highlights) } : {}),
-      OPENCODE_LIBC: input.target.platform === "linux" ? JSON.stringify("glibc") : "undefined",
-      FFF_LIBC: input.target.platform === "linux" ? JSON.stringify("gnu") : "undefined",
-      "process.env.WS_NO_BUFFER_UTIL": JSON.stringify("1"),
-    },
+    define: define(input),
     ssr: { noExternal: true },
-    build: {
-      ssr: "src/node/index.ts",
-      target: "node26",
-      outDir: "dist-node",
-      emptyOutDir: false,
-      minify: true,
-      rollupOptions: {
-        output: output("opencode.mjs", nodePrelude(input)),
-      },
-    },
+    build: build("src/node/main.ts", "dist-node/assets", cliAsset, assetBanner),
+  })
+}
+
+/** A small asset module the SEA main loads beside the CLI: the early-input worker or the CLI loader. */
+export function assetConfig(
+  input: Omit<NodeBuildInput, "assetHash">,
+  bundle: (typeof nodeAssetBundles)[number],
+): UserConfig {
+  return defineConfig({
+    root: dir,
+    resolve,
+    define: define(input),
+    ssr: { noExternal: true },
+    build: build(bundle.entry, "dist-node/assets", bundle.key, assetBanner),
   })
 }
 

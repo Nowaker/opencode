@@ -170,7 +170,7 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
   const executablePath = await compileExecutable(item)
   console.log(`building ${name}`)
   const result = await Bun.build({
-    entrypoints: ["./src/index.ts", "./src/photon-worker.ts"],
+    entrypoints: ["./src/index.ts", "./src/photon-worker.ts", "./src/startup-worker.ts"],
     tsconfig: "./tsconfig.json",
     plugins: [
       appAssetsPlugin,
@@ -210,6 +210,8 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
       OPENCODE_CLI_NAME: "'opencode'",
       OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_ARTIFACT: `'cli'`,
+      // The bootstrap's early-input worker is the sibling entrypoint above.
+      OPENCODE_STARTUP_WORKER: `'./startup-worker.js'`,
       ...(highlights ? { OPENCODE_RELEASE_HIGHLIGHTS: JSON.stringify(highlights) } : {}),
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",
       // FFF_LIBC selects the fff native lib variant: "musl" or "gnu".

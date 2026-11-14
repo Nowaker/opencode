@@ -113,6 +113,7 @@ import { ClientMcp } from "./context/client-mcp"
 import { PanelProvider, usePanel } from "./context/panel"
 import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
+import type { StartupComposer } from "./startup/composer"
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu", "terminal.suspend"] as const
 
@@ -199,11 +200,16 @@ export type TuiInput = {
   updater?: UpdateSource
   packages: PackageSource
   environment?: Readonly<Record<string, string>>
-  terminalHandoff?: () => Promise<
+  /**
+   * Supplies a renderer that already owns the terminal, created with these options. `complete` runs after its first
+   * frame. `startup` carries a startup draft for the composer of the route the arguments lead to.
+   */
+  terminalHandoff?: (options: CliRendererConfig) => Promise<
     | {
         readonly renderer: CliRenderer
         readonly mode: ThemeMode | null
         readonly complete: () => void
+        readonly startup?: StartupComposer.Composer
       }
     | undefined
   >
@@ -229,7 +235,22 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   )
   const directory = location.directory
   const pluginDirectories = yield* Effect.promise(() => localPluginDirectories(process.cwd(), global.config))
-  const handoff = input.terminalHandoff ? yield* Effect.promise(input.terminalHandoff) : undefined
+  const rendererOptions = {
+    externalOutputMode: "passthrough",
+    targetFps: 60,
+    gatherStats: false,
+    exitOnCtrlC: false,
+    useKittyKeyboard: {},
+    autoFocus: false,
+    openConsoleOnError: false,
+    useMouse: config.mouse,
+    consoleOptions: {
+      keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
+    },
+  } satisfies CliRendererConfig
+  const terminalHandoff = input.terminalHandoff
+  const handoff = terminalHandoff ? yield* Effect.tryPromise(() => terminalHandoff(rendererOptions)) : undefined
+  const startup = handoff?.startup
   const managed = input.server.service
   const service = managed
     ? {
@@ -248,22 +269,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   }
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
-      const options = {
-        externalOutputMode: "passthrough",
-        targetFps: 60,
-        gatherStats: false,
-        exitOnCtrlC: false,
-        useKittyKeyboard: {},
-        autoFocus: false,
-        openConsoleOnError: false,
-        useMouse: config.mouse,
-        consoleOptions: {
-          keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
-        },
-      } satisfies CliRendererConfig
       const renderer = yield* Effect.gen(function* () {
         if (handoff) {
-          handoff.renderer.useMouse = options.useMouse
+          handoff.renderer.useMouse = rendererOptions.useMouse
           return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
             Effect.promise(async () => {
               destroyRenderer(renderer)
@@ -274,11 +282,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         }
         if (process.env.OPENCODE_DRIVE) {
           const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
-          return yield* Drive.create(options, input.app.version)
+          return yield* Drive.create(rendererOptions, input.app.version)
         }
         return yield* Effect.acquireRelease(
           Effect.tryPromise({
-            try: () => createCliRenderer(options),
+            try: () => createCliRenderer(rendererOptions),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           }),
           (renderer) =>
@@ -381,6 +389,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                       ? JSON.parse(process.env.OPENCODE_ROUTE)
                                       : undefined,
                                   skipInitialLoading: Boolean(process.env.OPENCODE_FAST_BOOT),
+                                  composer: startup,
                                 }}
                               >
                                 <ClipboardProvider value={clipboard}>
@@ -390,7 +399,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                       service={input.config}
                                       options={{ terminalSuspend: process.platform !== "win32" }}
                                     >
-                                      <Keymap.Provider>
+                                      <Keymap.Provider enabled={!startup?.active()}>
                                         <ToastProvider>
                                           <RouteProvider
                                             initialRoute={
@@ -472,6 +481,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             </LogProvider>
           )
         }, renderer)
+        startup?.raise()
         if (handoff) {
           renderer.once(CliRenderEvents.FRAME, handoff.complete)
           renderer.requestRender()
@@ -662,7 +672,20 @@ function App() {
 
   const args = useArgs()
   const startupPrompt = args.prompt ? { text: args.prompt, files: [], agents: [], pasted: [] } : undefined
+  // The startup draft follows the arguments to the route they lead to. Session lookups below resolve it once known.
+  const draft = startup.composer
+  createEffect(() =>
+    draft?.style({
+      background: theme.background.base,
+      panel: theme.decrease(theme.background.raised.base),
+      border: theme.border.base,
+      text: theme.text.base,
+      placeholder: theme.text.muted,
+    }),
+  )
   onMount(() => {
+    if (!args.continue && !args.sessionID) draft?.resolve({ type: "home" })
+    if (args.sessionID && !args.fork) draft?.resolve({ type: "session", sessionID: args.sessionID })
     batch(() => {
       if (args.agent) local.agent.set(args.agent)
       if (args.model) {
@@ -685,6 +708,12 @@ function App() {
     })
   })
 
+  // Without a session to continue, the draft goes where the startup route is showing by then: still the placeholder
+  // session, whose failure carries the draft home, or home once that failure came first.
+  const shown = () =>
+    draft?.resolve(
+      route.data.type === "session" ? { type: "session", sessionID: route.data.sessionID } : { type: "home" },
+    )
   let continued = false
   createEffect(() => {
     if (continued || !args.continue) return
@@ -700,17 +729,27 @@ function App() {
       })
       .then((response) => {
         const match = response.data[0]?.id
-        if (!match) return
+        if (!match) return shown()
         if (!args.fork) {
+          draft?.resolve({ type: "session", sessionID: match })
           route.navigate({ type: "session", sessionID: match, prompt: startupPrompt })
           return
         }
         void client.api.session
           .fork({ sessionID: match })
-          .then((result) => route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt }))
-          .catch(toast.error)
+          .then((result) => {
+            draft?.resolve({ type: "session", sessionID: result.id })
+            route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt })
+          })
+          .catch((error) => {
+            shown()
+            toast.error(error)
+          })
       })
-      .catch(toast.error)
+      .catch((error) => {
+        shown()
+        toast.error(error)
+      })
   })
 
   // Handle --session with --fork once.
@@ -720,8 +759,15 @@ function App() {
     forked = true
     void client.api.session
       .fork({ sessionID: args.sessionID })
-      .then((result) => route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt }))
-      .catch(toast.error)
+      .then((result) => {
+        draft?.resolve({ type: "session", sessionID: result.id })
+        route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt })
+      })
+      .catch((error) => {
+        // A failed fork leaves the startup on its initial route.
+        draft?.resolve({ type: "home" })
+        toast.error(error)
+      })
   })
 
   // Opens the release highlights once after an update, but only into an idle home screen during startup.

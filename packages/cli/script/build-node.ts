@@ -10,7 +10,7 @@ import { Script } from "@opencode/script"
 import { embed } from "@opencode/script/highlights"
 import pkg from "../package.json"
 import { collectNodeAssets, copyNodeAssets, hashNodeAssets, seaAssetMap } from "./node-assets"
-import { appArchiveAsset, mainConfig } from "../vite.node.config"
+import { appArchiveAsset, assetConfig, cliAsset, cliConfig, mainConfig, nodeAssetBundles } from "../vite.node.config"
 import { nodeExecArgv, nodeTarget, type NodeTarget } from "../src/node/target"
 import { buildAppArchive } from "./app-assets"
 import { verifyArtifact } from "./verify-artifact"
@@ -94,20 +94,29 @@ for (const target of targets) {
   console.log(`building cli-node-${targetName(target)}`)
   const assets = await collectNodeAssets(target)
   await rm("dist-node", { recursive: true, force: true })
-  const assetHash = await hashNodeAssets(assets)
   const input = {
     version: Script.version,
     channel: Script.channel,
     highlights,
     modelsSnapshot,
-    assetHash,
     target,
   }
   await copyNodeAssets(assets)
   await writeFile(path.join("dist-node", "assets", appArchiveAsset), appArchive)
-  await build(mainConfig(input))
-  await assertTextImportsInlined("dist-node/opencode.mjs")
-  if (bundleOnly) await verifyArtifact("dist-node/opencode.mjs")
+  // The CLI and worker bundles are extracted assets too, so the asset hash that names the extraction directory
+  // covers them; the SEA main embeds that hash and is built last.
+  await build(cliConfig(input))
+  for (const bundle of nodeAssetBundles) await build(assetConfig(input, bundle))
+  const bundles = [cliAsset, ...nodeAssetBundles.map((bundle) => bundle.key)].map((key) => ({
+    key,
+    source: path.join(dir, "dist-node", "assets", key),
+  }))
+  await build(mainConfig({ ...input, assetHash: await hashNodeAssets([...assets, ...bundles]) }))
+  await assertTextImportsInlined(path.join("dist-node", "assets", cliAsset))
+  if (bundleOnly) {
+    await verifyArtifact("dist-node/opencode.mjs")
+    for (const bundle of bundles) await verifyArtifact(bundle.source)
+  }
 
   const host = target.platform === process.platform && target.arch === process.arch
   if (host) {

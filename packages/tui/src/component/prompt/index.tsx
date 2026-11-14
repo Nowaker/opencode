@@ -16,7 +16,7 @@ import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
-import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+import { useTuiPaths, useTuiStartup, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
 import { useClient } from "../../context/client"
@@ -194,6 +194,7 @@ export function Prompt(props: PromptProps) {
   const muted = () => leader() || props.muted
   const local = useLocal()
   const paths = useTuiPaths()
+  const startup = useTuiStartup().composer
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
   const client = useClient()
@@ -718,6 +719,22 @@ export function Prompt(props: PromptProps) {
 
   onMount(() => {
     onCleanup(registerComposer(stashSessionID, ref))
+    if (startup)
+      onCleanup(
+        startup.offer({
+          sessionID: stashSessionID,
+          input,
+          set: (text) => {
+            takeDraft(stashSessionID)
+            input.extmarks.clear()
+            setStore("extmarkToPart", new Map())
+            setStore("prompt", { ...emptyPrompt(), text })
+            input.setText(text)
+          },
+        }),
+      )
+    // Only an untouched startup editor restores an older saved draft; an edited one consumes it when claimed.
+    if (startup?.owns(stashSessionID)) return
     const saved = takeDraft(stashSessionID)
     if (store.prompt.text) return
     if (saved && saved.prompt.text) {

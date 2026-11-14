@@ -19,12 +19,13 @@ import { useRoute, useRouteData } from "../../context/route"
 import { createStore } from "solid-js/store"
 import { useData } from "../../context/data"
 import { SplitBorder } from "../../ui/border"
-import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+import { useTuiPaths, useTuiStartup, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
 import { useTheme, useThemes } from "../../context/theme"
 import {
   BoxRenderable,
+  CliRenderEvents,
   ScrollBoxRenderable,
   addDefaultParsers,
   TextAttributes,
@@ -240,6 +241,7 @@ export function Session(props: {
   const disabled = createMemo(() => promptedPermissions().length > 0 || forms().length > 0)
 
   const renderer = useRenderer()
+  const startup = useTuiStartup().composer
   const dimensions = useTerminalDimensions()
   const thinkingMode = createMemo<ThinkingMode>(() => config.session?.thinking ?? "hide")
   const showScrollbar = createMemo(() => config.session?.scrollbar ?? false)
@@ -354,6 +356,7 @@ export function Session(props: {
           variant: "error",
           duration: 5000,
         })
+        startup?.redirect(sessionID, { type: "home" })
         sessionTabs.enabled() ? sessionTabs.close(sessionID) : navigate({ type: "home" })
         return
       }
@@ -366,8 +369,18 @@ export function Session(props: {
         variant: "error",
         duration: 5000,
       })
+      startup?.redirect(sessionID, { type: "home" })
       sessionTabs.enabled() ? sessionTabs.close(sessionID) : navigate({ type: "home" })
     })
+  })
+
+  // A startup draft for this session waits for its composer. When the synchronized session shows none (a
+  // permission, a form, a child session), the draft parks until that composer mounts.
+  createEffect(() => {
+    if (!synced() || !startup?.active()) return
+    const sessionID = route.sessionID
+    renderer.once(CliRenderEvents.FRAME, () => startup.park(sessionID))
+    renderer.requestRender()
   })
 
   let seeded = false
@@ -396,6 +409,8 @@ export function Session(props: {
     promptRef.set(r)
     if (seeded || !route.prompt || !r) return
     seeded = true
+    // An edited startup draft takes the place of --prompt.
+    if (startup?.owns(route.sessionID)) return
     r.set(route.prompt)
   }
 
@@ -625,7 +640,10 @@ export function Session(props: {
     const current = prompt()
     if (sent || !current || !synced() || !local.model.ready || !local.model.catalogReady) return
     if (!local.agent.current() || !local.model.current()) return
-    if (!args.prompt || route.prompt?.text !== args.prompt || current.current.text !== args.prompt) return
+    if (startup && !startup.settled(route.sessionID)) return
+    if (!startup?.takeSubmit(route.sessionID)) {
+      if (!args.prompt || route.prompt?.text !== args.prompt || current.current.text !== args.prompt) return
+    }
     sent = true
     current.submit()
   })

@@ -15,6 +15,7 @@ import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
 import { FadeInText } from "../component/fade-in-text"
+import { useTuiStartup } from "../context/runtime"
 
 let once = false
 const placeholder = {
@@ -31,6 +32,7 @@ export function Home() {
   const editor = useEditorContext()
   const data = useData()
   const location = useLocation()
+  const startup = useTuiStartup().composer
   const dimensions = useTerminalDimensions()
   const [logoWidth, setLogoWidth] = createSignal(0)
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
@@ -54,8 +56,10 @@ export function Home() {
     setRef(r)
     promptRef.set(r)
     if (once || !r || route.prompt || !args.prompt) return
-    r.set({ text: args.prompt, files: [], agents: [], pasted: [] })
     once = true
+    // An edited startup draft takes the place of --prompt.
+    if (startup?.owns(undefined)) return
+    r.set({ text: args.prompt, files: [], agents: [], pasted: [] })
   }
 
   createEffect(() => {
@@ -65,15 +69,19 @@ export function Home() {
     untrack(() => composer.set(prompt))
   })
 
-  // Wait for everything submit needs before auto-submitting --prompt; it runs once.
+  // Wait for everything submit needs before auto-submitting --prompt, or a startup draft submitted with Enter before
+  // this composer took it over; it runs once.
   createEffect(() => {
     const r = ref()
     if (sent) return
     if (!r) return
     if (!local.model.ready || !local.model.catalogReady) return
     if (!local.agent.current() || !local.model.current()) return
-    if (!args.prompt) return
-    if (r.current.text !== args.prompt) return
+    if (startup && !startup.settled(undefined)) return
+    if (!startup?.takeSubmit(undefined)) {
+      if (!args.prompt) return
+      if (r.current.text !== args.prompt) return
+    }
     sent = true
     r.submit()
   })

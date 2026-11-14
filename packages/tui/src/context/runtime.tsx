@@ -1,4 +1,5 @@
 import { createComponent, createContext, type JSX, useContext } from "solid-js"
+import type { StartupComposer } from "../startup/composer"
 
 export type TuiHighlight = Readonly<{
   title: string
@@ -30,6 +31,8 @@ export type TuiTerminalEnvironment = Readonly<{
 export type TuiStartup = Readonly<{
   initialRoute?: unknown
   skipInitialLoading: boolean
+  /** The draft typed before the TUI loaded, until the composer of its route claims it. */
+  composer?: StartupComposer.Composer
 }>
 
 export type TuiLifecycle = Readonly<{

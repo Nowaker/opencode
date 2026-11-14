@@ -35,7 +35,14 @@ export type Handle = {
   readonly close: () => Promise<void>
 }
 
-export const make = (): Handle => {
+/**
+ * While the startup input owns the terminal, the update's stages show as its status line instead: a second
+ * renderer would compete with it for the terminal.
+ */
+export type Owner = { readonly status: (text?: string) => void }
+
+export const make = (owner?: Owner): Handle => {
+  if (owner) return status(owner)
   let session: Promise<Session | undefined> | undefined
   return {
     begin: (from) => {
@@ -61,6 +68,29 @@ export const make = (): Handle => {
       const active = await session
       await active?.close()
     },
+  }
+}
+
+function status(owner: Owner): Handle {
+  let header: string | undefined
+  const show = (stage: string) => {
+    if (header) owner.status(`${header}: ${stage}`)
+  }
+  return {
+    begin: (from) => {
+      header = `OpenCode is updating${from ? ` from ${from}` : ""} to ${OPENCODE_VERSION}`
+      show(stages[0])
+      return true
+    },
+    loading: () => show(stages[2]),
+    finish: async () => {
+      if (header) owner.status(undefined)
+      return undefined
+    },
+    fail: async (message) => {
+      if (header) owner.status(`OpenCode update paused: ${message}`)
+    },
+    close: async () => {},
   }
 }
 
