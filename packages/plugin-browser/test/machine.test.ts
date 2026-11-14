@@ -271,7 +271,7 @@ describe("reconcileBrowserPermissions", () => {
   })
 
   test("browser denies are not browser allows", () => {
-    const deny = { action: "browser", resource: "*", effect: "deny" } as const
+    const deny = { action: "browser.attach", resource: "*", effect: "deny" } as const
     expect(BrowserMachine.reconcileBrowserPermissions([deny], false)).toBeUndefined()
   })
 })

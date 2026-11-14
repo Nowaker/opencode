@@ -14,7 +14,7 @@ export const REQUEST_TIMEOUT_MS = 60_000
 
 /** The browser tools and their skill, which an attachment allows together. */
 export const ACCESS = [
-  { action: "browser", resource: "*" },
+  { action: "browser.attach", resource: "*" },
   { action: "skill", resource: BrowserSkill.id },
 ] as const
 

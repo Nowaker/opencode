@@ -49,7 +49,7 @@ export const register = Effect.fn("BrowserTools.register")(function* (
           output: operation.output,
           options: {
             namespace: separator < 0 ? "browser" : `browser.${operation.name.slice(0, separator)}`,
-            permission: "browser",
+            permission: "browser.attach",
             codemode: true,
           },
           // The selected schema owns this correlation; the heterogeneous registry erases it.

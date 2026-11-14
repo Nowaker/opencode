@@ -13,6 +13,8 @@ import { Plugin } from "@opencode/core/plugin"
 import { Rpc } from "@opencode/core/rpc"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
+import { SessionContext } from "@opencode/core/session/context"
+import { SessionMessage } from "@opencode/core/session/message"
 import { tempGlobalLayer } from "./fixture/global"
 import { offlineModels } from "./fixture/models"
 import { tmpdirScoped } from "./fixture/tmpdir"
@@ -30,7 +32,7 @@ const writes: {
 } = { revoked: Deferred.makeUnsafe() }
 
 const isGrant = (permissions: Permission.Ruleset) =>
-  permissions.some((rule) => rule.action === "browser" && rule.effect === "allow")
+  permissions.some((rule) => rule.action === "browser.attach" && rule.effect === "allow")
 
 const orderedWrites = Session.node.replace(
   Session.node.mapLayer((base) =>
@@ -72,9 +74,9 @@ const it = testEffect(
   ]),
 )
 
-const user = { action: "bash", resource: "*", effect: "ask" } as const
+const user = { action: "browser", resource: "*", effect: "allow" } as const
 const allows = [
-  { action: "browser", resource: "*", effect: "allow" },
+  { action: "browser.attach", resource: "*", effect: "allow" },
   { action: "skill", resource: "browser", effect: "allow" },
 ] as const
 
@@ -106,6 +108,10 @@ const setup = Effect.gen(function* () {
   return {
     ref,
     locations,
+    sessions,
+    session,
+    rpc,
+    select: Context.get(context, SessionContext.Service).select(session.id),
     attach: (connectionID: string) =>
       rpc.attach({ sessionID: session.id, connectionID, version: 4 }).pipe(Effect.forkScoped),
     attached: (connectionID: string) => Deferred.await(handshake(connectionID)).pipe(Effect.timeout("10 seconds")),
@@ -146,5 +152,54 @@ it.live("disposing the plugin revokes the browser rules before the location fini
 
     yield* browser.locations.invalidate(browser.ref)
     expect(yield* browser.permissions).toEqual([user])
+  }),
+)
+
+it.live("only an attachment exposes and runs built-in browser tools, preserving generic browser grants", () =>
+  Effect.gen(function* () {
+    const browser = yield* setup
+    yield* browser.sessions.setPermissions({
+      sessionID: browser.session.id,
+      permissions: [user, { action: "execute", resource: "*", effect: "deny" }],
+    })
+    const before = yield* browser.select
+    expect(before.tools.definitions.filter((tool) => tool.name.startsWith("browser_"))).toEqual([])
+
+    const attachment = yield* browser.attach("conn_tools")
+    yield* browser.attached("conn_tools")
+    const selected = yield* browser.select
+    expect(
+      selected.tools.definitions.filter((tool) => tool.name.startsWith("browser_")).map((tool) => tool.name),
+    ).toEqual(Browser.Operations.map((operation) => `browser_${operation.name.replaceAll(".", "_")}`).toSorted())
+    const state = { tabs: [], focusedTabID: null }
+    yield* browser.rpc.state({ sessionID: browser.session.id, connectionID: "conn_tools", state })
+    yield* browser.rpc.events.subscribe("control").pipe(
+      Stream.runForEach((event) => {
+        if (event.data.type !== "command") return Effect.void
+        const request = { sessionID: browser.session.id, ...event.data }
+        return browser.rpc.command(request).pipe(
+          Effect.flatMap((command) => {
+            expect(command.action).toEqual({ type: "tabs.list" })
+            return browser.rpc.result({ ...request, outcome: { type: "success", result: { value: state, files: [] } } })
+          }),
+        )
+      }),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
+    const result = yield* selected.tools.execute({
+      sessionID: browser.session.id,
+      agent: selected.agent.id,
+      messageID: SessionMessage.ID.create(),
+      call: { type: "tool-call", id: "browser-tabs", name: "browser_tabs_list", input: {} },
+    })
+    expect(result.output).toEqual(state)
+
+    writes.revoked = Deferred.makeUnsafe()
+    yield* Fiber.interrupt(attachment)
+    yield* Deferred.await(writes.revoked).pipe(Effect.timeout("10 seconds"))
+    const after = yield* browser.select
+    expect(after.tools.definitions.filter((tool) => tool.name.startsWith("browser_"))).toEqual([])
+    expect(after.session.permissions).toEqual([user, { action: "execute", resource: "*", effect: "deny" }])
   }),
 )
