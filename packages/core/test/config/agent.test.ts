@@ -369,6 +369,7 @@ permissions:
                 color: "#ff6b6b",
                 steps: 12,
                 request: {
+                  settings: { temperature: 0.15, topP: 0.82, reasoningEffort: "medium" },
                   headers: { first: "one", shared: "first" },
                   body: { enabled: true, profile: "review", effort: "medium" },
                 },
@@ -382,6 +383,7 @@ permissions:
             agents: {
               reviewer: {
                 request: {
+                  settings: { temperature: 0.73, reasoningEffort: "high" },
                   headers: { shared: "last", second: "two" },
                   body: { retries: 2, effort: "high" },
                 },
@@ -407,7 +409,7 @@ permissions:
         model: { providerID: "anthropic", id: "claude-sonnet" },
       })
       expect(reviewer.request).toEqual({
-        settings: {},
+        settings: { temperature: 0.73, topP: 0.82, reasoningEffort: "high" },
         headers: { first: "one", shared: "last", second: "two" },
         body: { enabled: true, profile: "review", retries: 2, effort: "high" },
       })

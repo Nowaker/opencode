@@ -2439,7 +2439,11 @@ export type ConfigEntry =
         agents?: {
           [x: string]: {
             model?: string | { providerID: string; model: string; variant?: string }
-            request?: { headers?: { [x: string]: string }; body?: { [x: string]: JsonValue } }
+            request?: {
+              settings?: ConfigProviderSettings
+              headers?: { [x: string]: string }
+              body?: { [x: string]: JsonValue }
+            }
             system?: string
             description?: string
             mode?: "subagent" | "primary" | "all"

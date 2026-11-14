@@ -95,6 +95,7 @@ export const Plugin = define({
                 ...(item.model.variant === undefined ? {} : { variant: item.model.variant }),
               }
             if (item.request !== undefined) {
+              Object.assign(agent.request.settings, item.request.settings ?? {})
               Object.assign(agent.request.headers, item.request.headers ?? {})
               Object.assign(agent.request.body, item.request.body ?? {})
             }
