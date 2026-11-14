@@ -15,6 +15,12 @@ test.each([
   expect(StartupInput.classify(input.argv, cwd)).toEqual({ route: input.route, prompt: input.prompt })
 })
 
+test.each(["1", "2147483647"])("startup wait %s retains the early session editor", (wait) => {
+  expect(
+    StartupInput.classify(["--server", "http://127.0.0.1:1", "--server-wait", wait, "--session", "ses_reserved"], cwd),
+  ).toEqual({ route: "session", prompt: undefined, wait: true })
+})
+
 test.each([
   { argv: ["--help"] },
   { argv: ["-h"] },
@@ -24,6 +30,10 @@ test.each([
   { argv: ["debug", "paths"] },
   { argv: ["--no-such-flag"] },
   { argv: ["--prompt"] },
+  { argv: ["--server-wait", "1"] },
+  { argv: ["--server", "http://127.0.0.1:1", "--server-wait", "0"] },
+  { argv: ["--server", "http://127.0.0.1:1", "--server-wait", "2147483648"] },
+  { argv: ["--server", "http://127.0.0.1:1", "--server-wait", "1.5"] },
   { argv: ["--session", "a", "--session", "b"] },
   { argv: ["no-such-directory"] },
   { argv: [".", ".."] },

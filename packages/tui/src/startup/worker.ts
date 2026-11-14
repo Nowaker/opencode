@@ -147,7 +147,7 @@ async function quit() {
   done = true
   clearTimeout(escape)
   await reader.stop()
-  post({ type: "quit" })
+  post({ type: "quit", snapshot: editor.snapshot() })
 }
 
 function fail(error: unknown) {
@@ -167,7 +167,7 @@ port.on("message", (request: Request) => {
     status = request.text
     return paint()
   }
-  if (request.type === "handover") return settle(intake.request())
+  if (request.type === "handover") return request.immediate ? void finish() : settle(intake.request())
 })
 
 if (reader) {
