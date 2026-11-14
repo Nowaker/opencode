@@ -31,6 +31,8 @@ export const ServerInfo = Schema.Struct({
       sessionSelection: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can read the target Location's effective agent and model selection without changing it.",
       }),
+      sessionCompareAndInterrupt: Schema.optional(Schema.Literal(true)),
+      sessionConditionalPrompt: Schema.optional(Schema.Literal(true)),
       subagentOptions: Schema.optional(Schema.Boolean).annotate({
         description: "Supports native subagent fork, completion notice policies and timed foreground handoff.",
       }),

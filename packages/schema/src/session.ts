@@ -1,4 +1,15 @@
 export * as Session from "./session.js"
+export {
+  InputRevision,
+  Recovery,
+  InterruptExpected,
+  PromptExpected,
+  InterruptExperimental,
+  InterruptBody,
+  PromptExperimental,
+  InterruptGuardError,
+  PromptGuardError,
+} from "./session-recovery.js"
 
 import { Effect, Result, Schema, SchemaGetter, SchemaParser } from "effect"
 import { Base64Url } from "effect/encoding"

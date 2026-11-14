@@ -1,5 +1,6 @@
 export * as Session from "./session.js"
 export * from "./session/schema.js"
+export { InterruptGuardError, PromptGuardError } from "@opencode/schema/session"
 
 import { DateTime, Effect, Layer, Context, Option, Schema, Stream } from "effect"
 import { LLMClient } from "@opencode/ai/effect"
@@ -142,6 +143,9 @@ export interface Interface {
     input: ForkInput,
   ) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | ForkEmptyError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  readonly recovery: (input: {
+    readonly sessionID: SessionSchema.ID
+  }) => Effect.Effect<SessionSchema.Recovery, NotFoundError>
   readonly environment: (input: {
     readonly sessionID: SessionSchema.ID
     readonly variables?: SessionEnvironment.Variables
@@ -248,7 +252,7 @@ export interface Interface {
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly background: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
-  readonly interrupt: (sessionID: SessionSchema.ID, options?: { readonly resume?: boolean }) => Effect.Effect<boolean>
+  readonly interrupt: SessionExecution.Interface["interrupt"]
   readonly cancelChild: (
     input: SessionSchema.CancelChildInput,
   ) => Effect.Effect<SessionSchema.CancelChildResult, NotFoundError | ParentMismatchError>
@@ -297,6 +301,17 @@ const layer = Layer.effect(
     const environments = yield* SessionEnvironment.Service
     const locations = yield* LocationServiceMap.Service
     const sessions = yield* Session.make()
+    function interrupt(
+      sessionID: SessionSchema.ID,
+      options?: SessionExecution.UnguardedInterruptOptions,
+    ): Effect.Effect<boolean>
+    function interrupt(
+      sessionID: SessionSchema.ID,
+      options: SessionExecution.InterruptOptions,
+    ): Effect.Effect<boolean, SessionSchema.InterruptGuardError>
+    function interrupt(sessionID: SessionSchema.ID, options?: SessionExecution.InterruptOptions) {
+      return Effect.uninterruptible(options ? execution.interrupt(sessionID, options) : execution.interrupt(sessionID))
+    }
     function synthetic(
       input: SessionSchema.SyntheticAdmission & { sessionID: SessionSchema.ID },
     ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
@@ -401,9 +416,7 @@ const layer = Layer.effect(
         // instruction-update text the initial baseline already reflects.
         // The parent's location, not the caller's, decides whether the copy's media is stored as blobs.
         const media = yield* mediaBlob(parent)
-        const context = input.child
-          ? yield* SessionHistory.load(db, parent.id, "fork").pipe(Effect.orDie)
-          : []
+        const context = input.child ? yield* SessionHistory.load(db, parent.id, "fork").pipe(Effect.orDie) : []
         const compaction = context.find((message) => message.type === "compaction" && message.status === "completed")
         const recent = compaction?.metadata?.recent
         yield* bus
@@ -436,6 +449,7 @@ const layer = Layer.effect(
         return yield* result.get(sessionID).pipe(Effect.orDie)
       }),
       get: (sessionID) => sessions.forSession(sessionID).get(),
+      recovery: (input) => sessions.forSession(input.sessionID).recovery(),
       environment: Effect.fn("Session.environment")(function* (input) {
         yield* result.get(input.sessionID)
         if (input.variables !== undefined) yield* environments.set(input.sessionID, input.variables)
@@ -582,7 +596,7 @@ const layer = Layer.effect(
       }),
       resume: (sessionID) => sessions.forSession(sessionID).resume(),
       synthetic,
-      interrupt: (sessionID, options) => sessions.forSession(sessionID).interrupt(options),
+      interrupt,
       cancelChild,
       revert: {
         stage: (input) => sessions.forSession(input.sessionID).revert.stage(input),

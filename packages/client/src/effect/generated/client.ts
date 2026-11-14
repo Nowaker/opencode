@@ -97,6 +97,8 @@ import type {
   ExperimentalSessionImportOutput,
   ExperimentalSessionExportInput,
   ExperimentalSessionExportOutput,
+  ExperimentalSessionRecoveryInput,
+  ExperimentalSessionRecoveryOutput,
   ExperimentalSessionSkillInput,
   ExperimentalSessionSkillOutput,
   ExperimentalSessionWaitInput,
@@ -545,6 +547,7 @@ const EndpointSessionPrompt = (raw: RawClient["server.session"]) => (input: Sess
         agents: input["agents"],
         skills: input["skills"],
         metadata: input["metadata"],
+        experimental: input["experimental"],
         delivery: input["delivery"],
         resume: input["resume"],
       },
@@ -681,9 +684,11 @@ const EndpointSessionGenerate = (raw: RawClient["server.session"]) => (input: Se
 
 const EndpointSessionInterrupt = (raw: RawClient["server.session"]) => (input: SessionInterruptInput) =>
   preserveEffect<SessionInterruptOutput>()(
-    raw["session.interrupt"]({ params: { sessionID: input["sessionID"] }, query: { resume: input["resume"] } }).pipe(
-      Effect.mapError(mapClientError),
-    ),
+    raw["session.interrupt"]({
+      params: { sessionID: input["sessionID"] },
+      query: { resume: input["resume"] },
+      payload: { experimental: input["experimental"] },
+    }).pipe(Effect.mapError(mapClientError)),
   )
 
 const EndpointSessionBackground = (raw: RawClient["server.session"]) => (input: SessionBackgroundInput) =>
@@ -837,6 +842,15 @@ const EndpointExperimentalSessionExport =
       ),
     )
 
+const EndpointExperimentalSessionRecovery =
+  (raw: RawClient["server.session"]) => (input: ExperimentalSessionRecoveryInput) =>
+    preserveEffect<ExperimentalSessionRecoveryOutput>()(
+      raw["session.recovery"]({ params: { sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
 const EndpointExperimentalSessionSkill = (raw: RawClient["server.session"]) => (input: ExperimentalSessionSkillInput) =>
   preserveEffect<ExperimentalSessionSkillOutput>()(
     raw["session.skill"]({
@@ -901,6 +915,7 @@ const adaptGroupExperimentalSession = (raw: RawClient["server.session"]) => ({
   stats: EndpointExperimentalSessionStats(raw),
   import: EndpointExperimentalSessionImport(raw),
   export: EndpointExperimentalSessionExport(raw),
+  recovery: EndpointExperimentalSessionRecovery(raw),
   skill: EndpointExperimentalSessionSkill(raw),
   wait: EndpointExperimentalSessionWait(raw),
   instructions: {
@@ -2052,6 +2067,8 @@ const adaptClient = (raw: RawClient) => {
       import: client.experimental.session.import,
       /** @deprecated Use `client.experimental.session.export`. Removed in the next minor. */
       export: client.experimental.session.export,
+      /** @deprecated Use `client.experimental.session.recovery`. Removed in the next minor. */
+      recovery: client.experimental.session.recovery,
       /** @deprecated Use `client.experimental.session.skill`. Removed in the next minor. */
       skill: client.experimental.session.skill,
       /** @deprecated Use `client.experimental.session.wait`. Removed in the next minor. */

@@ -1,6 +1,7 @@
 export * as SessionExecution from "./execution.js"
 
 import { Cause, Context, Effect, Exit, Layer } from "effect"
+import { isSqlError } from "effect/sql/SqlError"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
 import { Job } from "../job.js"
@@ -13,8 +14,15 @@ import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { toSessionError } from "./to-session-error.js"
 import { SessionInbox } from "./inbox.js"
+import { Event } from "@opencode/schema/event"
+import { SessionRecovery } from "./recovery.js"
+import { SessionInputRevision } from "./input-revision.js"
+
+export type InterruptOptions = SessionSchema.InterruptBody & { readonly resume?: boolean }
+export type UnguardedInterruptOptions = { readonly resume?: boolean; readonly experimental?: undefined }
 
 export interface Interface {
+  readonly identity: (sessionID: SessionSchema.ID) => Event.ID | null
   /** Snapshots active execution owned by this process. */
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   /** Checks process-local ownership, including interruption cleanup and terminal settlement. */
@@ -29,12 +37,10 @@ export interface Interface {
    * Returns whether an active execution was interrupted. Compose with `awaitIdle` when
    * settlement matters.
    */
-  readonly interrupt: (
-    sessionID: SessionSchema.ID,
-    options?: {
-      readonly resume?: boolean
-    },
-  ) => Effect.Effect<boolean>
+  readonly interrupt: {
+    (sessionID: SessionSchema.ID, options?: UnguardedInterruptOptions): Effect.Effect<boolean>
+    (sessionID: SessionSchema.ID, options: InterruptOptions): Effect.Effect<boolean, SessionSchema.InterruptGuardError>
+  }
   /** Resolves once this process owns no active execution for the Session. Returns immediately when idle and never starts work. */
   readonly awaitIdle: (sessionID: SessionSchema.ID) => Effect.Effect<void>
 }
@@ -107,10 +113,10 @@ export const layer = Layer.effect(
       })
     })
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError, InterruptReason>({
-      started: (sessionID) =>
+      started: (sessionID, id) =>
         reportLifecycle(
           sessionID,
-          bus.publish(SessionEvent.Execution.Started, { sessionID }, claimOnCommit(sessionID)),
+          bus.publish(SessionEvent.Execution.Started, { sessionID }, { ...claimOnCommit(sessionID), id }),
         ),
       drain: (sessionID, force, promotable) => drain(sessionID, force, undefined, promotable),
       // One terminal observation per busy period, covering every coalesced drain.
@@ -145,27 +151,73 @@ export const layer = Layer.effect(
         ),
     })
 
+    function interrupt(sessionID: SessionSchema.ID, options?: UnguardedInterruptOptions): Effect.Effect<boolean>
+    function interrupt(
+      sessionID: SessionSchema.ID,
+      options: InterruptOptions,
+    ): Effect.Effect<boolean, SessionSchema.InterruptGuardError>
+    function interrupt(sessionID: SessionSchema.ID, options?: InterruptOptions) {
+      return Effect.gen(function* () {
+        const expected = options?.experimental?.expected
+        const interrupted = yield* expected
+          ? db
+              .transaction(
+                () =>
+                  Effect.gen(function* () {
+                    const current = yield* SessionRecovery.read(db, sessionID).pipe(Effect.orDie)
+                    const reason =
+                      expected.messageID !== undefined && current.assistantMessageID !== expected.messageID
+                        ? "message-changed"
+                        : expected.executionClaim !== undefined && current.executionClaim !== expected.executionClaim
+                          ? "execution-changed"
+                          : !SessionInputRevision.matches(current.inputRevision, expected.inputRevision)
+                            ? "input-changed"
+                            : undefined
+                    if (reason)
+                      return yield* new SessionSchema.InterruptGuardError({
+                        accepted: false,
+                        interrupted: false,
+                        reason,
+                        sessionID,
+                      })
+                    const accepted = yield* Effect.sync(() =>
+                      coordinator.compareAndInterrupt(sessionID, expected.executionID, "user"),
+                    )
+                    if (!accepted)
+                      return yield* new SessionSchema.InterruptGuardError({
+                        accepted: false,
+                        interrupted: false,
+                        reason: "execution-changed",
+                        sessionID,
+                      })
+                    return true
+                  }),
+                { behavior: "immediate" },
+              )
+              .pipe(Effect.catchIf(isSqlError, Effect.die))
+          : coordinator.interrupt(sessionID, "user")
+        if (!options?.resume) return interrupted
+        // Resume steering input and between-turn control work from the interrupted
+        // intent. Queued next-turn prompts stay parked: a steer-scoped drain never
+        // promotes them, and a control item behind a queued prompt waits its turn.
+        // Interruption acknowledges before cleanup settles, so this wake usually lands
+        // on the stopping execution's doorbell and starts the successor at settle.
+        // Reading the inbox concurrently with the dying drain is safe: delivery consumes
+        // rows inside uninterruptible publications, so a steer row is either still
+        // promotable here or was fully delivered and needs no resumption.
+        const next = yield* SessionInbox.nextPromotable(db, sessionID, "input")
+        if (next === undefined) return interrupted
+        if (next.delivery === "steer" || next.type === "compaction" || next.type === "move")
+          yield* coordinator.wake(sessionID, "steer")
+        return interrupted
+      })
+    }
+
     return Service.of({
+      identity: coordinator.identity,
       active: coordinator.active,
       isActive: coordinator.isActive,
-      interrupt: (sessionID, options) =>
-        Effect.gen(function* () {
-          const interrupted = yield* coordinator.interrupt(sessionID, "user")
-          if (!options?.resume) return interrupted
-          // Resume steering input and between-turn control work from the interrupted
-          // intent. Queued next-turn prompts stay parked: a steer-scoped drain never
-          // promotes them, and a control item behind a queued prompt waits its turn.
-          // Interruption acknowledges before cleanup settles, so this wake usually lands
-          // on the stopping execution's doorbell and starts the successor at settle.
-          // Reading the inbox concurrently with the dying drain is safe: delivery consumes
-          // rows inside uninterruptible publications, so a steer row is either still
-          // promotable here or was fully delivered and needs no resumption.
-          const next = yield* SessionInbox.nextPromotable(db, sessionID, "input")
-          if (next === undefined) return interrupted
-          if (next.delivery === "steer" || next.type === "compaction" || next.type === "move")
-            yield* coordinator.wake(sessionID, "steer")
-          return interrupted
-        }),
+      interrupt,
       resume: coordinator.run,
       wake: coordinator.wake,
       awaitIdle: coordinator.awaitIdle,
@@ -183,6 +235,7 @@ export const node = makeGlobalNode({
 export const noopLayer = Layer.succeed(
   Service,
   Service.of({
+    identity: () => null,
     active: Effect.succeed(new Set()),
     isActive: () => Effect.succeed(false),
     resume: () => Effect.void,

@@ -249,7 +249,7 @@ export type SessionDomain = Pick<
   | "move"
   | "context"
 > &
-  Pick<ExperimentalSessionApi<unknown>, "wait" | "instructions" | "cancelChild"> & {
+  Pick<ExperimentalSessionApi<unknown>, "wait" | "instructions" | "cancelChild" | "recovery"> & {
     readonly messages: MessageApi<unknown>["list"]
     /** Read the target Location's effective Session selection without changing stored fields or invoking request hooks. */
     readonly selection: (input: { readonly sessionID: Session.ID }) => Effect.Effect<Session.Selection, unknown>

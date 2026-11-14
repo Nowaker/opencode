@@ -7,6 +7,38 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 
 describe("SessionRunCoordinator", () => {
+  it.effect("stale compare-and-interrupt preserves a successor's pending wake", () =>
+    Effect.gen(function* () {
+      const running = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let drains = 0
+      const coordinator = yield* SessionRunCoordinator.make({
+        drain: () =>
+          Effect.gen(function* () {
+            drains++
+            yield* Deferred.succeed(running, undefined)
+            yield* Deferred.await(release)
+          }),
+      })
+      yield* coordinator.wake("session")
+      const previous = coordinator.identity("session")
+      if (previous === null) throw new Error("Missing execution identity")
+      yield* coordinator.interrupt("session")
+      yield* coordinator.awaitIdle("session")
+      const before = drains
+      yield* coordinator.wake("session")
+      yield* Deferred.await(running)
+      const joined = yield* coordinator.run("session").pipe(Effect.forkChild({ startImmediately: true }))
+      yield* coordinator.wake("session")
+
+      expect(coordinator.compareAndInterrupt("session", previous)).toBe(false)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(joined)
+
+      expect(drains - before).toBe(2)
+    }),
+  )
+
   it.effect("joins concurrent resumes for one key", () =>
     Effect.gen(function* () {
       const gate = yield* Deferred.make<void>()

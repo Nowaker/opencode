@@ -14,6 +14,8 @@ export type ServerInfo = {
         childCancellation?: boolean | undefined
         sessionMessages?: boolean | undefined
         sessionSelection?: boolean | undefined
+        sessionCompareAndInterrupt?: true | undefined
+        sessionConditionalPrompt?: true | undefined
         subagentOptions?: boolean | undefined
         pluginConfiguration?: boolean | undefined
         compactionSummary?: boolean | undefined
@@ -174,9 +176,9 @@ export type SessionStatsToolUsage = {
 
 export type SessionStatsActivity = { date: string; steps: number }
 
-export type InstructionEntryKey = string
-
 export type EventID = string
+
+export type InstructionEntryKey = string
 
 export type EventSeq = number
 
@@ -704,6 +706,8 @@ export type SessionStatsTools =
   | { mode: "summary"; totals: SessionStatsToolTotals }
   | { mode: "detail"; totals: SessionStatsToolTotals; usage: Array<SessionStatsToolUsage> }
 
+export type SessionInputRevision = { seq: number; eventID: EventID }
+
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
 
 export type InstructionEntrySnapshot = Array<{ key: InstructionEntryKey; value: JsonValue; removed: boolean }>
@@ -1201,6 +1205,17 @@ export type FormState =
   | { status: "pending" }
   | { status: "answered"; answer: FormAnswer }
   | { status: "cancelled"; message?: string }
+
+export type SessionRecovery = {
+  assistantMessageID: SessionMessageID | null
+  idleMessageID: SessionMessageID | null
+  throughSeq: number
+  executionID: EventID | null
+  executionClaim: number | null
+  localActive: boolean
+  inputRevision: SessionInputRevision | null
+  pendingInput: boolean
+}
 
 export type SessionAgentSelected = {
   id: EventID
@@ -3068,6 +3083,15 @@ export type ConflictError = {
 export const isConflictError = (value: unknown): value is ConflictError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
+export type SessionPromptGuardError = {
+  readonly _tag: "Session.PromptGuardError"
+  readonly accepted: false
+  readonly reason: "not-idle" | "input-changed" | "idle-changed"
+  readonly sessionID: string
+}
+export const isSessionPromptGuardError = (value: unknown): value is SessionPromptGuardError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "Session.PromptGuardError"
+
 export type CommandNotFoundError = {
   readonly _tag: "CommandNotFoundError"
   readonly command: string
@@ -3099,6 +3123,16 @@ export type UnknownError = {
 }
 export const isUnknownError = (value: unknown): value is UnknownError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "UnknownError"
+
+export type SessionInterruptGuardError = {
+  readonly _tag: "Session.InterruptGuardError"
+  readonly accepted: false
+  readonly interrupted: false
+  readonly reason: "message-changed" | "execution-changed" | "input-changed"
+  readonly sessionID: string
+}
+export const isSessionInterruptGuardError = (value: unknown): value is SessionInterruptGuardError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "Session.InterruptGuardError"
 
 export type FormNotFoundError = { readonly _tag: "FormNotFoundError"; readonly id: string; readonly message: string }
 export const isFormNotFoundError = (value: unknown): value is FormNotFoundError =>
@@ -3467,6 +3501,15 @@ export type SessionPromptInput = {
       }>
     | undefined
   readonly metadata?: { readonly [x: string]: JsonValue } | undefined
+  readonly experimental?:
+    | {
+        readonly expected?: {
+          readonly idleMessageID: string | null
+          readonly throughSeq: number
+          readonly inputRevision: { readonly seq: number; readonly eventID: string } | null
+        }
+      }
+    | undefined
   readonly delivery?: ("steer" | "queue") | null | undefined
   readonly resume?: boolean | null | undefined
 }
@@ -3582,7 +3625,20 @@ export type SessionGenerateInput = { readonly sessionID: string; readonly prompt
 
 export type SessionGenerateOutput = SessionGenerateResponse["data"]
 
-export type SessionInterruptInput = { readonly sessionID: string; readonly resume?: boolean | undefined }
+export type SessionInterruptInput = {
+  readonly sessionID: string
+  readonly resume?: boolean | undefined
+  readonly experimental?:
+    | {
+        readonly expected?: {
+          readonly executionID: string
+          readonly inputRevision: { readonly seq: number; readonly eventID: string } | null
+          readonly messageID?: string
+          readonly executionClaim?: number | "Infinity" | "-Infinity" | "NaN" | null
+        }
+      }
+    | undefined
+}
 
 export type SessionInterruptOutput = SessionInterruptResponse
 
@@ -3915,6 +3971,10 @@ export type ExperimentalSessionImportOutput = { data: SessionInfo }["data"]
 export type ExperimentalSessionExportInput = { readonly sessionID: string; readonly sanitize?: boolean | undefined }
 
 export type ExperimentalSessionExportOutput = { data: SessionTransferData }["data"]
+
+export type ExperimentalSessionRecoveryInput = { readonly sessionID: string }
+
+export type ExperimentalSessionRecoveryOutput = { data: SessionRecovery }["data"]
 
 export type ExperimentalSessionSkillInput = {
   readonly sessionID: string
@@ -4962,6 +5022,12 @@ export type SessionExportInput = ExperimentalSessionExportInput
 
 /** @deprecated Use `ExperimentalSessionExportOutput`. Removed in the next minor. */
 export type SessionExportOutput = ExperimentalSessionExportOutput
+
+/** @deprecated Use `ExperimentalSessionRecoveryInput`. Removed in the next minor. */
+export type SessionRecoveryInput = ExperimentalSessionRecoveryInput
+
+/** @deprecated Use `ExperimentalSessionRecoveryOutput`. Removed in the next minor. */
+export type SessionRecoveryOutput = ExperimentalSessionRecoveryOutput
 
 /** @deprecated Use `ExperimentalSessionSkillInput`. Removed in the next minor. */
 export type SessionSkillInput = ExperimentalSessionSkillInput

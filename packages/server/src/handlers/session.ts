@@ -5,7 +5,8 @@ import { SessionTitle } from "@opencode/core/session/title"
 import { SessionTransfer } from "@opencode/core/session/transfer"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { Form } from "@opencode/core/form"
-import { DateTime, Effect, Stream } from "effect"
+import { DateTime, Effect, Schema, Stream } from "effect"
+import { InterruptBody } from "@opencode/schema/session"
 import { HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { SessionMediaMessageResponse } from "@opencode/protocol/groups/message"
@@ -182,6 +183,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           }
         }),
       )
+      .handle("session.recovery", (ctx) =>
+        session.recovery(ctx.params).pipe(
+          Effect.map((data) => ({ data })),
+          Effect.catchTag("Session.NotFoundError", missingSession),
+        ),
+      )
       .handle(
         "session.view",
         Effect.fn(function* (ctx) {
@@ -314,6 +321,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 metadata: ctx.payload.metadata,
                 delivery: ctx.payload.delivery,
                 resume: ctx.payload.resume,
+                experimental: ctx.payload.experimental,
               })
               .pipe(
                 Effect.catchTag("Session.NotFoundError", missingSession),
@@ -613,11 +621,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             .pipe(Stream.orDie)
         }),
       )
-      .handle(
+      .handleRaw(
         "session.interrupt",
         Effect.fn(function* (ctx) {
           yield* requireSession(ctx.params.sessionID)
-          return { interrupted: yield* session.interrupt(ctx.params.sessionID, { resume: ctx.query.resume }) }
+          const text = yield* ctx.request.text.pipe(Effect.orDie)
+          const payload = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(InterruptBody))(
+            text === "" ? "{}" : text,
+          ).pipe(Effect.mapError(() => new InvalidRequestError({ message: "Invalid interrupt guard payload" })))
+          return {
+            interrupted: yield* session.interrupt(ctx.params.sessionID, {
+              resume: ctx.query.resume,
+              experimental: payload.experimental,
+            }),
+          }
         }),
       )
       .handle(

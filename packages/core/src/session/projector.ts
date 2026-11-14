@@ -14,6 +14,7 @@ import { SessionEvent } from "./event.js"
 import { SessionMessage } from "./message.js"
 import { SessionMessageUpdater } from "./message-updater.js"
 import { SessionInbox } from "./inbox.js"
+import { SessionInputRevision } from "./input-revision.js"
 import { InstructionState } from "./instruction-state.js"
 import { SessionBlob } from "./blob.js"
 import { SessionInboxTable, SessionMessageTable, SessionPartTable, SessionTable, type SessionPartData } from "./sql.js"
@@ -873,6 +874,7 @@ const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const bus = yield* Bus.Service
     const db = (yield* Database.Service).db
+    yield* SessionInputRevision.project(bus, db)
     yield* bus.project(SessionEvent.Created, (event) =>
       Effect.gen(function* () {
         const stored = yield* db

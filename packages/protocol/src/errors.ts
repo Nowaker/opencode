@@ -1,6 +1,16 @@
 import { Schema } from "effect"
 import { Skill } from "@opencode/schema/skill"
 import { Location } from "@opencode/schema/location"
+import { Session } from "@opencode/schema/session"
+
+export const SessionInterruptGuardError = Session.InterruptGuardError.annotate({
+  identifier: "SessionInterruptGuardError",
+  httpApiStatus: 409,
+})
+export const SessionPromptGuardError = Session.PromptGuardError.annotate({
+  identifier: "SessionPromptGuardError",
+  httpApiStatus: 409,
+})
 
 export class LocationNotFoundError extends Schema.TaggedError<LocationNotFoundError>()(
   "LocationNotFoundError",

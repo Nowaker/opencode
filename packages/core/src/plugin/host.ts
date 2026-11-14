@@ -152,6 +152,8 @@ export const make = Effect.fn("PluginHost.make")(function* (
       capabilities: {
         sessionMessages: true,
         sessionSelection: true,
+        sessionCompareAndInterrupt: true,
+        sessionConditionalPrompt: true,
         subagentOptions: true,
         childCancellation: true,
         jobControl: true,
@@ -649,6 +651,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         }),
       get: (input) => sessions.get(input.sessionID),
       selection,
+      recovery: sessions.recovery,
       fork: sessions.fork,
       remove: (input) => sessions.remove(input.sessionID),
       switchAgent: sessions.switchAgent,
@@ -673,7 +676,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
       synthetic: sessions.synthetic,
       interrupt: (input) =>
         sessions
-          .interrupt(input.sessionID, { resume: input.resume })
+          .interrupt(input.sessionID, { resume: input.resume, experimental: input.experimental })
           .pipe(Effect.map((interrupted) => ({ interrupted }))),
       wait: (input) => sessions.wait(input.sessionID),
       cancelChild: sessions.cancelChild,

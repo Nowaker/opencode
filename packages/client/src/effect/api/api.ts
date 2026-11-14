@@ -61,6 +61,8 @@ export type ServerInfoOutput = {
         readonly childCancellation?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
         readonly sessionSelection?: boolean | undefined
+        readonly sessionCompareAndInterrupt?: true | undefined
+        readonly sessionConditionalPrompt?: true | undefined
         readonly subagentOptions?: boolean | undefined
         readonly pluginConfiguration?: boolean | undefined
         readonly compactionSummary?: boolean | undefined
@@ -234,6 +236,7 @@ export type SessionPromptInput = {
   readonly agents?: ReadonlyArray<AgentAttachment> | undefined
   readonly skills?: ReadonlyArray<PromptInput.SkillAttachment> | undefined
   readonly metadata?: { readonly [x: string]: unknown } | undefined
+  readonly experimental?: { readonly expected?: Session.PromptExpected | undefined } | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
   readonly resume?: boolean | undefined
 }
@@ -356,7 +359,11 @@ export type SessionGenerateOperation<E = never> = (
   input: SessionGenerateInput,
 ) => Effect.Effect<SessionGenerateOutput, E>
 
-export type SessionInterruptInput = { readonly sessionID: Session.ID; readonly resume?: boolean | undefined }
+export type SessionInterruptInput = {
+  readonly sessionID: Session.ID
+  readonly resume?: boolean | undefined
+  readonly experimental?: { readonly expected?: Session.InterruptExpected | undefined } | undefined
+}
 export type SessionInterruptOutput = { readonly interrupted: boolean }
 export type SessionInterruptOperation<E = never> = (
   input: SessionInterruptInput,
@@ -480,6 +487,9 @@ export interface SessionApi<E = never> {
   /** @deprecated Use `client.experimental.session.export`. Removed in the next minor. */
   readonly export: ExperimentalSessionExportOperation<E>
 
+  /** @deprecated Use `client.experimental.session.recovery`. Removed in the next minor. */
+  readonly recovery: ExperimentalSessionRecoveryOperation<E>
+
   /** @deprecated Use `client.experimental.session.skill`. Removed in the next minor. */
   readonly skill: ExperimentalSessionSkillOperation<E>
 
@@ -593,6 +603,12 @@ export type ExperimentalSessionExportOutput = {
 export type ExperimentalSessionExportOperation<E = never> = (
   input: ExperimentalSessionExportInput,
 ) => Effect.Effect<ExperimentalSessionExportOutput, E>
+
+export type ExperimentalSessionRecoveryInput = { readonly sessionID: Session.ID }
+export type ExperimentalSessionRecoveryOutput = Session.Recovery
+export type ExperimentalSessionRecoveryOperation<E = never> = (
+  input: ExperimentalSessionRecoveryInput,
+) => Effect.Effect<ExperimentalSessionRecoveryOutput, E>
 
 export type ExperimentalSessionSkillInput = {
   readonly sessionID: Session.ID
@@ -1472,6 +1488,7 @@ export interface ExperimentalSessionApi<E = never> {
   readonly stats: ExperimentalSessionStatsOperation<E>
   readonly import: ExperimentalSessionImportOperation<E>
   readonly export: ExperimentalSessionExportOperation<E>
+  readonly recovery: ExperimentalSessionRecoveryOperation<E>
   readonly skill: ExperimentalSessionSkillOperation<E>
   readonly wait: ExperimentalSessionWaitOperation<E>
   readonly instructions: {
@@ -2896,6 +2913,15 @@ export type SessionExportOutput = ExperimentalSessionExportOutput
 
 /** @deprecated Use `ExperimentalSessionExportOperation`. Removed in the next minor. */
 export type SessionExportOperation<E = never> = ExperimentalSessionExportOperation<E>
+
+/** @deprecated Use `ExperimentalSessionRecoveryInput`. Removed in the next minor. */
+export type SessionRecoveryInput = ExperimentalSessionRecoveryInput
+
+/** @deprecated Use `ExperimentalSessionRecoveryOutput`. Removed in the next minor. */
+export type SessionRecoveryOutput = ExperimentalSessionRecoveryOutput
+
+/** @deprecated Use `ExperimentalSessionRecoveryOperation`. Removed in the next minor. */
+export type SessionRecoveryOperation<E = never> = ExperimentalSessionRecoveryOperation<E>
 
 /** @deprecated Use `ExperimentalSessionSkillInput`. Removed in the next minor. */
 export type SessionSkillInput = ExperimentalSessionSkillInput

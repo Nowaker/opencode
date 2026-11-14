@@ -98,6 +98,7 @@ const setup = Effect.fnUntraced(function* (options?: {
   const resumes: SessionSchema.ID[] = []
   const wakes: Array<{ sessionID: SessionSchema.ID; pending: SessionMessage.ID[]; enqueued: number }> = []
   const execution = SessionExecution.Service.of({
+    identity: () => null,
     active: Effect.succeed(new Set<SessionSchema.ID>()),
     isActive: () => Effect.succeed(false),
     resume: (id) =>
@@ -826,6 +827,7 @@ describe("Session-owned handles", () => {
       })
       const fixture = yield* setup({
         execution: SessionExecution.Service.of({
+          identity: coordinator.identity,
           active: coordinator.active,
           isActive: coordinator.isActive,
           resume: (id) =>

@@ -91,6 +91,8 @@ import type {
   ExperimentalSessionImportOutput,
   ExperimentalSessionExportInput,
   ExperimentalSessionExportOutput,
+  ExperimentalSessionRecoveryInput,
+  ExperimentalSessionRecoveryOutput,
   ExperimentalSessionSkillInput,
   ExperimentalSessionSkillOutput,
   ExperimentalSessionWaitInput,
@@ -760,6 +762,7 @@ export function make(options: ClientOptions) {
               agents: input["agents"],
               skills: input["skills"],
               metadata: input["metadata"],
+              experimental: input["experimental"],
               delivery: input["delivery"],
               resume: input["resume"],
             },
@@ -946,8 +949,9 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/interrupt`,
             query: { resume: input["resume"] },
+            body: { experimental: input["experimental"] },
             successStatus: 200,
-            declaredStatuses: [400, 401, 404],
+            declaredStatuses: [400, 401, 404, 409],
             empty: false,
           },
           requestOptions,
@@ -1101,6 +1105,17 @@ export function make(options: ClientOptions) {
               query: { sanitize: input["sanitize"] },
               successStatus: 200,
               declaredStatuses: [400, 401, 404, 500],
+              empty: false,
+            },
+            requestOptions,
+          ).then((value) => value.data),
+        recovery: (input: ExperimentalSessionRecoveryInput, requestOptions?: RequestOptions) =>
+          request<{ readonly data: ExperimentalSessionRecoveryOutput }>(
+            {
+              method: "GET",
+              path: `/api/experimental/session/${encodeURIComponent(input.sessionID)}/recovery`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 404],
               empty: false,
             },
             requestOptions,
@@ -2749,6 +2764,8 @@ export function make(options: ClientOptions) {
       import: client.experimental.session.import,
       /** @deprecated Use `client.experimental.session.export`. Removed in the next minor. */
       export: client.experimental.session.export,
+      /** @deprecated Use `client.experimental.session.recovery`. Removed in the next minor. */
+      recovery: client.experimental.session.recovery,
       /** @deprecated Use `client.experimental.session.skill`. Removed in the next minor. */
       skill: client.experimental.session.skill,
       /** @deprecated Use `client.experimental.session.wait`. Removed in the next minor. */

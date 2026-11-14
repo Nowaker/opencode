@@ -1,4 +1,5 @@
 export * as SessionErrors from "./error.js"
+export { InterruptGuardError, PromptGuardError } from "@opencode/schema/session"
 
 import { Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"

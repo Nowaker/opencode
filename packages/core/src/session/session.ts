@@ -29,11 +29,13 @@ import { SessionShell } from "./shell.js"
 import { SessionSkill } from "./skill.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
+import { SessionRecovery } from "./recovery.js"
 import { mergeMetadata } from "./metadata.js"
 
 type PromptRequest = SessionPrompt.Input & {
   id?: SessionMessage.ID
   resume?: boolean
+  experimental?: SessionSchema.PromptExperimental
 }
 
 /**
@@ -167,6 +169,7 @@ export const make = Effect.fn("Session.make")(function* () {
       Effect.gen(function* () {
         const session = yield* get(sessionID)
         const messageID = input.id ?? SessionMessage.ID.create()
+        const expected = input.experimental?.expected
         const admitted = yield* Effect.gen(function* () {
           const existing = yield* admission.reconcile({
             id: messageID,
@@ -180,11 +183,20 @@ export const make = Effect.fn("Session.make")(function* () {
           return yield* Effect.gen(function* () {
             const item = yield* restore(SessionPrompt.prepare({ session, messageID, input }))
             // Commit a staged revert only after preparation succeeds, before admitting new work.
-            if (session.revert) yield* SessionRevert.commit(bus, session)
+            if (session.revert && !input.experimental?.expected) yield* SessionRevert.commit(bus, session)
             return yield* admission.admit({
               id: messageID,
               sessionID: session.id,
               item,
+              check: expected
+                ? () =>
+                    SessionRecovery.checkPrompt({
+                      db: database.db,
+                      sessionID,
+                      expected,
+                      identity: () => execution.identity(sessionID),
+                    })
+                : undefined,
             })
           }).pipe(
             instances.provide(session),
@@ -293,6 +305,8 @@ export const make = Effect.fn("Session.make")(function* () {
     yield* get(sessionID)
     yield* execution.resume(sessionID)
   })
+  const recovery = (sessionID: SessionSchema.ID) =>
+    SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
   const synthetic = Effect.fn("Session.synthetic")((sessionID: SessionSchema.ID, input: SessionSchema.SyntheticInput) =>
     Effect.uninterruptible(
       Effect.gen(function* () {
@@ -344,8 +358,8 @@ export const make = Effect.fn("Session.make")(function* () {
     ),
   )
   const interrupt = Effect.fn("Session.interrupt")(
-    (sessionID: SessionSchema.ID, options?: { readonly resume?: boolean }) =>
-      Effect.uninterruptible(execution.interrupt(sessionID, options)),
+    (sessionID: SessionSchema.ID, options?: SessionExecution.InterruptOptions) =>
+      Effect.uninterruptible(options ? execution.interrupt(sessionID, options) : execution.interrupt(sessionID)),
   )
   const stage = Effect.fn("Session.revert.stage")(function* (
     sessionID: SessionSchema.ID,
@@ -376,6 +390,7 @@ export const make = Effect.fn("Session.make")(function* () {
   const revert = { stage, clear, commit }
   const operations = {
     get,
+    recovery,
     message,
     view,
     rename,
@@ -402,6 +417,7 @@ export const make = Effect.fn("Session.make")(function* () {
 
   const forSession = (sessionID: SessionSchema.ID) => {
     const get = operations.get.bind(undefined, sessionID)
+    const recovery = operations.recovery.bind(undefined, sessionID)
     const message = operations.message.bind(undefined, sessionID)
     const view = operations.view.bind(undefined, sessionID)
     const rename = operations.rename.bind(undefined, sessionID)
@@ -440,6 +456,7 @@ export const make = Effect.fn("Session.make")(function* () {
     return {
       id: sessionID,
       get,
+      recovery,
       message,
       view,
       rename,

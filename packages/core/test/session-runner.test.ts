@@ -482,6 +482,7 @@ const layer = Layer.unwrap(
           drain: (sessionID, force) => drain(sessionID, force),
         })
         return SessionExecution.Service.of({
+          identity: coordinator.identity,
           active: coordinator.active,
           isActive: coordinator.isActive,
           resume: coordinator.run,

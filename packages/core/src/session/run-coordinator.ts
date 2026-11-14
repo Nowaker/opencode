@@ -1,10 +1,13 @@
 export * as SessionRunCoordinator from "./run-coordinator.js"
 
 import { Deferred, Effect, Exit, Fiber, FiberSet, Scope } from "effect"
+import { Event } from "@opencode/schema/event"
 import type { Promotable } from "./inbox.js"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
 export interface Coordinator<Key, E, Reason = never> {
+  readonly identity: (key: Key) => Event.ID | null
+  readonly compareAndInterrupt: (key: Key, expected: Event.ID, reason?: Reason) => boolean
   /** Snapshots keys with an execution owned by this coordinator. */
   readonly active: Effect.Effect<ReadonlySet<Key>>
   /** Checks ownership for one key, including cleanup and terminal settlement. */
@@ -33,6 +36,7 @@ export interface Coordinator<Key, E, Reason = never> {
  * with this execution's exit.
  */
 type Execution<E, Reason> = {
+  readonly id: Event.ID
   readonly done: Deferred.Deferred<void, E>
   owner?: Fiber.Fiber<void>
   scope: Promotable
@@ -55,7 +59,7 @@ type Execution<E, Reason> = {
 export const make = <Key, E, Reason = never>(options: {
   readonly drain: (key: Key, force: boolean, scope: Promotable) => Effect.Effect<void, E>
   /** Runs once when a process-local busy period begins, before its first drain. */
-  readonly started?: (key: Key) => Effect.Effect<void>
+  readonly started?: (key: Key, id: Event.ID) => Effect.Effect<void>
   /**
    * Runs in the execution fiber for every exit, including interruption, after the final
    * drain and before the execution settles (waiters resolve after it completes).
@@ -81,6 +85,7 @@ export const make = <Key, E, Reason = never>(options: {
 
     const start = (key: Key, force: boolean, scope: Promotable) => {
       const execution: Execution<E, Reason> = {
+        id: Event.ID.create(),
         done: Deferred.makeUnsafe<void, E>(),
         scope,
         stopping: false,
@@ -91,7 +96,7 @@ export const make = <Key, E, Reason = never>(options: {
       // Drains start one tick after wake; callers observe progress through events or run.
       execution.owner = fork(
         Effect.yieldNow.pipe(
-          Effect.andThen(Effect.uninterruptible(options.started?.(key) ?? Effect.void)),
+          Effect.andThen(Effect.uninterruptible(options.started?.(key, execution.id) ?? Effect.void)),
           Effect.andThen(loop(key, execution, force)),
           Effect.onExit((exit) =>
             Effect.sync(() => {
@@ -139,27 +144,33 @@ export const make = <Key, E, Reason = never>(options: {
         start(key, false, scope)
       })
 
-    const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> =>
-      Effect.sync(() => {
-        const execution = executions.get(key)
-        if (execution === undefined || execution.stopping) return false
-        if (execution.owner === undefined) {
-          // Settlement window: the owner exited but the settled hook has not finished. The
-          // terminal outcome is already decided, so no reason attaches — but the interrupt
-          // still claims the recorded wakes so settle does not start a dead-intent successor.
-          execution.pendingWake = undefined
-          return false
-        }
-        execution.stopping = true
-        // Wakes recorded so far belong to the interrupted intent; the interrupt claims them.
-        // Wakes arriving during cleanup are new admissions and restart normally at settle.
+    const stop = (key: Key, reason?: Reason) => {
+      const execution = executions.get(key)
+      if (execution === undefined || execution.stopping) return false
+      if (execution.owner === undefined) {
+        // Settlement window: the owner exited but the settled hook has not finished. The
+        // terminal outcome is already decided, so no reason attaches — but the interrupt
+        // still claims the recorded wakes so settle does not start a dead-intent successor.
         execution.pendingWake = undefined
-        execution.interruptionReason = reason
-        // Fire and forget: nobody benefits from waiting out cleanup here, and callers like
-        // the interrupt endpoint must acknowledge immediately even when finalizers are slow.
-        fork(Fiber.interrupt(execution.owner))
-        return true
-      })
+        return false
+      }
+      execution.stopping = true
+      // Wakes recorded so far belong to the interrupted intent; the interrupt claims them.
+      // Wakes arriving during cleanup are new admissions and restart normally at settle.
+      execution.pendingWake = undefined
+      execution.interruptionReason = reason
+      // Fire and forget: nobody benefits from waiting out cleanup here, and callers like
+      // the interrupt endpoint must acknowledge immediately even when finalizers are slow.
+      fork(Fiber.interrupt(execution.owner))
+      return true
+    }
+    const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> => Effect.sync(() => stop(key, reason))
+    const identity = (key: Key) => executions.get(key)?.id ?? null
+    const compareAndInterrupt = (key: Key, expected: Event.ID, reason?: Reason) => {
+      const execution = executions.get(key)
+      if (execution?.id !== expected || execution.stopping || execution.owner === undefined) return false
+      return stop(key, reason)
+    }
 
     // One execution's `done` already spans coalesced continuations; re-check after it
     // settles to cover a successor execution started by a late doorbell.
@@ -170,5 +181,14 @@ export const make = <Key, E, Reason = never>(options: {
         return Deferred.await(execution.done).pipe(Effect.ignoreCause, Effect.andThen(awaitIdle(key)))
       })
 
-    return { active: Effect.sync(() => new Set(executions.keys())), isActive, run, wake, interrupt, awaitIdle }
+    return {
+      active: Effect.sync(() => new Set(executions.keys())),
+      identity,
+      compareAndInterrupt,
+      isActive,
+      run,
+      wake,
+      interrupt,
+      awaitIdle,
+    }
   })

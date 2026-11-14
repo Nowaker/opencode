@@ -26,6 +26,8 @@ import {
   ServiceUnavailableError,
   SessionBusyError,
   SessionNotFoundError,
+  SessionInterruptGuardError,
+  SessionPromptGuardError,
   SkillNotFoundError,
   UnknownError,
 } from "../errors.js"
@@ -244,6 +246,20 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       ),
     )
     .add(
+      HttpApiEndpoint.get("session.recovery", "/api/experimental/session/:sessionID/recovery", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Session.Recovery }),
+        error: SessionNotFoundError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "experimental.session.recovery",
+          summary: "Observe session recovery state",
+          description:
+            "Experimental: may change without compatibility guarantees. Read projected history and input revision together with the process-local execution owner.",
+        }),
+      ),
+    )
+    .add(
       HttpApiEndpoint.delete("session.remove", "/api/session/:sessionID", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
@@ -349,11 +365,12 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           id: SessionMessage.ID.pipe(Schema.optional),
           ...PromptInput.Prompt.fields,
           metadata: SessionInbox.UserPayload.fields.metadata,
+          experimental: Session.PromptExperimental.pipe(optional),
           delivery: SessionInbox.Delivery.pipe(Schema.optional),
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: SessionInbox.User }),
-        error: [ConflictError, InvalidRequestError, SessionNotFoundError],
+        error: [ConflictError, InvalidRequestError, SessionNotFoundError, SessionPromptGuardError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -677,12 +694,13 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.post("session.interrupt", "/api/session/:sessionID/interrupt", {
         params: { sessionID: Session.ID },
         query: { resume: BooleanFromString.pipe(Schema.optional) },
+        payload: Session.InterruptBody,
         success: Schema.Struct({
           interrupted: Schema.Boolean.annotate({
             description: "Whether an active execution owned by this OpenCode process was interrupted.",
           }),
         }).annotate({ identifier: "SessionInterruptResponse" }),
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, SessionInterruptGuardError, InvalidRequestError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.interrupt",

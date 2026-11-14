@@ -33,6 +33,8 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
               permissionRejectIsolation: true,
               sessionMessages: true,
               sessionSelection: true,
+              sessionCompareAndInterrupt: true,
+              sessionConditionalPrompt: true,
               subagentOptions: true,
               childCancellation: true,
               jobControl: true,

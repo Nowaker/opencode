@@ -697,6 +697,7 @@ export function fromPromise(plugin: Plugin) {
                   Effect.flatMap(Schema.encodeUnknownEffect(Session.Selection)),
                 ),
               ),
+            recovery: adaptApiMethod(SessionEndpoints["session.recovery"], host.session.recovery),
             remove: adaptApiMethod(SessionEndpoints["session.remove"], host.session.remove),
             switchAgent: adaptApiMethod(SessionEndpoints["session.switchAgent"], host.session.switchAgent),
             switchModel: adaptApiMethod(SessionEndpoints["session.switchModel"], host.session.switchModel),

@@ -1,7 +1,7 @@
 export * as SessionInbox from "./inbox.js"
 
 import { and, asc, eq, or } from "drizzle-orm"
-import { Context, DateTime, Effect, Layer, Schema } from "effect"
+import { Context, Data, DateTime, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Event } from "@opencode/schema/event"
 import {
@@ -76,6 +76,8 @@ export const serialized = <A, E, R>(sessionID: SessionSchema.ID, effect: Effect.
 export class LifecycleConflict extends Schema.TaggedError<LifecycleConflict>()("SessionInbox.LifecycleConflict", {
   id: SessionMessage.ID,
 }) {}
+
+class Reconciled extends Data.TaggedError("SessionInbox.Reconciled")<{ readonly admission: Info }> {}
 
 function matches<Type extends Item["type"]>(
   stored: Info,
@@ -192,16 +194,28 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
   })
 
   const admit = Effect.fn("SessionInbox.admit")(
-    function* <Type extends Item["type"]>(request: {
+    function* <Type extends Item["type"], E = never>(request: {
       readonly id: SessionMessage.ID
       readonly sessionID: SessionSchema.ID
       readonly item: Item & { readonly type: Type }
+      readonly check?: () => Effect.Effect<void, E>
     }) {
       const existing = yield* reconcile({ ...request, type: request.item.type, delivery: request.item.delivery })
       if (existing !== undefined) return existing
       const item: Item = request.item
-      const write: Effect.Effect<{ readonly created: number }> =
-        item.type === "synthetic" && item.payload.ignored
+      const check = request.check
+      const write: Effect.Effect<{ readonly created: number }, E | LifecycleConflict | Reconciled> = check
+        ? bus.publishPrepared(SessionEvent.InboxEnqueued, {
+            aggregateID: request.sessionID,
+            prepare: () =>
+              Effect.gen(function* () {
+                const existing = yield* reconcile({ ...request, type: item.type, delivery: item.delivery })
+                if (existing !== undefined) return yield* new Reconciled({ admission: existing })
+                yield* check()
+                return { inboxID: request.id, sessionID: request.sessionID, item }
+              }),
+          })
+        : item.type === "synthetic" && item.payload.ignored
           ? bus.publish(
               SessionEvent.Synthetic,
               { sessionID: request.sessionID, ...item.payload },
@@ -220,6 +234,10 @@ export const make = Effect.fn("SessionInbox.make")(function* () {
             time: { created: DateTime.makeUnsafe(event.created) },
             ...request.item,
           }),
+        ),
+        Effect.catchIf(
+          (error): error is Reconciled => error instanceof Reconciled,
+          (error) => Effect.succeed(error.admission),
         ),
         Effect.catchDefect((defect) => {
           if (

@@ -23,6 +23,8 @@ import { SessionMessage } from "@opencode/core/session/message"
 import { SessionRunner } from "@opencode/core/session/runner/index"
 import { SessionInboxTable, SessionTable } from "@opencode/core/session/sql"
 import { SessionStore } from "@opencode/core/session/store"
+import { SessionRecovery } from "@opencode/core/session/recovery"
+import { Event } from "@opencode/schema/event"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, LayerMap, Scope } from "effect"
 import { eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -32,6 +34,299 @@ const it = testEffect(
     LayerNode.group([Database.node, Bus.node, SessionStore.node, SessionInbox.node, Job.node, KV.node, Session.node]),
   ),
 )
+
+describe("Session recovery execution guards", () => {
+  it.effect("matching guarded interrupt releases the claim and leaves queued input intact with resume true", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const admission = yield* SessionInbox.Service
+      const sessionID = Session.ID.create()
+      yield* seedSessions(database, [sessionID])
+      const running = yield* Deferred.make<void>()
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const context = yield* buildExecution(scope, () =>
+        Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never)),
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+      yield* execution.wake(sessionID)
+      yield* Deferred.await(running)
+      const queued = yield* admission.admit({
+        id: SessionMessage.ID.create(),
+        sessionID,
+        item: { type: "user", delivery: "queue", payload: { text: "keep this payload" } },
+      })
+      const observed = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+      if (observed.executionID === null) throw new Error("Missing test execution")
+      const bus = yield* Bus.Service
+      yield* bus.publish(SessionEvent.Renamed, { sessionID, title: "metadata control" })
+      yield* bus.publish(SessionEvent.MetadataUpdated, { sessionID, metadata: { unrelated: true } })
+
+      expect(
+        yield* execution.interrupt(sessionID, {
+          resume: true,
+          experimental: {
+            expected: {
+              executionID: observed.executionID,
+              executionClaim: observed.executionClaim,
+              inputRevision: observed.inputRevision,
+            },
+          },
+        }),
+      ).toBe(true)
+      yield* execution.awaitIdle(sessionID)
+
+      expect(yield* admission.list(sessionID)).toEqual([queued])
+      expect((yield* claims(database))[sessionID]).toBe(false)
+    }),
+  )
+
+  it.effect(
+    "a successor reserved before its first assistant survives a stale stop even with the same claim timestamp",
+    () =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const sessionID = Session.ID.create()
+        yield* seedSessions(database, [sessionID], { time_suspended: 123 })
+        const running = yield* Deferred.make<void>()
+        const scope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+        const context = yield* buildExecution(scope, () =>
+          Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never)),
+        )
+        const execution = Context.get(context, SessionExecution.Service)
+        yield* execution.wake(sessionID)
+        yield* Deferred.await(running)
+        const first = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+        if (first.executionID === null) throw new Error("Missing test execution")
+        yield* execution.interrupt(sessionID)
+        yield* execution.awaitIdle(sessionID)
+        yield* database.db.update(SessionTable).set({ time_suspended: 123 }).where(eq(SessionTable.id, sessionID)).run()
+        yield* execution.wake(sessionID)
+        const successor = execution.identity(sessionID)
+
+        const error = yield* execution
+          .interrupt(sessionID, {
+            resume: true,
+            experimental: {
+              expected: { executionID: first.executionID, executionClaim: 123, inputRevision: first.inputRevision },
+            },
+          })
+          .pipe(Effect.flip)
+
+        expect(error).toMatchObject({
+          _tag: "Session.InterruptGuardError",
+          accepted: false,
+          interrupted: false,
+          reason: "execution-changed",
+          sessionID,
+        })
+        expect(execution.identity(sessionID)).toBe(successor)
+        expect(successor).not.toBe(first.executionID)
+        expect(yield* execution.isActive(sessionID)).toBe(true)
+      }),
+  )
+
+  for (const reason of ["input-changed", "message-changed", "execution-changed"] as const) {
+    it.effect(`guarded interruption compares ${reason} without stopping the owner`, () =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const sessionID = Session.ID.create()
+        yield* seedSessions(database, [sessionID])
+        const running = yield* Deferred.make<void>()
+        const scope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+        const context = yield* buildExecution(scope, () =>
+          Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never)),
+        )
+        const execution = Context.get(context, SessionExecution.Service)
+        yield* execution.wake(sessionID)
+        yield* Deferred.await(running)
+        const current = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+        if (current.executionID === null) throw new Error("Missing test execution")
+        const expected = {
+          executionID: current.executionID,
+          inputRevision: reason === "input-changed" ? { seq: 99, eventID: Event.ID.create() } : current.inputRevision,
+          ...(reason === "message-changed" ? { messageID: SessionMessage.ID.create() } : {}),
+          ...(reason === "execution-changed" ? { executionClaim: null } : {}),
+        }
+
+        const error = yield* execution.interrupt(sessionID, { experimental: { expected } }).pipe(Effect.flip)
+
+        expect(error).toMatchObject({ accepted: false, interrupted: false, reason, sessionID })
+        expect(execution.identity(sessionID)).toBe(current.executionID)
+      }),
+    )
+  }
+
+  it.effect("guarded stop refuses an unowned durable claim", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const sessionID = Session.ID.create()
+      yield* seedSessions(database, [sessionID], { time_suspended: 123 })
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const context = yield* buildExecution(scope, () => Effect.never)
+      const execution = Context.get(context, SessionExecution.Service)
+
+      const error = yield* execution
+        .interrupt(sessionID, {
+          experimental: { expected: { executionID: Event.ID.create(), executionClaim: 123, inputRevision: null } },
+        })
+        .pipe(Effect.flip)
+
+      expect(error.reason).toBe("execution-changed")
+      expect((yield* claims(database))[sessionID]).toBe(true)
+    }),
+  )
+
+  for (const admissionFirst of [true, false]) {
+    it.effect(
+      `input survives ${admissionFirst ? "admission before stop refusal" : "admission after accepted stop"}`,
+      () =>
+        Effect.gen(function* () {
+          const database = yield* Database.Service
+          const admission = yield* SessionInbox.Service
+          const sessionID = Session.ID.create()
+          yield* seedSessions(database, [sessionID])
+          const running = yield* Deferred.make<void>()
+          const scope = yield* Scope.make()
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+          const context = yield* buildExecution(scope, () =>
+            Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never)),
+          )
+          const execution = Context.get(context, SessionExecution.Service)
+          yield* execution.wake(sessionID)
+          yield* Deferred.await(running)
+          const current = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+          if (current.executionID === null) throw new Error("Missing test execution")
+          const id = SessionMessage.ID.create()
+          const enqueue = admission.admit({
+            id,
+            sessionID,
+            item: { type: "user", delivery: "queue", payload: { text: "survives" } },
+          })
+          const stop = execution.interrupt(sessionID, {
+            experimental: { expected: { executionID: current.executionID, inputRevision: current.inputRevision } },
+          })
+
+          if (admissionFirst) {
+            yield* enqueue
+            expect(yield* stop.pipe(Effect.flip)).toMatchObject({ reason: "input-changed", accepted: false })
+          }
+          if (!admissionFirst) {
+            expect(yield* stop).toBe(true)
+            yield* enqueue
+            yield* execution.awaitIdle(sessionID)
+          }
+
+          expect((yield* admission.list(sessionID)).map((row) => ({ id: row.id, payload: row.payload }))).toEqual([
+            { id, payload: { text: "survives" } },
+          ])
+        }),
+    )
+  }
+
+  it.effect("earlier execution reservation refuses conditional admission before producing history", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const admission = yield* SessionInbox.Service
+      const sessionID = Session.ID.create()
+      yield* seedSessions(database, [sessionID])
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const context = yield* buildExecution(scope, () => Effect.never)
+      const execution = Context.get(context, SessionExecution.Service)
+      const expected = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+
+      const error = yield* admission
+        .admit({
+          id: SessionMessage.ID.create(),
+          sessionID,
+          item: { type: "user", delivery: "steer", payload: { text: "refused" } },
+          check: () =>
+            Effect.gen(function* () {
+              yield* execution.wake(sessionID)
+              const row = yield* database.db
+                .select({ claim: SessionTable.time_suspended })
+                .from(SessionTable)
+                .where(eq(SessionTable.id, sessionID))
+                .get()
+              expect(row?.claim).toBeNull()
+              yield* SessionRecovery.checkPrompt({
+                db: database.db,
+                sessionID,
+                expected,
+                identity: () => execution.identity(sessionID),
+              })
+            }),
+        })
+        .pipe(Effect.flip)
+
+      expect(error).toMatchObject({ _tag: "Session.PromptGuardError", reason: "not-idle", accepted: false })
+      expect(yield* admission.list(sessionID)).toEqual([])
+    }),
+  )
+
+  it.effect("execution reserved after conditional validation cannot drain until admission commits", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      const admission = yield* SessionInbox.Service
+      const sessionID = Session.ID.create()
+      yield* seedSessions(database, [sessionID])
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const drained = yield* Deferred.make<SessionMessage.ID[]>()
+      const context = yield* buildExecution(scope, () =>
+        admission.list(sessionID).pipe(
+          Effect.flatMap((rows) =>
+            Deferred.succeed(
+              drained,
+              rows.map((row) => row.id),
+            ),
+          ),
+          Effect.andThen(Effect.never),
+        ),
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+      const expected = yield* SessionRecovery.snapshot(database.db, sessionID, () => execution.identity(sessionID))
+      const reserved = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      yield* bus.project(SessionEvent.InboxEnqueued, (event) =>
+        event.data.sessionID !== sessionID
+          ? Effect.void
+          : Effect.gen(function* () {
+              yield* execution.wake(sessionID)
+              yield* Deferred.succeed(reserved, undefined)
+              yield* Deferred.await(release)
+            }),
+      )
+      const id = SessionMessage.ID.create()
+      const publication = yield* admission
+        .admit({
+          id,
+          sessionID,
+          item: { type: "user", delivery: "steer", payload: { text: "atomic" } },
+          check: () =>
+            SessionRecovery.checkPrompt({
+              db: database.db,
+              sessionID,
+              expected,
+              identity: () => execution.identity(sessionID),
+            }),
+        })
+        .pipe(Effect.forkScoped)
+      yield* Deferred.await(reserved)
+
+      expect(execution.identity(sessionID)).not.toBeNull()
+      expect(yield* Deferred.isDone(drained)).toBe(false)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(publication)
+      expect(yield* Deferred.await(drained)).toEqual([id])
+    }),
+  )
+})
 
 describe("SessionExecution lifecycle", () => {
   test("classifies success and typed failure terminals", () => {
