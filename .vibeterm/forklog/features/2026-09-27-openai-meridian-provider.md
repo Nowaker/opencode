@@ -56,6 +56,7 @@ The code change was authored by coordinator session
 | `e185addfe5` | 2026-09-29 | Offer exactly the OpenAI ids `<baseURL>/models` lists (1.5 s timeout), keeping their models.dev metadata and `-fast`/`-pro` aliases, adding served ids models.dev lacks with defaults; a failed read is logged and falls back to the configured whitelist, else models.dev; a whitelist/blacklist still narrows the result | `CLONES[].servedModels`, `fetchServedModels`, `applyServedModels`, and the pass before the whitelist/blacklist loop in `provider.ts`; `test/provider/provider.test.ts` |
 | `2475f7552b` | 2026-10-02 | The built-in `openai` with a non-default `options.baseURL` gets the same `servedModels` + `smallFamilies` (`OPENAI_GATEWAY`) through `gatewayBehaviour()`; the Codex auth loader skips its chatgpt.com-rewriting OAuth fetch when a baseURL is configured | `OPENAI_GATEWAY`, `gatewayBehaviour` in `provider.ts`; `auth.loader` in `src/plugin/openai/codex.ts`; both test files |
 | `3ff282aa1d` | 2026-10-11 | The Codex auth loader keeps its OAuth fetch for OpenAI's own default baseURL (`https://api.openai.com/v1`); only a gateway baseURL skips it | `auth.loader` in `src/plugin/openai/codex.ts`; `test/plugin/codex.test.ts`; `test/session/llm-native-recorded.test.ts` "OpenAI OAuth" |
+| `f82e3efdce2` | 2026-11-14 | Disable temperature after discovery and config for ChatGPT gateway models, including fallback, so automatic Luna titles survive direct API catalog sampling metadata; preserve direct OpenAI API and `openai2` behavior | `GatewayBehaviour.temperature`, final model normalization in `provider.ts`; provider and real title-flow tests |
 
 ## Verification
 
@@ -70,6 +71,8 @@ The code change was authored by coordinator session
   no auth hook and its effective `baseURL` is `http://127.0.0.1:3459/v1`.
 
 ## Timeline
+
+- 2026-11-14 [Title generation delivery](../sessions/2026-11-14-session-titles.md), [`ses_e260d756cffeESP9yeZasZMm2X`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e260d756cffeESP9yeZasZMm2X): reproduce the provider rejection and unchanged title through real `SessionPrompt`, normalize backend sampling support, repair both reported titles and preserve direct API sampling.
 
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   verify served catalog, small-model and explicit baseURL boundaries; generic
