@@ -28,6 +28,9 @@ export const ServerInfo = Schema.Struct({
       sessionMessages: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can read durable session messages with the message list pagination contract.",
       }),
+      sessionSelection: Schema.optional(Schema.Boolean).annotate({
+        description: "Plugins can read the target Location's effective agent and model selection without changing it.",
+      }),
       subagentOptions: Schema.optional(Schema.Boolean).annotate({
         description: "Supports native subagent fork, completion notice policies and timed foreground handoff.",
       }),

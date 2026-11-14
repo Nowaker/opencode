@@ -60,6 +60,7 @@ export type ServerInfoOutput = {
         readonly jobResults?: boolean | undefined
         readonly childCancellation?: boolean | undefined
         readonly sessionMessages?: boolean | undefined
+        readonly sessionSelection?: boolean | undefined
         readonly subagentOptions?: boolean | undefined
         readonly pluginConfiguration?: boolean | undefined
         readonly compactionSummary?: boolean | undefined

@@ -1,6 +1,7 @@
 import { Tool } from "@opencode/schema/tool"
 import { Job } from "@opencode/schema/job"
 import { Form } from "@opencode/schema/form"
+import { Session } from "@opencode/schema/session"
 import type { Rpc } from "@opencode/schema/rpc"
 import type { OpenCodeEvent } from "@opencode/client"
 import type { RpcCallOptions, RpcEventPayload, SelectedEvent, SubscribeOptions } from "@opencode/client/promise/api"
@@ -686,6 +687,13 @@ export function fromPromise(plugin: Plugin) {
             create: adaptApiMethod(SessionEndpoints["session.create"], host.session.create),
             fork: adaptApiMethod(SessionEndpoints["session.fork"], host.session.fork),
             get: adaptApiMethod(SessionEndpoints["session.get"], host.session.get),
+            selection: (input) =>
+              run(
+                Schema.decodeUnknownEffect(Schema.Struct({ sessionID: Session.ID }))(input).pipe(
+                  Effect.flatMap(host.session.selection),
+                  Effect.flatMap(Schema.encodeUnknownEffect(Session.Selection)),
+                ),
+              ),
             remove: adaptApiMethod(SessionEndpoints["session.remove"], host.session.remove),
             switchAgent: adaptApiMethod(SessionEndpoints["session.switchAgent"], host.session.switchAgent),
             switchModel: adaptApiMethod(SessionEndpoints["session.switchModel"], host.session.switchModel),

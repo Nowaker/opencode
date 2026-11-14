@@ -27,6 +27,11 @@ export type Metadata = SessionMetadata
 
 export const Event = SessionEvent
 
+export const Selection = Schema.Struct({ agent: Agent.ID, model: Model.Ref }).annotate({
+  identifier: "Session.Selection",
+})
+export interface Selection extends Schema.Schema.Type<typeof Selection> {}
+
 export const CancelChildInput = Schema.Struct({ parentID: ID, sessionID: ID }).annotate({
   identifier: "Session.CancelChildInput",
 })

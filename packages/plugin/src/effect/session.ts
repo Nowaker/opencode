@@ -8,7 +8,7 @@ import type { SessionInbox } from "@opencode/schema/session-inbox"
 import type { SessionError } from "@opencode/schema/session-error"
 import type { SessionMessage } from "@opencode/schema/session-message"
 import type { TokenUsage } from "@opencode/schema/token-usage"
-import type { JsonSchema, Types } from "effect"
+import type { Effect, JsonSchema, Types } from "effect"
 import type { ModelHooks } from "./registration.js"
 import type { SessionCompactionDetails, SessionCompactionSummary } from "../session-compaction.js"
 
@@ -251,5 +251,7 @@ export type SessionDomain = Pick<
 > &
   Pick<ExperimentalSessionApi<unknown>, "wait" | "instructions" | "cancelChild"> & {
     readonly messages: MessageApi<unknown>["list"]
+    /** Read the target Location's effective Session selection without changing stored fields or invoking request hooks. */
+    readonly selection: (input: { readonly sessionID: Session.ID }) => Effect.Effect<Session.Selection, unknown>
     readonly hook: ModelHooks<SessionHooks>
   }

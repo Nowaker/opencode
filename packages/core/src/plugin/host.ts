@@ -24,6 +24,8 @@ import { Mcp } from "../mcp/index.js"
 import { Session } from "../session.js"
 import { InstructionEntry } from "../session/instruction-entry.js"
 import { SessionMessagePage } from "../session/message-page.js"
+import { SessionSelection } from "../session/selection.js"
+import { SessionStore } from "../session/store.js"
 import { PersistentPty } from "../persistent-pty.js"
 import { Provider } from "../provider.js"
 import { Reference } from "../reference.js"
@@ -83,6 +85,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const permission = yield* Permission.Service
   const hooks = yield* PluginHooks.Service
   const sessions = yield* Session.Service
+  const selection = yield* SessionSelection.make
   const instructionEntries = yield* InstructionEntry.Service
   const forms = yield* Form.Service
   const persistentPty = yield* PersistentPty.Service
@@ -148,6 +151,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
       ...app,
       capabilities: {
         sessionMessages: true,
+        sessionSelection: true,
         subagentOptions: true,
         childCancellation: true,
         jobControl: true,
@@ -644,6 +648,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
             : { parentID: input.parentID }),
         }),
       get: (input) => sessions.get(input.sessionID),
+      selection,
       fork: sessions.fork,
       remove: (input) => sessions.remove(input.sessionID),
       switchAgent: sessions.switchAgent,
@@ -724,6 +729,7 @@ export const requirements = LayerNode.group([
   Permission.node,
   PluginHooks.node,
   Session.node,
+  SessionStore.node,
   InstructionEntry.node,
   PersistentPty.node,
   LocationServiceMap.node,

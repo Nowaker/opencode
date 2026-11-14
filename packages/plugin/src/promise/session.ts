@@ -251,5 +251,7 @@ export type SessionDomain = Pick<
 > &
   Pick<ExperimentalSessionApi, "wait" | "instructions" | "cancelChild"> & {
     readonly messages: MessageApi["list"]
+    /** Read the target Location's effective Session selection without changing stored fields or invoking request hooks. */
+    readonly selection: (input: { readonly sessionID: string }) => Promise<typeof Session.Selection.Encoded>
     readonly hook: ModelHooks<SessionHooks>
   }

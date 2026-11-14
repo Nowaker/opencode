@@ -13,6 +13,7 @@ export type ServerInfo = {
         jobResults?: boolean | undefined
         childCancellation?: boolean | undefined
         sessionMessages?: boolean | undefined
+        sessionSelection?: boolean | undefined
         subagentOptions?: boolean | undefined
         pluginConfiguration?: boolean | undefined
         compactionSummary?: boolean | undefined
