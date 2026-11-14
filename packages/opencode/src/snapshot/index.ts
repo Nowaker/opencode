@@ -213,6 +213,23 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
         const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
 
+        // A nested repository is staged as a gitlink to its HEAD. git add cannot record one whose branch has no
+        // commit yet and fails the whole batch with "does not have a commit checked out", so such a repository is
+        // left out until its first commit; a gitlink would hold none of its files anyway.
+        const unborn = Effect.fnUntraced(function* (dirs: string[]) {
+          const found = yield* Effect.forEach(
+            dirs,
+            Effect.fnUntraced(function* (dir) {
+              const nested = path.join(state.worktree, dir, ".git")
+              if (!(yield* exists(nested))) return
+              const head = yield* git(["--git-dir", nested, "rev-parse", "--verify", "--quiet", "HEAD"])
+              if (head.code !== 0) return dir
+            }),
+            { concurrency: 8 },
+          )
+          return new Set(found.filter((dir): dir is string => dir !== undefined))
+        })
+
         const enabled = Effect.fnUntraced(function* () {
           if (state.vcs !== "git") return false
           return (yield* config.get()).snapshot !== false
@@ -323,27 +340,30 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           const allow = all.filter((item) => !ignored.has(item))
           if (!allow.length) return nothingAdded
 
-          const sizes = new Map(
-            yield* Effect.all(
-              allow.map((item) =>
-                fs
-                  .stat(path.join(state.worktree, item))
-                  .pipe(Effect.catch(() => Effect.void))
-                  .pipe(
-                    Effect.map((stat) => {
-                      if (!stat || stat.type !== "File") return [item, 0] as const
-                      return [item, typeof stat.size === "bigint" ? Number(stat.size) : stat.size] as const
-                    }),
-                  ),
-              ),
-              { concurrency: 8 },
+          const stats = yield* Effect.all(
+            allow.map((item) =>
+              fs
+                .stat(path.join(state.worktree, item))
+                .pipe(Effect.catch(() => Effect.void))
+                .pipe(
+                  Effect.map((stat) => {
+                    if (!stat || stat.type !== "File") return [item, 0, stat?.type === "Directory"] as const
+                    return [item, typeof stat.size === "bigint" ? Number(stat.size) : stat.size, false] as const
+                  }),
+                ),
             ),
+            { concurrency: 8 },
           )
+          const sizes = new Map(stats.map((item) => [item[0], item[1]] as const))
           const untrackedSet = new Set(untracked)
           const block = new Set(allow.filter((item) => untrackedSet.has(item) && (sizes.get(item) ?? 0) > limit))
           yield* sync(Array.from(block))
+          const skip = yield* unborn(stats.filter((item) => item[2]).map((item) => item[0]))
+          if (skip.size) {
+            yield* Effect.logInfo("skipping nested repositories without a commit", { repos: Array.from(skip) })
+          }
           // Stage only the allowed candidate paths so snapshot updates stay scoped.
-          const staged = allow.filter((item) => !block.has(item))
+          const staged = allow.filter((item) => !block.has(item) && !skip.has(item))
           if (!(yield* stage(staged))) return
           const stagedSizes = staged.map((item) => [item, sizes.get(item) ?? 0] as const)
           return {

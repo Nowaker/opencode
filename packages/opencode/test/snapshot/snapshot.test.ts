@@ -242,6 +242,46 @@ it.instance(
 )
 
 it.instance(
+  "nested repository without a commit does not block the snapshot",
+  Effect.gen(function* () {
+    const tmp = yield* bootstrap()
+    yield* exec(tmp.path, ["git", "init", "-q", "unborn"])
+    yield* write(`${tmp.path}/unborn/pending.txt`, "PENDING")
+    yield* exec(tmp.path, ["git", "init", "-q", "born"])
+    yield* write(`${tmp.path}/born/file.txt`, "BORN")
+    yield* exec(`${tmp.path}/born`, ["git", "add", "file.txt"])
+    yield* exec(`${tmp.path}/born`, [
+      "git",
+      "-c",
+      "user.name=test",
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-q",
+      "-m",
+      "born",
+    ])
+    const snapshot = yield* Snapshot.Service
+    const before = yield* snapshot.track()
+    expect(before).toBeTruthy()
+
+    yield* write(`${tmp.path}/b.txt`, "MODIFIED")
+    const patch = yield* snapshot.patch(before!)
+    expect(patch.files).toContain(fwd(tmp.path, "b.txt"))
+    const after = yield* snapshot.track()
+    expect(after).toBeTruthy()
+    expect(after).not.toBe(before)
+
+    const tree = yield* storeGit(yield* snapshotStore(tmp.path), ["ls-tree", after!])
+    expect(tree.stdout).toMatch(/^160000 commit [0-9a-f]+\tborn$/m)
+    expect(tree.stdout).not.toContain("unborn")
+  }),
+  { git: true },
+)
+
+it.instance(
   "special characters in filenames",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
