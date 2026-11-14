@@ -42,6 +42,7 @@ import { Tool } from "../tool.js"
 import { SessionAffinity } from "./affinity.js"
 import { SessionModelTransport } from "./model-transport.js"
 import { SessionModelRequestOptions } from "./model-request-options.js"
+import { SessionModelRequestTools } from "./model-request-tools.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionSystemPrompt } from "./system-prompt.js"
@@ -259,15 +260,7 @@ export const layer = Layer.effect(
         definitions: [],
         execute: () => new Tool.Error({ message: "Tools are not available for this request" }),
       }
-      // Remember which tool each definition object came from. Hooks rename a tool by moving
-      // its definition to a new key, so after the hook we find the tool by object identity.
-      // Definitions are shared across steps and sessions, and hooks may edit schemas in place,
-      // so each hook gets a deep copy.
-      const given = new Map(
-        tools.definitions.map(
-          (t) => [{ description: t.description, input: JSON.parse(JSON.stringify(t.inputSchema)) }, t] as const,
-        ),
-      )
+      const requestTools = SessionModelRequestTools.prepare(tools.definitions)
       const shaped = yield* shape(
         {
           sessionID: session.id,
@@ -276,17 +269,9 @@ export const layer = Layer.effect(
           messages: input.messages,
           options: SessionModelRequestOptions.defaults(kind, input, agent?.request.settings),
         },
-        Object.fromEntries(Array.from(given, ([d, t]) => [t.name, d])),
+        requestTools.tools,
       )
-      // Match by identity first, then by key. Entries matching neither were invented by a
-      // hook and are dropped. `t.name` stays the real name so execution can map renames back.
-      const byName = new Map(tools.definitions.map((t) => [t.name, t]))
-      const hooked = new Map(
-        Object.entries(shaped.tools ?? {}).flatMap(([name, d]) => {
-          const t = given.get(d) ?? byName.get(name)
-          return t ? [[name, { ...t, description: d.description, inputSchema: d.input }] as const] : []
-        }),
-      )
+      const hooked = requestTools.reconcile(shaped.tools)
       const entries = Object.entries(shaped.options)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
@@ -311,7 +296,7 @@ export const layer = Layer.effect(
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
         system: shaped.system,
         messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
-        tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
+        tools: SessionModelRequestTools.declarations(hooked, model.model.route.protocol),
         toolChoice: input.toolChoice,
         ...generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,

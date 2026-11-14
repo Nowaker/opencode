@@ -42,7 +42,7 @@ export interface SessionRequest {
 
 export interface SessionContext extends SessionRequest {
   readonly agent: Agent.ID
-  tools: Record<string, { description: string; input: JsonSchema.JsonSchema }>
+  tools: Record<string, { description: string; input: JsonSchema.JsonSchema; deferred?: boolean }>
 }
 
 export interface SessionCompactionResult {

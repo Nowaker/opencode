@@ -33,6 +33,42 @@ import { effortUpdate } from "../effort-updates.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
+import {
+  Tool,
+  CustomTool,
+  HostedTool,
+  ToolChoice,
+  lowerTool,
+  lowerCustomTool,
+  lowerTools,
+  namedTool,
+  lowerToolChoice,
+} from "./utils/open-responses-tools.js"
+import {
+  HostedToolItem,
+  HostedToolReplay,
+  type HostedToolReplayItem,
+  StreamItem,
+  type OutputItem,
+  itemID,
+  restoreHostedTool,
+} from "./utils/responses-items.js"
+
+export {
+  Tool,
+  CustomTool,
+  HostedTool,
+  ToolChoice,
+  lowerTool,
+  lowerCustomTool,
+  lowerTools,
+  namedTool,
+  lowerToolChoice,
+  HostedToolItem,
+  HostedToolReplay,
+  StreamItem,
+}
+export type { HostedToolReplayItem, OutputItem }
 import { OpenAIFreeform } from "./openai-freeform.js"
 
 const ADAPTER = "open-responses"
@@ -97,61 +133,6 @@ export const OpenResponsesReasoningItem = Schema.Struct({
   encrypted_content: optionalNull(Schema.String),
 })
 
-const OpenResponsesWebSearchCall = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("web_search_call"),
-    id: Schema.String,
-    status: Schema.optional(Schema.String),
-    action: optionalNull(JsonObject),
-  }),
-  [JsonObject],
-)
-
-const OpenResponsesFileSearchCall = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("file_search_call"),
-    id: Schema.String,
-    status: Schema.optional(Schema.String),
-    queries: Schema.optional(Schema.Array(Schema.String)),
-    results: optionalNull(Schema.Array(JsonObject)),
-  }),
-  [JsonObject],
-)
-
-const OpenResponsesCodeInterpreterCall = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("code_interpreter_call"),
-    id: Schema.String,
-    status: Schema.optional(Schema.String),
-    code: optionalNull(Schema.String),
-    container_id: optionalNull(Schema.String),
-    outputs: optionalNull(Schema.Array(JsonObject)),
-  }),
-  [JsonObject],
-)
-
-const OpenResponsesMCPCall = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("mcp_call"),
-    id: Schema.String,
-    status: Schema.optional(Schema.String),
-    server_label: Schema.optional(Schema.String),
-    name: Schema.optional(Schema.String),
-    arguments: Schema.optional(Schema.String),
-    output: optionalNull(Schema.String),
-    error: Schema.optional(Schema.Unknown),
-  }),
-  [JsonObject],
-)
-
-export const HostedToolItem = Schema.Union([
-  OpenResponsesWebSearchCall,
-  OpenResponsesFileSearchCall,
-  OpenResponsesCodeInterpreterCall,
-  OpenResponsesMCPCall,
-])
-export type HostedToolItem = Schema.Schema.Type<typeof HostedToolItem>
-
 // `function_call_output.output` accepts either a plain string or an ordered
 // array of content items so tools can return images and files in addition to text.
 // https://www.openresponses.org/reference
@@ -179,15 +160,6 @@ export const ConfigurationUpdate = Schema.Struct({
   reasoning: Schema.Struct({ effort: OpenResponsesOptions.ReasoningEffort }),
 })
 export type ConfigurationUpdate = Schema.Schema.Type<typeof ConfigurationUpdate>
-
-export const HostedToolReplay = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.String,
-    id: Schema.String,
-  }),
-  [JsonObject],
-)
-export type HostedToolReplayItem = Schema.Schema.Type<typeof HostedToolReplay>
 
 export const InputItem = Schema.Union([
   CompactionItem,
@@ -243,48 +215,6 @@ type OpenResponsesReasoningInput = {
   summary: Array<{ type: "summary_text"; text: string }>
   encrypted_content?: string | null
 }
-export const Tool = Schema.Struct({
-  type: Schema.tag("function"),
-  name: Schema.String,
-  description: Schema.String,
-  parameters: JsonObject,
-  strict: Schema.optional(Schema.Boolean),
-})
-
-export const CustomTool = Schema.Struct({
-  type: Schema.tag("custom"),
-  name: Schema.String,
-  description: Schema.String,
-  format: Schema.Union([
-    Schema.Struct({ type: Schema.tag("text") }),
-    Schema.Struct({
-      type: Schema.tag("grammar"),
-      syntax: Schema.Literals(["lark", "regex"]),
-      definition: Schema.String,
-    }),
-  ]),
-})
-
-export const HostedTool = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.String,
-  }),
-  [JsonObject],
-)
-export type HostedTool = Schema.Schema.Type<typeof HostedTool>
-
-const NamedTool = Schema.Struct({ type: Schema.Literals(["function", "custom"]), name: Schema.String })
-
-export const ToolChoice = Schema.Union([
-  Schema.Literals(["auto", "none", "required"]),
-  NamedTool,
-  Schema.Struct({
-    type: Schema.tag("allowed_tools"),
-    mode: Schema.Literals(["auto", "none", "required"]),
-    tools: Schema.Array(NamedTool),
-  }),
-])
-
 // Fields shared between the HTTP body and the WebSocket `response.create`
 // message. The HTTP body adds `stream: true`; the WebSocket message adds
 // `type: "response.create"`. Defining the shared shape once keeps the two
@@ -355,26 +285,6 @@ export const OpenResponsesUsage = Schema.StructWithRest(
   [JsonObject],
 )
 type OpenResponsesUsage = Schema.Schema.Type<typeof OpenResponsesUsage>
-
-// The spec requires `id` on every output item, but some gateways drop it from
-// later item events (Bedrock Mantle renames it to `item_id` on
-// `output_item.done` and `response.completed.output`). Decode it as optional
-// and let `normalize` recover or mint it once before the parser runs.
-// https://www.openresponses.org/specification#extending-items
-export const StreamItem = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.String,
-    id: optionalNullish(Schema.String),
-    call_id: optionalNullish(Schema.String),
-    name: optionalNullish(Schema.String),
-    namespace: optionalNullish(Schema.String),
-    arguments: optionalNullish(Schema.String),
-    encrypted_content: optionalNull(Schema.String),
-  }),
-  [Schema.Record(Schema.String, Schema.Unknown)],
-)
-export type StreamItem = Schema.Schema.Type<typeof StreamItem>
-export type OutputItem = StreamItem & { readonly id: string }
 
 // Responses-compatible providers put error details at the top level, under `error`, or under
 // `response.error`, and gateways reshape them freely: strings, numeric codes, extra fields. Those
@@ -470,69 +380,6 @@ interface ReasoningStreamItem {
 // =============================================================================
 // Request Lowering
 // =============================================================================
-export const lowerTool = Effect.fnUntraced(function* (protocolName: string, tool: ToolDefinition) {
-  if (tool.native !== undefined)
-    return yield* ProviderShared.invalidRequest(`${protocolName} does not support provider-native tool ${tool.name}`)
-  return {
-    type: "function" as const,
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.inputSchema,
-    // The common tool definition does not currently express Responses strict-schema policy.
-    strict: false,
-  }
-})
-
-export const lowerCustomTool = (tool: ToolDefinition, custom: OpenAIFreeform.Custom) => {
-  const grammar = OpenAIFreeform.grammar(custom.format)
-  return {
-    type: "custom" as const,
-    name: tool.name,
-    description: tool.description,
-    format: grammar ? { type: "grammar" as const, ...grammar } : { type: "text" as const },
-  }
-}
-
-export const lowerTools = (
-  tools: ReadonlyArray<ToolDefinition>,
-  adapter: ProviderAdapter,
-  custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
-) =>
-  Effect.forEach(
-    tools,
-    (tool): Effect.Effect<Schema.Schema.Type<typeof Tool | typeof CustomTool> | HostedTool, AIError> => {
-      if (tool.native !== undefined && adapter.nativeTool) return adapter.nativeTool(tool.native)
-      const definition = custom.get(tool.name)
-      return definition ? Effect.succeed(lowerCustomTool(tool, definition)) : lowerTool(adapter.name, tool)
-    },
-  )
-
-export const namedTool = (name: string, custom: ReadonlyMap<string, OpenAIFreeform.Custom>) => ({
-  type: custom.has(name) ? ("custom" as const) : ("function" as const),
-  name,
-})
-
-export const lowerToolChoice = (
-  protocolName: string,
-  toolChoice: NonNullable<LLMRequest["toolChoice"]>,
-  custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
-) =>
-  ProviderShared.matchToolChoice(protocolName, toolChoice, {
-    auto: () => "auto" as const,
-    none: () => "none" as const,
-    required: () => "required" as const,
-    tool: (toolName) => namedTool(toolName, custom),
-  })
-
-// Server-issued item ids need a nonempty prefix and suffix, but the prefix is
-// provider-defined and does not necessarily identify the item's semantic type.
-const itemID = (providerMetadata: ProviderMetadata | undefined, providerMetadataKey: string) => {
-  const metadata = providerMetadata?.[providerMetadataKey]
-  if (!metadata || typeof metadata.itemId !== "string") return undefined
-  const separator = metadata.itemId.indexOf("_")
-  return separator > 0 && separator < metadata.itemId.length - 1 ? metadata.itemId : undefined
-}
-
 // A call replays as the type its tool is declared with now; the item id only survives when that type is unchanged.
 const lowerToolCall = (
   part: ToolCallPart,
@@ -746,17 +593,11 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, adapter:
         }
         if (part.type === "tool-result" && part.providerExecuted === true) {
           flushText()
-          const id = itemID(part.providerMetadata, providerMetadataKey)
-          const hosted =
-            part.result.type !== "json"
-              ? undefined
-              : Schema.is(HostedToolItem)(part.result.value)
-                ? part.result.value
-                : adapter.restoreHostedToolItem?.(part.result.value)
-          if (id !== undefined && hosted?.id === id) {
-            if (!hostedToolItems.has(id)) {
-              input.push(hosted)
-              hostedToolItems.add(id)
+          const hosted = restoreHostedTool(part, providerMetadataKey, adapter.restoreHostedToolItem)
+          if (hosted) {
+            if (!hostedToolItems.has(hosted.id)) {
+              input.push(hosted.item)
+              hostedToolItems.add(hosted.id)
             }
             continue
           }
@@ -1183,7 +1024,7 @@ const onOutputItemAdded = (state: ParserState, event: NormalizedEvent): StepResu
     id: item.call_id,
     name: item.name ?? "",
     namespace: item.namespace,
-    input: custom ? "" : (item.arguments ?? ""),
+    input: custom ? "" : typeof item.arguments === "string" ? item.arguments : "",
     providerMetadata: metadata,
   })
   const opened = custom
@@ -1314,7 +1155,11 @@ const onOutputItemDone = Effect.fnUntraced(function* (state: ParserState, item: 
     const custom = item.type === "custom_tool_call"
     const metadata = providerMetadata(state, OpenAIFreeform.metadata(item.id, custom))
     const final = { custom: state.custom.get(item.name), raw: rawInput(item) }
-    const input = custom ? OpenAIFreeform.fromRaw(final.custom, final.raw) : item.arguments
+    const input = custom
+      ? OpenAIFreeform.fromRaw(final.custom, final.raw)
+      : typeof item.arguments === "string"
+        ? item.arguments
+        : undefined
     const registered = state.tools[item.id] !== undefined
     const closed = custom ? OpenAIFreeform.close(state.tools, [item.id], final) : undefined
     const tools = registered

@@ -1,28 +1,18 @@
 import { Effect, Schema } from "effect"
 import { Protocol } from "../route/protocol.js"
-import { CacheTTL, type LLMRequest } from "../schema/index.js"
+import type { LLMRequest } from "../schema/index.js"
 import { AnthropicMessages } from "./anthropic-messages.js"
 import { MetaResponses } from "./meta-responses.js"
-import { JsonObject, optionalArray, ProviderShared } from "./shared.js"
+import { optionalArray, ProviderShared } from "./shared.js"
 
 const WebSearch = Schema.Struct({
   type: Schema.Literal("web_search"),
   name: Schema.Literal("web_search"),
   user_location: MetaResponses.WebSearch.fields.user_location,
 })
-const MetaCacheControl = Schema.Struct({
-  type: Schema.tag("ephemeral"),
-  ttl: Schema.optional(CacheTTL),
-})
-const FunctionTool = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  input_schema: JsonObject,
-  cache_control: Schema.optional(MetaCacheControl),
-})
 const Body = Schema.Struct({
   ...AnthropicMessages.AnthropicMessagesBody.fields,
-  tools: optionalArray(Schema.Union([FunctionTool, WebSearch])),
+  tools: optionalArray(Schema.Union([AnthropicMessages.AnthropicTool, WebSearch])),
 })
 
 const fromRequest = Effect.fn("MetaMessages.fromRequest")(function* (request: LLMRequest) {

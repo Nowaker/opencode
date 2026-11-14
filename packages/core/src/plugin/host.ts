@@ -150,6 +150,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
     app: {
       ...app,
       capabilities: {
+        toolDeferral: true,
         sessionMessages: true,
         sessionSelection: true,
         sessionCompareAndInterrupt: true,

@@ -28,6 +28,14 @@ export type { OptionsInput as OpenAIEmbeddingOptions } from "../protocols/openai
 
 export const id = ProviderID.make("openai")
 
+export const toolSearch = () =>
+  ToolDefinition.make({
+    name: "tool_search",
+    description: "Search deferred tools using OpenAI's hosted tool search.",
+    inputSchema: { type: "object", properties: {} },
+    native: { openai: { type: "tool_search", execution: "server" } },
+  })
+
 export const routes = [OpenAIResponses.route, OpenAIChat.route]
 
 // This provider facade wraps the lower-level Responses and Chat model factories

@@ -9,6 +9,7 @@ export type ServerInfo = {
   capabilities?:
     | {
         persistentPty?: boolean | undefined
+        toolDeferral?: boolean | undefined
         jobControl?: boolean | undefined
         jobResults?: boolean | undefined
         childCancellation?: boolean | undefined

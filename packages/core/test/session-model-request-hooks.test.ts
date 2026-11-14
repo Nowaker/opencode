@@ -146,14 +146,12 @@ describe("SessionModelRequest HTTP hooks", () => {
       }
 
       const required = yield* Effect.forEach([1, 2], () =>
-        requests
-          .primary({ session, agent: Agent.ID.make("build"), model, system: [], messages: [], tools })
-          .pipe(
-            Effect.map((prepared) => {
-              const tool = prepared.request.tools[0]
-              return tool?.type === "tool" ? tool.inputSchema.required : undefined
-            }),
-          ),
+        requests.primary({ session, agent: Agent.ID.make("build"), model, system: [], messages: [], tools }).pipe(
+          Effect.map((prepared) => {
+            const tool = prepared.request.tools[0]
+            return tool?.type === "tool" ? tool.inputSchema.required : undefined
+          }),
+        ),
       )
 
       expect(required).toEqual([

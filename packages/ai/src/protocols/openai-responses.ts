@@ -1,23 +1,29 @@
 import { Effect, Schema } from "effect"
-import { Base64 } from "effect/encoding"
 import { Headers } from "effect/http"
 import { Route } from "../route/client.js"
 import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Protocol } from "../route/protocol.js"
 import { HttpTransport } from "../route/transport/index.js"
-import type { LLMRequest, ToolDefinition, ToolEntry } from "../schema/index.js"
+import type { LLMRequest } from "../schema/index.js"
 import { requestTTL } from "../cache-policy.js"
 import { resolveEffortUpdates } from "../effort-updates.js"
 import { OpenResponses } from "./open-responses.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
-import { JsonObject, lenient, optionalArray, optionalNull, ProviderShared } from "./shared.js"
+import { lenient, optionalArray, ProviderShared } from "./shared.js"
 import { ResponsesHostedTools } from "./utils/responses-hosted-tools.js"
 import { OpenResponsesChannel } from "./open-responses-channel.js"
 import { ResponsesCompaction } from "./utils/responses-compaction.js"
 import { ResponsesCheckpoint } from "./utils/responses-checkpoint.js"
 import * as Cache from "./utils/cache.js"
 import { OpenAIFreeform } from "./openai-freeform.js"
+import {
+  OpenAIResponsesTools,
+  OpenAIResponsesToolChoice,
+  lowerTools,
+  lowerToolChoice,
+} from "./utils/openai-response-tools.js"
+import { OpenAIResponsesHostedToolItem, HOSTED_TOOLS } from "./utils/openai-hosted-tools.js"
 
 const ADAPTER = "openai-responses"
 const NAME = "OpenAI Responses"
@@ -43,80 +49,6 @@ const ReasoningOptions = Schema.Struct({
   reasoningMode: lenient(ReasoningMode),
   reasoningContext: lenient(ReasoningContext),
 })
-
-const OpenAIResponsesImageGenerationTool = Schema.Struct({
-  type: Schema.tag("image_generation"),
-  action: Schema.optional(Schema.Literals(["auto", "generate", "edit"])),
-  background: Schema.optional(Schema.Literals(["auto", "opaque", "transparent"])),
-  input_fidelity: Schema.optional(Schema.Literals(["low", "high"])),
-  output_compression: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
-  output_format: Schema.optional(Schema.Literals(["png", "jpeg", "webp"])),
-  partial_images: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  quality: Schema.optional(Schema.Literals(["auto", "low", "medium", "high"])),
-  size: Schema.optional(
-    Schema.String.check(
-      Schema.makeFilter((value) => {
-        if (value === "auto") return undefined
-        const match = /^(\d+)x(\d+)$/.exec(value)
-        if (!match) return "image size must be `auto` or `{width}x{height}`"
-        return Number(match[1]) > 0 && Number(match[2]) > 0 ? undefined : "image dimensions must be positive integers"
-      }),
-    ),
-  ),
-})
-
-const OpenAIResponsesHostedToolItem = Schema.Union([
-  Schema.StructWithRest(
-    Schema.Struct({
-      type: Schema.tag("computer_call"),
-      id: Schema.String,
-      status: Schema.optional(Schema.String),
-      call_id: Schema.optional(Schema.String),
-      action: optionalNull(JsonObject),
-      pending_safety_checks: Schema.optional(Schema.Array(JsonObject)),
-    }),
-    [JsonObject],
-  ),
-  Schema.StructWithRest(
-    Schema.Struct({
-      type: Schema.tag("web_search_preview_call"),
-      id: Schema.String,
-      status: Schema.optional(Schema.String),
-      action: optionalNull(JsonObject),
-    }),
-    [JsonObject],
-  ),
-  Schema.StructWithRest(
-    Schema.Struct({
-      type: Schema.tag("image_generation_call"),
-      id: Schema.String,
-      status: Schema.optional(Schema.String),
-      result: optionalNull(Schema.String),
-      output_format: Schema.optional(Schema.Literals(["png", "jpeg", "webp"])),
-      revised_prompt: optionalNull(Schema.String),
-    }),
-    [JsonObject],
-  ),
-])
-
-const OpenAIResponsesNamespace = Schema.Struct({
-  type: Schema.tag("namespace"),
-  name: Schema.String,
-  description: Schema.String,
-  tools: Schema.Array(OpenResponses.Tool),
-})
-
-const OpenAIResponsesTools = Schema.Union([
-  OpenResponses.Tool,
-  OpenResponses.CustomTool,
-  OpenAIResponsesNamespace,
-  OpenAIResponsesImageGenerationTool,
-])
-
-const OpenAIResponsesToolChoice = Schema.Union([
-  OpenResponses.ToolChoice,
-  Schema.Struct({ type: Schema.tag("image_generation") }),
-])
 
 const OpenAIResponsesCoreFields = {
   ...OpenResponses.coreFields,
@@ -173,69 +105,6 @@ const supportsEffortUpdates = (request: LLMRequest) => {
   return match !== null && Number(match[1]) >= 6
 }
 
-const nativeImageToolInput = (tool: ToolDefinition) => {
-  const native = tool.native?.openai
-  return ProviderShared.isRecord(native) && native.type === "image_generation" ? native : undefined
-}
-
-const nativeImageTool = (tool: ToolDefinition) => {
-  const native = nativeImageToolInput(tool)
-  return Schema.is(OpenAIResponsesImageGenerationTool)(native) ? native : undefined
-}
-
-const lowerTool = Effect.fnUntraced(function* (
-  tool: ToolDefinition,
-  custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
-) {
-  const native = nativeImageToolInput(tool)
-  if (native !== undefined) {
-    if (Schema.is(OpenAIResponsesImageGenerationTool)(native)) return native
-    return yield* ProviderShared.invalidRequest("OpenAI Responses image generation tool options are invalid")
-  }
-  const definition = custom.get(tool.name)
-  if (definition) return OpenResponses.lowerCustomTool(tool, definition)
-  return yield* OpenResponses.lowerTool(NAME, tool)
-})
-
-// Native namespaces hold only function tools, so deeper levels flatten into
-// the leaf names the same way non-native protocols flatten the whole tree.
-const lowerToolEntry = Effect.fnUntraced(function* (
-  tool: ToolEntry,
-  custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
-) {
-  if (tool.type === "tool") return yield* lowerTool(tool, custom)
-  // OpenAI requires a namespace description; fall back to a generic one so a
-  // missing description never blocks the request.
-  return {
-    type: "namespace" as const,
-    name: tool.name,
-    description: tool.description ?? `Tools in the ${tool.name} namespace.`,
-    tools: yield* Effect.forEach(ProviderShared.flattenTools(tool.tools), (leaf) =>
-      OpenResponses.lowerTool(NAME, leaf),
-    ),
-  }
-})
-
-const lowerTools = (request: LLMRequest) => {
-  const custom = OpenAIFreeform.tools(request)
-  return Effect.forEach(request.tools, (tool) => lowerToolEntry(tool, custom))
-}
-
-const lowerToolChoice = (
-  toolChoice: NonNullable<LLMRequest["toolChoice"]>,
-  tools: ReadonlyArray<ToolEntry>,
-  custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
-) =>
-  ProviderShared.matchToolChoice(NAME, toolChoice, {
-    auto: () => "auto" as const,
-    none: () => "none" as const,
-    required: () => "required" as const,
-    tool: (name) =>
-      tools.some((tool) => tool.type === "tool" && tool.name === name && nativeImageTool(tool) !== undefined)
-        ? ({ type: "image_generation" } as const)
-        : OpenResponses.namedTool(name, custom),
-  })
-
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
   const management = yield* ProviderShared.validateWith(
     Schema.decodeUnknownEffect(Schema.UndefinedOr(ContextManagement)),
@@ -290,36 +159,6 @@ const checkpointBody = {
     }
   }),
 }
-
-const hostedToolResult = Effect.fnUntraced(function* (item: ResponsesHostedTools.Item) {
-  const isError = item.error !== undefined && item.error !== null
-  if (item.type === "image_generation_call" && item.result) {
-    yield* Effect.fromResult(Base64.decode(item.result)).pipe(
-      Effect.mapError((cause) =>
-        ProviderShared.eventError(ADAPTER, "OpenAI Responses returned invalid image base64", undefined, cause),
-      ),
-    )
-    const format = item.output_format ?? "png"
-    return {
-      type: "content" as const,
-      value: [
-        {
-          type: "file" as const,
-          uri: `data:image/${format};base64,${item.result}`,
-          mime: `image/${format}`,
-        },
-      ],
-    }
-  }
-  return isError ? { type: "error" as const, value: item.error } : { type: "json" as const, value: item }
-})
-
-const HOSTED_TOOLS = {
-  ...ResponsesHostedTools.common,
-  web_search_preview_call: { name: "web_search_preview", input: (item) => item.action ?? {} },
-  computer_call: { name: "computer_use", input: (item) => item.action ?? {} },
-  image_generation_call: { name: "image_generation", input: () => ({}), result: hostedToolResult },
-} as const satisfies ResponsesHostedTools.Definitions
 
 export const protocol = Protocol.make({
   id: ADAPTER,

@@ -102,6 +102,14 @@ const result = await ai.collect(ai.loop({ model, prompt: "Summarize package.json
 console.log(result.text, result.usage?.totalTokens)
 ```
 
+### Hosted tool search
+
+Canonical request `ToolDefinition` values accept `deferred?: boolean`. Set `deferred: true` on an ordinary function declaration to keep it behind hosted tool search; omission and `false` preserve eager wire output. Include exactly one top-level `OpenAI.toolSearch()` descriptor for OpenAI Responses, or `Anthropic.toolSearch()` for Anthropic Messages. Anthropic defaults to regex search; `Anthropic.toolSearch({ variant: "bm25" })` selects BM25.
+
+Deferral is supported by the `openai-responses` and `anthropic-messages` protocols. The caller owns model and deployment eligibility. Missing or incompatible search descriptors, deferred native/freeform tools, explicit cache hints on deferred Anthropic tools, and `http.body.tools` overlays fail before transport. This validation also applies to explicit endpoint and trigger compaction.
+
+Keep complete assistant and tool-result messages, including provider metadata, when replaying history. Native search arguments, result payloads, tool references and original item identities survive normalization and stored-history replay. Automatic Anthropic cache placement skips deferred declarations and selects an eligible eager declaration instead.
+
 ### Freeform tools
 
 A tool with exactly one required string parameter can set `freeform`, so the model writes that parameter as raw text

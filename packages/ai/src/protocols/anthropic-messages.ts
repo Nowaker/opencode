@@ -10,7 +10,6 @@ import { Headers } from "effect/http"
 import { HttpTransport } from "../route/transport/index.js"
 import {
   AIError,
-  CacheTTL,
   type LLMRequest,
   LLMEvent,
   mergeJsonRecords,
@@ -22,7 +21,6 @@ import {
   type ProviderMetadata,
   type ProviderOptions,
   type ToolCallPart,
-  type ToolDefinition,
   type ToolResultPart,
 } from "../schema/index.js"
 import { JsonObject, knownString, optionalArray, optionalNull, ProviderShared, withUntypedFrames } from "./shared.js"
@@ -32,6 +30,21 @@ import * as Cache from "./utils/cache.js"
 import { claudeVersion, supportsThinkingBlockBinding, THINKING_BINDING_BETA } from "./utils/claude-model.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
+import { AnthropicStreamBlock, decodeAnthropicStreamBlock } from "./utils/anthropic-stream-block.js"
+import {
+  AnthropicCacheControl,
+  AnthropicTool,
+  AnthropicServerToolUseBlock,
+  AnthropicServerToolResultBlock,
+  isServerToolResultType,
+  lowerTool,
+  lowerServerToolCall,
+  lowerServerToolResult,
+  scrubToolCallID,
+  serverToolResultEvent,
+} from "./utils/anthropic-tools.js"
+
+export { AnthropicTool }
 
 const ADAPTER = "anthropic-messages"
 export const DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -78,10 +91,6 @@ export type ContextManagement = typeof ContextManagement.Type
 // =============================================================================
 // Request Body Schema
 // =============================================================================
-const AnthropicCacheControl = Schema.Struct({
-  type: Schema.tag("ephemeral"),
-  ttl: Schema.optional(CacheTTL),
-})
 const AnthropicServiceTier = knownString<"auto" | "standard_only">()
 const AnthropicSpeed = knownString<"fast" | "standard">()
 
@@ -182,35 +191,6 @@ const AnthropicToolUseBlock = Schema.Struct({
 })
 type AnthropicToolUseBlock = Schema.Schema.Type<typeof AnthropicToolUseBlock>
 
-const AnthropicServerToolUseBlock = Schema.Struct({
-  type: Schema.tag("server_tool_use"),
-  id: Schema.String,
-  name: Schema.String,
-  input: Schema.Unknown,
-  cache_control: Schema.optional(AnthropicCacheControl),
-})
-type AnthropicServerToolUseBlock = Schema.Schema.Type<typeof AnthropicServerToolUseBlock>
-
-// Server tool result blocks: web_search_tool_result, code_execution_tool_result,
-// and web_fetch_tool_result. The provider executes the tool and inlines the
-// structured result into the assistant turn — there is no client tool_result
-// round-trip. We round-trip the structured `content` payload as opaque JSON so
-// the next request can echo it back when continuing the conversation.
-const AnthropicServerToolResultType = Schema.Literals([
-  "web_search_tool_result",
-  "code_execution_tool_result",
-  "web_fetch_tool_result",
-])
-type AnthropicServerToolResultType = Schema.Schema.Type<typeof AnthropicServerToolResultType>
-
-const AnthropicServerToolResultBlock = Schema.Struct({
-  type: AnthropicServerToolResultType,
-  tool_use_id: Schema.String,
-  content: Schema.Unknown,
-  cache_control: Schema.optional(AnthropicCacheControl),
-})
-type AnthropicServerToolResultBlock = Schema.Schema.Type<typeof AnthropicServerToolResultBlock>
-
 // Anthropic accepts either a plain string or an ordered array of text, image, and
 // document blocks inside `tool_result.content`. The array form keeps media as native
 // model input instead of JSON-stringifying base64 into prompt text.
@@ -263,14 +243,6 @@ const AnthropicMessage = Schema.Union([
   }),
 ]).pipe(Schema.toTaggedUnion("role"))
 type AnthropicMessage = Schema.Schema.Type<typeof AnthropicMessage>
-
-const AnthropicTool = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  input_schema: JsonObject,
-  cache_control: Schema.optional(AnthropicCacheControl),
-})
-type AnthropicTool = Schema.Schema.Type<typeof AnthropicTool>
 
 const AnthropicToolChoice = Schema.Union([
   Schema.Struct({
@@ -437,29 +409,6 @@ const AnthropicUsage = Schema.StructWithRest(
 )
 type AnthropicUsage = Schema.Schema.Type<typeof AnthropicUsage>
 
-const AnthropicStreamBlock = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.String,
-    id: Schema.optional(Schema.String),
-    name: Schema.optional(Schema.String),
-    text: Schema.optional(Schema.String),
-    thinking: Schema.optional(Schema.String),
-    signature: Schema.optional(Schema.String),
-    // redacted_thinking blocks arrive whole in content_block_start with the
-    // encrypted payload in `data`; there is no streaming delta sequence.
-    data: Schema.optional(Schema.String),
-    input: Schema.optional(Schema.Unknown),
-    // *_tool_result blocks arrive whole as content_block_start (no streaming
-    // delta) with the structured payload in `content` and the originating
-    // server_tool_use id in `tool_use_id`.
-    tool_use_id: Schema.optional(Schema.String),
-    content: Schema.optional(Schema.Unknown),
-  }),
-  [JsonObject],
-)
-type AnthropicStreamBlock = Schema.Schema.Type<typeof AnthropicStreamBlock>
-const decodeAnthropicStreamBlock = Schema.decodeUnknownOption(AnthropicStreamBlock)
-
 const AnthropicStreamDelta = Schema.StructWithRest(
   Schema.Struct({
     content: optionalNull(Schema.String),
@@ -513,6 +462,7 @@ interface ParserState {
   readonly compactions: Readonly<Record<number, string | null>>
   readonly providerMetadataKey: string
   readonly tools: ToolStream.State<number>
+  readonly serverToolNames: Readonly<Record<string, string>>
   readonly reasoningSignatures: Readonly<Record<number, string>>
   readonly usage?: Usage
   readonly pendingFinish?: {
@@ -553,13 +503,6 @@ const redactedDataFromMetadata = (metadata: ProviderMetadata | undefined, key: s
   return typeof provider.redactedData === "string" ? provider.redactedData : undefined
 }
 
-const lowerTool = (breakpoints: Cache.Breakpoints, tool: ToolDefinition): AnthropicTool => ({
-  name: tool.name,
-  description: tool.description,
-  input_schema: tool.inputSchema,
-  cache_control: cacheControl(breakpoints, tool.cache),
-})
-
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
   ProviderShared.matchToolChoice("Anthropic Messages", toolChoice, {
     auto: () => ({
@@ -584,44 +527,11 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
     }),
   })
 
-const scrubToolCallID = (id: string) => id.replace(/[^a-zA-Z0-9_-]/g, "_")
-
 const lowerToolCall = (part: ToolCallPart): AnthropicToolUseBlock => ({
   type: "tool_use",
   id: scrubToolCallID(part.id),
   name: part.name,
   input: part.input,
-})
-
-const lowerServerToolCall = (part: ToolCallPart): AnthropicServerToolUseBlock => ({
-  type: "server_tool_use",
-  id: scrubToolCallID(part.id),
-  name: part.name,
-  input: part.input,
-})
-
-// Server tool result blocks are typed by name. Anthropic ships three today;
-// extend this list when new server tools land. The block content is the
-// structured payload returned by the provider, which we round-trip as-is.
-const serverToolResultType = (name: string): AnthropicServerToolResultType | undefined => {
-  if (name === "web_search") return "web_search_tool_result"
-  if (name === "code_execution") return "code_execution_tool_result"
-  if (name === "web_fetch") return "web_fetch_tool_result"
-  return undefined
-}
-
-const lowerServerToolResult = Effect.fnUntraced(function* (part: ToolResultPart, providerMetadataKey: string) {
-  const wireType = serverToolResultType(part.name)
-  if (!wireType)
-    return yield* invalid(`Anthropic Messages does not know how to round-trip server tool result for ${part.name}`)
-  // Prefer the provider-owned replay payload; fall back to the result value for
-  // histories constructed directly from provider events.
-  const payload = part.providerMetadata?.[providerMetadataKey]?.["result"] ?? part.result.value
-  return {
-    type: wireType,
-    tool_use_id: scrubToolCallID(part.id),
-    content: payload,
-  } satisfies AnthropicServerToolResultBlock
 })
 
 // Per-part Anthropic block fields, read from `providerMetadata[providerMetadataKey]` with Anthropic's wire names.
@@ -962,7 +872,10 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
   // over-mark we keep their tool hints and shed the message-tail ones first.
   const breakpoints = Cache.newBreakpoints(ANTHROPIC_BREAKPOINT_CAP)
   const flattened = ProviderShared.flattenToolRequest(updates.request)
-  const tools = flattened.tools.length === 0 ? undefined : flattened.tools.map((tool) => lowerTool(breakpoints, tool))
+  const tools =
+    flattened.tools.length === 0
+      ? undefined
+      : flattened.tools.map((tool) => lowerTool(tool, cacheControl(breakpoints, tool.cache)))
   // Anthropic rejects tool_choice when tools are absent; "none" is only meaningful with tools present.
   const toolChoice = tools === undefined || !request.toolChoice ? undefined : yield* lowerToolChoice(request.toolChoice)
   const systemParts = request.system.filter((part) => part.text.length > 0)
@@ -1100,35 +1013,6 @@ const mergeUsage = (left: Usage | undefined, right: Usage | undefined, providerM
   })
 }
 
-// Server tool result blocks come whole in `content_block_start` (no streaming
-// delta sequence). We convert the payload to a `tool-result` event with
-// `providerExecuted: true`. The runtime appends it to the assistant message
-// for round-trip; downstream consumers can inspect `result.value` for the
-// structured payload.
-const SERVER_TOOL_RESULT_NAMES: Record<AnthropicServerToolResultType, string> = {
-  web_search_tool_result: "web_search",
-  code_execution_tool_result: "code_execution",
-  web_fetch_tool_result: "web_fetch",
-}
-
-const isServerToolResultType = (type: string): type is AnthropicServerToolResultType => type in SERVER_TOOL_RESULT_NAMES
-
-const serverToolResultEvent = (block: AnthropicStreamBlock, providerMetadataKey: string): LLMEvent | undefined => {
-  if (!block.type || !isServerToolResultType(block.type)) return undefined
-  const errorPayload =
-    ProviderShared.isRecord(block.content) && "type" in block.content ? String(block.content.type) : ""
-  const isError = errorPayload.endsWith("_tool_result_error")
-  return LLMEvent.toolResult({
-    id: block.tool_use_id ?? "",
-    name: SERVER_TOOL_RESULT_NAMES[block.type],
-    result: isError ? { type: "error", value: block.content } : { type: "json", value: block.content },
-    providerExecuted: true,
-    // The complete payload is irreducible provider replay state: subsequent
-    // stateless requests must round-trip the typed result block verbatim.
-    providerMetadata: providerMetadata(providerMetadataKey, { blockType: block.type, result: block.content }),
-  })
-}
-
 type StepResult = readonly [ParserState, ReadonlyArray<LLMEvent>]
 
 const NO_EVENTS: StepResult["1"] = []
@@ -1152,6 +1036,10 @@ const onContentBlockStart = (
       {
         ...state,
         lifecycle,
+        serverToolNames:
+          block.type === "server_tool_use"
+            ? { ...state.serverToolNames, [block.id]: block.name ?? "" }
+            : state.serverToolNames,
         tools: ToolStream.start(state.tools, event.index, {
           id: block.id,
           name: block.name ?? "",
@@ -1225,7 +1113,7 @@ const onContentBlockStart = (
     ]
   }
 
-  const result = serverToolResultEvent(block, state.providerMetadataKey)
+  const result = serverToolResultEvent(block, state.providerMetadataKey, state.serverToolNames)
   if (!result) return [state, NO_EVENTS]
   const events: LLMEvent[] = []
   return [{ ...state, lifecycle: Lifecycle.stepStart(state.lifecycle, events) }, [...events, result]]
@@ -1522,6 +1410,7 @@ export const protocol = Protocol.make({
       compactions: {},
       providerMetadataKey: request.model.route.providerMetadataKey ?? request.model.provider,
       tools: ToolStream.empty<number>(),
+      serverToolNames: {},
       reasoningSignatures: {},
       lifecycle: Lifecycle.initial(),
     }),

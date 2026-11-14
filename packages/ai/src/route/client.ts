@@ -7,6 +7,7 @@ import { HttpTransport } from "./transport/index.js"
 import type { HttpMiddleware, Transport, TransportRuntime, WebSocketChannelExecutor } from "./transport/index.js"
 import type { Protocol } from "./protocol.js"
 import { applyCachePolicy } from "../cache-policy.js"
+import { validateToolSearch } from "../tool-search.js"
 import { applyEffortUpdates } from "../effort-updates.js"
 import { normalizeToolHistory } from "../tool-history.js"
 import { sanitizeSurrogates } from "../utils/sanitize.js"
@@ -577,6 +578,7 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest, options
     return yield* ProviderShared.invalidRequest(
       "Local file references must be read with Media.file(path) before sending",
     )
+  yield* validateToolSearch(resolveRequestOptions(request))
   const resolved = prepareRequest(request)
   const route = resolved.model.route
 
@@ -669,12 +671,16 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
       options?: EndpointCompactOptions,
     ): Effect.Effect<CompactionResponse, AIError>
     function compact(request: LLMRequest, options?: EndpointCompactOptions | TriggerCompactOptions) {
-      return Effect.suspend((): Effect.Effect<CompactionResponse | CompactionCheckpointResponse, AIError> => {
-        if (options?.mechanism === "trigger" && canCompact(request, options))
-          return request.model.route.compact.trigger(prepareRequest(request), executor, options)
-        if ((options?.mechanism === undefined || options.mechanism === "endpoint") && canCompact(request))
-          return request.model.route.compact.endpoint(prepareRequest(request), executor, options)
-        return unsupportedCompaction(request.model, options?.mechanism)
+      return Effect.gen(function* () {
+        if (options?.mechanism === "trigger" && canCompact(request, options)) {
+          yield* validateToolSearch(resolveRequestOptions(request))
+          return yield* request.model.route.compact.trigger(prepareRequest(request), executor, options)
+        }
+        if ((options?.mechanism === undefined || options.mechanism === "endpoint") && canCompact(request)) {
+          yield* validateToolSearch(resolveRequestOptions(request))
+          return yield* request.model.route.compact.endpoint(prepareRequest(request), executor, options)
+        }
+        return yield* unsupportedCompaction(request.model, options?.mechanism)
       })
     }
     return Service.of({

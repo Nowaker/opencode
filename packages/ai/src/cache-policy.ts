@@ -96,16 +96,21 @@ interface Budget {
   remaining: number
 }
 
+const cacheableTool = (tool: ToolEntry): boolean =>
+  tool.type === "namespace" ? tool.tools.some(cacheableTool) : tool.deferred !== true
+
 const markLastTool = (tools: ReadonlyArray<ToolEntry>, hint: CacheHint, budget: Budget): ReadonlyArray<ToolEntry> => {
-  const target = tools.at(-1)
+  const index = tools.findLastIndex(cacheableTool)
+  const target = tools[index]
   if (target === undefined) return tools
   if (target.type === "namespace") {
     const nested = markLastTool(target.tools, hint, budget)
-    return nested === target.tools ? tools : [...tools.slice(0, -1), { ...target, tools: nested }]
+    if (nested === target.tools) return tools
+    return tools.map((tool, i) => (i === index ? { ...target, tools: nested } : tool))
   }
   if (target.cache || budget.remaining === 0) return tools
   budget.remaining -= 1
-  return [...tools.slice(0, -1), new ToolDefinition({ ...target, cache: hint })]
+  return tools.map((tool, i) => (i === index ? new ToolDefinition({ ...target, cache: hint }) : tool))
 }
 
 const countToolHints = (tools: ReadonlyArray<ToolEntry>): number =>
