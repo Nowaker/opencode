@@ -405,6 +405,44 @@ export function Prompt(props: PromptProps) {
     })
   }
 
+  const paused = createMemo(() => status().paused)
+  // What the pause waits for while the current step drains, and how many tool calls it holds once it stopped.
+  const pauseTools = createMemo(() => {
+    const messages = sync.data.message[props.sessionID ?? ""] ?? []
+    const tools = messages.flatMap((message) =>
+      (sync.data.part[message.id] ?? []).flatMap((part) => (part.type === "tool" ? [part] : [])),
+    )
+    return {
+      running: tools.findLast((part) => part.state.status === "running")?.tool,
+      deferred: tools.filter((part) => part.state.status === "pending" && part.state.metadata?.deferred).length,
+    }
+  })
+
+  function pauseAction(action: "pause" | "unpause" | "discard") {
+    const sessionID = props.sessionID
+    if (!sessionID) return
+    const body = { sessionID, source: { kind: "tui" as const } }
+    const request =
+      action === "pause"
+        ? sdk.client.session.pause(body, { throwOnError: true }).then((result) => {
+            if (!result.data.changed) toast.show({ message: "Session is already paused", variant: "info", duration: 2000 })
+          })
+        : action === "unpause"
+          ? sdk.client.session.unpause(body, { throwOnError: true }).then((result) => {
+              if (!result.data.changed) toast.show({ message: "Session is not paused", variant: "info", duration: 2000 })
+            })
+          : sdk.client.session.discard(body, { throwOnError: true }).then((result) => {
+              toast.show({
+                message: `${result.data.discarded} deferred tool call${result.data.discarded === 1 ? "" : "s"} discarded`,
+                variant: "info",
+                duration: 3000,
+              })
+            })
+    void request.catch((error) =>
+      toast.show({ title: `Failed to ${action} session`, message: errorMessage(error), variant: "error" }),
+    )
+  }
+
   // Initialize agent/model/variant from last user message when session changes
   let syncedSessionID: string | undefined
   createEffect(() => {
@@ -540,6 +578,39 @@ export function Prompt(props: PromptProps) {
         enabled: Boolean(props.sessionID),
         run: () => {
           abort()
+          dialog.clear()
+        },
+      },
+      {
+        title: "Pause after this step",
+        name: "session.pause",
+        category: "Session",
+        slashName: "pause",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          pauseAction("pause")
+          dialog.clear()
+        },
+      },
+      {
+        title: "Unpause session",
+        name: "session.unpause",
+        category: "Session",
+        slashName: "unpause",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          pauseAction("unpause")
+          dialog.clear()
+        },
+      },
+      {
+        title: "Discard deferred tool calls",
+        name: "session.discard",
+        category: "Session",
+        slashName: "discard",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          pauseAction("discard")
           dialog.clear()
         },
       },
@@ -698,6 +769,7 @@ export function Prompt(props: PromptProps) {
       "prompt.stash.list",
       "prompt.skills",
       "session.interrupt",
+      "session.pause",
       "workspace.set",
       "session.move",
     ]),
@@ -1504,6 +1576,7 @@ export function Prompt(props: PromptProps) {
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
         variant,
         parts: nonTextParts.filter((x) => x.type === "file"),
+        unpause: true,
       })
     } else {
       move.startSubmit()
@@ -1525,6 +1598,8 @@ export function Prompt(props: PromptProps) {
           model: selectedModel,
           variant,
           parts: [...leading, { id: textPartID, type: "text", text: inputText }, ...nonTextParts],
+          // A person typing to a paused session means to go on: the deferred calls run first, then this.
+          unpause: true,
         },
       })
       if (editorParts.length > 0) editor.markSelectionSent()
@@ -2229,6 +2304,14 @@ export function Prompt(props: PromptProps) {
                 </box>
                 <box flexDirection="row" gap={TuiLayout.Prompt.statusGap} flexShrink={1}>
                   <box flexShrink={0}>
+                    <Show when={paused()?.state === "pending" && !aborting()}>
+                      <text fg={theme.warning}>
+                        pausing…{" "}
+                        <span style={{ fg: theme.textMuted }}>
+                          {pauseTools().running ? `waiting for ${pauseTools().running}` : "waiting for the response"}
+                        </span>
+                      </text>
+                    </Show>
                     <Show when={!aborting()} fallback={<text fg={theme.warning}>aborting…</text>}>
                       <text
                         fg={store.interrupt > 0 ? theme.primary : theme.text}
@@ -2247,6 +2330,18 @@ export function Prompt(props: PromptProps) {
                     </box>
                   </Show>
                 </box>
+              </box>
+            </Match>
+            <Match when={paused()}>
+              <box paddingLeft={3} flexDirection="row" gap={1} flexGrow={1} flexShrink={1}>
+                <text fg={theme.warning} {...onClick(() => pauseAction("unpause"))}>
+                  paused <span style={{ fg: theme.textMuted }}>- /unpause to continue</span>
+                </text>
+                <Show when={pauseTools().deferred > 0}>
+                  <text fg={theme.textMuted}>
+                    {pauseTools().deferred} deferred tool call{pauseTools().deferred === 1 ? "" : "s"}, /discard to drop
+                  </text>
+                </Show>
               </box>
             </Match>
             <Match when={admissionShown()}>

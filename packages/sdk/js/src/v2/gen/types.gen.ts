@@ -81,6 +81,8 @@ export type Event =
   | EventProjectUpdated
   | EventSessionStatus
   | EventSessionIdle
+  | EventSessionPauseUpdated
+  | EventSessionPauseReleased
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -511,6 +513,9 @@ export type ToolStatePending = {
     [key: string]: unknown
   }
   raw: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type ToolStateRunning = {
@@ -701,9 +706,36 @@ export type Todo = {
   priority: string
 }
 
+export type SessionPauseSource = {
+  kind: "tui" | "tool" | "api"
+  sessionID?: string
+  sessionTitle?: string
+  machine?: string
+  tool?: string
+  client?: string
+}
+
+export type SessionPauseHeld = {
+  messageID: string
+  at: number
+  delivery?: unknown
+}
+
+export type SessionPause = {
+  at: number
+  mode: "soft"
+  state: "pending" | "paused"
+  source: SessionPauseSource
+  reason?: string
+  stoppedAt?: number
+  root?: string
+  held?: Array<SessionPauseHeld>
+}
+
 export type SessionStatus =
   | {
       type: "idle"
+      paused?: SessionPause
     }
   | {
       type: "retry"
@@ -718,9 +750,11 @@ export type SessionStatus =
         link?: string
       }
       next: number
+      paused?: SessionPause
     }
   | {
       type: "busy"
+      paused?: SessionPause
     }
 
 export type QuestionOption = {
@@ -1537,6 +1571,22 @@ export type GlobalEvent = {
         type: "session.idle"
         properties: {
           sessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "session.pause.updated"
+        properties: {
+          sessionID: string
+          pause: SessionPause
+        }
+      }
+    | {
+        id: string
+        type: "session.pause.released"
+        properties: {
+          sessionID: string
+          held: Array<SessionPauseHeld>
         }
       }
     | {
@@ -2745,6 +2795,23 @@ export type SendNowRefusedError = {
   message: string
 }
 
+export type SessionPauseResult = {
+  sessionID: string
+  pause: SessionPause
+  changed: boolean
+}
+
+export type SessionUnpauseResult = {
+  sessionID: string
+  changed: boolean
+  deferred: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type SessionDiscardResult = {
+  sessionID: string
+  discarded: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type EventTuiPromptAppend = {
   type: "tui.prompt.append"
   properties: {
@@ -3067,6 +3134,8 @@ export type V2Event =
   | ProjectUpdated
   | SessionStatus2
   | SessionIdle
+  | SessionPauseUpdated
+  | SessionPauseReleased
   | QuestionAsked
   | QuestionReplied2
   | QuestionRejected2
@@ -6081,6 +6150,42 @@ export type SessionIdle = {
   }
 }
 
+export type SessionPauseUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.pause.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    pause: SessionPause
+  }
+}
+
+export type SessionPauseReleased = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.pause.released"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    held: Array<SessionPauseHeld>
+  }
+}
+
 export type QuestionAsked = {
   id: string
   metadata?: {
@@ -7147,6 +7252,24 @@ export type EventSessionIdle = {
   type: "session.idle"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventSessionPauseUpdated = {
+  id: string
+  type: "session.pause.updated"
+  properties: {
+    sessionID: string
+    pause: SessionPause
+  }
+}
+
+export type EventSessionPauseReleased = {
+  id: string
+  type: "session.pause.released"
+  properties: {
+    sessionID: string
+    held: Array<SessionPauseHeld>
   }
 }
 
@@ -10225,6 +10348,7 @@ export type SessionPromptData = {
     }
     agent?: string
     noReply?: boolean
+    unpause?: boolean
     tools?: {
       [key: string]: boolean
     }
@@ -10606,6 +10730,7 @@ export type SessionPromptAsyncData = {
     }
     agent?: string
     noReply?: boolean
+    unpause?: boolean
     tools?: {
       [key: string]: boolean
     }
@@ -10658,6 +10783,7 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    unpause?: boolean
     parts?: Array<{
       id?: string
       type: "file"
@@ -10995,6 +11121,131 @@ export type SessionSendNowResponses = {
 }
 
 export type SessionSendNowResponse = SessionSendNowResponses[keyof SessionSendNowResponses]
+
+export type SessionPauseData = {
+  body?: {
+    source?: SessionPauseSource
+    reason?: string
+    /**
+     * Text of the user-only notice, used as given. opencode writes one when omitted.
+     */
+    notice?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/pause"
+}
+
+export type SessionPauseErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionPauseError = SessionPauseErrors[keyof SessionPauseErrors]
+
+export type SessionPauseResponses = {
+  /**
+   * The session's pause
+   */
+  200: SessionPauseResult
+}
+
+export type SessionPauseResponse = SessionPauseResponses[keyof SessionPauseResponses]
+
+export type SessionUnpauseData = {
+  body?: {
+    source?: SessionPauseSource
+    /**
+     * Text of the user-only notice, used as given. opencode writes one when omitted.
+     */
+    notice?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/unpause"
+}
+
+export type SessionUnpauseErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionUnpauseError = SessionUnpauseErrors[keyof SessionUnpauseErrors]
+
+export type SessionUnpauseResponses = {
+  /**
+   * Unpaused
+   */
+  200: SessionUnpauseResult
+}
+
+export type SessionUnpauseResponse = SessionUnpauseResponses[keyof SessionUnpauseResponses]
+
+export type SessionDiscardData = {
+  body?: {
+    source?: SessionPauseSource
+    /**
+     * Text of the user-only notice, used as given. opencode writes one when omitted.
+     */
+    notice?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/discard"
+}
+
+export type SessionDiscardErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * SessionBusyError
+   */
+  409: SessionBusyError
+}
+
+export type SessionDiscardError = SessionDiscardErrors[keyof SessionDiscardErrors]
+
+export type SessionDiscardResponses = {
+  /**
+   * Discarded deferred tool calls
+   */
+  200: SessionDiscardResult
+}
+
+export type SessionDiscardResponse = SessionDiscardResponses[keyof SessionDiscardResponses]
 
 export type PartDeleteData = {
   body?: never

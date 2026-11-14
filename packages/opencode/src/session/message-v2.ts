@@ -109,6 +109,16 @@ const PART_CACHE_MAX = 400_000
 const infoCache = new Map<MessageID, { time_updated: number; info: Info }>()
 const partCache = new Map<PartID, { time_updated: number; part: Part }>()
 
+// time_updated has millisecond resolution, so a second write within the millisecond of a cached read would be
+// served stale. Every write from this process drops its row from the cache.
+export function forgetPart(id: PartID) {
+  partCache.delete(id)
+}
+
+export function forgetInfo(id: MessageID) {
+  infoCache.delete(id)
+}
+
 function evictOldest<K, V>(cache: Map<K, V>, cap: number): void {
   if (cache.size <= cap) return
   const toDelete = Math.floor(cap * 0.1)

@@ -94,6 +94,8 @@ export const PromptPayload = Schema.Struct(Struct.omit(SessionPrompt.PromptInput
 export const CommandPayload = Schema.Struct(Struct.omit(SessionPrompt.CommandInput.fields, ["sessionID"]))
 export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.fields, ["sessionID"]))
 export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput.fields, ["sessionID"]))
+export const PausePayload = Schema.Struct(Struct.omit(SessionPrompt.PauseInput.fields, ["sessionID"]))
+export const UnpausePayload = Schema.Struct(Struct.omit(SessionPrompt.UnpauseInput.fields, ["sessionID"]))
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
@@ -126,6 +128,9 @@ export const SessionPaths = {
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   unqueue: `${root}/:sessionID/message/:messageID/unqueue`,
   sendNow: `${root}/:sessionID/send-now`,
+  pause: `${root}/:sessionID/pause`,
+  unpause: `${root}/:sessionID/unpause`,
+  discard: `${root}/:sessionID/discard`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
 } as const
@@ -485,6 +490,48 @@ export const SessionApi = HttpApi.make("session")
             summary: "Send now",
             description:
               "Start a turn that reads every message stored after the last assistant message, such as notes delivered without starting a turn. Queued messages keep their IDs and content; the turn runs in the background and appends its own messages, as the turn of a prompt does. Fails with 409 when a turn is already running, nothing is queued, or the session is paused.",
+          }),
+        ),
+        HttpApiEndpoint.post("pause", SessionPaths.pause, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: [HttpApiSchema.NoContent, PausePayload],
+          success: described(SessionPrompt.PauseResult, "The session's pause"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.pause",
+            summary: "Pause after this step",
+            description:
+              "Let the running tool and the current model response finish, record the tool calls the model asks for afterwards without running them, and stop at the step boundary. The session holds every prompt that does not ask to unpause, survives a restart, and pauses its subagent sessions too. A pause already in place is returned unchanged; a pause never aborts.",
+          }),
+        ),
+        HttpApiEndpoint.post("unpause", SessionPaths.unpause, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: [HttpApiSchema.NoContent, UnpausePayload],
+          success: described(SessionPrompt.UnpauseResult, "Unpaused"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.unpause",
+            summary: "Unpause session",
+            description:
+              "Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused.",
+          }),
+        ),
+        HttpApiEndpoint.post("discard", SessionPaths.discard, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: [HttpApiSchema.NoContent, UnpausePayload],
+          success: described(SessionPrompt.DiscardResult, "Discarded deferred tool calls"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.discard",
+            summary: "Discard deferred tool calls",
+            description:
+              "Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running.",
           }),
         ),
         HttpApiEndpoint.delete("deletePart", SessionPaths.deletePart, {

@@ -13,6 +13,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { SessionPause } from "@/session/pause"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -31,8 +32,10 @@ import {
   InitPayload,
   ListQuery,
   MessagesQuery,
+  PausePayload,
   PermissionResponsePayload,
   PromptPayload,
+  UnpausePayload,
   RevertPayload,
   ShellPayload,
   SummarizePayload,
@@ -58,6 +61,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const agentSvc = yield* Agent.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
+    const pauseSvc = yield* SessionPause.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
@@ -76,8 +80,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
     })
 
+    // A session paused before this process started is in the database only; it is listed as idle and paused.
     const status = Effect.fn("SessionHttpApi.status")(function* () {
-      return Object.fromEntries(yield* statusSvc.list())
+      const live = yield* statusSvc.list()
+      const paused = yield* pauseSvc.list()
+      return {
+        ...Object.fromEntries([...paused].map(([id, pause]) => [id, { type: "idle" as const, paused: pause }])),
+        ...Object.fromEntries(live),
+      }
     })
 
     const requireSession = Effect.fn("SessionHttpApi.requireSession")(function* (sessionID: SessionID) {
@@ -478,6 +488,44 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return { sessionID: ctx.params.sessionID, messageIDs }
     })
 
+    // These routes take an empty body as well as JSON, so a bare POST pauses, unpauses or discards.
+    const optionalBody = <A>(schema: Schema.Decoder<A>) =>
+      Effect.fn("SessionHttpApi.optionalBody")(function* (request: HttpServerRequest.HttpServerRequest) {
+        const body = yield* Effect.orDie(request.text)
+        if (body.trim().length === 0) return undefined
+        const json = yield* tryParseJson(body)
+        return yield* Schema.decodeUnknownEffect(schema)(json).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      })
+    const pauseBody = optionalBody(PausePayload)
+    const unpauseBody = optionalBody(UnpausePayload)
+
+    const pause = Effect.fn("SessionHttpApi.pause")(function* (ctx: {
+      params: { sessionID: SessionID }
+      request: HttpServerRequest.HttpServerRequest
+    }) {
+      const payload = yield* pauseBody(ctx.request)
+      yield* requireSession(ctx.params.sessionID)
+      return yield* promptSvc.pause({ ...payload, sessionID: ctx.params.sessionID })
+    })
+
+    const unpause = Effect.fn("SessionHttpApi.unpause")(function* (ctx: {
+      params: { sessionID: SessionID }
+      request: HttpServerRequest.HttpServerRequest
+    }) {
+      const payload = yield* unpauseBody(ctx.request)
+      yield* requireSession(ctx.params.sessionID)
+      return yield* promptSvc.unpause({ ...payload, sessionID: ctx.params.sessionID })
+    })
+
+    const discard = Effect.fn("SessionHttpApi.discard")(function* (ctx: {
+      params: { sessionID: SessionID }
+      request: HttpServerRequest.HttpServerRequest
+    }) {
+      const payload = yield* unpauseBody(ctx.request)
+      yield* requireSession(ctx.params.sessionID)
+      return yield* SessionError.mapBusy(promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID }))
+    })
+
     const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
     }) {
@@ -529,6 +577,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("unrevert", unrevert)
       .handle("unqueue", unqueue)
       .handle("sendNow", sendNow)
+      .handleRaw("pause", pause)
+      .handleRaw("unpause", unpause)
+      .handleRaw("discard", discard)
       .handle("permissionRespond", permissionRespond)
       .handle("deleteMessage", deleteMessage)
       .handle("deletePart", deletePart)

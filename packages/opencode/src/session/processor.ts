@@ -17,6 +17,7 @@ import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
+import { SessionPause } from "./pause"
 import { SessionAbort } from "./abort"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
@@ -230,6 +231,30 @@ const layer = Layer.effect(
             time: { start: match.part.state.time.start, end: Date.now() },
             attachments: output.attachments,
           },
+        })
+        yield* settleToolCall(toolCallID)
+      })
+
+      /*
+       * A call the paused session did not start keeps its full input as pending work. Settling it here keeps the
+       * abort cleanup from marking it interrupted, so it survives an abort or a restart until unpause or discard.
+       * The AI SDK merges tool results from their own stream, so an instant deferral can arrive before its call's
+       * `tool-call` event; that event then finishes the deferral with the full input.
+       */
+      const early = new Map<string, { reason: "paused"; at: number }>()
+      const deferToolCall = Effect.fn("SessionProcessor.deferToolCall")(function* (
+        toolCallID: string,
+        deferred: { reason: "paused"; at: number },
+      ) {
+        const match = yield* readToolCall(toolCallID)
+        if (!match) return
+        if (match.part.state.status !== "running") {
+          early.set(toolCallID, deferred)
+          return
+        }
+        yield* session.updatePart({
+          ...match.part,
+          state: { status: "pending", input: match.part.state.input, raw: "", metadata: { deferred } },
         })
         yield* settleToolCall(toolCallID)
       })
@@ -477,6 +502,12 @@ const layer = Layer.effect(
             // The provider has already run its own tools (e.g. OpenAI's hosted tool_search) by the time we
             // see the call, so a doom_loop ask can neither stop nor change them; it would only block the turn.
             if (call?.metadata?.providerExecuted) return
+            const deferred = early.get(value.id)
+            if (deferred) {
+              early.delete(value.id)
+              yield* deferToolCall(value.id, deferred)
+              return
+            }
 
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
@@ -525,6 +556,11 @@ const layer = Layer.effect(
               return
             }
             const rawOutput = toolResultOutput(value)
+            const deferred = SessionPause.deferredOf(rawOutput.metadata)
+            if (deferred) {
+              yield* deferToolCall(value.id, deferred)
+              return
+            }
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
               attachment.mime.startsWith("image/")
                 ? image.normalize(attachment).pipe(

@@ -24,6 +24,7 @@ import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
 import { SessionStatusEvent } from "./session-status-event"
+import { SessionPauseEvent } from "./session-pause-event"
 import { SessionTodo } from "./session-todo"
 import { ShellBackgroundEvent } from "./shell-background-event"
 import { SessionV1 } from "./session-v1"
@@ -74,6 +75,7 @@ export const Definitions = Event.inventory(
   ...LegacyEvent.Definitions,
   ...Project.Event.Definitions,
   ...SessionStatusEvent.Definitions,
+  ...SessionPauseEvent.Definitions,
   ...QuestionV1.Event.Definitions,
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,

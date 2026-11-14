@@ -2399,6 +2399,9 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
 
   return (
     <Switch>
+      <Match when={props.part.state.status === "pending" && props.part.state.metadata?.deferred}>
+        <DeferredTool part={props.part} />
+      </Match>
       <Match when={display() === "bash"}>
         <Shell {...toolprops} />
       </Match>
@@ -2445,6 +2448,17 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <GenericTool {...toolprops} />
       </Match>
     </Switch>
+  )
+}
+
+// A call the model asked for while the session was paused: recorded with its input, run by /unpause.
+function DeferredTool(props: { part: ToolPart }) {
+  const { theme } = useTheme()
+  return (
+    <InlineTool icon="⏸" iconColor={theme.warning} pending={props.part.tool} complete={true} part={props.part}>
+      {props.part.tool} {input(props.part.state.input ?? {})}{" "}
+      <span style={{ fg: theme.warning }}>· waiting for /unpause</span>
+    </InlineTool>
   )
 }
 

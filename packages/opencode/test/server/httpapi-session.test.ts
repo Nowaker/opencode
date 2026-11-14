@@ -852,6 +852,57 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
+    "pause, unpause and discard an idle session over HTTP; status lists it as idle and paused",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "pause" })
+        const route = (path: string) => pathFor(path, { sessionID: session.id })
+
+        const missing = yield* request(pathFor(SessionPaths.pause, { sessionID: SessionID.descending() }), {
+          method: "POST",
+          headers,
+        })
+        expect(missing.status).toBe(404)
+
+        const source = { kind: "tool", sessionID: "ses_caller", sessionTitle: "Caller", machine: "m4max", tool: "pause" }
+        const paused = yield* requestJson<{ changed: boolean; pause: { state: string; reason: string; source: unknown } }>(
+          route(SessionPaths.pause),
+          { method: "POST", headers, body: JSON.stringify({ source, reason: "restart" }) },
+        )
+        expect(paused).toMatchObject({ changed: true, pause: { state: "paused", reason: "restart", source } })
+        // A bare POST works too; a second pause changes nothing.
+        expect(
+          (yield* requestJson<{ changed: boolean }>(route(SessionPaths.pause), {
+            method: "POST",
+            headers: { "x-opencode-directory": test.directory },
+          })).changed,
+        ).toBe(false)
+
+        const status = yield* requestJson<Record<string, { type: string; paused?: { state: string } }>>(
+          SessionPaths.status,
+          { headers },
+        )
+        expect(status[session.id]).toMatchObject({ type: "idle", paused: { state: "paused" } })
+
+        expect(
+          yield* requestJson(route(SessionPaths.discard), { method: "POST", headers, body: JSON.stringify({}) }),
+        ).toEqual({ sessionID: session.id, discarded: 0 })
+        expect(
+          yield* requestJson(route(SessionPaths.unpause), { method: "POST", headers, body: JSON.stringify({}) }),
+        ).toEqual({ sessionID: session.id, changed: true, deferred: 0 })
+        expect(
+          (yield* requestJson<Record<string, unknown>>(SessionPaths.status, { headers }))[session.id],
+        ).toBeUndefined()
+        expect(
+          (yield* requestJson<{ changed: boolean }>(route(SessionPaths.unpause), { method: "POST", headers })).changed,
+        ).toBe(false)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "returns v2 public unavailable errors for unfinished session mutations",
     () =>
       Effect.gen(function* () {

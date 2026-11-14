@@ -110,6 +110,7 @@ export const CommandMap = {
   session_unshare: "session.unshare",
   session_interrupt: "session.interrupt",
   session_abort: "session.abort",
+  session_pause: "session.pause",
   session_background: "session.background",
   session_compact: "session.compact",
   session_toggle_timestamps: "session.toggle.timestamps",

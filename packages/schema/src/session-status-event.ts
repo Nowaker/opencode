@@ -5,10 +5,15 @@ import { optional } from "./schema"
 import { Event } from "./event"
 import { NonNegativeInt } from "./schema"
 import { SessionID } from "./session-id"
+import { SessionPauseEvent } from "./session-pause-event"
+
+// A paused session keeps its status type; `paused` says it holds its wakes until unpause.
+const paused = optional(SessionPauseEvent.Info)
 
 export const Info = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("idle"),
+    paused,
   }),
   Schema.Struct({
     type: Schema.Literal("retry"),
@@ -25,9 +30,11 @@ export const Info = Schema.Union([
       }),
     ),
     next: NonNegativeInt,
+    paused,
   }),
   Schema.Struct({
     type: Schema.Literal("busy"),
+    paused,
   }),
 ]).annotate({ identifier: "SessionStatus" })
 export type Info = Schema.Schema.Type<typeof Info>

@@ -295,6 +295,18 @@ Start a new session. _Alias_: `/clear`
 
 ---
 
+### pause
+
+Pause the session after its current step. A tool that is running finishes and the model's response streams to its end; tool calls the model asks for after the pause are kept with their input and shown as **waiting for /unpause**, and the session stops before calling the model again. While the step drains the footer shows **pausing…** and what it waits for, then **paused**. A paused session stays paused across a restart, and a message from another session, a schedule or a background task is stored but starts no turn until you unpause. Pausing again changes nothing; use [`/abort`](#commands) to stop the step itself. Subagent sessions of the session pause too.
+
+```bash frame="none"
+/pause
+```
+
+**Keybind:** `alt+p` (`session_pause`)
+
+---
+
 ### provenance
 
 Open or close the [delivery provenance](#delivery-provenance) of every prompt in the session. A record opened or closed on its own since is set to match.
@@ -420,6 +432,26 @@ Undo last message and keep every file as it is. Nothing is snapshotted, so a lat
 
 ```bash frame="none"
 /undo-messages
+```
+
+---
+
+### unpause
+
+Unpause the session: the tool calls the pause kept run in order, asking for permission as usual, and the session carries on as if it had never stopped. Messages that arrived while it was paused are answered after them. Sending a message from the prompt also unpauses: the kept calls run first, then your message.
+
+```bash frame="none"
+/unpause
+```
+
+---
+
+### discard
+
+Drop the tool calls a pause kept: each gets the result "not run: discarded by /discard", so the model sees they did not run. The session stays paused until `/unpause` or a new message.
+
+```bash frame="none"
+/discard
 ```
 
 ---

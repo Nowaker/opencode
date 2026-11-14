@@ -202,6 +202,8 @@ import type {
   SessionDeleteResponses,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionDiscardErrors,
+  SessionDiscardResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGetErrors,
@@ -214,6 +216,9 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionPauseErrors,
+  SessionPauseResponses,
+  SessionPauseSource,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -232,6 +237,8 @@ import type {
   SessionSummarizeResponses,
   SessionTodoErrors,
   SessionTodoResponses,
+  SessionUnpauseErrors,
+  SessionUnpauseResponses,
   SessionUnqueueErrors,
   SessionUnqueueResponses,
   SessionUnrevertErrors,
@@ -3897,6 +3904,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      unpause?: boolean
       tools?: {
         [key: string]: boolean
       }
@@ -3919,6 +3927,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
             { in: "body", key: "system" },
@@ -4264,6 +4273,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      unpause?: boolean
       tools?: {
         [key: string]: boolean
       }
@@ -4286,6 +4296,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
             { in: "body", key: "system" },
@@ -4323,6 +4334,7 @@ export class Session2 extends HeyApiClient {
       arguments?: string
       command?: string
       variant?: string
+      unpause?: boolean
       parts?: Array<{
         id?: string
         type: "file"
@@ -4348,6 +4360,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "arguments" },
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
+            { in: "body", key: "unpause" },
             { in: "body", key: "parts" },
           ],
         },
@@ -4583,6 +4596,131 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/send-now",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Pause after this step
+   *
+   * Let the running tool and the current model response finish, record the tool calls the model asks for afterwards without running them, and stop at the step boundary. The session holds every prompt that does not ask to unpause, survives a restart, and pauses its subagent sessions too. A pause already in place is returned unchanged; a pause never aborts.
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      source?: SessionPauseSource
+      reason?: string
+      notice?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "source" },
+            { in: "body", key: "reason" },
+            { in: "body", key: "notice" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionPauseResponses, SessionPauseErrors, ThrowOnError>({
+      url: "/session/{sessionID}/pause",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Unpause session
+   *
+   * Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused.
+   */
+  public unpause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      source?: SessionPauseSource
+      notice?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "source" },
+            { in: "body", key: "notice" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionUnpauseResponses, SessionUnpauseErrors, ThrowOnError>({
+      url: "/session/{sessionID}/unpause",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Discard deferred tool calls
+   *
+   * Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running.
+   */
+  public discard<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      source?: SessionPauseSource
+      notice?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "source" },
+            { in: "body", key: "notice" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionDiscardResponses, SessionDiscardErrors, ThrowOnError>({
+      url: "/session/{sessionID}/discard",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

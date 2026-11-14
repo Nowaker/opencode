@@ -248,10 +248,17 @@ or the separately generated SDK v2 for the HTTP surface.
 | `POST`   | `/session/:id/revert`                    | Revert a message                      | body: `{ messageID, partID?, files? }`, returns `boolean`. `files: false` reverts the messages only and touches no file |
 | `POST`   | `/session/:id/unrevert`                  | Restore all reverted messages         | Returns `boolean`                                                                  |
 | `POST`   | `/session/:id/message/:messageID/unqueue` | Take back a prompt queued behind the running turn | Returns the removed message; `409` when no turn is running or the turn has already read it |
+| `POST`   | `/session/:id/pause`                     | Pause after the current step          | body: `{ source?, reason?, notice? }`, returns `{ sessionID, pause, changed }`. Never aborts; a second pause returns `changed: false` |
+| `POST`   | `/session/:id/unpause`                   | Run the deferred tool calls and continue | body: `{ source?, notice? }`, returns `{ sessionID, changed, deferred }` |
+| `POST`   | `/session/:id/discard`                   | Give the deferred tool calls a "not run" result | body: `{ source?, notice? }`, returns `{ sessionID, discarded }`; `409` while the paused step still runs |
 | `POST`   | `/session/:id/send-now`                   | Send now: start a turn that reads every queued note | Returns `{ sessionID, messageIDs }` and runs the turn in the background; `409` `SendNowRefusedError` with `reason` `busy`, `empty` or `paused` |
 | `POST`   | `/session/:id/permissions/:permissionID` | Respond to a permission request       | body: `{ response, remember? }`, returns `boolean`                                 |
 
 ---
+
+### Pause
+
+A pause is stored in the session's `metadata.pause` as `{ at, mode: "soft", state, source, reason?, stoppedAt?, root?, held? }`: `state` is `pending` while the current step drains and `paused` once the loop stopped; `source` is `{ kind: "tui" | "tool" | "api", sessionID?, sessionTitle?, machine?, tool?, client? }` as sent; `root` names the ancestor whose pause a subagent session inherited; `held` lists the prompts that arrived while paused (`{ messageID, at, delivery? }`). `GET /session/status` gives a paused session `paused` beside its usual `type`, so a paused idle session is `{ type: "idle", paused }`. A tool call the model asks for while paused is stored as `status: "pending"` with its full `input` and `metadata.deferred: { reason: "paused", at }`. A prompt or command with `unpause: true` unpauses first, so the deferred calls run before it; without it a prompt to a paused session is stored and answered at unpause. Every pause, unpause and discard leaves a notice in the transcript that is never sent to the model; pass `notice` to choose its text.
 
 ### Messages
 

@@ -205,6 +205,8 @@ function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFr
     },
   }
   delete result.vibeterm.lastExecution
+  // A pause belongs to the session that was paused, never to its copy.
+  delete result.pause
   return result
 }
 
@@ -712,6 +714,7 @@ const layer: Layer.Layer<
 
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        MessageV2.forgetInfo(msg.id)
         yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
@@ -726,6 +729,7 @@ const layer: Layer.Layer<
 
     const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        MessageV2.forgetPart(part.id)
         yield* events.publish(SessionV1.Event.PartUpdated, {
           sessionID: part.sessionID,
           part: structuredClone(part),
