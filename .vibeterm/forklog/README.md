@@ -37,6 +37,8 @@ carries every feature forward unchanged. That commit includes the full
 - [Awaited v2 compaction summary completion](./features/2026-11-11-v2-compaction-summary.md)
 - [Awaited plugin configuration on v2](./features/2026-11-11-plugin-configuration.md)
 - [Native v2 plugin session and Job controls](./features/2026-11-10-v2-plugin-controls.md)
+- [Atomic native v2 recovery guards](./features/2026-11-13-v2-recovery-guards.md)
+- [Selected-agent request defaults on v2](./features/2026-11-13-v2-agent-request.md)
 - [Anthropic Meridian provider clone](./features/2026-11-12-anthropic-meridian-provider.md)
 - [Slow animation frames in an unfocused TUI](./features/2026-11-11-unfocused-redraw-throttle.md)
 - [Atomic session metadata merge on v2](./features/2026-11-10-v2-metadata-merge.md)
@@ -158,7 +160,7 @@ carries every feature forward unchanged. That commit includes the full
 
 - [2026-11-13 W13](./sessions/2026-11-13-v2-compaction-summary.md) - awaited experimental compaction summary completion, generation/cutoff identities, local stop filtering and prior-summary projections; native ledger reader remains W10-owned.
 - [2026-11-11 W12, delivered November 13](./sessions/2026-11-11-plugin-configuration.md) - awaited mutable plugin configuration before native consumers; source approved, published to both mirrors and installed as vt-15 through 12/12 gates on desktop and m4max; native controller demo passed, W10 consumer acceptance pending.
-- [2026-11-13 W1 delivery](./sessions/2026-11-13-v2-plugin-controls.md) - reviewed native forks, notices, durable messages, owned cancellation, immediate synthetic append and atomic metadata parity, then owned native forms, Job results and isolated permission replies; vt-22 installed through native gates with all three API domains proved on desktop and m4max.
+- [2026-11-13 W1 delivery](./sessions/2026-11-13-v2-plugin-controls.md) - native forks, notices, durable messages, cancellation, synthetic append, metadata, forms, Job results and permission replies, followed by effective selection, agent request defaults, reader cancellation and atomic recovery guards; both hosts independently install f22a3cca01 as vt-30 through 12/12 gates, with installed behavior receipts and cleanup attribution.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-bash-event-order.md) - a background bash command that exited while its start was still being announced published `shell.background.exited` before `.started`, so OMO's running-jobs ledger kept 11 finished jobs and their tabs never parked; Exited now waits for Started; `081451095b`, merged `34bccf2103`; vt-459 on desktop and m4max with the retry cap.
 - [2026-11-11 `ses_e37b26ea1ffeyDu2wQLAdY0TmV`](./sessions/2026-11-11-turn-end-held-order.md) - under `queued_prompts: "turn_end"` a held prompt or note was sent in its stored place, inside the ended turn, so the follow-up request ended with the turn's own answer and the model said the note "arrived empty"; held input now goes after that answer (`answerAfterTurn`); `ed9e8785a9`, merged `85466d15f4`; vt-449 on desktop with the retry cap.
 - [2026-11-11 `ses_e3b66e073ffeBjngD0B2e6LCl8`](./sessions/2026-11-11-fork-context.md) - `session.fork` takes `history: "context"` (only what the next turn reads) and zeroes every copy's cost and tokens, so a fork subagent of a long session starts small and is not counted twice; installed vt-452 on desktop and m4max.
