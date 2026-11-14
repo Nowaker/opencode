@@ -7,9 +7,12 @@ import { Env } from "../env"
 import { ServiceConfig } from "./service-config"
 import { Standalone } from "./standalone"
 import { errorMessage } from "../util/error"
+import { ServerWaitTimeout, waitForServer } from "./server-wait"
 
 export type Args = {
   readonly server?: string
+  readonly serverWait?: number
+  readonly session?: string
   readonly standalone?: boolean
   readonly mismatch?: "replace" | "ignore" | "error"
   /** Start the background service when none is running. When false, use a standalone server instead. */
@@ -19,6 +22,7 @@ export type Args = {
 
 export type Resolved = {
   readonly endpoint: Endpoint
+  readonly sessionReady?: boolean
   readonly service?: ReturnType<typeof managedService>
   /** A private server started for this command alone. */
   readonly standalone?: boolean
@@ -29,6 +33,8 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
   const standaloneFlag = yield* Effect.serviceOption(StandaloneFlag)
   const server = args.server ?? Option.getOrUndefined(serverFlag)
   const standalone = args.standalone ?? Option.getOrElse(standaloneFlag, () => false)
+  if (args.serverWait !== undefined && server === undefined)
+    return yield* Effect.fail(new Error("--server-wait requires an explicit --server URL"))
   if (server !== undefined && standalone)
     return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
   if (server !== undefined) {
@@ -38,6 +44,16 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
       auth: password ? { type: "basic" as const, username: "opencode", password: Redacted.value(password) } : undefined,
     } satisfies Endpoint
     const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
+    if (args.serverWait !== undefined) {
+      const health = yield* waitForServer(endpoint, args.serverWait, args.session).pipe(
+        Effect.mapError((cause) => connectError(endpoint, cause)),
+      )
+      if (health.version !== OPENCODE_VERSION)
+        process.stderr.write(
+          `Warning: Server at ${endpoint.url} has version ${health.version}; this client is ${OPENCODE_VERSION}. Continuing anyway.\n`,
+        )
+      return { endpoint, sessionReady: args.session !== undefined } satisfies Resolved
+    }
     const health = yield* Effect.tryPromise({
       try: () => client.server.info({ signal: AbortSignal.timeout(5_000) }),
       catch: (cause) => connectError(endpoint, cause),
@@ -99,6 +115,11 @@ const resolveManaged = Effect.fnUntraced(function* (options: EnsureOptions, mism
 })
 
 function connectError(endpoint: Endpoint, cause: unknown) {
+  if (cause instanceof ServerWaitTimeout)
+    return new Error(
+      `Timed out waiting for server at ${endpoint.url}${cause.message}; check --server and --session or increase --server-wait`,
+      { cause },
+    )
   if (isUnauthorizedError(cause)) {
     return new Error(
       endpoint.auth === undefined

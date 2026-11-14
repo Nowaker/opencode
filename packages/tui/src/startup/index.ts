@@ -1,14 +1,15 @@
 export * as StartupInput from "./index"
 
-import fs from "node:fs"
 import os from "node:os"
-import path from "node:path"
 import { Worker } from "node:worker_threads"
 import { stringWidth } from "#string-width"
 import { StartupEditor } from "./editor"
 import { StartupFrame } from "./frame"
 import type { Init, Reply, Request } from "./protocol"
 import { StartupTerminal } from "./terminal"
+import { classify } from "./classify"
+
+export { classify } from "./classify"
 
 // The default TUI's early terminal owner. The CLI calls start() before it imports anything heavy: the terminal goes
 // into raw mode at once, so keys typed while OpenCode loads are neither echoed nor lost, and a worker thread paints
@@ -37,70 +38,14 @@ export type Handle = {
   readonly status: (text?: string) => void
   /** Resolves once the worker has stopped at a token boundary, or undefined when the early owner fell back. */
   readonly handover: () => Promise<Transfer | undefined>
+  /** Recovers a waiting startup's draft to the normal terminal before closing it. */
+  readonly recover: () => Promise<void>
   readonly close: () => void
 }
 
 type Phase = "capturing" | "transferring" | "transferred" | "adopted" | "inert" | "closed"
 
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const
-
-// The default command's syntax (packages/cli/src/commands/commands.ts). Anything else, including help, version and
-// unknown flags, starts without an early owner.
-const BOOLEAN_FLAGS = new Set(["--standalone", "--auto", "--yolo", "--dangerously-skip-permissions", "--print-logs"])
-const VALUE_FLAGS = new Set(["--server", "-s", "--session", "--prompt"])
-const COMMANDS = new Set([
-  "upgrade",
-  "update",
-  "uninstall",
-  "acp",
-  "api",
-  "debug",
-  "auth",
-  "mcp",
-  "plugin",
-  "models",
-  "stats",
-  "mini",
-  "run",
-  "session",
-  "service",
-  "reload",
-  "pair",
-  "serve",
-])
-
-export function classify(argv: readonly string[], cwd: string) {
-  const values = new Map<string, string>()
-  const positionals: string[] = []
-  let resume = false
-  const queue = [...argv]
-  for (let arg = queue.shift(); arg !== undefined; arg = queue.shift()) {
-    if (!arg.startsWith("-") || arg === "-") {
-      positionals.push(arg)
-      continue
-    }
-    const equals = arg.indexOf("=")
-    const flag = arg.startsWith("--") && equals > 0 ? arg.slice(0, equals) : arg
-    if (BOOLEAN_FLAGS.has(flag) && flag === arg) continue
-    if ((flag === "-c" || flag === "--continue") && flag === arg) {
-      resume = true
-      continue
-    }
-    if (!VALUE_FLAGS.has(flag)) return
-    const value = flag === arg ? queue.shift() : arg.slice(equals + 1)
-    const name = flag === "-s" ? "--session" : flag
-    if (value === undefined || values.has(name)) return
-    values.set(name, value)
-  }
-  if (positionals.length > 1) return
-  const directory = positionals[0]
-  if (directory !== undefined) {
-    if (COMMANDS.has(directory)) return
-    if (!fs.statSync(path.resolve(cwd, directory), { throwIfNoEntry: false })?.isDirectory()) return
-  }
-  const route: Route = resume || values.has("--session") ? "session" : "home"
-  return { route, prompt: values.get("--prompt") }
-}
 
 export function start(input: {
   readonly argv: readonly string[]
@@ -114,6 +59,7 @@ export function start(input: {
   if (input.env.OPENCODE_STORY || input.env.OPENCODE_ROUTE || input.env.OPENCODE_DRIVE) return
   const kind = classify(input.argv, process.cwd())
   if (!kind) return
+  const preserve = kind.wait
 
   const size = () => ({ width: process.stdout.columns || 80, height: process.stdout.rows || 24 })
   // [0] guards terminal writes, [1] tells the worker the terminal is no longer its to write.
@@ -125,11 +71,19 @@ export function start(input: {
   const waiting = Promise.withResolvers<Transfer | undefined>()
   waiting.promise.catch(() => {})
   let requested = false
+  let retained: Snapshot | undefined
+  let recovery: Promise<void> | undefined
 
   const post = (request: Request) => worker.postMessage(request)
   const resize = () => post({ type: "resize", ...size() })
   const exit = () => restore()
   const signal = (name: NodeJS.Signals) => {
+    if (preserve) {
+      void recover().finally(() => {
+        if (process.listenerCount(name) === 0) process.exit(128 + (os.constants.signals[name] ?? 1))
+      })
+      return
+    }
     restore()
     // With no other handler the signal's default action was to end the process; keep it.
     if (process.listenerCount(name) === 0) process.exit(128 + (os.constants.signals[name] ?? 1))
@@ -164,6 +118,20 @@ export function start(input: {
     restore()
     phase = "inert"
     if (requested) waiting.resolve(undefined)
+  }
+
+  function recover(): Promise<void> {
+    if (!preserve || phase === "adopted" || phase === "inert") return Promise.resolve()
+    return (recovery ??= (async () => {
+      if (!retained && phase !== "closed") {
+        requested = true
+        phase = "transferring"
+        post({ type: "handover", immediate: true })
+        retained = (await waiting.promise)?.snapshot
+      }
+      restore()
+      if (retained?.touched) StartupTerminal.write(2, `Startup draft (not submitted): ${JSON.stringify(retained)}\n`)
+    })())
   }
 
   // A worker that cannot read the terminal says so and the TUI starts without it. Any other worker failure is a
@@ -213,6 +181,11 @@ export function start(input: {
     }
     if (reply.type === "unavailable") return fallBack()
     if (reply.type === "quit") {
+      if (preserve) {
+        retained = reply.snapshot
+        process.kill(process.pid, "SIGINT")
+        return
+      }
       restore()
       process.exit(130)
     }
@@ -258,6 +231,7 @@ export function start(input: {
       }
       return waiting.promise
     },
+    recover,
     close: () => {
       if (phase === "adopted") return release()
       restore()

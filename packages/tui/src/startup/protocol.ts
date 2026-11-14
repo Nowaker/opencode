@@ -14,10 +14,10 @@ export type Init = {
 export type Request =
   | { readonly type: "resize"; readonly width: number; readonly height: number }
   | { readonly type: "status"; readonly text?: string }
-  | { readonly type: "handover" }
+  | { readonly type: "handover"; readonly immediate?: boolean }
 
 export type Reply =
   | { readonly type: "ready" }
   | { readonly type: "unavailable"; readonly message: string }
-  | { readonly type: "quit" }
+  | { readonly type: "quit"; readonly snapshot: StartupEditor.Snapshot }
   | { readonly type: "handover"; readonly snapshot: StartupEditor.Snapshot; readonly bytes: Uint8Array }

@@ -51,6 +51,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
   params: {
     ...ServerParams,
     ...PermissionParams,
+    serverWait: Flag.Int("server-wait").pipe(
+      Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))),
+      Flag.withDescription("Wait up to this many milliseconds for --server and the requested --session"),
+      Flag.optional,
+    ),
     directory: Argument.String("directory").pipe(
       Argument.withDescription("Directory to start OpenCode in"),
       Argument.optional,
