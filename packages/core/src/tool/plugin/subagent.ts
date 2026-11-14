@@ -108,7 +108,11 @@ export const Plugin = {
             : `Model "${ref.providerID}/${ref.id}" is not available. Use the models tool to see what is available.`,
         })
       }
-      if (ref.variant !== undefined && !model.variants.some((variant) => variant.id === ref.variant))
+      if (
+        ref.variant !== undefined &&
+        ref.variant !== "default" &&
+        !model.variants.some((variant) => variant.id === ref.variant)
+      )
         return yield* new ToolFailure({
           message:
             model.variants.length === 0
