@@ -185,6 +185,14 @@ await ctx.tool.transform((tools) => {
 })
 ```
 
+## Native Recovery Guards
+
+Hosts advertising `ctx.app.capabilities?.sessionCompareAndInterrupt` and `sessionConditionalPrompt` expose `await ctx.session.recovery({ sessionID })` as a raw native snapshot. The experimental HTTP equivalent is `GET /api/experimental/session/:sessionID/recovery`, wrapped in `{ data }`. The snapshot contains nullable `assistantMessageID`, `idleMessageID`, `executionID`, `executionClaim` and `inputRevision`, plus `throughSeq`, `localActive` and `pendingInput`. `throughSeq` is the latest projected message sequence, or `-1` before history exists; rename and metadata updates do not advance it. `inputRevision` is `{ seq, eventID }`, changes with native input lifecycle mutations, and detects admission followed by cancellation even when no input remains. Null on a legacy Session means no tracked revision yet.
+
+Pass `experimental.expected: { executionID, inputRevision, messageID?, executionClaim? }` to `ctx.session.interrupt` to stop only the observed local execution. `executionID` and `inputRevision` are required when the guard is supplied; optional claim supports explicit null. The native comparison and stop are atomic. Refusal throws `Session.InterruptGuardError` with `accepted: false`, `interrupted: false`, `sessionID` and reason `message-changed`, `execution-changed` or `input-changed`; HTTP preserves those fields with 409. Omitted guards preserve ordinary interruption and `resume` behavior. Queued prompts remain parked when resuming steering work. A durable claim without a local owner is unavailable for guarded stopping.
+
+Pass `experimental.expected: { idleMessageID, throughSeq, inputRevision }` to `ctx.session.prompt` to admit recovery input only while the native observation remains idle and unchanged. Refusal throws `Session.PromptGuardError` with `accepted: false`, `sessionID` and reason `not-idle`, `input-changed` or `idle-changed`; HTTP returns 409. Native refusal publishes no admission, event or wake and does not commit a staged revert. Accepted-ID retries reconcile before guard rejection and retain native retry wake behavior; conflicting Session/type IDs remain conflicts. Hooks and attachment preparation run before the atomic admission boundary, so arbitrary hook side effects are outside this guarantee. These experimental operations control only the current process's execution owner; they do not fence another process or writers that bypass native projections.
+
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:
