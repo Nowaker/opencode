@@ -33,6 +33,7 @@ import { effortUpdate } from "../effort-updates.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
+import { OpenAISearchItem } from "./utils/tool-search-items.js"
 import { OpenAIFreeform } from "./openai-freeform.js"
 
 const ADAPTER = "open-responses"
@@ -249,6 +250,7 @@ export const Tool = Schema.Struct({
   description: Schema.String,
   parameters: JsonObject,
   strict: Schema.optional(Schema.Boolean),
+  defer_loading: Schema.optional(Schema.Boolean),
 })
 
 export const CustomTool = Schema.Struct({
@@ -361,7 +363,7 @@ type OpenResponsesUsage = Schema.Schema.Type<typeof OpenResponsesUsage>
 // `output_item.done` and `response.completed.output`). Decode it as optional
 // and let `normalize` recover or mint it once before the parser runs.
 // https://www.openresponses.org/specification#extending-items
-export const StreamItem = Schema.StructWithRest(
+const GenericStreamItem = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.String,
     id: optionalNullish(Schema.String),
@@ -372,7 +374,8 @@ export const StreamItem = Schema.StructWithRest(
     encrypted_content: optionalNull(Schema.String),
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
-)
+).check(Schema.makeFilter((item) => item.type !== "tool_search_call" && item.type !== "tool_search_output"))
+export const StreamItem = Schema.Union([OpenAISearchItem, GenericStreamItem])
 export type StreamItem = Schema.Schema.Type<typeof StreamItem>
 export type OutputItem = StreamItem & { readonly id: string }
 
@@ -480,6 +483,7 @@ export const lowerTool = Effect.fnUntraced(function* (protocolName: string, tool
     parameters: tool.inputSchema,
     // The common tool definition does not currently express Responses strict-schema policy.
     strict: false,
+    ...(tool.deferred === true ? { defer_loading: true } : {}),
   }
 })
 
@@ -747,13 +751,14 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, adapter:
         if (part.type === "tool-result" && part.providerExecuted === true) {
           flushText()
           const id = itemID(part.providerMetadata, providerMetadataKey)
-          const hosted =
+          const saved = adapter.restoreHostedToolItem?.(part.providerMetadata?.[providerMetadataKey]?.item)
+          const hosted = saved ?? (
             part.result.type !== "json"
               ? undefined
               : Schema.is(HostedToolItem)(part.result.value)
                 ? part.result.value
-                : adapter.restoreHostedToolItem?.(part.result.value)
-          if (id !== undefined && hosted?.id === id) {
+                : adapter.restoreHostedToolItem?.(part.result.value))
+          if (id !== undefined && hosted && (saved !== undefined || hosted.id === id)) {
             if (!hostedToolItems.has(id)) {
               input.push(hosted)
               hostedToolItems.add(id)
@@ -1183,7 +1188,7 @@ const onOutputItemAdded = (state: ParserState, event: NormalizedEvent): StepResu
     id: item.call_id,
     name: item.name ?? "",
     namespace: item.namespace,
-    input: custom ? "" : (item.arguments ?? ""),
+        input: custom ? "" : (typeof item.arguments === "string" ? item.arguments : ""),
     providerMetadata: metadata,
   })
   const opened = custom
@@ -1314,7 +1319,7 @@ const onOutputItemDone = Effect.fnUntraced(function* (state: ParserState, item: 
     const custom = item.type === "custom_tool_call"
     const metadata = providerMetadata(state, OpenAIFreeform.metadata(item.id, custom))
     const final = { custom: state.custom.get(item.name), raw: rawInput(item) }
-    const input = custom ? OpenAIFreeform.fromRaw(final.custom, final.raw) : item.arguments
+    const input = custom ? OpenAIFreeform.fromRaw(final.custom, final.raw) : typeof item.arguments === "string" ? item.arguments : undefined
     const registered = state.tools[item.id] !== undefined
     const closed = custom ? OpenAIFreeform.close(state.tools, [item.id], final) : undefined
     const tools = registered

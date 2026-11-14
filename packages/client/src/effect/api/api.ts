@@ -56,6 +56,7 @@ export type ServerInfoOutput = {
   readonly capabilities?:
     | {
         readonly persistentPty?: boolean | undefined
+        readonly toolDeferral?: boolean | undefined
         readonly jobControl?: boolean | undefined
         readonly jobResults?: boolean | undefined
         readonly childCancellation?: boolean | undefined

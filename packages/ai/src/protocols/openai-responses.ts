@@ -18,6 +18,8 @@ import { ResponsesCompaction } from "./utils/responses-compaction.js"
 import { ResponsesCheckpoint } from "./utils/responses-checkpoint.js"
 import * as Cache from "./utils/cache.js"
 import { OpenAIFreeform } from "./openai-freeform.js"
+import { OpenAISearch } from "../tool-search.js"
+import { OpenAISearchItem } from "./utils/tool-search-items.js"
 
 const ADAPTER = "openai-responses"
 const NAME = "OpenAI Responses"
@@ -66,6 +68,7 @@ const OpenAIResponsesImageGenerationTool = Schema.Struct({
 })
 
 const OpenAIResponsesHostedToolItem = Schema.Union([
+  OpenAISearchItem,
   Schema.StructWithRest(
     Schema.Struct({
       type: Schema.tag("computer_call"),
@@ -111,6 +114,7 @@ const OpenAIResponsesTools = Schema.Union([
   OpenResponses.CustomTool,
   OpenAIResponsesNamespace,
   OpenAIResponsesImageGenerationTool,
+  OpenAISearch,
 ])
 
 const OpenAIResponsesToolChoice = Schema.Union([
@@ -187,6 +191,7 @@ const lowerTool = Effect.fnUntraced(function* (
   tool: ToolDefinition,
   custom: ReadonlyMap<string, OpenAIFreeform.Custom>,
 ) {
+  if (Schema.is(OpenAISearch)(tool.native?.openai)) return tool.native.openai
   const native = nativeImageToolInput(tool)
   if (native !== undefined) {
     if (Schema.is(OpenAIResponsesImageGenerationTool)(native)) return native
@@ -319,6 +324,8 @@ const HOSTED_TOOLS = {
   web_search_preview_call: { name: "web_search_preview", input: (item) => item.action ?? {} },
   computer_call: { name: "computer_use", input: (item) => item.action ?? {} },
   image_generation_call: { name: "image_generation", input: () => ({}), result: hostedToolResult },
+  tool_search_call: { name: "tool_search", input: (item) => item.arguments ?? {} },
+  tool_search_output: { name: "tool_search", input: () => ({}) },
 } as const satisfies ResponsesHostedTools.Definitions
 
 export const protocol = Protocol.make({

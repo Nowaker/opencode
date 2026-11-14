@@ -32,6 +32,7 @@ import * as Cache from "./utils/cache.js"
 import { claudeVersion, supportsThinkingBlockBinding, THINKING_BINDING_BETA } from "./utils/claude-model.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
+import { AnthropicSearch } from "../tool-search.js"
 
 const ADAPTER = "anthropic-messages"
 export const DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -200,6 +201,7 @@ const AnthropicServerToolResultType = Schema.Literals([
   "web_search_tool_result",
   "code_execution_tool_result",
   "web_fetch_tool_result",
+  "tool_search_tool_result",
 ])
 type AnthropicServerToolResultType = Schema.Schema.Type<typeof AnthropicServerToolResultType>
 
@@ -264,12 +266,20 @@ const AnthropicMessage = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("role"))
 type AnthropicMessage = Schema.Schema.Type<typeof AnthropicMessage>
 
-const AnthropicTool = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  input_schema: JsonObject,
-  cache_control: Schema.optional(AnthropicCacheControl),
-})
+export const AnthropicTool = Schema.Union([
+  Schema.Struct({
+    name: Schema.String,
+    description: Schema.String,
+    input_schema: JsonObject,
+    defer_loading: Schema.optional(Schema.Boolean),
+    cache_control: Schema.optional(AnthropicCacheControl),
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["tool_search_tool_regex_20251119", "tool_search_tool_bm25_20251119"]),
+    name: Schema.String,
+    cache_control: Schema.optional(AnthropicCacheControl),
+  }),
+])
 type AnthropicTool = Schema.Schema.Type<typeof AnthropicTool>
 
 const AnthropicToolChoice = Schema.Union([
@@ -513,6 +523,7 @@ interface ParserState {
   readonly compactions: Readonly<Record<number, string | null>>
   readonly providerMetadataKey: string
   readonly tools: ToolStream.State<number>
+  readonly serverToolNames: Readonly<Record<string, string>>
   readonly reasoningSignatures: Readonly<Record<number, string>>
   readonly usage?: Usage
   readonly pendingFinish?: {
@@ -553,12 +564,17 @@ const redactedDataFromMetadata = (metadata: ProviderMetadata | undefined, key: s
   return typeof provider.redactedData === "string" ? provider.redactedData : undefined
 }
 
-const lowerTool = (breakpoints: Cache.Breakpoints, tool: ToolDefinition): AnthropicTool => ({
-  name: tool.name,
-  description: tool.description,
-  input_schema: tool.inputSchema,
-  cache_control: cacheControl(breakpoints, tool.cache),
-})
+const lowerTool = (breakpoints: Cache.Breakpoints, tool: ToolDefinition): AnthropicTool => {
+  const native = tool.native?.anthropic
+  if (Schema.is(AnthropicSearch)(native)) return { ...native, cache_control: cacheControl(breakpoints, tool.cache) }
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.inputSchema,
+    ...(tool.deferred === true ? { defer_loading: true } : {}),
+    cache_control: cacheControl(breakpoints, tool.cache),
+  }
+}
 
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
   ProviderShared.matchToolChoice("Anthropic Messages", toolChoice, {
@@ -607,11 +623,13 @@ const serverToolResultType = (name: string): AnthropicServerToolResultType | und
   if (name === "web_search") return "web_search_tool_result"
   if (name === "code_execution") return "code_execution_tool_result"
   if (name === "web_fetch") return "web_fetch_tool_result"
+  if (name === "tool_search_tool_regex" || name === "tool_search_tool_bm25") return "tool_search_tool_result"
   return undefined
 }
 
 const lowerServerToolResult = Effect.fnUntraced(function* (part: ToolResultPart, providerMetadataKey: string) {
-  const wireType = serverToolResultType(part.name)
+  const blockType = part.providerMetadata?.[providerMetadataKey]?.blockType
+  const wireType = Schema.is(AnthropicServerToolResultType)(blockType) ? blockType : serverToolResultType(part.name)
   if (!wireType)
     return yield* invalid(`Anthropic Messages does not know how to round-trip server tool result for ${part.name}`)
   // Prefer the provider-owned replay payload; fall back to the result value for
@@ -1109,23 +1127,24 @@ const SERVER_TOOL_RESULT_NAMES: Record<AnthropicServerToolResultType, string> = 
   web_search_tool_result: "web_search",
   code_execution_tool_result: "code_execution",
   web_fetch_tool_result: "web_fetch",
+  tool_search_tool_result: "tool_search_tool_regex",
 }
 
 const isServerToolResultType = (type: string): type is AnthropicServerToolResultType => type in SERVER_TOOL_RESULT_NAMES
 
-const serverToolResultEvent = (block: AnthropicStreamBlock, providerMetadataKey: string): LLMEvent | undefined => {
+const serverToolResultEvent = (block: AnthropicStreamBlock, state: ParserState): LLMEvent | undefined => {
   if (!block.type || !isServerToolResultType(block.type)) return undefined
   const errorPayload =
     ProviderShared.isRecord(block.content) && "type" in block.content ? String(block.content.type) : ""
   const isError = errorPayload.endsWith("_tool_result_error")
   return LLMEvent.toolResult({
     id: block.tool_use_id ?? "",
-    name: SERVER_TOOL_RESULT_NAMES[block.type],
+    name: state.serverToolNames[block.tool_use_id ?? ""] ?? SERVER_TOOL_RESULT_NAMES[block.type],
     result: isError ? { type: "error", value: block.content } : { type: "json", value: block.content },
     providerExecuted: true,
     // The complete payload is irreducible provider replay state: subsequent
     // stateless requests must round-trip the typed result block verbatim.
-    providerMetadata: providerMetadata(providerMetadataKey, { blockType: block.type, result: block.content }),
+    providerMetadata: providerMetadata(state.providerMetadataKey, { blockType: block.type, result: block.content }),
   })
 }
 
@@ -1152,6 +1171,10 @@ const onContentBlockStart = (
       {
         ...state,
         lifecycle,
+        serverToolNames:
+          block.type === "server_tool_use"
+            ? { ...state.serverToolNames, [block.id]: block.name ?? "" }
+            : state.serverToolNames,
         tools: ToolStream.start(state.tools, event.index, {
           id: block.id,
           name: block.name ?? "",
@@ -1225,7 +1248,7 @@ const onContentBlockStart = (
     ]
   }
 
-  const result = serverToolResultEvent(block, state.providerMetadataKey)
+  const result = serverToolResultEvent(block, state)
   if (!result) return [state, NO_EVENTS]
   const events: LLMEvent[] = []
   return [{ ...state, lifecycle: Lifecycle.stepStart(state.lifecycle, events) }, [...events, result]]
@@ -1522,6 +1545,7 @@ export const protocol = Protocol.make({
       compactions: {},
       providerMetadataKey: request.model.route.providerMetadataKey ?? request.model.provider,
       tools: ToolStream.empty<number>(),
+      serverToolNames: {},
       reasoningSignatures: {},
       lifecycle: Lifecycle.initial(),
     }),

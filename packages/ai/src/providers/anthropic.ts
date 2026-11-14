@@ -1,7 +1,7 @@
 import { Auth } from "../route/auth.js"
 import { AuthOptions, type ProviderAuthOption } from "../route/auth-options.js"
 import type { ProviderPackage } from "../provider-package.js"
-import { ProviderConfigurationError, ProviderID, type ModelID, type RequestOptions } from "../schema/index.js"
+import { ProviderConfigurationError, ProviderID, ToolDefinition, type ModelID, type RequestOptions } from "../schema/index.js"
 import { AnthropicMessages } from "../protocols/anthropic-messages.js"
 import { AnthropicCompatible } from "./anthropic-compatible.js"
 
@@ -10,6 +10,16 @@ export type AnthropicProviderOptionsInput = AnthropicMessages.ProviderOptionsInp
 export type AnthropicThinkingInput = AnthropicMessages.ThinkingInput
 
 export const id = ProviderID.make("anthropic")
+
+export const toolSearch = (options: { readonly variant?: "regex" | "bm25" } = {}) => {
+  const name = `tool_search_tool_${options.variant ?? "regex"}`
+  return ToolDefinition.make({
+    name,
+    description: "Search deferred tools using Anthropic's hosted tool search.",
+    inputSchema: { type: "object", properties: {} },
+    native: { anthropic: { type: `${name}_20251119`, name } },
+  })
+}
 
 export const routes = [AnthropicMessages.route]
 

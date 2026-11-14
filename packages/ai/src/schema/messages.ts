@@ -382,6 +382,7 @@ const toolDefinitionFields = {
   inputSchema: JsonSchema,
   outputSchema: Schema.optional(JsonSchema),
   freeform: Schema.optional(Freeform),
+  deferred: Schema.optional(Schema.Boolean),
   cache: Schema.optional(CacheHint),
   native: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 }

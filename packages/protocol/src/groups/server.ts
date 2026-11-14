@@ -16,6 +16,9 @@ export const ServerInfo = Schema.Struct({
   capabilities: Schema.optional(
     Schema.Struct({
       persistentPty: Schema.optional(Schema.Boolean),
+      toolDeferral: Schema.optional(Schema.Boolean).annotate({
+        description: "Awaited session context hooks can defer ordinary tools through native provider tool search.",
+      }),
       jobControl: Schema.optional(Schema.Boolean).annotate({
         description: "Plugins can list owned background Jobs and cancel directly owned native shell and image Jobs.",
       }),

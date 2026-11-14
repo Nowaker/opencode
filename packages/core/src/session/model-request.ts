@@ -13,11 +13,13 @@ import {
   type MediaPart,
   Message,
   SystemPart,
+  type ToolDefinition,
   ToolMessage,
   type ToolResultPart,
   UserMessage,
 } from "@opencode/ai/effect"
 import type { StreamOptions } from "@opencode/ai/route"
+import { Anthropic, OpenAI } from "@opencode/ai/providers"
 import type {
   SessionCompaction,
   SessionCompactionDetails,
@@ -263,9 +265,9 @@ export const layer = Layer.effect(
       // its definition to a new key, so after the hook we find the tool by object identity.
       // Definitions are shared across steps and sessions, and hooks may edit schemas in place,
       // so each hook gets a deep copy.
-      const given = new Map(
+      const given = new Map<Definitions[string], ToolDefinition>(
         tools.definitions.map(
-          (t) => [{ description: t.description, input: JSON.parse(JSON.stringify(t.inputSchema)) }, t] as const,
+          (t) => [{ description: t.description, input: JSON.parse(JSON.stringify(t.inputSchema)), deferred: t.deferred }, t] as const,
         ),
       )
       const shaped = yield* shape(
@@ -284,13 +286,21 @@ export const layer = Layer.effect(
       const hooked = new Map(
         Object.entries(shaped.tools ?? {}).flatMap(([name, d]) => {
           const t = given.get(d) ?? byName.get(name)
-          return t ? [[name, { ...t, description: d.description, inputSchema: d.input }] as const] : []
+          return t ? [[name, { ...t, description: d.description, inputSchema: d.input, deferred: d.deferred }] as const] : []
         }),
       )
       const entries = Object.entries(shaped.options)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
       const affinity = SessionAffinity.get(session)
+      const deferred = Array.from(hooked.values()).some((tool) => tool.deferred === true)
+      const search = !deferred
+        ? []
+        : model.model.route.protocol === "anthropic-messages"
+          ? [Anthropic.toolSearch()]
+          : model.model.route.protocol === "openai-responses"
+            ? [OpenAI.toolSearch()]
+            : []
       const base = ai.request({
         model: model.model,
         headers: {
@@ -311,7 +321,7 @@ export const layer = Layer.effect(
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
         system: shaped.system,
         messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
-        tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
+        tools: [...Array.from(hooked, ([name, t]) => ({ ...t, name })), ...search],
         toolChoice: input.toolChoice,
         ...generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
