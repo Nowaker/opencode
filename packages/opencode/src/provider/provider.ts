@@ -215,12 +215,12 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
 // clone's backend does not serve the source's small models. `servedModels`
 // narrows the catalog to what the configured gateway lists at
 // `<baseURL>/models` (see applyServedModels).
-type GatewayBehaviour = { smallFamilies?: string[]; servedModels?: boolean }
+type GatewayBehaviour = { smallFamilies?: string[]; servedModels?: boolean; temperature?: false }
 
 // Meridian's ChatGPT Codex backend refuses every nano and mini model for
 // ChatGPT accounts ("not supported when using Codex with a ChatGPT
 // account"); gpt-luna is the cheapest family it serves.
-const OPENAI_GATEWAY: GatewayBehaviour = { smallFamilies: ["gpt-luna"], servedModels: true }
+const OPENAI_GATEWAY: GatewayBehaviour = { smallFamilies: ["gpt-luna"], servedModels: true, temperature: false }
 
 const CLONES: ({ source: string; id: string; suffix: string } & GatewayBehaviour)[] = [
   { source: "anthropic", id: "anthropic2", suffix: "alt" },
@@ -1881,9 +1881,12 @@ const layer = Layer.effect(
           }
 
           const configProvider = cfg.provider?.[providerID]
+          const gateway = gatewayBehaviour(provider)
 
           for (const [modelID, model] of Object.entries(provider.models)) {
             model.api.id = model.api.id ?? model.id ?? modelID
+            // ChatGPT rejects sampling even when the direct API catalog supports it.
+            if (gateway?.temperature === false) model.capabilities.temperature = false
 
             if (
               // These chat aliases are invalid for the special handling in the

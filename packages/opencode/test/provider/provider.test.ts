@@ -1182,6 +1182,61 @@ it.instance(
   },
 )
 
+for (const providerID of ["openai", "openai-meridian"]) {
+  for (const [route, baseURL] of [
+    ["served", gatewayURL("ok")],
+    ["unreachable", closedBaseURL],
+    ["error", gatewayURL("broken")],
+    ["empty", gatewayURL("claude")],
+    ["timeout", gatewayURL("slow")],
+  ] as const) {
+    it.instance(
+      `${providerID} disables catalog temperature for ChatGPT models when discovery is ${route}`,
+      Effect.gen(function* () {
+        const providers = yield* list
+        const model = providers[ProviderV2.ID.make(providerID)].models["gpt-5.6-sol"]
+        expect(model.capabilities.temperature).toBe(false)
+      }),
+      {
+        config: {
+          provider: {
+            [providerID]: {
+              options: { apiKey: "meridian", baseURL },
+              models: { "gpt-5.6-sol": { temperature: true } },
+            },
+          },
+        },
+      },
+    )
+  }
+}
+
+for (const [providerID, baseURL] of [
+  ["openai", undefined],
+  ["openai", "https://api.openai.com/v1"],
+  ["openai", "https://api.openai.com/v1/"],
+  ["openai2", gatewayURL("ok")],
+] as const) {
+  it.instance(
+    `${providerID} preserves direct API temperature with ${baseURL ?? "the default URL"}`,
+    Effect.gen(function* () {
+      const providers = yield* list
+      const model = providers[ProviderV2.ID.make(providerID)].models["gpt-5.6-sol"]
+      expect(model.capabilities.temperature).toBe(true)
+    }),
+    {
+      config: {
+        provider: {
+          [providerID]: {
+            options: { apiKey: "test-api", ...(baseURL ? { baseURL } : {}) },
+            models: { "gpt-5.6-sol": { temperature: true } },
+          },
+        },
+      },
+    },
+  )
+}
+
 it.instance(
   "getSmallModel never falls back to a nano model for openai behind a gateway",
   Effect.gen(function* () {
