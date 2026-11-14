@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Pause a session after its current step and unpause it later](./features/2026-11-14-session-pause.md)
 - [Send queued notes now](./features/2026-11-14-send-now.md)
 - [Awaited v2 compaction summary completion](./features/2026-11-11-v2-compaction-summary.md)
 - [Awaited plugin configuration on v2](./features/2026-11-11-plugin-configuration.md)
@@ -159,6 +160,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-14 `ses_e26c25ca4ffeYUicqdusaViOJa`](./sessions/2026-11-14-session-pause.md) - `/pause` (keybind `session_pause`, fork `alt+p`) lets the running tool and response finish and stops at the step boundary; calls asked for afterwards are kept as `pending` + `metadata.deferred`; `/unpause` runs them in order and continues, `/discard` answers them "not run"; held automated input, subagent tree, durable across restart; `POST /session/:id/pause|unpause|discard`, `paused` on status, `session.pause.updated`/`.released`; `d634b67a9be`, `e60728ae6eb`, `05d3e55825c`; vt-486 on m4max
 - [2026-11-14 `ses_e26c1f916ffeAFy8f2KwrZeJMN`](./sessions/2026-11-14-send-now.md) - "Send now" on a queued note starts one turn that reads every unread note without rewriting or re-iding them (`POST /session/:id/send-now`, 409 busy/empty/paused, TUI first action); vibeterm-api pass-through and session-sync fired-note test in opencode-tools `441001ab6`..`9dee766d4`; `0b31166e059`, vt-481 on both hosts
 - [2026-11-13 W13](./sessions/2026-11-13-v2-compaction-summary.md) - awaited experimental compaction summary completion, generation/cutoff identities, local stop filtering and prior-summary projections; native ledger reader remains W10-owned.
 - [2026-11-11 W12, delivered November 13](./sessions/2026-11-11-plugin-configuration.md) - awaited mutable plugin configuration before native consumers; source approved, published to both mirrors and installed as vt-15 through 12/12 gates on desktop and m4max; native controller demo passed, W10 consumer acceptance pending.
