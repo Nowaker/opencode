@@ -870,6 +870,13 @@ export function latest(msgs: WithParts[]) {
   return { user, assistant, finished, tasks }
 }
 
+// The user messages after the newest assistant message: prompts and notes no step has read yet. Notices are left
+// out, since the model never sees them.
+export function unread(msgs: WithParts[]) {
+  const reader = msgs.findLastIndex((msg) => msg.info.role === "assistant")
+  return msgs.slice(reader + 1).filter((msg) => msg.info.role === "user" && !isNotice(msg))
+}
+
 // A user message whose every part is an ignored text is a notice for the reader (a background fork's
 // receipt, Vibeterm's user_message): the model never sees it, so it must not count as the prompt a turn answers.
 function isNotice(msg: WithParts) {

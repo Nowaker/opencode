@@ -30,7 +30,7 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionMessageTable } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -2226,6 +2226,107 @@ it.instance(
       expect(outcomes.ok + outcomes.started).toBe(24)
     }),
   60_000,
+)
+
+// Send now
+
+const sendNowReason = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? (Cause.squash(exit.cause) as { reason?: string }).reason : "ok"
+
+const storedRows = Effect.fn("test.storedRows")(function* (sessionID: SessionID) {
+  const { db } = yield* Database.Service
+  const messages = yield* db.select().from(MessageTable).where(eq(MessageTable.session_id, sessionID)).all().pipe(Effect.orDie)
+  const parts = yield* db.select().from(PartTable).where(eq(PartTable.session_id, sessionID)).all().pipe(Effect.orDie)
+  return { messages, parts }
+})
+
+const answered = (sessionID: SessionID, messageID: MessageID) =>
+  pollWithTimeout(
+    Effect.gen(function* () {
+      const status = yield* SessionStatus.Service
+      const turns = yield* turnsFor(sessionID, messageID)
+      return turns.replies === 1 && (yield* status.get(sessionID)).type === "idle" ? turns : undefined
+    }),
+    `message ${messageID} was never answered`,
+    "10 seconds",
+  )
+
+it.instance("send now runs one turn that reads every queued note and leaves their rows as written", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Notes" })
+    yield* llm.text("first answer")
+    yield* prompt.prompt(queuedPrompt(chat.id, MessageID.ascending(), "first"))
+
+    const notes = [MessageID.ascending(), MessageID.ascending()]
+    yield* prompt.prompt({ ...queuedPrompt(chat.id, notes[0], "note one words"), noReply: true })
+    yield* prompt.prompt({ ...queuedPrompt(chat.id, notes[1], "note two words"), noReply: true })
+    const before = yield* storedRows(chat.id)
+    expect(yield* llm.calls).toBe(1)
+
+    yield* llm.text("answer to the notes")
+    expect(yield* prompt.sendNow(chat.id)).toEqual(notes)
+    yield* answered(chat.id, notes[1])
+
+    expect(yield* llm.calls).toBe(2)
+    const inputs = yield* llm.inputs
+    expect(JSON.stringify(inputs[1])).toContain("note one words")
+    expect(JSON.stringify(inputs[1])).toContain("note two words")
+    const after = yield* storedRows(chat.id)
+    const ids = new Set(before.messages.map((row) => row.id))
+    // The answered note gets its file summary after the turn, as any answered prompt does; nothing else changes.
+    const unsummarized = (rows: typeof before.messages) =>
+      rows.map((row) => ({ ...row, time_updated: 0, data: { ...row.data, summary: undefined } }))
+    expect(unsummarized(after.messages.filter((row) => ids.has(row.id)))).toEqual(unsummarized(before.messages))
+    expect(after.parts.filter((row) => before.parts.some((part) => part.id === row.id))).toEqual(before.parts)
+    expect(after.messages.filter((row) => !ids.has(row.id)).map((row) => row.data.role)).toEqual(["assistant"])
+  }),
+)
+
+it.instance("send now refuses when nothing is queued, or only notices the model never sees", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Nothing queued" })
+    expect(sendNowReason(yield* prompt.sendNow(chat.id).pipe(Effect.exit))).toBe("empty")
+
+    yield* llm.text("done")
+    yield* prompt.prompt(queuedPrompt(chat.id, MessageID.ascending(), "answered"))
+    expect(sendNowReason(yield* prompt.sendNow(chat.id).pipe(Effect.exit))).toBe("empty")
+
+    yield* prompt.prompt({
+      ...queuedPrompt(chat.id, MessageID.ascending(), "for the reader only"),
+      parts: [{ type: "text", text: "for the reader only", ignored: true }],
+      noReply: true,
+    })
+    const exit = yield* prompt.sendNow(chat.id).pipe(Effect.exit)
+    expect(sendNowReason(exit)).toBe("empty")
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(SessionPrompt.SendNowRefusedError)
+    expect(yield* llm.calls).toBe(1)
+  }),
+)
+
+it.instance("send now refuses while a turn is running, which reads the notes itself", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Busy" })
+    yield* llm.hold("first answer", deferredAsPromise(gate))
+
+    const first = yield* prompt.prompt(queuedPrompt(chat.id, MessageID.ascending(), "first")).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    yield* waitForBusy(chat.id)
+    yield* prompt.prompt({ ...queuedPrompt(chat.id, MessageID.ascending(), "note while busy"), noReply: true })
+
+    expect(sendNowReason(yield* prompt.sendNow(chat.id).pipe(Effect.exit))).toBe("busy")
+    yield* Deferred.succeed(gate, void 0)
+    yield* Fiber.join(first)
+  }),
 )
 
 it.instance("assertNotBusy fails with BusyError when loop running", () =>

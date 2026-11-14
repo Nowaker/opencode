@@ -25,6 +25,7 @@ import {
   PermissionNotFoundError,
   PromptAdmissionError,
   PromptNotQueuedError,
+  SendNowRefusedError,
   SessionBusyError,
   OwnerSealedError,
 } from "../errors"
@@ -124,6 +125,7 @@ export const SessionPaths = {
   permissions: `${root}/:sessionID/permissions/:permissionID`,
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   unqueue: `${root}/:sessionID/message/:messageID/unqueue`,
+  sendNow: `${root}/:sessionID/send-now`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
 } as const
@@ -467,6 +469,22 @@ export const SessionApi = HttpApi.make("session")
             summary: "Unqueue prompt",
             description:
               "Remove a prompt waiting behind the running turn before the turn reads it, without interrupting the turn. Fails with 409 when no turn is running or the turn has already read the prompt.",
+          }),
+        ),
+        HttpApiEndpoint.post("sendNow", SessionPaths.sendNow, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(
+            Schema.Struct({ sessionID: SessionID, messageIDs: Schema.Array(MessageID) }),
+            "The queued messages the new turn reads, oldest first",
+          ),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SendNowRefusedError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.sendNow",
+            summary: "Send now",
+            description:
+              "Start a turn that reads every message stored after the last assistant message, such as notes delivered without starting a turn. Queued messages keep their IDs and content; the turn runs in the background and appends its own messages, as the turn of a prompt does. Fails with 409 when a turn is already running, nothing is queued, or the session is paused.",
           }),
         ),
         HttpApiEndpoint.delete("deletePart", SessionPaths.deletePart, {

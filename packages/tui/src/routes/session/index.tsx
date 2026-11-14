@@ -1764,6 +1764,12 @@ export function Session() {
                                     deliveries().get(message.id) === "queued" &&
                                     TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
                                   }
+                                  sendable={
+                                    (sync.data.session_status?.[route.sessionID]?.type ?? "idle") === "idle" &&
+                                    messages().findLastIndex((x) => x.role === "assistant") <
+                                      messages().findIndex((x) => x.id === message.id) &&
+                                    TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
+                                  }
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
                                   restorePrompt={restorePrompt}
                                 />

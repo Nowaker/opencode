@@ -220,6 +220,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionSendNowErrors,
+  SessionSendNowResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -4547,6 +4549,38 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionUnqueueResponses, SessionUnqueueErrors, ThrowOnError>({
       url: "/session/{sessionID}/message/{messageID}/unqueue",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Send now
+   *
+   * Start a turn that reads every message stored after the last assistant message, such as notes delivered without starting a turn. Queued messages keep their IDs and content; the turn runs in the background and appends its own messages, as the turn of a prompt does. Fails with 409 when a turn is already running, nothing is queued, or the session is paused.
+   */
+  public sendNow<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionSendNowResponses, SessionSendNowErrors, ThrowOnError>({
+      url: "/session/{sessionID}/send-now",
       ...options,
       ...params,
     })

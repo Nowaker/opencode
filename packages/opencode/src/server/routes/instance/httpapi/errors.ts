@@ -147,6 +147,16 @@ export class PromptNotQueuedError extends Schema.TaggedErrorClass<PromptNotQueue
   { httpApiStatus: 409 },
 ) {}
 
+export class SendNowRefusedError extends Schema.TaggedErrorClass<SendNowRefusedError>()(
+  "SendNowRefusedError",
+  {
+    sessionID: Schema.String,
+    reason: Schema.Literals(["busy", "empty", "paused"]),
+    message: Schema.String,
+  },
+  { httpApiStatus: 409 },
+) {}
+
 export class QuestionNotFoundError extends Schema.TaggedErrorClass<QuestionNotFoundError>()(
   "QuestionNotFoundError",
   {

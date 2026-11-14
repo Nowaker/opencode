@@ -823,6 +823,35 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
+    "send now answers 404 for an unknown session and 409 when nothing is queued",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const session = yield* createSession({ title: "send now" })
+
+        const unknown = yield* request(pathFor(SessionPaths.sendNow, { sessionID: SessionID.descending() }), {
+          headers,
+          method: "POST",
+        })
+        expect(unknown.status).toBe(404)
+
+        const empty = yield* request(pathFor(SessionPaths.sendNow, { sessionID: session.id }), {
+          headers,
+          method: "POST",
+        })
+        expect(empty.status).toBe(409)
+        expect(yield* responseJson(empty)).toMatchObject({
+          _tag: "SendNowRefusedError",
+          sessionID: session.id,
+          reason: "empty",
+          message: expect.any(String),
+        })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "returns v2 public unavailable errors for unfinished session mutations",
     () =>
       Effect.gen(function* () {

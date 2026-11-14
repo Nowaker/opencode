@@ -38,7 +38,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { notFound, PermissionNotFoundError, PromptAdmissionError, PromptNotQueuedError } from "../errors"
+import { notFound, PermissionNotFoundError, PromptAdmissionError, PromptNotQueuedError, SendNowRefusedError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -458,6 +458,26 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       )
     })
 
+    const sendNow = Effect.fn("SessionHttpApi.sendNow")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      const messageIDs = yield* promptSvc.sendNow(ctx.params.sessionID).pipe(
+        Effect.catchTag("SessionSendNowRefusedError", (error) =>
+          Effect.fail(
+            new SendNowRefusedError({
+              sessionID: error.sessionID,
+              reason: error.reason,
+              message: {
+                busy: "A turn is already running; it reads the queued messages itself",
+                empty: "Nothing is queued: every message has already been read",
+                paused: "The session is paused; unpause it first",
+              }[error.reason],
+            }),
+          ),
+        ),
+      )
+      return { sessionID: ctx.params.sessionID, messageIDs }
+    })
+
     const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
     }) {
@@ -508,6 +528,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("applyRevert", applyRevert)
       .handle("unrevert", unrevert)
       .handle("unqueue", unqueue)
+      .handle("sendNow", sendNow)
       .handle("permissionRespond", permissionRespond)
       .handle("deleteMessage", deleteMessage)
       .handle("deletePart", deletePart)

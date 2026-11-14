@@ -15,6 +15,7 @@ export function DialogMessage(props: {
   messageID: string
   sessionID: string
   queued?: boolean
+  sendable?: boolean
   provenance?: { text: string; expanded: boolean; set: (open: boolean) => void }
   setPrompt?: (prompt: PromptInfo) => void
   restorePrompt?: (prompt: PromptInfo) => void
@@ -71,6 +72,25 @@ export function DialogMessage(props: {
     },
   }
 
+  const sendNowOption = {
+    title: "Send now",
+    value: "session.sendNow",
+    description: "start a turn that reads every queued note",
+    onSelect: async (dialog: DialogContext) => {
+      dialog.clear()
+      const result = await sdk.client.session
+        .sendNow({ sessionID: props.sessionID })
+        .catch((error: unknown) => ({ error, data: undefined }))
+      if (result.data) return
+      const error = result.error
+      const benign = error && typeof error === "object" && "reason" in error && error.reason !== "paused"
+      toast.show({
+        variant: benign ? "warning" : "error",
+        message: `Not sent: ${error && typeof error === "object" && "message" in error ? String(error.message) : errorMessage(error)}`,
+      })
+    },
+  }
+
   const provenance = props.provenance
   const provenanceOptions = provenance
     ? [
@@ -99,6 +119,7 @@ export function DialogMessage(props: {
     <DialogSelect
       title="Message Actions"
       options={[
+        ...(props.sendable ? [sendNowOption] : []),
         ...(props.queued ? [unqueueOption] : revertOptions),
         {
           title: "Copy",

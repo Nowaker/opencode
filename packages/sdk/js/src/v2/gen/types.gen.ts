@@ -2738,6 +2738,13 @@ export type PromptNotQueuedError = {
   message: string
 }
 
+export type SendNowRefusedError = {
+  _tag: "SendNowRefusedError"
+  sessionID: string
+  reason: "busy" | "empty" | "paused"
+  message: string
+}
+
 export type EventTuiPromptAppend = {
   type: "tui.prompt.append"
   properties: {
@@ -10947,6 +10954,47 @@ export type SessionUnqueueResponses = {
 }
 
 export type SessionUnqueueResponse = SessionUnqueueResponses[keyof SessionUnqueueResponses]
+
+export type SessionSendNowData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/send-now"
+}
+
+export type SessionSendNowErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * SendNowRefusedError
+   */
+  409: SendNowRefusedError
+}
+
+export type SessionSendNowError = SessionSendNowErrors[keyof SessionSendNowErrors]
+
+export type SessionSendNowResponses = {
+  /**
+   * The queued messages the new turn reads, oldest first
+   */
+  200: {
+    sessionID: string
+    messageIDs: Array<string>
+  }
+}
+
+export type SessionSendNowResponse = SessionSendNowResponses[keyof SessionSendNowResponses]
 
 export type PartDeleteData = {
   body?: never

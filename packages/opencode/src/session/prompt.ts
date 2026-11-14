@@ -197,7 +197,17 @@ export interface Interface {
     sessionID: SessionID
     messageID: MessageID
   }) => Effect.Effect<SessionV1.WithParts, NotQueuedError | NotFoundError>
+  readonly sendNow: (sessionID: SessionID) => Effect.Effect<MessageID[], SendNowRefusedError>
 }
+
+/**
+ * Send now was refused. `busy`: a turn is running, and it reads the queued messages itself. `empty`: nothing waits
+ * after the last assistant message. `paused`: the session is paused.
+ */
+export class SendNowRefusedError extends Schema.TaggedErrorClass<SendNowRefusedError>()("SessionSendNowRefusedError", {
+  sessionID: SessionID,
+  reason: Schema.Literals(["busy", "empty", "paused"]),
+}) {}
 
 /**
  * Unqueue was refused. `idle`: no turn is running that the prompt waits behind. `started`: the running turn has
@@ -1203,6 +1213,32 @@ const layer = Layer.effect(
       return message
     })
 
+    // Starts the turn a waking prompt would have started, over the messages already stored. Nothing is written
+    // before the turn's own assistant message, so every queued note keeps its row and ID.
+    const sendNow = Effect.fn("SessionPrompt.sendNow")(function* (sessionID: SessionID) {
+      if (runs.has(sessionID) || (yield* status.get(sessionID)).type !== "idle")
+        return yield* new SendNowRefusedError({ sessionID, reason: "busy" })
+      const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+        Effect.provideService(Database.Service, database),
+        Effect.orDie,
+      )
+      const queued = MessageV2.unread(history).map((msg) => msg.info.id)
+      if (queued.length === 0) return yield* new SendNowRefusedError({ sessionID, reason: "empty" })
+      yield* drive(sessionID, queued.at(-1)).pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logError("send now failed", { sessionID, cause })
+            yield* events.publish(Session.Event.Error, {
+              sessionID,
+              error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
+            })
+          }),
+        ),
+        (work) => OwnerQuiescence.fork(work, scope, true),
+      )
+      return queued
+    })
+
     const prompt: Interface["prompt"] = Effect.fn("SessionPrompt.prompt")(function* (
       input: PromptInput,
       admission?: Deferred.Deferred<void, AdmissionRejected>,
@@ -1980,6 +2016,7 @@ const layer = Layer.effect(
       command: (input) => OwnerQuiescence.activity(command(input)),
       resolvePromptParts,
       unqueue,
+      sendNow: (sessionID) => OwnerQuiescence.activity(sendNow(sessionID)),
     })
   }),
 )
