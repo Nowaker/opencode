@@ -28,7 +28,7 @@ Coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.t
 - No UI button: the TUI still offers once/always/reject.
 - The `doom_loop` permission default (`ask`) is unchanged.
 - `reject` keeps its cascade and its "user rejected" prefix.
-- The v2 protocol's `Permission.Reply` and `packages/core/src/permission.ts` are unchanged.
+- The original v1 increment leaves the v2 protocol and owner unchanged; the separately delivered v2 port is recorded below.
 
 ## Rationale and constraints
 
@@ -60,6 +60,7 @@ Coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.t
 
 ## Timeline
 
+- 2026-11-13 [W1 v2 port](../sessions/2026-11-13-v2-plugin-controls.md#form-permission-and-job-result-controls), [session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ), publishes `889195efbcefdd8d826727560e56309f240a5636` on `v2-nowaker`. Native v2 `decision: "defer"` preserves exact/default/empty feedback without sibling cascade, and reject gains opt-in `scope: "request"`. Both runtimes advertise `permissionDefer` and `permissionRejectIsolation`; omitted reject scope retains v2's existing cascade. Canonical `ReplySelection`, `Permission.DeferredError`, runner error conversion, MCP and CodeMode propagation own the port; the v1 processor and doom-loop implementation are not copied into v2. Desktop and m4max install vt-22 through separate 12/12 gates and each passes the installed four-scenario permission proof.
 - 2026-11-10 [`ses_e3b76f3eaffe6Ydg2S8MTeZa64`](../sessions/2026-11-10-permission-defer-reply.md) - initial build. Evidence: `8940e84418`, merge `365d0a3b4d`, vt-416 on both hosts.
 
 ## Current maintenance notes
