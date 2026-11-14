@@ -102,6 +102,21 @@ describe("session diff", () => {
     expect(fileDiff.hunks).toEqual([])
   })
 
+  test("renders truncated tool metadata without throwing and preserves exact change counts", () => {
+    const view = normalize({
+      file: "large.txt",
+      patch:
+        "Index: large.txt\n===================================================================\n--- large.txt\n+++ large.txt\n@@ -1,320 +1,320 @@\n-old\n+new\n... diff truncated: 20971520 bytes, 638 lines not stored\n",
+      additions: 320,
+      deletions: 320,
+    })
+
+    expect(view.fileDiff.name).toBe("large.txt")
+    expect(view.additions).toBe(320)
+    expect(view.deletions).toBe(320)
+    expect(view.fileDiff.hunks).toEqual([])
+  })
+
   test("keeps full legacy content as a complete diff", () => {
     const diff = {
       file: "a.ts",

@@ -102,7 +102,7 @@ export const EditTool = Tool.define(
                 const desiredBom = next.bom
                 contentOld = ""
                 contentNew = next.text
-                diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
+                diff = capDiff(trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew)))
                 yield* ctx.ask({
                   permission: "edit",
                   patterns: [path.relative(instance.worktree, filePath)],
@@ -145,12 +145,14 @@ export const EditTool = Tool.define(
               const desiredBom = source.bom || next.bom
               contentNew = next.text
 
-              diff = trimDiff(
-                createTwoFilesPatch(
-                  filePath,
-                  filePath,
-                  normalizeLineEndings(contentOld),
-                  normalizeLineEndings(contentNew),
+              diff = capDiff(
+                trimDiff(
+                  createTwoFilesPatch(
+                    filePath,
+                    filePath,
+                    normalizeLineEndings(contentOld),
+                    normalizeLineEndings(contentNew),
+                  ),
                 ),
               )
               yield* ctx.ask({
@@ -172,12 +174,14 @@ export const EditTool = Tool.define(
                 file: filePath,
                 event: "change",
               })
-              diff = trimDiff(
-                createTwoFilesPatch(
-                  filePath,
-                  filePath,
-                  normalizeLineEndings(contentOld),
-                  normalizeLineEndings(contentNew),
+              diff = capDiff(
+                trimDiff(
+                  createTwoFilesPatch(
+                    filePath,
+                    filePath,
+                    normalizeLineEndings(contentOld),
+                    normalizeLineEndings(contentNew),
+                  ),
                 ),
               )
             }).pipe(Effect.orDie),
@@ -654,6 +658,26 @@ export const ContextAwareReplacer: Replacer = function* (content, find) {
       }
     }
   }
+}
+
+export const MAX_FILE_DIFF_BYTES = 256 * 1024
+export const MAX_TOTAL_DIFF_BYTES = 1024 * 1024
+
+export function capDiff(diff: string, maxBytes = MAX_FILE_DIFF_BYTES): string {
+  const bytes = Buffer.byteLength(diff)
+  if (bytes <= maxBytes) return diff
+
+  // Reserve the largest possible marker, then keep only complete UTF-8 lines.
+  // Encode only a bounded prefix, rather than copying the entire large diff.
+  const reserve = Buffer.byteLength(`... diff truncated: ${bytes} bytes, ${diff.length} lines not stored\n`)
+  const prefix = Buffer.from(diff.slice(0, maxBytes)).subarray(0, Math.max(0, maxBytes - reserve))
+  const end = prefix.lastIndexOf(10) + 1
+  const head = prefix.subarray(0, end).toString()
+  let lines = diff.endsWith("\n") ? 0 : 1
+  for (let index = head.length; index < diff.length; index++) {
+    if (diff.charCodeAt(index) === 10) lines++
+  }
+  return `${head}... diff truncated: ${bytes - end} bytes, ${lines} lines not stored\n`
 }
 
 export function trimDiff(diff: string): string {

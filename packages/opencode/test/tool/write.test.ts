@@ -60,6 +60,38 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 })
 
 describe("tool.write", () => {
+  for (const existing of [false, true]) {
+    it.instance(`bounds the permission diff for a 20 MiB ${existing ? "overwrite" : "creation"}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "large.txt")
+        const content = ("x".repeat(65535) + "\n").repeat(320)
+        const previews: unknown[] = []
+        if (existing) yield* Effect.promise(() => fs.writeFile(filepath, "old\n"))
+
+        const result = yield* run(
+          { filePath: filepath, content },
+          {
+            ...ctx,
+            ask: (input) =>
+              Effect.sync(() => {
+                previews.push(input.metadata.diff)
+              }),
+          },
+        )
+
+        expect(previews).toHaveLength(1)
+        const diff = previews[0]
+        expect(typeof diff).toBe("string")
+        if (typeof diff !== "string") throw new Error("missing permission diff")
+        expect(Buffer.byteLength(diff)).toBeLessThanOrEqual(256 * 1024)
+        expect(diff).toContain("... diff truncated:")
+        expect(result.output).toBe("Wrote file successfully (20971520 bytes).")
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe(content)
+      }),
+    )
+  }
+
   describe("new file creation", () => {
     it.instance("writes content to new file", () =>
       Effect.gen(function* () {

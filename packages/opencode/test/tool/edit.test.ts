@@ -100,6 +100,45 @@ const onceBus = Effect.fn("EditToolTest.onceBus")(function* (def: typeof Watcher
 })
 
 describe("tool.edit", () => {
+  for (const existing of [false, true]) {
+    it.instance(`bounds permission and result diffs for a 20 MiB ${existing ? "replacement" : "creation"}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "large.txt")
+        const content = ("x".repeat(65535) + "\n").repeat(320)
+        const previews: unknown[] = []
+        if (existing) yield* put(filepath, "old\n")
+
+        const result = yield* run(
+          { filePath: filepath, oldString: existing ? "old\n" : "", newString: content },
+          {
+            ...ctx,
+            ask: (input) =>
+              Effect.sync(() => {
+                previews.push(input.metadata.diff)
+              }),
+            metadata: (input) =>
+              Effect.sync(() => {
+                previews.push(input.metadata?.diff, input.metadata?.filediff?.patch)
+              }),
+          },
+        )
+
+        expect(previews).toHaveLength(3)
+        for (const diff of [...previews, result.metadata.diff, result.metadata.filediff.patch]) {
+          expect(typeof diff).toBe("string")
+          if (typeof diff !== "string") throw new Error("missing diff metadata")
+          expect(Buffer.byteLength(diff)).toBeLessThanOrEqual(256 * 1024)
+          expect(diff).toContain("... diff truncated:")
+        }
+        expect(result.metadata.filediff.additions).toBe(320)
+        expect(result.metadata.filediff.deletions).toBe(existing ? 1 : 0)
+        expect(result.output).toBe("Edit applied successfully.")
+        expect(yield* load(filepath)).toBe(content)
+      }),
+    )
+  }
+
   describe("creating new files", () => {
     it.instance("creates new file when oldString is empty", () =>
       Effect.gen(function* () {
