@@ -3,10 +3,10 @@
 ## Identity
 
 - Status: active
-- Integration branch: `dev-nowaker`
+- Integration branches: `dev-nowaker` (v1 source and all forklog records), `v2-nowaker` (native v2 source)
 - Development branch(es): `feat/tool-exposure-hook` (cut from `dev-nowaker`; upstreamable candidate, no PR)
 - First local commit: `ac36448956`
-- Current local commit(s): `ac36448956`, merge `f8f7cf2e33`; `2c4bd2a36a`, merge `cead509aa0`
+- Current local commit(s): v1 `ac36448956`, merge `f8f7cf2e33`; `2c4bd2a36a`, merge `cead509aa0`; native v2 `99ff4b4cc47065777136ff0d3d89b0466a21ebb7` on `native-tool-discovery` and `v2-nowaker`
 - Upstream base when introduced: `006d837c50` (`v1.19.5`, `github/v1`)
 - Last checked against upstream: `006d837c50`
 
@@ -14,13 +14,13 @@
 
 > i would generally wan a hybrid. i'd like to define which oc tools are always exposed, and which ones are behind a list.
 
-## Goals
+## Original v1 goals
 
 - A `tool.deferral` plugin hook decides, per tool of every request (built-in, plugin, MCP), whether it is sent with `defer_loading`.
 - With `@ai-sdk/openai` the Responses `tool_search` tool is added when any tool is deferred.
 - Without the hook, requests are byte-identical to before.
 
-## Non-goals
+## Original v1 non-goals
 
 - No search tool for `@ai-sdk/anthropic`: the endpoint brings it (Meridian does). The direct Anthropic API rejects deferred tools without one; the hook doc says to defer only where supported.
 - Code mode (`experimentalCodeMode`) returns before the hook and is untouched.
@@ -48,3 +48,16 @@
 - Same through opencode-tools `toolDeferral.*` settings and the opencode-lazy-mcp-plugin: both providers passed.
 - Installed `1.19.5-vt-407-006d837c50` on desktop; v2 guard gate passed.
 - 2026-11-10: `llm-request.test.ts` fails on the old code (0/2) and passes with the fix; installed `1.19.5-vt-436-006d837c50` on both hosts, and a GPT explore run answered.
+
+## Native v2 implementation
+
+- Both Promise and Effect Session context hooks receive mutable `deferred?: boolean` tool entries. Awaited hook output is request-local, deeply copied and reconciled against captured executor identity; an alias continues to execute the original tool. Omission and false preserve eager declarations.
+- Core uses the canonical native AI tool-search descriptors for `openai-responses` and `anthropic-messages`; unsupported protocols fail before transport. Unlike the original v1 Meridian contract above, native Anthropic requests include an explicit regex descriptor, with the canonical AI API also supporting BM25. The consumer owns deployment/model eligibility, eager and reserved-tool policy; Code Mode and native permission boundaries are preserved.
+- Stable seams: `packages/core/src/session/model-request-tools.ts`, `ModelRequest.prepare` and `tools.execute({ definitions: hooked })`; plugin `ToolDefinition.deferred`; `packages/ai/src/tool-search.ts`; protocol declaration, cache and hosted-item/replay owners under `packages/ai/src/protocols/utils/`; validation in ordinary and both explicit compaction routes. Protocol/Server info and generated Client surfaces expose optional `toolDeferral`.
+- OpenAI object search arguments, nullable call IDs, original/normalized item identity and raw provider metadata survive stored-history replay. Anthropic response-local regex/BM25 identity and nested success, empty and error content survive normalization and replay. Explicit incompatible cache hints and `http.body.tools` overlays refuse before dispatch.
+- Corrected source gate: 404 AI tests / 1,235 assertions, 8 Core tests / 57 assertions, current canonical 34/34, zero corrected literal diagnostics and eight restored-owner mutation failures. Two canonical client generation passes preserve all eight outputs. The retained Oracle closes both required compaction/extraction findings on exact 38-path snapshot `137b5d9548e11c475d36a3cc0104d43ae6683f519caf2bde2dab9c80b2d09c81`.
+- Both hosts independently install `opencode v2.2.7-vt-37-5f76acb125` from source `99ff4b4cc4`, each passing the mandatory native 12/12 gate and an isolated installed `toolDeferral: true` response. The same frozen private driver passes all 11 compiled scenarios on each host: captured alias execution exactly once, eager/false parity, unavailable-tool refusal, unsupported-protocol zero dispatch and durable native replay. Both owned engines exit zero and providers settle with zero active requests. The [delivery record](../sessions/2026-11-15-native-tool-deferral.md) owns exact artifact identities, command receipts and the source-tested-only BM25/model-eligibility limits.
+
+## Timeline
+
+- 2026-11-15 [W1 delivery](../sessions/2026-11-15-native-tool-deferral.md), [full source session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ) - native v2 port `99ff4b4cc4` is reviewed, normally published on both primary mirrors and independently installed on desktop and m4max. The earlier interrupted checkpoint remains on its original feature refs; no historical v1 verification is relabeled as v2 evidence.
