@@ -35,7 +35,7 @@ index 701d70dea2174e98ab56f4d614e678e868561479..c4b73d0825c4b46a99e5ec4f2811a40a
      for (const extmark of this.extmarks.values()) {
        if (extmark.virtual && offset >= extmark.start && offset < extmark.end) {
 diff --git a/chunk-bun-tkm837n2.js b/chunk-bun-tkm837n2.js
-index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe07277f42 100644
+index e5e5874f758a2e8c622ca8e9301f20c60c245546..ecf424ec10ab720216760ef623aa395262a945c5 100644
 --- a/chunk-bun-tkm837n2.js
 +++ b/chunk-bun-tkm837n2.js
 @@ -7063,6 +7063,7 @@ class CliRenderer extends EventEmitter5 {
@@ -54,7 +54,24 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
      this._usesProcessStdout = stdout === process.stdout;
      this.realStdoutWrite = stdout.write;
      const lib = resolveRenderLib();
-@@ -7519,7 +7521,11 @@ Captured external output:
+@@ -7205,7 +7207,15 @@ Captured external output:
+     this.rendererPtr = rendererPtr;
+     this.clearOnShutdown = config.clearOnShutdown ?? true;
+     this.lib.setClearOnShutdown(this.rendererPtr, this.clearOnShutdown);
+-    const forwardEnvKeys = config.forwardEnvKeys ?? (config.remote === false ? [...DEFAULT_FORWARDED_ENV_KEYS] : []);
++    // An SSH login makes native auto detection skip the process environment, so a tmux started from that
++    // login stays unknown until its XTVERSION reply; the Kitty graphics query sent after an earlier reply
++    // goes out unwrapped and tmux makes it the pane title. The multiplexer keys describe the pane this
++    // process writes to, so forward them; native then reads only these keys (Nowaker/opentui f25ffe29).
++    const remoteSession = ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "MOSH_CONNECTION"].some((key) => process.env[key] !== undefined);
++    const multiplexerKeys = ["TMUX", "ZELLIJ", "ZELLIJ_SESSION_NAME", "ZELLIJ_PANE_ID", "STY"];
++    if (/^(tmux|screen)/.test(process.env.TERM ?? ""))
++      multiplexerKeys.push("TERM");
++    const forwardEnvKeys = config.forwardEnvKeys ?? (config.remote === false ? [...DEFAULT_FORWARDED_ENV_KEYS] : remoteMode === undefined && remoteSession ? multiplexerKeys : []);
+     for (const key of forwardEnvKeys) {
+       const value = process.env[key];
+       if (value === undefined)
+@@ -7519,7 +7529,11 @@ Captured external output:
        return;
      }
      if (this._isRunning) {
@@ -67,7 +84,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
          this.scheduleRenderTimer();
        }
        return;
-@@ -7622,6 +7628,14 @@ Captured external output:
+@@ -7622,6 +7636,14 @@ Captured external output:
    get targetFps() {
      return this._targetFps;
    }
@@ -82,7 +99,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
    set targetFps(targetFps) {
      this._targetFps = targetFps;
      this.targetFrameTime = 1000 / this._targetFps;
-@@ -8654,6 +8668,8 @@ Captured external output:
+@@ -8654,6 +8676,8 @@ Captured external output:
        startupCursorCprActive
      });
      this.lib.setupTerminal(this.rendererPtr, this._screenMode === "alternate-screen");
@@ -91,7 +108,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
      this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
      if (this.debugOverlay.enabled) {
        this.lib.setDebugOverlay(this.rendererPtr, true, this.debugOverlay.corner);
-@@ -8775,10 +8791,17 @@ Captured external output:
+@@ -8775,10 +8799,17 @@ Captured external output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -109,7 +126,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
          this.emit("focus" /* FOCUS */);
        }
        return true;
-@@ -9338,6 +9361,8 @@ Captured external output:
+@@ -9338,6 +9369,8 @@ Captured external output:
      this.stdinParser?.reset();
      this.stdin.removeListener("data", this.stdinListener);
      this.themeModeState.cancelRefresh();
@@ -118,7 +135,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
      this.lib.suspendRenderer(this.rendererPtr);
      if (this.stdin.setRawMode) {
        this.stdin.setRawMode(false);
-@@ -9364,6 +9389,8 @@ Captured external output:
+@@ -9364,6 +9397,8 @@ Captured external output:
        this.lib.resumeRenderer(this.rendererPtr);
      }
      this.suspendedNonAltSurfacePreserved = false;
@@ -127,7 +144,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
      this.flushPendingSplitOutputBeforeTransition(false, { allowSuspended: true, allowPassthrough: true });
      if (this._screenMode === "split-footer" && this._splitHeight > 0) {
        this.syncSplitFooterState();
-@@ -9425,6 +9452,8 @@ Captured external output:
+@@ -9425,6 +9460,8 @@ Captured external output:
      if (this._destroyCleanupPrepared)
        return;
      this._destroyCleanupPrepared = true;
@@ -136,7 +153,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
      if (this._usesProcessStdout) {
        process.removeListener("SIGWINCH", this.sigwinchHandler);
      }
-@@ -9650,7 +9679,7 @@ Captured external output:
+@@ -9650,7 +9687,7 @@ Captured external output:
              this.collectStatSample(overallFrameTime);
            }
            if (this._isRunning || this.immediateRerenderRequested) {
@@ -145,7 +162,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
              const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
              this.immediateRerenderRequested = false;
              this.renderTimeout = this.clock.setTimeout(() => {
-@@ -9664,7 +9693,7 @@ Captured external output:
+@@ -9664,7 +9701,7 @@ Captured external output:
          } else if (nativeStatus === "blocked") {
            const overallFrameTime = performance.now() - overallStart;
            if (this._isRunning || this.immediateRerenderRequested) {
@@ -155,7 +172,7 @@ index e5e5874f758a2e8c622ca8e9301f20c60c245546..7656e5e72e42ba3f738f64d75d8bdffe
              this.immediateRerenderRequested = false;
              this.renderTimeout = this.clock.setTimeout(() => {
 diff --git a/chunk-node-51kpf0mz.js b/chunk-node-51kpf0mz.js
-index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f682520d266 100644
+index 4a2cb78c73179cc55c06dad549345a3145680120..ed295bdd33d2b8ae36046892d6de1ce009877983 100644
 --- a/chunk-node-51kpf0mz.js
 +++ b/chunk-node-51kpf0mz.js
 @@ -7062,6 +7062,7 @@ class CliRenderer extends EventEmitter5 {
@@ -174,7 +191,24 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
      this._usesProcessStdout = stdout === process.stdout;
      this.realStdoutWrite = stdout.write;
      const lib = resolveRenderLib();
-@@ -7518,7 +7520,11 @@ Captured external output:
+@@ -7204,7 +7206,15 @@ Captured external output:
+     this.rendererPtr = rendererPtr;
+     this.clearOnShutdown = config.clearOnShutdown ?? true;
+     this.lib.setClearOnShutdown(this.rendererPtr, this.clearOnShutdown);
+-    const forwardEnvKeys = config.forwardEnvKeys ?? (config.remote === false ? [...DEFAULT_FORWARDED_ENV_KEYS] : []);
++    // An SSH login makes native auto detection skip the process environment, so a tmux started from that
++    // login stays unknown until its XTVERSION reply; the Kitty graphics query sent after an earlier reply
++    // goes out unwrapped and tmux makes it the pane title. The multiplexer keys describe the pane this
++    // process writes to, so forward them; native then reads only these keys (Nowaker/opentui f25ffe29).
++    const remoteSession = ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "MOSH_CONNECTION"].some((key) => process.env[key] !== undefined);
++    const multiplexerKeys = ["TMUX", "ZELLIJ", "ZELLIJ_SESSION_NAME", "ZELLIJ_PANE_ID", "STY"];
++    if (/^(tmux|screen)/.test(process.env.TERM ?? ""))
++      multiplexerKeys.push("TERM");
++    const forwardEnvKeys = config.forwardEnvKeys ?? (config.remote === false ? [...DEFAULT_FORWARDED_ENV_KEYS] : remoteMode === undefined && remoteSession ? multiplexerKeys : []);
+     for (const key of forwardEnvKeys) {
+       const value = process.env[key];
+       if (value === undefined)
+@@ -7518,7 +7528,11 @@ Captured external output:
        return;
      }
      if (this._isRunning) {
@@ -187,7 +221,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
          this.scheduleRenderTimer();
        }
        return;
-@@ -7621,6 +7627,14 @@ Captured external output:
+@@ -7621,6 +7635,14 @@ Captured external output:
    get targetFps() {
      return this._targetFps;
    }
@@ -202,7 +236,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
    set targetFps(targetFps) {
      this._targetFps = targetFps;
      this.targetFrameTime = 1000 / this._targetFps;
-@@ -8653,6 +8667,8 @@ Captured external output:
+@@ -8653,6 +8675,8 @@ Captured external output:
        startupCursorCprActive
      });
      this.lib.setupTerminal(this.rendererPtr, this._screenMode === "alternate-screen");
@@ -211,7 +245,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
      this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
      if (this.debugOverlay.enabled) {
        this.lib.setDebugOverlay(this.rendererPtr, true, this.debugOverlay.corner);
-@@ -8774,10 +8790,17 @@ Captured external output:
+@@ -8774,10 +8798,17 @@ Captured external output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -229,7 +263,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
          this.emit("focus" /* FOCUS */);
        }
        return true;
-@@ -9337,6 +9360,8 @@ Captured external output:
+@@ -9337,6 +9368,8 @@ Captured external output:
      this.stdinParser?.reset();
      this.stdin.removeListener("data", this.stdinListener);
      this.themeModeState.cancelRefresh();
@@ -238,7 +272,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
      this.lib.suspendRenderer(this.rendererPtr);
      if (this.stdin.setRawMode) {
        this.stdin.setRawMode(false);
-@@ -9363,6 +9388,8 @@ Captured external output:
+@@ -9363,6 +9396,8 @@ Captured external output:
        this.lib.resumeRenderer(this.rendererPtr);
      }
      this.suspendedNonAltSurfacePreserved = false;
@@ -247,7 +281,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
      this.flushPendingSplitOutputBeforeTransition(false, { allowSuspended: true, allowPassthrough: true });
      if (this._screenMode === "split-footer" && this._splitHeight > 0) {
        this.syncSplitFooterState();
-@@ -9424,6 +9451,8 @@ Captured external output:
+@@ -9424,6 +9459,8 @@ Captured external output:
      if (this._destroyCleanupPrepared)
        return;
      this._destroyCleanupPrepared = true;
@@ -256,7 +290,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
      if (this._usesProcessStdout) {
        process.removeListener("SIGWINCH", this.sigwinchHandler);
      }
-@@ -9649,7 +9678,7 @@ Captured external output:
+@@ -9649,7 +9686,7 @@ Captured external output:
              this.collectStatSample(overallFrameTime);
            }
            if (this._isRunning || this.immediateRerenderRequested) {
@@ -265,7 +299,7 @@ index 4a2cb78c73179cc55c06dad549345a3145680120..0fa3937574ecf263932f1a5a860d8f68
              const delay = Math.max(1, targetFrameTime - Math.floor(overallFrameTime));
              this.immediateRerenderRequested = false;
              this.renderTimeout = this.clock.setTimeout(() => {
-@@ -9663,7 +9692,7 @@ Captured external output:
+@@ -9663,7 +9700,7 @@ Captured external output:
          } else if (nativeStatus === "blocked") {
            const overallFrameTime = performance.now() - overallStart;
            if (this._isRunning || this.immediateRerenderRequested) {
