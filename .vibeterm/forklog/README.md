@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Archived sessions refuse new turns](./features/2026-11-14-archive-blocks-turns.md)
 - [Pause a session after its current step and unpause it later](./features/2026-11-14-session-pause.md)
 - [Editable input before the full v2 TUI loads](./features/2026-11-11-v2-early-input.md)
 - [Migration-status polling through a v2 reconnect](./features/2026-11-11-v2-reconnect-status.md)
