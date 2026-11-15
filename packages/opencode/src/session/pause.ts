@@ -116,8 +116,9 @@ const layer = Layer.effect(
 
     const write = Effect.fn("SessionPause.write")(function* (sessionID: SessionID, pause: Info | undefined) {
       const current = (yield* sessions.get(sessionID).pipe(Effect.orDie)).metadata ?? {}
-      const { pause: _, ...rest } = current
-      yield* sessions.setMetadata({ sessionID, metadata: pause ? { ...rest, pause } : rest })
+      // A cleared pause stays as `null`, never a deleted key: Vibeterm's session sync adds every key the local row
+      // lacks from the other machine's copy, so a deleted key came back from a peer still holding the old pause.
+      yield* sessions.setMetadata({ sessionID, metadata: { ...current, pause: pause ?? null } })
       yield* status.setPaused(sessionID, pause)
       yield* events.publish(Event.Updated, { sessionID, pause: pause ?? null })
     })

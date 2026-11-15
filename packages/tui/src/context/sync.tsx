@@ -338,7 +338,8 @@ export const {
         }
 
         case "session.status": {
-          setStore("session_status", event.properties.sessionID, event.properties.status)
+          // reconcile: a plain set merges objects, so a status without `paused` would keep the previous pause.
+          setStore("session_status", event.properties.sessionID, reconcile(event.properties.status))
           break
         }
 

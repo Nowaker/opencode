@@ -1,6 +1,8 @@
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { eq, sql } from "drizzle-orm"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -520,4 +522,27 @@ it.instance(
     }),
   { git: true },
   60_000,
+)
+
+/*
+ * 2026-11-15, Portal live check: a cleared pause came back. Unpause deleted the `pause` key, and session sync, which
+ * adds every metadata key the local row lacks, copied it back from desktop's copy still holding the old pending pause.
+ * `json_insert` applies the same add-only-if-missing rule to the row.
+ */
+it.instance("a cleared pause stays cleared when a peer's stale copy is merged in", () =>
+  Effect.gen(function* () {
+    const ctx = yield* setup()
+    const stale = (yield* ctx.prompt.pause({ sessionID: ctx.chat.id, source: { kind: "api", client: "portal" } })).pause
+    yield* ctx.prompt.unpause({ sessionID: ctx.chat.id })
+    const { db } = yield* Database.Service
+    yield* db
+      .update(SessionTable)
+      .set({ metadata: sql`json_insert(${SessionTable.metadata}, '$.pause', json(${JSON.stringify(stale)}))` })
+      .where(eq(SessionTable.id, ctx.chat.id))
+      .run()
+      .pipe(Effect.orDie)
+    expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+    expect((yield* ctx.pauses.list()).has(ctx.chat.id)).toBe(false)
+    expect((yield* ctx.prompt.sendNow(ctx.chat.id).pipe(Effect.flip)).reason).toBe("empty")
+  }),
 )
