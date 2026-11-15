@@ -105,12 +105,14 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     let sse: AbortController | undefined
 
     function createSDK() {
+      const headers = new Headers(props.headers)
+      headers.set("x-opencode-client", "tui")
       return createOpencodeClient({
         baseUrl: props.url,
         signal: abort.signal,
         directory: props.directory,
         fetch: props.fetch,
-        headers: props.headers,
+        headers: Object.fromEntries(headers),
       })
     }
 

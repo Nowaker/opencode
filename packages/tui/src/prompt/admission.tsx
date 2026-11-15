@@ -5,6 +5,8 @@ import { useSDK } from "../context/sdk"
 import { useEvent } from "../context/event"
 import { errorMessage } from "../util/error"
 import type { PromptInfo } from "./history"
+import type { SessionArchive } from "@opencode-ai/schema/session-archive"
+import { archiveError } from "./archive"
 
 /*
  * A submitted prompt is held here, with the draft it came from, until the
@@ -38,6 +40,7 @@ export type Admission<Body> = {
   state: "sending" | "checking" | "unknown" | "rejected"
   slow: boolean
   error?: string
+  archive?: SessionArchive.Details
   /**
    * Sent past the composer by `api.prompt.deliver`. Its sender looks the message up by ID and sends again with the
    * same IDs, so a delivery that is not known to be stored is dropped here rather than handed back to the composer.
@@ -47,7 +50,7 @@ export type Admission<Body> = {
 
 export type AdmissionSend =
   | { type: "ok" }
-  | { type: "rejected"; message: string }
+  | { type: "rejected"; message: string; archive?: SessionArchive.Details }
   | { type: "ambiguous"; message: string }
 
 export type AdmissionLookup =
@@ -95,6 +98,10 @@ export function createPromptAdmission<Body>(io: AdmissionIO<Body>) {
     const result = await io.send(entry.body)
     if (!find(messageID)) return
     if (result.type === "ok") return remove(messageID)
+    if (result.type === "rejected" && result.archive) {
+      if (entry.delivery) return remove(messageID)
+      return update(messageID, { state: "rejected", error: result.message, archive: result.archive })
+    }
     await reconcile(messageID, result)
   }
 
@@ -184,6 +191,8 @@ export const { use: usePromptAdmission, provider: PromptAdmissionProvider } = cr
         if ("thrown" in result) return { type: "ambiguous", message: errorMessage(result.thrown) }
         if (!result.error) return { type: "ok" }
         const message = errorMessage(result.error)
+        const archive = archiveError(result.error)
+        if (archive) return { type: "rejected", message, archive }
         // A gateway error or a missing response says nothing about whether the
         // server stored the prompt; any other status is the server's own answer.
         const status = result.response?.status

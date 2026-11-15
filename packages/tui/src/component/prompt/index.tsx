@@ -59,6 +59,9 @@ import { useKV } from "../../context/kv"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
+import { DialogSessionArchived } from "../dialog-session-archived"
+import { archiveDetails, archiveError, archiveRecord } from "../../prompt/archive"
+import type { SessionArchive } from "@opencode-ai/schema/session-archive"
 import { useArgs } from "../../context/args"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
@@ -406,6 +409,11 @@ export function Prompt(props: PromptProps) {
   }
 
   const paused = createMemo(() => status().paused)
+  const [archiveRefusal, setArchiveRefusal] = createSignal<SessionArchive.Details>()
+  const archived = createMemo(() => {
+    const session = props.sessionID ? sync.session.get(props.sessionID) : undefined
+    return archiveDetails(session) ?? (archiveRefusal()?.sessionID === props.sessionID ? archiveRefusal() : undefined)
+  })
   // What the pause waits for while the current step drains, and how many tool calls it holds once it stopped.
   const pauseTools = createMemo(() => {
     const messages = sync.data.message[props.sessionID ?? ""] ?? []
@@ -1144,14 +1152,62 @@ export function Prompt(props: PromptProps) {
     return "added above your new text"
   }
 
+  function showArchived(details: SessionArchive.Details, send: () => void, refresh = false) {
+    const [previous, setPrevious] = createSignal(archiveRecord(sync.session.get(details.sessionID))?.unarchived)
+    if (refresh) void sdk.client.session.get({ sessionID: details.sessionID }).then((result) => {
+      if (result.data) setPrevious(archiveRecord(result.data)?.unarchived)
+    }).catch((error: unknown) => toast.show({ title: "Archive history unavailable", message: errorMessage(error), variant: "error" }))
+    setArchiveRefusal(details)
+    dialog.replace(() => <DialogSessionArchived archive={details} unarchived={previous()} onUnarchive={() => {
+      setArchiveRefusal(undefined)
+      send()
+    }} />)
+  }
+
+  function recoverArchived(details: SessionArchive.Details, draft: PromptInfo, send: () => void) {
+    const newer = structuredClone(unwrap({ ...store.prompt, input: input.plainText, mode: store.mode }))
+    giveBack(draft)
+    if (!newer.input && !newer.parts.length) setStore("mode", draft.mode ?? "normal")
+    const restored = JSON.stringify({ input: input.plainText, parts: unwrap(store.prompt.parts) })
+    showArchived(details, () => {
+      if (JSON.stringify({ input: input.plainText, parts: unwrap(store.prompt.parts) }) === restored) {
+        input.setText(newer.input)
+        setStore("prompt", { input: newer.input, parts: newer.parts })
+        setStore("mode", newer.mode)
+        restoreExtmarksFromParts(newer.parts)
+        input.gotoBufferEnd()
+      }
+      send()
+    }, true)
+  }
+
+  function sendAction(send: (unarchive: boolean) => Promise<{ error?: unknown }>, draft: PromptInfo, unarchive: boolean) {
+    void send(unarchive).then((result) => {
+      if (!result.error) return
+      const archive = archiveError(result.error)
+      if (archive) return recoverArchived(archive, draft, () => sendAction(send, draft, true))
+      const notice = `Not sent (${errorMessage(result.error)}) - ${giveBack(draft)}`
+      toast.show({ title: "Failed to send prompt", message: notice, variant: "error" })
+    }).catch((error: unknown) => {
+      const notice = `Not sent (${errorMessage(error)}) - ${giveBack(draft)}`
+      toast.show({ title: "Failed to send prompt", message: notice, variant: "error" })
+    })
+  }
+
   createEffect(() => {
     const rejected = admissions().filter((entry) => entry.state === "rejected")
     untrack(() =>
       rejected.forEach((entry) => {
         if (!input || input.isDestroyed) return
         const error = entry.error ?? "unknown error"
+        const archive = entry.archive
+        const body = structuredClone(unwrap(entry.body))
         const draft = admission.release(entry.messageID)
         if (!draft) return
+        if (archive) return recoverArchived(archive, draft, () => admission.submit({
+          messageID: entry.messageID, sessionID: entry.sessionID, textPartID: entry.textPartID,
+          prompt: draft, body: { ...body, unarchive: true },
+        }))
         const notice = `Not sent (${error}) - ${giveBack(draft)}`
         setUnsent(notice)
         toast.show({ title: "Failed to send prompt", message: notice, variant: "error" })
@@ -1413,7 +1469,7 @@ export function Prompt(props: PromptProps) {
   })
 
   let submitting = false
-  async function submit(expected?: { input: string; parts: number }) {
+  async function submit(expected?: { input: string; parts: number }, unarchive = false) {
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -1423,13 +1479,13 @@ export function Prompt(props: PromptProps) {
     if (submitting) return false
     submitting = true
     try {
-      return await submitInner(expected)
+      return await submitInner(expected, unarchive)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner(expected?: { input: string; parts: number }) {
+  async function submitInner(expected?: { input: string; parts: number }, unarchive = false) {
     workspace.clearNotice()
     if (startupNotice()?.type === "changed") setStartupNotice(undefined)
 
@@ -1459,6 +1515,12 @@ export function Prompt(props: PromptProps) {
     }
 
     const workspaceSession = props.sessionID ? sync.session.get(props.sessionID) : undefined
+    const archive = archived()
+    if (archive && !unarchive) {
+      const expected = { input: store.prompt.input, parts: store.prompt.parts.length }
+      showArchived(archive, () => void submit(expected, true))
+      return false
+    }
     const workspaceID = workspaceSession?.workspaceID
     const workspaceStatus = workspaceID ? (project.workspace.status(workspaceID) ?? "error") : undefined
     if (props.sessionID && workspaceID && workspaceStatus !== "connected") {
@@ -1526,6 +1588,7 @@ export function Prompt(props: PromptProps) {
 
     // Capture mode before it gets reset
     const currentMode = store.mode
+    const draft = structuredClone(unwrap({ ...store.prompt, mode: currentMode }))
     const editorSelection = editorContext()
     const editorParts =
       editorSelection && editor.labelState() === "pending"
@@ -1546,7 +1609,7 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      void sdk.client.session.shell({
+      sendAction((unarchive) => sdk.client.session.shell({
         sessionID,
         agent: agent.name,
         model: {
@@ -1554,7 +1617,8 @@ export function Prompt(props: PromptProps) {
           modelID: selectedModel.modelID,
         },
         command: inputText,
-      })
+        unarchive,
+      }), draft, unarchive)
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1568,7 +1632,7 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void sdk.client.session.command({
+      sendAction((unarchive) => sdk.client.session.command({
         sessionID,
         command: command.slice(1),
         arguments: args,
@@ -1577,7 +1641,8 @@ export function Prompt(props: PromptProps) {
         variant,
         parts: nonTextParts.filter((x) => x.type === "file"),
         unpause: true,
-      })
+        unarchive,
+      }), draft, unarchive)
     } else {
       move.startSubmit()
       // IDs are generated here so a failed send can be looked up and resent without a duplicate. Only the leading
@@ -1600,6 +1665,7 @@ export function Prompt(props: PromptProps) {
           parts: [...leading, { id: textPartID, type: "text", text: inputText }, ...nonTextParts],
           // A person typing to a paused session means to go on: the deferred calls run first, then this.
           unpause: true,
+          unarchive,
         },
       })
       if (editorParts.length > 0) editor.markSelectionSent()
@@ -2210,6 +2276,9 @@ export function Prompt(props: PromptProps) {
                 )}
               </Show>
             </box>
+            <Show when={archived()}>
+              <text fg={theme.warning}>archived</text>
+            </Show>
             <Show when={hasRightContent()}>
               <box flexDirection="row" gap={1} alignItems="center">
                 {props.right}

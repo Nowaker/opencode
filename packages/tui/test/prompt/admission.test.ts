@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createPromptAdmission, type AdmissionLookup, type AdmissionSend } from "../../src/prompt/admission"
+import type { SessionArchive } from "@opencode-ai/schema/session-archive"
 
 type Body = { messageID: string; textPartID: string; text: string }
 
@@ -18,7 +19,7 @@ function createServer() {
     /** Next send stores the message and answers ok. */
     accept: () => behaviors.push(async (body) => (store(body), { type: "ok" })),
     /** Next send stores nothing; the server answers with an error. */
-    reject: (message = "database is locked") => behaviors.push(async () => ({ type: "rejected", message })),
+    reject: (message = "database is locked", archive?: SessionArchive.Details) => behaviors.push(async () => ({ type: "rejected", message, archive })),
     /** Next send is stored, but the response is lost on the way back. */
     lose: () => behaviors.push(async (body) => (store(body), { type: "ambiguous", message: "bad gateway" })),
     /** Next send never reaches the server, and nothing comes back. */
@@ -212,9 +213,9 @@ describe("prompt admission", () => {
     t.dispose()
   })
 
-  test("a delivery the server refuses is dropped, never kept for the composer to take back", async () => {
+  test.each([false, true])("a refused delivery is dropped rather than restored to the composer (archive: %s)", async (archived) => {
     const t = setup()
-    t.server.reject()
+    t.server.reject("refused", archived ? { sessionID: "ses_1", archivedAt: 123 } : undefined)
     const id = t.submit("from another session", true)
     await until(() => t.state(id) === undefined)
     expect(t.server.messages.size).toBe(0)

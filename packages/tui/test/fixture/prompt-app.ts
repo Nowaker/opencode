@@ -1,11 +1,12 @@
 import { mock } from "bun:test"
 import type { TuiComposerDraft, TuiPluginApi } from "@opencode-ai/plugin/tui"
+import type { Session } from "@opencode-ai/sdk/v2"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import { tmpdir } from "./fixture"
 import { createTuiResolvedConfig } from "./tui-runtime"
-import { createEventSource, createFetch, directory, json } from "./tui-sdk"
+import { createEventSource, createFetch, directory, json, type FetchHandler } from "./tui-sdk"
 import type { BuiltinTuiPlugin } from "../../src/feature-plugins/builtins"
 import { pluginMeta, withSlots } from "./sidebar"
 
@@ -52,6 +53,8 @@ export async function withPrompt(
     home?: boolean
     plugins?: BuiltinTuiPlugin[]
     kv?: Record<string, unknown>
+    session?: Partial<Session>
+    fetch?: FetchHandler
   },
 ) {
   await using tmp = await tmpdir()
@@ -64,11 +67,14 @@ export async function withPrompt(
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
   const paths: string[] = []
-  const calls = createFetch((url) => {
+  const chat = { ...session, ...options?.session }
+  const calls = createFetch(async (url, request) => {
     paths.push(url.pathname)
-    if (url.pathname === "/session") return json([session])
+    const overridden = await options?.fetch?.(url, request)
+    if (overridden) return overridden
+    if (url.pathname === "/session") return json([chat])
     if (url.pathname === "/session/status") return json({ [sessionID]: { type: "busy" } })
-    if (url.pathname === `/session/${sessionID}`) return json(session)
+    if (url.pathname === `/session/${sessionID}`) return json(chat)
     if (url.pathname === `/session/${sessionID}/message`) return url.searchParams.has("limit") ? json([]) : json({})
     if (url.pathname.startsWith(`/session/${sessionID}/message/`))
       return json({ name: "NotFoundError", data: { message: "Message not found" } }, { status: 404 })
@@ -175,4 +181,3 @@ export async function withPrompt(
     mock.restore()
   }
 }
-
