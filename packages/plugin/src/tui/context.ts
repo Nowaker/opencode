@@ -27,6 +27,9 @@ import type { ResolvedTheme } from "@opencode/theme/tui"
 import type { CliRenderer, KeyEvent, MarkdownCodeBlockRenderer, Renderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Store } from "solid-js/store"
+import type { Composer } from "./composer.js"
+
+export type { Composer, ComposerDraft, ComposerObservation } from "./composer.js"
 
 export interface Storage {
   /**
@@ -488,6 +491,8 @@ export interface Keymap {
 }
 
 export interface UI {
+  /** Optional on older hosts. Map absence to unavailable/unsupported. */
+  readonly composer?: Composer
   readonly dialog: Dialog
   readonly toast: Toast
   readonly format: {

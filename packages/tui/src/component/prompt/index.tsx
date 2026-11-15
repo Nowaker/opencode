@@ -32,6 +32,7 @@ import { parseSlashHead } from "../../prompt/parse"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { emptyPrompt, usePromptHistory, type PromptInfo, type PromptPartRef } from "../../prompt/history"
 import { registerComposer, saveDraft, takeDraft } from "./draft-stash"
+import { createDraftObservation } from "./observation"
 import { Skill } from "@opencode/schema/skill"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
@@ -96,6 +97,7 @@ export type PromptRef = {
   blur(): void
   focus(): void
   submit(): void
+  observe: ReturnType<typeof createDraftObservation>
 }
 
 const DRAFT_RETENTION_MIN_CHARS = 20
@@ -671,7 +673,12 @@ export function Prompt(props: PromptProps) {
     ],
   }))
 
+  const observe = createDraftObservation(inputTarget, () => ({ ...store.prompt, mode: store.mode }), cursorVersion)
   const ref: PromptRef = {
+    observe() {
+      if (props.visible === false || startup?.adopting() || (startup && !startup.settled(props.sessionID))) return
+      return observe()
+    },
     get focused() {
       return !disabled() && input.focused
     },

@@ -46,6 +46,8 @@ import { useOptionalPanel } from "../context/panel"
 import { useLocal } from "../context/local"
 import { errorMessage } from "../util/error"
 import { abbreviateHome } from "../util/path-format"
+import { usePromptRef } from "../context/prompt"
+import { createComposerApi } from "./composer"
 
 export type Dispose = () => Promise<void>
 
@@ -96,6 +98,7 @@ export function usePluginHost() {
     sessionTabs: useSessionTabs(),
     panel: useOptionalPanel(),
     local: useLocal(),
+    prompt: usePromptRef(),
   }
 }
 
@@ -220,6 +223,7 @@ export function createPluginContext(input: {
       memory: (key, options) => host.storage.memory(`plugin.${input.id}.${key}`, options),
     },
     ui: {
+      composer: createComposerApi(() => host.prompt.observe(), { owner: host.owner, owned: input.owned }),
       dialog: dialogApi,
       toast: toastApi,
       format: {

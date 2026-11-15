@@ -68,6 +68,7 @@ export function create(
   const [active, setActive] = createSignal(true)
   // The draft is still on its way to a composer, in the temporary editor or parked.
   const [pending, setPending] = createSignal(true)
+  const [adopting, setAdopting] = createSignal(false)
   const [target, setTarget] = createSignal<Target>()
   // Set when the claimed draft carries an explicit Enter; consumed once by its composer.
   const [submit, setSubmit] = createSignal(false)
@@ -115,6 +116,7 @@ export function create(
       }
       const draft = current()
       const keep = touched(draft)
+      setAdopting(keep)
       setSubmit(submitted !== undefined && submitted === draft.text)
       // The text lands before the temporary editor ends: ending it re-enables the application, whose effects (focus,
       // auto-submit) run at once and must see the claimed draft.
@@ -124,6 +126,7 @@ export function create(
       const paused = draft.anchor !== draft.caret
       if (paused) renderer.stdin.pause()
       void StartupLayer.restore(renderer, claimant.input, draft).then(() => {
+        setAdopting(false)
         if (paused) renderer.stdin.resume()
       })
     })
@@ -157,6 +160,7 @@ export function create(
   return {
     /** The temporary editor holds input; application keymaps stay disabled meanwhile. */
     active,
+    adopting,
     /** Where the draft goes: decided by the startup arguments once the route they lead to is known. */
     resolve(next: Target) {
       if (target() || disposed) return

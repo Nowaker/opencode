@@ -1,4 +1,5 @@
 import type { WidthMethod } from "@opentui/core"
+import { createSignal } from "solid-js"
 import { appendPrompt, type PromptInfo } from "../../prompt/history"
 import type { PromptRef } from "./index"
 
@@ -20,12 +21,21 @@ export function saveDraft(sessionID: string | undefined, entry: DraftEntry) {
 }
 
 const composers = new Map<string | undefined, PromptRef>()
+const [composerVersion, setComposerVersion] = createSignal(0)
+
+export function mountedComposer(sessionID: string | undefined) {
+  composerVersion()
+  return composers.get(sessionID)
+}
 
 /** Marks a tab's mounted composer as the one {@link appendToSessionPrompt} writes to; returns its unregister. */
 export function registerComposer(sessionID: string | undefined, composer: PromptRef) {
   composers.set(sessionID, composer)
+  setComposerVersion((value) => value + 1)
   return () => {
-    if (composers.get(sessionID) === composer) composers.delete(sessionID)
+    if (composers.get(sessionID) !== composer) return
+    composers.delete(sessionID)
+    setComposerVersion((value) => value + 1)
   }
 }
 
