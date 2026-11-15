@@ -104,6 +104,16 @@ Consumers: [pause-vt] [`ses_e26c2309cffe1Yhw092QXA2WWI`](https://portal.vibeterm
 
 - Required trailer: `AI-Session-ID: ses_e26c25ca4ffeYUicqdusaViOJa`
 
+## Follow-up: pause came back after unpause (Portal live check)
+
+Reported by [pause-portal] [`ses_e26c1d3f0ffeBskpNm6KAvzMCq`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e26c1d3f0ffeBskpNm6KAvzMCq) on scratch session `ses_e22d0fd7affehMAALu1CuEVtWl`.
+
+- Cause 1: unpause deleted `metadata.pause`; desktop still held the synced pending pause, and session sync adds every key the local row lacks. The event log shows the row clear at seq 34, then the original pending pause back at seq 56. The collector logged "merged session metadata" at 03:32Z, and the pause reappeared again afterwards. Fix `3cdb14afd61`: store `pause: null`.
+- Cause 2: the TUI merged each `session.status` into the stored object, so `paused` survived an idle status and the footer kept "paused". Fix: `reconcile`.
+- Not a fork bug: vibeterm-api's `/session/status` called the session busy because its detector reads a trailing `vibeterm_notify_session` note (noReply) as `no-dispatch`. Unpause correctly started no turn: notes never start one.
+- Tests: `pause.test.ts` "a cleared pause stays cleared when a peer's stale copy is merged in" and TUI `sync-session-status.test.tsx`; each fails without its fix and passes with it. `pause.test.ts` 10/10 in three consecutive runs; one earlier run timed out the discard case at 60 s on a loaded host and did not recur. TUI sync/footer/context 45 pass, `httpapi-session.test.ts` 29 pass, typecheck clean.
+- Installed `1.19.5-vt-494-006d837c50` on m4max with `.vibeterm/build.sh`; guard gate passed; smoke OK.
+
 ## Unknowns and blocked verification
 
 - Desktop install of vt-486 or later is reported by [`ses_e260d756cffeESP9yeZasZMm2X`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e260d756cffeESP9yeZasZMm2X), not checked here.

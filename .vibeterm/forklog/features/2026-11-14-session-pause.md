@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `session-pause`
 - First local commit: `d634b67a9be`
-- Current local commit(s): `d634b67a9be`, `e60728ae6eb`, `05d3e55825c`
+- Current local commit(s): `d634b67a9be`, `e60728ae6eb`, `05d3e55825c`, `3cdb14afd61`
 - Upstream base when introduced: `006d837c50` (upstream `v1`, `v1.19.5`)
 - Last checked against upstream: `006d837c50` (upstream `v1`, `v1.19.5`)
 - Upstream: not filed; see [pr-queue entry 09](../pr-queue/09-session-pause.md). Answers [#27511](https://github.com/anomalyco/opencode/issues/27511); the v2 shape is [#63875](https://github.com/anomalyco/opencode/issues/63875) `soft`.
@@ -50,6 +50,7 @@ The user approved "build all, as recommended", and coordinator [`ses_ef8235798ff
 | `d634b67a9be` | 2026-11-14 | Pause state, loop gate, deferral, unpause runner, discard, held prompts, subagent wait, routes, SDK, TUI commands, keybind, footer and deferred-part rendering, docs; Send now refuses `paused` | `SessionPause` in `packages/opencode/src/session/pause.ts`; `SessionPrompt.pause`/`unpause`/`discard`, `heldWhilePaused`, `runDeferred`, the paused gate in `runLoop` and the execute wrapper in `packages/opencode/src/session/prompt.ts`; `deferToolCall` in `processor.ts`; `SessionStatus.setPaused` in `status.ts`; `forgetPart`/`forgetInfo` in `message-v2.ts`; `SessionPauseEvent` in `packages/schema/src/session-pause-event.ts`; `ToolStatePending.metadata` in `packages/schema/src/v1/session.ts`; `paused` on `SessionStatusEvent.Info`; `POST /session/:sessionID/pause`, `/unpause`, `/discard` in `httpapi/groups/session.ts`; `session_pause` keybind; `DeferredTool` in `packages/tui/src/routes/session/index.tsx` |
 | `e60728ae6eb` | 2026-11-14 | Model and pin state writes log a failure instead of rejecting unhandled | `packages/tui/src/context/local.tsx` `save` |
 | `05d3e55825c` | 2026-11-14 | Drop the `@ts-expect-error` that `ToolStatePending.metadata` made unused | `packages/session-ui/src/components/message-part.tsx` `partMetadata` |
+| `3cdb14afd61` | 2026-11-14 | A cleared pause is stored as `pause: null` instead of a deleted key, so session sync's add-missing-key merge cannot bring back a peer's stale pause; the TUI reconciles `session.status` so an unpause clears the footer | `SessionPause.write` in `pause.ts`; `session.status` case in `packages/tui/src/context/sync.tsx` |
 
 The wire contract (paths, bodies, events, field names) is in the [session record](../sessions/2026-11-14-session-pause.md#contract-draft-2-fixed-2026-11-14).
 
@@ -72,3 +73,4 @@ Session [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.
 - The fork default `alt+p` is in `keybind-definitions.ts`; an upstream PR should default to `none`.
 - Vibeterm counterparts: [pause-vt] [`ses_e26c2309cffe1Yhw092QXA2WWI`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e26c2309cffe1Yhw092QXA2WWI) in opencode-tools, [pause-portal] [`ses_e26c1d3f0ffeBskpNm6KAvzMCq`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e26c1d3f0ffeBskpNm6KAvzMCq) in Portal.
 - Needs a v2 port (proposal phase P3), shaped by #63875 `soft`.
+- Session sync (opencode-tools `mergeIncomingSessionMeta`) keeps the local value of every non-`vibeterm` key, so a machine that synced a pause before it was cleared keeps that stale copy; the owning machine is protected by the `null` tombstone. Propagating the clear needs a recency rule for `pause` in session sync.
