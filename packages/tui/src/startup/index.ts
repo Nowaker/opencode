@@ -72,6 +72,7 @@ export function start(input: {
   waiting.promise.catch(() => {})
   let requested = false
   let retained: Snapshot | undefined
+  let remainder: Uint8Array | undefined
   let recovery: Promise<void> | undefined
 
   const post = (request: Request) => worker.postMessage(request)
@@ -127,10 +128,18 @@ export function start(input: {
         requested = true
         phase = "transferring"
         post({ type: "handover", immediate: true })
-        retained = (await waiting.promise)?.snapshot
+        const transfer = await waiting.promise
+        retained = transfer?.snapshot
+        remainder = transfer?.bytes
       }
       restore()
-      if (retained?.touched) StartupTerminal.write(2, `Startup draft (not submitted): ${JSON.stringify(retained)}\n`)
+      if (retained && (retained.touched || remainder?.length))
+        StartupTerminal.write(1, `Startup draft (not submitted): ${JSON.stringify(retained)}\n`)
+      if (remainder?.length)
+        StartupTerminal.write(
+          1,
+          `Startup input remainder (base64, not submitted): ${Buffer.from(remainder).toString("base64")}\n`,
+        )
     })())
   }
 
