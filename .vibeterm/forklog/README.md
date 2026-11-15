@@ -46,6 +46,7 @@ carries every feature forward unchanged. That commit includes the full
 - [Selected-agent request defaults on v2](./features/2026-11-13-v2-agent-request.md)
 - [Anthropic Meridian provider clone](./features/2026-11-12-anthropic-meridian-provider.md)
 - [Slow animation frames in an unfocused TUI](./features/2026-11-11-unfocused-redraw-throttle.md)
+- [Keep the Kitty graphics query out of the tmux pane title over ssh](./features/2026-11-15-remote-tmux-graphics-probe.md)
 - [Atomic session metadata merge on v2](./features/2026-11-10-v2-metadata-merge.md)
 - [Durable v2 events and authenticated replay](./features/2026-11-10-v2-event-replay.md)
 - [User-visible ignored synthetic notes on v2](./features/2026-11-10-v2-ignored-notes.md)
@@ -163,6 +164,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-15 `ses_e215062b9ffe020IfGlqnRnuPu`](./sessions/2026-11-15-remote-tmux-graphics-probe.md) - opencode in a tmux pane that inherited `SSH_*` set the pane title to the Kitty graphics query (`Gi=31337,...`): OpenTUI 0.4.5 ignored `TMUX` in auto remote mode and sent the query unwrapped behind the instant prompt; the 0.4.5 patch forwards the multiplexer keys in ssh/mosh sessions (OpenTUI native fix `f25ffe29`, upstream branch `fix/remote-tmux-graphics-probe`); `9973164c6c`; vt-501 on desktop, vt-502 on m4max, title kept in both tmux configs
 - [2026-11-15 W1 native tool deferral](./sessions/2026-11-15-native-tool-deferral.md) - reviewed request-local tool deferral, captured alias execution and native provider replay; source `99ff4b4cc4` published on both mirrors and independently installed as vt-37 through 12/12 native gates and all 11 compiled behavioral scenarios on each host, with protected-runtime and eligibility evidence limits retained.
 - [2026-11-14 W1 startup waiting and installed wordmark](./sessions/2026-11-14-v2-startup-wait.md) - exact explicit-server and reserved-Session readiness with lossless failed-startup terminal recovery; reviewed `5321` independently installed as vt-36 through 12/12 gates on both hosts, desktop 14/14 and Mac acceptance with async zero-contact help controls, corrected 44/100-column wordmark, retained c9 controller demonstration, mail repairs and explicitly retained denied scratch.
 - [2026-11-14 W4 desktop and Mac qualification](./sessions/2026-11-14-v2-early-input.md) - installed vt-33 passes eight visual, six controller and eight Mac compiled cases; one Mac timing campaign passes forty current first-input ledgers with history/HTTP and historical-byte caveats retained. The real early-logo correction is published for W1's next shared gated build; host release, guard publication, fingerprints and cleanup remain explicit.
