@@ -101,16 +101,22 @@ set -euo pipefail
 PROBE
 chmod +x "$ROOT/bin/probe"
 PROBE_OVERRIDE="$ROOT/bin/probe"
+GUARD_OVERRIDE="$ROOT/bin/guard"
+# The caller's PATH may hold opencode-tools' bin; the lookup cases must not find it there.
+TEST_PATH="$(printf '%s' "$PATH" | tr ':' '\n' | while IFS= read -r dir; do
+  [ -e "$dir/vibeterm-v2-guard" ] || [ -e "$dir/vibeterm-v2-probe" ] || printf '%s:' "$dir"
+done)"
+TEST_PATH="${TEST_PATH%:}"
 SRC_OVERRIDE=""
 INSTALL_OVERRIDE=""
 VERSION_OVERRIDE=""
 CACHE_OVERRIDE=""
 run() {
   STATUS=0
-  OUT="$(cd "$HERE" && env -i PATH="$ROOT/bin:$PATH" HOME="$ROOT/live-home" \
+  OUT="$(cd "$HERE" && env -i PATH="$ROOT/bin:$TEST_PATH" HOME="$ROOT/live-home" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
     OPENCODE_SRC="$SRC_OVERRIDE" OPENCODE_INSTALL="$INSTALL_OVERRIDE" \
-    OPENCODE_VERSION="$VERSION_OVERRIDE" VIBETERM_V2_GUARD="$ROOT/bin/guard" \
+    OPENCODE_VERSION="$VERSION_OVERRIDE" VIBETERM_V2_GUARD="$GUARD_OVERRIDE" \
     BUN_INSTALL_CACHE_DIR="$CACHE_OVERRIDE" \
     VIBETERM_V2_PROBE="$PROBE_OVERRIDE" BUILD_TEST_PROBE_FAILURE="$ROOT/fail-probe" \
     BUILD_TEST_EXPECTED_BINARY="${SRC_OVERRIDE:-$MANAGED}/packages/cli/dist/cli-native/bin/opencode" \
@@ -263,4 +269,44 @@ status 0
 [[ "$OUT" == *"path: $INSTALL_ROOT/opencode"* ]]
 [[ "$OUT" == *fixture-v1* ]]
 printf 'PASS: v1 guard failure blocks install; passing guard keeps the v1 default install path\n'
+
+fake_tool() {
+  mkdir -p "$1/vibeterm-opencode-client/bin"
+  cat > "$1/vibeterm-opencode-client/bin/$2" <<TOOL
+#!/usr/bin/env bash
+printf '%s\\n' "\$0 \$1" >> "$ROOT/tool-calls"
+TOOL
+  chmod +x "$1/vibeterm-opencode-client/bin/$2"
+}
+last_call() { tail -n 1 "$ROOT/tool-calls"; }
+fake_tool "$ROOT/config-tools" vibeterm-v2-guard
+fake_tool "$ROOT/opencode-tools" vibeterm-v2-guard
+fake_tool "$ROOT/opencode-tools" vibeterm-v2-probe
+mkdir -p "$ROOT/live-config/opencode"
+printf '{"plugin":["file://%s/opencode-vibeterm-route-plugin/index.ts"]}\n' "$ROOT/config-tools" \
+  > "$ROOT/live-config/opencode/tui.json"
+printf '{"plugin":["file://%s/opencode-vibeterm-spawn-plugin"]}\n' "$ROOT/config-tools" \
+  > "$ROOT/live-config/opencode/opencode.jsonc"
+GUARD_OVERRIDE=""
+run
+status 0
+equal "$(last_call)" "$ROOT/config-tools/vibeterm-opencode-client/bin/vibeterm-v2-guard gate"
+[[ "$OUT" == *"guard with $ROOT/config-tools/vibeterm-opencode-client/bin/vibeterm-v2-guard against"* ]]
+rm "$ROOT/live-config/opencode/tui.json" "$ROOT/live-config/opencode/opencode.jsonc"
+run
+status 0
+[[ "$(last_call)" == */opencode-tools/vibeterm-opencode-client/bin/vibeterm-v2-guard\ gate ]]
+PROBE_OVERRIDE=""
+run --v2
+status 0
+[[ "$(last_call)" == */opencode-tools/vibeterm-opencode-client/bin/vibeterm-v2-probe\ --binary ]]
+rm -rf "$ROOT/opencode-tools"
+PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode")"
+run
+status 1
+[[ "$(<"$ROOT/error")" == *'set VIBETERM_V2_GUARD'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode")" "$PREVIOUS_INODE"
+GUARD_OVERRIDE="$ROOT/bin/guard"
+PROBE_OVERRIDE="$ROOT/bin/probe"
+printf 'PASS: without VIBETERM_V2_GUARD or PATH, guard and probe come from the config-loaded opencode-tools, then a sibling; none fails closed\n'
 printf 'BUILD SCRIPT TESTS PASSED\n'

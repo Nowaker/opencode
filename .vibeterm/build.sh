@@ -63,8 +63,13 @@
 # requires v2 to fail naming the guard with the database's full logical
 # dump unchanged, and the v1 binary to still serve it. A failing gate
 # installs nothing. The guard command is VIBETERM_V2_GUARD, else
-# `vibeterm-v2-guard` on PATH. OPENCODE_SKIP_V2_GUARD_GATE=1 skips the gate,
-# loudly; it is for a host without opencode-tools, never for a failing gate.
+# `vibeterm-v2-guard` on PATH, else the one in the opencode-tools checkout
+# opencode's own config loads its Vibeterm plugins from (`file://` paths in
+# opencode.json[c] and tui.json[c]), else in an opencode-tools checkout beside
+# this one: a non-interactive shell (ssh -n, a builder session) has no
+# opencode-tools bin on PATH. `vibeterm-v2-probe` for --v2 is found the same
+# way. OPENCODE_SKIP_V2_GUARD_GATE=1 skips the gate, loudly; it is for a host
+# without opencode-tools, never for a failing gate.
 #
 # The running opencode-serve units keep the OLD binary via still-open
 # file descriptors after this script swaps the on-disk inode (mv+cp).
@@ -291,18 +296,37 @@ if [ "${#BUILT_CANDIDATES[@]}" -ne 1 ]; then
 fi
 BUILT="${BUILT_CANDIDATES[0]}"
 
+# An opencode-tools command (vibeterm-opencode-client/bin/<name>): PATH, the
+# checkout opencode's config loads plugins from, or one beside this checkout.
+vibeterm_tool() {
+  local config="${XDG_CONFIG_HOME:-${HOME-}/.config}/opencode" tools
+  if command -v "$1"; then return 0; fi
+  while IFS= read -r tools; do
+    if [ -x "$tools/vibeterm-opencode-client/bin/$1" ]; then
+      printf '%s\n' "$tools/vibeterm-opencode-client/bin/$1"
+      return 0
+    fi
+  done < <(
+    { grep -ho 'file://[^"]*/opencode-vibeterm-[^/"]*' \
+        "$config/opencode.json" "$config/opencode.jsonc" "$config/tui.json" "$config/tui.jsonc" 2>/dev/null || true; } |
+      sed 's#^file://##; s#/opencode-vibeterm-[^/]*$##' | awk '!seen[$0]++'
+    printf '%s\n' "$(dirname "$(dirname "$GIT_COMMON")")/opencode-tools"
+  )
+  return 0
+}
 v2_guard_gate() {
   if [ "${OPENCODE_SKIP_V2_GUARD_GATE-}" = 1 ]; then
     echo "WARNING: OPENCODE_SKIP_V2_GUARD_GATE=1 - installing $VERSION without proving the v1 database guard" >&2
     return 0
   fi
-  local guard="${VIBETERM_V2_GUARD:-$(command -v vibeterm-v2-guard || true)}"
+  local guard="${VIBETERM_V2_GUARD:-$(vibeterm_tool vibeterm-v2-guard)}"
   if [ -z "$guard" ] || [ ! -x "$guard" ]; then
-    echo "error: vibeterm-v2-guard not found; set VIBETERM_V2_GUARD to opencode-tools'" >&2
+    echo "error: vibeterm-v2-guard not found on PATH, in the opencode-tools checkout opencode's config" >&2
+    echo "       loads plugins from, or beside this checkout; set VIBETERM_V2_GUARD to opencode-tools'" >&2
     echo "       vibeterm-opencode-client/bin/vibeterm-v2-guard (or OPENCODE_SKIP_V2_GUARD_GATE=1)" >&2
     return 1
   fi
-  echo "Proving the v1 database guard against $BUILT ..."
+  echo "Proving the v1 database guard with $guard against $BUILT ..."
   if ! "$guard" gate --v1 "$BUILT"; then
     echo "error: the v1 database guard does not hold for $VERSION or the newest opencode releases;" >&2
     echo "       NOT installing. Fix the guard in opencode-tools (_lib/v2-migration-guard) first." >&2
@@ -310,9 +334,10 @@ v2_guard_gate() {
   fi
 }
 v2_probe_gate() {
-  local probe="${VIBETERM_V2_PROBE:-$(command -v vibeterm-v2-probe || true)}"
+  local probe="${VIBETERM_V2_PROBE:-$(vibeterm_tool vibeterm-v2-probe)}"
   if [ -z "$probe" ] || [ ! -x "$probe" ]; then
-    echo "error: vibeterm-v2-probe not found; set VIBETERM_V2_PROBE to opencode-tools'" >&2
+    echo "error: vibeterm-v2-probe not found on PATH, in the opencode-tools checkout opencode's config" >&2
+    echo "       loads plugins from, or beside this checkout; set VIBETERM_V2_PROBE to opencode-tools'" >&2
     echo "       vibeterm-opencode-client/bin/vibeterm-v2-probe" >&2
     return 1
   fi
