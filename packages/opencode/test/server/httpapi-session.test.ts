@@ -244,6 +244,34 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  for (const client of ["tui", "api"] as const) {
+    it.instance(`unarchive records the ${client} actor and retains archive announcement history`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* createSession({ title: "archive actor" })
+        const archivedAt = 1794614400000
+        const archived = { at: archivedAt, by: { kind: "system", component: "session-sync" }, note: "Repaired" }
+        yield* Session.use.setMetadata({ sessionID: session.id, metadata: { vibeterm: { archive: {
+          sessionId: session.id, archived, announcedAt: archivedAt,
+        } } } })
+        yield* Session.use.setArchived({ sessionID: session.id, time: archivedAt })
+        const response = yield* request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
+          method: "POST",
+          headers: { "x-opencode-directory": test.directory, "content-type": "application/json", ...(client === "tui" ? { "x-opencode-client": "tui" } : {}) },
+          body: JSON.stringify({ noReply: true, unarchive: true, parts: [{ type: "text", text: "note" }] }),
+        })
+        expect(response.status).toBe(200)
+        const current = yield* Session.use.get(session.id)
+        expect(current.time.archived).toBeUndefined()
+        expect(current.metadata?.vibeterm.archive.archived).toEqual(archived)
+        expect(current.metadata?.vibeterm.archive.announcedAt).toBe(archivedAt)
+        expect(current.metadata?.vibeterm.archive.unarchived.by).toEqual({ kind: client, ...(process.env.VIBETERM_MACHINE_NAME ? { machine: process.env.VIBETERM_MACHINE_NAME } : {}) })
+        yield* Session.use.setArchived({ sessionID: session.id, time: archivedAt + 1 })
+        expect((yield* Session.use.get(session.id)).metadata?.vibeterm.archive.unarchived).toEqual(current.metadata?.vibeterm.archive.unarchived)
+      }), { git: true, config: { formatter: false, lsp: false } },
+    )
+  }
+
   for (const route of [SessionPaths.prompt, SessionPaths.promptAsync, SessionPaths.command, SessionPaths.shell]) {
     it.instance(`returns the archive conflict contract for ${route}`, () =>
       Effect.gen(function* () {

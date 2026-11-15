@@ -2,17 +2,18 @@ export * as SessionArchive from "./session-archive"
 
 import { Schema } from "effect"
 import { optional } from "./schema"
+import { SessionPauseEvent } from "./session-pause-event"
 
 export interface Actor extends Schema.Schema.Type<typeof Actor> {}
 export const Actor = Schema.Struct({
-  kind: Schema.Literals(["user", "ai", "system"]),
-  machine: Schema.NullOr(Schema.String),
-  sessionId: optional(Schema.String),
-  client: optional(Schema.String),
-  tool: optional(Schema.String),
+  ...SessionPauseEvent.Source.fields,
+  kind: Schema.Literals(["tui", "tool", "api", "system"]),
+  instance: optional(Schema.String),
+  component: optional(Schema.String),
 }).annotate({ identifier: "SessionArchiveActor" })
 
-const Action = Schema.Struct({ at: Schema.Finite, note: optional(Schema.String), by: Actor })
+export interface Action extends Schema.Schema.Type<typeof Action> {}
+export const Action = Schema.Struct({ at: Schema.Finite, note: optional(Schema.String), by: Actor })
 
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({

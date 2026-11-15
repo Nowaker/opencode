@@ -273,8 +273,6 @@ function applyLegacySchemaOverrides(spec: OpenApiSpec) {
     schemas.VibetermCreator.properties.machine = nullable(schemas.VibetermCreator.properties.machine)
     schemas.VibetermCreator.properties.hostname = nullable(schemas.VibetermCreator.properties.hostname)
   }
-  if (schemas.SessionArchiveActor?.properties?.machine)
-    schemas.SessionArchiveActor.properties.machine = nullable(schemas.SessionArchiveActor.properties.machine)
   const providerOptions = schemas.ProviderConfig?.properties?.options
   if (providerOptions) providerOptions.additionalProperties = {}
   const model = schemas.ProviderConfig?.properties?.models?.additionalProperties

@@ -68,7 +68,15 @@ const it = testEffect(
 )
 
 const model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
-const by = { kind: "ai" as const, machine: "m4max", sessionId: "ses_replacement", tool: "repair" }
+const by = {
+  kind: "tool" as const,
+  machine: "m4max",
+  sessionID: "ses_replacement",
+  sessionTitle: "Repair",
+  tool: "repair",
+  instance: "prod",
+  component: "session-sync",
+}
 const archivedAt = 1794614400000
 const setup = Effect.fn("archive.setup")(function* () {
   const { directory } = yield* TestInstance
@@ -171,11 +179,16 @@ it.instance(
             sessionId: ctx.chat.id,
             archived: ctx.metadata.vibeterm.archive.archived,
             extra: "keep",
-            unarchived: { by: { kind: "user", machine: process.env.VIBETERM_MACHINE_NAME ?? null, client: "api" } },
+            unarchived: {
+              by: {
+                kind: "api",
+                ...(process.env.VIBETERM_MACHINE_NAME ? { machine: process.env.VIBETERM_MACHINE_NAME } : {}),
+              },
+            },
           },
         },
       })
-      expect(session.metadata?.vibeterm.archive.announcedAt).toBeUndefined()
+      expect(session.metadata?.vibeterm.archive.announcedAt).toBe(archivedAt)
       expect(session.metadata?.vibeterm.archive.unarchived.at).toBeGreaterThanOrEqual(before)
       expect(session.metadata?.vibeterm.archive.unarchived.at).toBeLessThanOrEqual(Date.now())
       expect(result.info.role).toBe("assistant")
@@ -208,6 +221,26 @@ it.instance(
         expect(error).toBeInstanceOf(SessionArchive.Error)
         if (error instanceof SessionArchive.Error) expect(error.data).toEqual({ sessionID: ctx.chat.id, archivedAt })
       }
+    }),
+  { git: true },
+)
+
+it.instance(
+  "unarchiving drops an archive record copied from another session",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      yield* ctx.sessions.setMetadata({
+        sessionID: ctx.chat.id,
+        metadata: { vibeterm: { archive: { ...ctx.metadata.vibeterm.archive, sessionId: "ses_foreign" } } },
+      })
+      yield* ctx.llm.text("ran")
+      yield* ctx.prompt.prompt({ ...text(ctx.chat.id), unarchive: true })
+      const session = yield* ctx.sessions.get(ctx.chat.id)
+      const record = session.metadata?.vibeterm.archive
+      expect(record.sessionId).toBe(ctx.chat.id)
+      expect(record.archived).toBeUndefined()
+      expect(record.unarchived.by.kind).toBe("api")
     }),
   { git: true },
 )

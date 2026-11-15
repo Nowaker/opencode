@@ -19,7 +19,8 @@ export const admit = Effect.fn("SessionArchive.admit")(function* (
   const vibeterm = isRecord(metadata.vibeterm) ? metadata.vibeterm : {}
   const archive = isRecord(vibeterm.archive) ? vibeterm.archive : {}
   const info = Option.getOrUndefined(Schema.decodeUnknownOption(Info)(archive))
-  const archived = info?.sessionId === session.id ? info.archived : undefined
+  const own = info?.sessionId === session.id
+  const archived = own ? info.archived : undefined
   if (input.unarchive !== true) {
     if (input.noReply === true) return session
     return yield* new Error({
@@ -31,7 +32,6 @@ export const admit = Effect.fn("SessionArchive.admit")(function* (
       },
     })
   }
-  const { announcedAt, ...rest } = archive
   yield* sessions.setMetadata({
     sessionID: input.sessionID,
     metadata: {
@@ -39,14 +39,14 @@ export const admit = Effect.fn("SessionArchive.admit")(function* (
       vibeterm: {
         ...vibeterm,
         archive: {
-          ...rest,
+          // A record a fork copied belongs to its parent and is not carried into this session's own.
+          ...(own ? archive : {}),
           sessionId: input.sessionID,
           unarchived: {
             at: Date.now(),
             by: {
-              kind: "user",
-              machine: process.env.VIBETERM_MACHINE_NAME ?? null,
-              client: yield* Client,
+              kind: yield* Client,
+              ...(process.env.VIBETERM_MACHINE_NAME ? { machine: process.env.VIBETERM_MACHINE_NAME } : {}),
             },
           },
         },

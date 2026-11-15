@@ -70,10 +70,12 @@ function isBuiltInEndpointError(name: string) {
 }
 
 describe("PublicApi OpenAPI v2 errors", () => {
-  test("archive conflicts expose their name and a nullable actor machine", () => {
+  test("archive conflicts expose pause source actors with an optional machine", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     expect(spec.components.schemas.SessionArchivedError?.properties?.name?.enum).toEqual(["SessionArchivedError"])
-    expect(spec.components.schemas.SessionArchiveActor?.properties?.machine).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] })
+    expect(spec.components.schemas.SessionArchiveActor?.properties?.machine).toEqual({ type: "string" })
+    expect(spec.components.schemas.SessionArchiveActor?.required).toEqual(["kind"])
+    expect(spec.components.schemas.SessionArchiveActor?.properties?.kind?.enum).toEqual(["tui", "tool", "api", "system"])
     for (const path of ["message", "prompt_async", "command", "shell"])
       expect(componentNames(spec.paths[`/session/{sessionID}/${path}`]?.post?.responses?.["409"])).toContain("SessionArchivedError")
   })

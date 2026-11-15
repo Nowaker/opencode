@@ -2719,11 +2719,14 @@ export type OwnerSealed = {
 }
 
 export type SessionArchiveActor = {
-  kind: "user" | "ai" | "system"
-  machine: string | null
-  sessionId?: string
-  client?: string
+  kind: "tui" | "tool" | "api" | "system"
+  sessionID?: string
+  sessionTitle?: string
+  machine?: string
   tool?: string
+  client?: string
+  instance?: string
+  component?: string
 }
 
 export type SessionArchivedError = {
