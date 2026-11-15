@@ -61,8 +61,10 @@ done
 [ "$OPENCODE_CONFIG_PROJECT_DISABLE" = 1 ]
 if [ "$1" = install ]; then
   [ "$2" = --frozen-lockfile ]
+  printf '%s\n' "${BUN_INSTALL_CACHE_DIR-unset}" > install-cache-seen
   exit 0
 fi
+[ -z "${BUN_INSTALL_CACHE_DIR+set}" ] || exit 45
 [ "$*" = './script/build.ts --single' ]
 printf 'build changed lock\n' > ../../bun.lock
 [ ! -f ../../fail-build ] || exit 42
@@ -102,12 +104,14 @@ PROBE_OVERRIDE="$ROOT/bin/probe"
 SRC_OVERRIDE=""
 INSTALL_OVERRIDE=""
 VERSION_OVERRIDE=""
+CACHE_OVERRIDE=""
 run() {
   STATUS=0
   OUT="$(cd "$HERE" && env -i PATH="$ROOT/bin:$PATH" HOME="$ROOT/live-home" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
     OPENCODE_SRC="$SRC_OVERRIDE" OPENCODE_INSTALL="$INSTALL_OVERRIDE" \
     OPENCODE_VERSION="$VERSION_OVERRIDE" VIBETERM_V2_GUARD="$ROOT/bin/guard" \
+    BUN_INSTALL_CACHE_DIR="$CACHE_OVERRIDE" \
     VIBETERM_V2_PROBE="$PROBE_OVERRIDE" BUILD_TEST_PROBE_FAILURE="$ROOT/fail-probe" \
     BUILD_TEST_EXPECTED_BINARY="${SRC_OVERRIDE:-$MANAGED}/packages/cli/dist/cli-native/bin/opencode" \
     XDG_DATA_HOME="$ROOT/live-data" XDG_CONFIG_HOME="$ROOT/live-config" \
@@ -205,6 +209,14 @@ run --v2
 status 0
 [ "$(inode "$INSTALL_ROOT/opencode2")" != "$PREVIOUS_INODE" ]
 printf 'PASS: default v2 install uses isolated build/probes, restores lockfile and swaps only opencode2 inode\n'
+
+equal "$(<"$MANAGED/install-cache-seen")" "$ROOT/live-home/.bun/install/cache"
+CACHE_OVERRIDE="$ROOT/shared-bun-cache"
+run --v2
+status 0
+equal "$(<"$MANAGED/install-cache-seen")" "$ROOT/shared-bun-cache"
+CACHE_OVERRIDE=""
+printf 'PASS: v2 install shares the caller bun cache, the explicit one first; the build step gets none\n'
 
 PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode2")"
 PREVIOUS_DIGEST="$(digest "$INSTALL_ROOT/opencode2")"

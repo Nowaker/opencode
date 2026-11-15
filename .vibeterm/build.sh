@@ -251,6 +251,8 @@ run_v2() {
     OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_VERSION="$VERSION" \
     OPENCODE_INSTALL_METHOD=unknown "$@"
 }
+# bun's package cache is content-addressed by integrity and holds nothing user-specific, so the v2 install shares the caller's instead of re-downloading ~12 GB into unshared node_modules.
+BUN_CACHE="${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install/cache}"
 if [ "$V2" = 1 ]; then
   mkdir -p "$SRC/.vibeterm/tmp"
   V2_SCRATCH="$(mktemp -d "$SRC/.vibeterm/tmp/build-v2.XXXXXX")"
@@ -271,7 +273,7 @@ fi
 
 echo "Building opencode @ $VERSION from $SRC ..."
 if [ "$V2" = 1 ]; then
-  (cd "$SRC" && run_v2 bun install --frozen-lockfile)
+  (cd "$SRC" && run_v2 env BUN_INSTALL_CACHE_DIR="$BUN_CACHE" bun install --frozen-lockfile)
   (cd "$SRC/packages/cli" && run_v2 bun ./script/build.ts --single)
 else
   (
