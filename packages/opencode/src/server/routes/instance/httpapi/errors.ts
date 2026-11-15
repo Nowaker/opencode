@@ -1,4 +1,10 @@
 import { Schema } from "effect"
+import { Details } from "@opencode-ai/schema/session-archive"
+
+export class SessionArchivedError extends Schema.ErrorClass<SessionArchivedError>("SessionArchivedError")(
+  { name: Schema.Literal("SessionArchivedError"), data: Details },
+  { httpApiStatus: 409 },
+) {}
 
 export class PromptAdmissionError extends Schema.ErrorClass<PromptAdmissionError>("PromptAdmissionError")(
   {

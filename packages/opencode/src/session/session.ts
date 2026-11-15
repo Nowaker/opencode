@@ -877,6 +877,8 @@ const layer: Layer.Layer<
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
+      // The projector preserves row-owned Vibeterm keys against stale events. An explicit setter replaces them first.
+      yield* db.update(SessionTable).set({ metadata: input.metadata }).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
       yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 

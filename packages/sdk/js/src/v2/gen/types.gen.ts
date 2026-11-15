@@ -2718,6 +2718,24 @@ export type OwnerSealed = {
   generation: number
 }
 
+export type SessionArchiveActor = {
+  kind: "user" | "ai" | "system"
+  machine: string | null
+  sessionId?: string
+  client?: string
+  tool?: string
+}
+
+export type SessionArchivedError = {
+  name: "SessionArchivedError"
+  data: {
+    sessionID: string
+    archivedAt: number
+    note?: string
+    by?: SessionArchiveActor
+  }
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -10348,6 +10366,7 @@ export type SessionPromptData = {
     }
     agent?: string
     noReply?: boolean
+    unarchive?: boolean
     unpause?: boolean
     tools?: {
       [key: string]: boolean
@@ -10377,9 +10396,9 @@ export type SessionPromptErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed
+   * OwnerSealed | SessionArchivedError
    */
-  409: OwnerSealed
+  409: OwnerSealed | SessionArchivedError
 }
 
 export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
@@ -10587,9 +10606,9 @@ export type SessionInitErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed
+   * OwnerSealed | SessionArchivedError
    */
-  409: OwnerSealed
+  409: OwnerSealed | SessionArchivedError
 }
 
 export type SessionInitError = SessionInitErrors[keyof SessionInitErrors]
@@ -10730,6 +10749,7 @@ export type SessionPromptAsyncData = {
     }
     agent?: string
     noReply?: boolean
+    unarchive?: boolean
     unpause?: boolean
     tools?: {
       [key: string]: boolean
@@ -10759,9 +10779,9 @@ export type SessionPromptAsyncErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed
+   * OwnerSealed | SessionArchivedError
    */
-  409: OwnerSealed
+  409: OwnerSealed | SessionArchivedError
 }
 
 export type SessionPromptAsyncError = SessionPromptAsyncErrors[keyof SessionPromptAsyncErrors]
@@ -10783,6 +10803,7 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    unarchive?: boolean
     unpause?: boolean
     parts?: Array<{
       id?: string
@@ -10813,9 +10834,9 @@ export type SessionCommandErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed
+   * OwnerSealed | SessionArchivedError
    */
-  409: OwnerSealed
+  409: OwnerSealed | SessionArchivedError
 }
 
 export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]
@@ -10841,6 +10862,7 @@ export type SessionShellData = {
       modelID: string
     }
     command: string
+    unarchive?: boolean
   }
   path: {
     sessionID: string
@@ -10862,9 +10884,9 @@ export type SessionShellErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError | OwnerSealed
+   * SessionBusyError | OwnerSealed | SessionArchivedError
    */
-  409: SessionBusyError | OwnerSealed
+  409: SessionBusyError | OwnerSealed | SessionArchivedError
 }
 
 export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]

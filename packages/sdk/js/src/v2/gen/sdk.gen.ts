@@ -3904,6 +3904,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      unarchive?: boolean
       unpause?: boolean
       tools?: {
         [key: string]: boolean
@@ -3927,6 +3928,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "unarchive" },
             { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
@@ -4273,6 +4275,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      unarchive?: boolean
       unpause?: boolean
       tools?: {
         [key: string]: boolean
@@ -4296,6 +4299,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "unarchive" },
             { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
@@ -4334,6 +4338,7 @@ export class Session2 extends HeyApiClient {
       arguments?: string
       command?: string
       variant?: string
+      unarchive?: boolean
       unpause?: boolean
       parts?: Array<{
         id?: string
@@ -4360,6 +4365,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "arguments" },
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
+            { in: "body", key: "unarchive" },
             { in: "body", key: "unpause" },
             { in: "body", key: "parts" },
           ],
@@ -4395,6 +4401,7 @@ export class Session2 extends HeyApiClient {
         modelID: string
       }
       command?: string
+      unarchive?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4410,6 +4417,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "command" },
+            { in: "body", key: "unarchive" },
           ],
         },
       ],

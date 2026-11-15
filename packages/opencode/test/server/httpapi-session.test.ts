@@ -244,6 +244,30 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  for (const route of [SessionPaths.prompt, SessionPaths.promptAsync, SessionPaths.command, SessionPaths.shell]) {
+    it.instance(`returns the archive conflict contract for ${route}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* createSession({ title: "archived" })
+        const archivedAt = 1794614400000
+        const by = { kind: "system", machine: "desktop", tool: "repair" }
+        yield* Session.use.setMetadata({ sessionID: session.id, metadata: { vibeterm: { archive: {
+          sessionId: session.id, archived: { at: archivedAt, note: "Use the repaired copy", by },
+        } } } })
+        yield* Session.use.setArchived({ sessionID: session.id, time: archivedAt })
+        const response = yield* request(pathFor(route, { sessionID: session.id }), {
+          method: "POST",
+          headers: { "x-opencode-directory": test.directory, "content-type": "application/json" },
+          body: JSON.stringify({ parts: route === SessionPaths.prompt || route === SessionPaths.promptAsync ? [{ type: "text", text: "hello" }] : undefined, agent: "build", command: "work", arguments: "" }),
+        })
+        expect(response.status).toBe(409)
+        expect(yield* responseJson(response)).toEqual({
+          name: "SessionArchivedError", data: { sessionID: session.id, archivedAt, note: "Use the repaired copy", by },
+        })
+      }), { git: true, config: { formatter: false, lsp: false } },
+    )
+  }
+
   it.effect("maps busy sessions to public session busy errors", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.descending()

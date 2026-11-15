@@ -1948,7 +1948,7 @@ it.instance("async admission signals a same message ID retry before the original
     yield* llm.hold("once", deferredAsPromise(gate))
     const a = yield* prompt.prompt(sameIDPrompt(chat.id, id)).pipe(Effect.forkChild)
     yield* llm.wait(1)
-    const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+      const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
 
     const b = yield* prompt.prompt(sameIDPrompt(chat.id, id), admitted).pipe(Effect.forkChild)
     yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
@@ -1973,7 +1973,7 @@ it.instance("async admission stores a different prompt while the session is busy
     const first = yield* prompt.prompt(sameIDPrompt(chat.id, MessageID.ascending())).pipe(Effect.forkChild)
     yield* llm.wait(1)
     const id = MessageID.ascending()
-    const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+      const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
 
     const queued = yield* prompt.prompt(sameIDPrompt(chat.id, id), admitted).pipe(Effect.forkChild)
     yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
@@ -2007,7 +2007,7 @@ const promptWhileAsked = Effect.fn("test.promptWhileAsked")(function* <A extends
   const asked = yield* pollWithTimeout(input.pending(chat.id), `${input.tool} never asked`)
 
   const id = MessageID.ascending()
-  const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+      const admitted = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
   const delivered = yield* prompt.prompt(queuedPrompt(chat.id, id, "delivered words"), admitted).pipe(Effect.forkChild)
   yield* Deferred.await(admitted).pipe(Effect.timeout("2 seconds"))
 

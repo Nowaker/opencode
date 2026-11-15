@@ -40,6 +40,8 @@ import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { SessionPause } from "./pause"
+import { SessionArchive } from "./archive"
+import { Unarchive } from "@opencode-ai/schema/session-archive"
 import { EffectBridge } from "@/effect/bridge"
 import { LLM } from "./llm"
 import { Shell } from "@opencode-ai/core/shell"
@@ -214,11 +216,11 @@ export interface Interface {
   readonly cancel: (sessionID: SessionID, options?: SessionAbort.CancelOptions) => Effect.Effect<void>
   readonly prompt: (
     input: PromptInput,
-    admission?: Deferred.Deferred<void, AdmissionRejected>,
-  ) => Effect.Effect<SessionV1.WithParts, Image.Error>
+    admission?: Deferred.Deferred<void, AdmissionError>,
+  ) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
-  readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
-  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
+  readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError | SessionArchive.Error>
+  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
   readonly unqueue: (input: {
     sessionID: SessionID
@@ -254,6 +256,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 export class AdmissionRejected extends Schema.TaggedErrorClass<AdmissionRejected>()("PromptAdmissionRejected", {
   message: Schema.String,
 }) {}
+
+export type AdmissionError = AdmissionRejected | SessionArchive.Error
 
 const layer = Layer.effect(
   Service,
@@ -1202,7 +1206,7 @@ const layer = Layer.effect(
      * second one waits for it; afterwards a stored reply is returned as it is. A message stored without a
      * reply - an admission that failed before its run started - is admitted again, which completes it.
      */
-    const admitting = new Map<string, { done: Latch.Latch; admission: Deferred.Deferred<void, AdmissionRejected> }>()
+    const admitting = new Map<string, { done: Latch.Latch; admission: Deferred.Deferred<void, AdmissionError> }>()
 
     // The running loop of each session, with the prompts it has read and the ones unqueued before it read them.
     // `pickUp` and `unqueue` each check and update these without yielding in between, so a prompt is either read
@@ -1566,7 +1570,7 @@ const layer = Layer.effect(
 
     const prompt: Interface["prompt"] = Effect.fn("SessionPrompt.prompt")(function* (
       input: PromptInput,
-      admission?: Deferred.Deferred<void, AdmissionRejected>,
+      admission?: Deferred.Deferred<void, AdmissionError>,
     ) {
       const messageID = input.messageID ?? MessageID.ascending()
       const key = `${input.sessionID}/${messageID}`
@@ -1581,7 +1585,7 @@ const layer = Layer.effect(
         return yield* prompt(input, admission)
       }
       const done = Latch.makeUnsafe(false)
-      const accepted = admission ?? (yield* Deferred.make<void, AdmissionRejected>())
+      const accepted = admission ?? (yield* Deferred.make<void, AdmissionError>())
       admitting.set(key, { done, admission: accepted })
       return yield* Effect.gen(function* () {
         const replied = input.messageID ? yield* reply(input.sessionID, messageID) : Option.none<SessionV1.WithParts>()
@@ -1614,6 +1618,10 @@ const layer = Layer.effect(
               return
             }
             const error = Cause.squash(exit.cause)
+            if (error instanceof SessionArchive.Error) {
+              yield* Deferred.fail(accepted, error)
+              return
+            }
             yield* Deferred.fail(
               accepted,
               new AdmissionRejected({ message: error instanceof Error ? error.message : Cause.pretty(exit.cause) }),
@@ -1640,8 +1648,8 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    const admit = Effect.fnUntraced(function* (input: PromptInput, admission: Deferred.Deferred<void, AdmissionRejected>) {
-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+    const admit = Effect.fnUntraced(function* (input: PromptInput, admission: Deferred.Deferred<void, AdmissionError>) {
+      const session = yield* SessionArchive.admit(sessions, input)
       yield* revert.cleanup(session)
       const paused = input.noReply === true ? undefined : yield* pauses.get(input.sessionID)
       // The loop this prompt drives runs the deferred calls before it answers the prompt.
@@ -2119,14 +2127,16 @@ const layer = Layer.effect(
       return () => !joined || (!joined.seen.has(messageID) && !joined.withdrawn.has(messageID))
     }
 
-    const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
+    const shell: Interface["shell"] = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
+      yield* SessionArchive.admit(sessions, input)
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      yield* SessionArchive.admit(sessions, input)
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
         command: input.command,
@@ -2369,6 +2379,7 @@ const layer = Layer.effect(
         // exactly where prompt() stops when noReply is set.
         noReply: cmd.native,
         unpause: input.unpause,
+        unarchive: input.unarchive,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -2406,6 +2417,7 @@ export const PromptInput = Schema.Struct({
   model: Schema.optional(ModelRef),
   agent: Schema.optional(Schema.String),
   noReply: Schema.optional(Schema.Boolean),
+  unarchive: Unarchive,
   unpause: Schema.optional(Schema.Boolean).annotate({
     description:
       "Unpause a paused session before this prompt: its deferred tool calls run first, then the prompt. Without it a prompt to a paused session is stored and held until unpause.",
@@ -2477,6 +2489,7 @@ export const ShellInput = Schema.Struct({
   agent: Schema.String,
   model: Schema.optional(ModelRef),
   command: Schema.String,
+  unarchive: Unarchive,
 })
 export type ShellInput = Schema.Schema.Type<typeof ShellInput>
 
@@ -2488,6 +2501,7 @@ export const CommandInput = Schema.Struct({
   arguments: Schema.String,
   command: Schema.String,
   variant: Schema.optional(Schema.String),
+  unarchive: Unarchive,
   unpause: Schema.optional(Schema.Boolean).annotate({
     description: "Unpause a paused session before the command's prompt, as a prompt's unpause does.",
   }),

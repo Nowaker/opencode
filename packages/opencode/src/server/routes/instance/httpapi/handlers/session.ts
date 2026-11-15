@@ -14,6 +14,7 @@ import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionPause } from "@/session/pause"
+import { SessionArchive } from "@/session/archive"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -292,7 +293,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           command: Command.Default.INIT,
           arguments: "",
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
+          SessionError.mapArchive,
+        )
       return true
     })
 
@@ -347,7 +351,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
+          SessionError.mapArchive,
+        )
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })
@@ -358,11 +365,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      const admission = yield* Deferred.make<void, SessionPrompt.AdmissionRejected>()
+      const admission = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
+      const client = yield* SessionError.archiveClient
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }, admission).pipe(
+        Effect.provideService(SessionArchive.Client, client),
         Effect.onError((cause) => Deferred.failCause(admission, Cause.die(Cause.squash(cause)))),
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
+            if (Cause.squash(cause) instanceof SessionArchive.Error) return
             yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
             yield* events.publish(Session.Event.Error, {
               sessionID: ctx.params.sessionID,
@@ -379,6 +389,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             data: { message: error.message, possiblyAccepted: false },
           })),
         ),
+        SessionError.mapArchive,
       )
       return HttpApiSchema.NoContent.make()
     })
@@ -390,7 +401,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* requireSession(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
+          SessionError.mapArchive,
+        )
     })
 
     const shell = Effect.fn("SessionHttpApi.shell")(function* (ctx: {
@@ -398,7 +412,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ShellPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
+      return yield* promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(SessionError.mapBusy, SessionError.mapArchive)
     })
 
     const revert = Effect.fn("SessionHttpApi.revert")(function* (ctx: {
