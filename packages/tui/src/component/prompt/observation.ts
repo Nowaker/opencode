@@ -28,7 +28,8 @@ export function createDraftObservation(
     const caret = input.cursorOffset
     const range = input.getSelection()
     const anchor = !range || range.start === range.end ? caret : caret === range.start ? range.end : range.start
-    return freeze({ ...clone(prompt()), caret, selection: { anchor, focus: caret } })
+    // Native paste edits can precede the reactive prompt text mirror.
+    return freeze({ ...clone(prompt()), text: input.plainText, caret, selection: { anchor, focus: caret } })
   }
 }
 
