@@ -22,7 +22,7 @@ import {
   ProcessId,
 } from "effect/unstable/process/ChildProcessSpawner"
 import * as NodeChildProcess from "node:child_process"
-import { PassThrough } from "node:stream"
+import { PassThrough, type Readable } from "node:stream"
 import launch from "cross-spawn"
 import { makeGlobalNode } from "./effect/app-node"
 import { filesystem, path } from "./effect/app-node-platform"
@@ -95,6 +95,7 @@ const toPlatformError = (
 }
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
+type Outputs = ReadonlyMap<number, PassThrough>
 
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
@@ -168,6 +169,7 @@ export const make = Effect.gen(function* () {
   const setupFds = Effect.fnUntraced(function* (
     command: ChildProcess.StandardCommand,
     proc: NodeChildProcess.ChildProcess,
+    outputs: Outputs,
     extra: ReadonlyArray<{ fd: number; config: ChildProcess.AdditionalFdConfig }>,
   ) {
     if (extra.length === 0) {
@@ -197,11 +199,9 @@ export const make = Effect.gen(function* () {
           break
         }
         case "output": {
+          const tap = outputs.get(x.fd)
           let stream: Stream.Stream<Uint8Array, PlatformError.PlatformError> = Stream.empty
-          if (node && "read" in node) {
-            const tap = new PassThrough()
-            node.on("error", (err) => tap.destroy(toError(err)))
-            node.pipe(tap)
+          if (tap) {
             stream = NodeStream.fromReadable({
               evaluate: () => tap,
               onError: (err) => toPlatformError(`fromReadable(fd${x.fd})`, toError(err), command),
@@ -241,19 +241,21 @@ export const make = Effect.gen(function* () {
 
   const setupOutput = (
     command: ChildProcess.StandardCommand,
-    proc: NodeChildProcess.ChildProcess,
+    outputs: Outputs,
     out: ChildProcess.StdoutConfig,
     err: ChildProcess.StderrConfig,
   ) => {
-    let stdout = proc.stdout
+    const stdoutTap = outputs.get(1)
+    const stderrTap = outputs.get(2)
+    let stdout = stdoutTap
       ? NodeStream.fromReadable({
-          evaluate: () => proc.stdout!,
+          evaluate: () => stdoutTap,
           onError: (cause) => toPlatformError("fromReadable(stdout)", toError(cause), command),
         })
       : Stream.empty
-    let stderr = proc.stderr
+    let stderr = stderrTap
       ? NodeStream.fromReadable({
-          evaluate: () => proc.stderr!,
+          evaluate: () => stderrTap,
           onError: (cause) => toPlatformError("fromReadable(stderr)", toError(cause), command),
         })
       : Stream.empty
@@ -264,30 +266,62 @@ export const make = Effect.gen(function* () {
     return { stdout, stderr, all: Stream.merge(stdout, stderr) }
   }
 
-  const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
-    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
-      const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      const proc = launch(command.command, command.args, opts)
-      let end = false
-      let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
-      proc.on("error", (err) => {
-        resume(Effect.fail(toPlatformError("spawn", err, command)))
-      })
-      proc.on("exit", (...args) => {
-        exit = args
-      })
-      proc.on("close", (...args) => {
-        if (end) return
-        end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
-      })
-      proc.on("spawn", () => {
-        resume(Effect.succeed([proc, signal]))
-      })
-      return Effect.sync(() => {
-        proc.kill("SIGTERM")
-      })
-    })
+  // Node and Bun discard whatever a child wrote to a pipe nobody listens to once it exits, so a reader attaching after
+  // a fast command finished used to see no output at all. Each output pipe is therefore drained into a buffer from the
+  // spawn on, before any event of the child can fire. While the child runs, a full buffer pauses the pipe, so a stream
+  // nobody reads applies backpressure as the bare pipe did. Once the child exits the rest is buffered without limit:
+  // the exit is reported on close, which waits for every pipe to end. A reader that stops early destroys its buffer,
+  // and with it the pipe, so the child sees the closed pipe as before.
+  const spawn = (
+    command: ChildProcess.StandardCommand,
+    opts: NodeChildProcess.SpawnOptions,
+    outputFds: ReadonlyArray<number>,
+  ) =>
+    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal, Outputs], PlatformError.PlatformError>(
+      (resume) => {
+        const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
+        const proc = launch(command.command, command.args, opts)
+        let end = false
+        let exited = false
+        let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
+        const sources: Array<Readable> = []
+        const outputs = new Map(
+          outputFds.flatMap((fd) => {
+            const source = proc.stdio[fd]
+            if (!source || !("read" in source)) return []
+            sources.push(source)
+            const tap = new PassThrough()
+            source.on("data", (chunk) => {
+              if (!tap.write(chunk) && !exited) source.pause()
+            })
+            source.on("end", () => tap.end())
+            source.on("error", (err) => tap.destroy(toError(err)))
+            tap.on("drain", () => source.resume())
+            tap.on("close", () => source.destroy())
+            return [[fd, tap] as const]
+          }),
+        )
+        proc.on("error", (err) => {
+          resume(Effect.fail(toPlatformError("spawn", err, command)))
+        })
+        proc.on("exit", (...args) => {
+          exit = args
+          exited = true
+          for (const source of sources) source.resume()
+        })
+        proc.on("close", (...args) => {
+          if (end) return
+          end = true
+          Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
+        })
+        proc.on("spawn", () => {
+          resume(Effect.succeed([proc, signal, outputs]))
+        })
+        return Effect.sync(() => {
+          proc.kill("SIGTERM")
+        })
+      },
+    )
 
   const killGroup = (
     command: ChildProcess.StandardCommand,
@@ -370,15 +404,19 @@ export const make = Effect.gen(function* () {
           const extra = fds(command.options)
           const dir = yield* cwd(command.options)
 
-          const [proc, signal] = yield* Effect.acquireRelease(
-            spawn(command, {
-              cwd: dir,
-              env: env(command.options),
-              stdio: stdios(sin, sout, serr, extra),
-              detached: command.options.detached ?? process.platform !== "win32",
-              shell: command.options.shell,
-              windowsHide: process.platform === "win32",
-            }),
+          const [proc, signal, outputs] = yield* Effect.acquireRelease(
+            spawn(
+              command,
+              {
+                cwd: dir,
+                env: env(command.options),
+                stdio: stdios(sin, sout, serr, extra),
+                detached: command.options.detached ?? process.platform !== "win32",
+                shell: command.options.shell,
+                windowsHide: process.platform === "win32",
+              },
+              [1, 2, ...extra.flatMap((x) => (x.config.type === "output" ? [x.fd] : []))],
+            ),
             Effect.fnUntraced(function* ([proc, signal]) {
               const done = yield* Deferred.isDone(signal)
               const kill = timeout(proc, command, command.options)
@@ -402,8 +440,8 @@ export const make = Effect.gen(function* () {
             }),
           )
 
-          const fd = yield* setupFds(command, proc, extra)
-          const out = setupOutput(command, proc, sout, serr)
+          const fd = yield* setupFds(command, proc, outputs, extra)
+          const out = setupOutput(command, outputs, sout, serr)
           let ref = true
           return makeHandle({
             pid: ProcessId(proc.pid!),

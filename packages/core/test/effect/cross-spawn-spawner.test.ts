@@ -211,6 +211,44 @@ describe("cross-spawn spawner", () => {
     )
   })
 
+  describe("output read after the process exits", () => {
+    // Waiting for the exit before reading is the latest a reader can attach, which is where a reader that is forked
+    // after the spawn can land: the child has exited and Node has already flushed whatever nobody was reading.
+    fx.effect(
+      "keeps stdout, stderr and all for a reader that attaches after the exit",
+      Effect.gen(function* () {
+        for (let run = 0; run < 20; run++) {
+          const outputs = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const handle = yield* ChildProcess.make("sh", ["-c", "echo out; echo err >&2"])
+              expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+              return yield* Effect.all([decodeByteStream(handle.stdout), decodeByteStream(handle.stderr)])
+            }),
+          )
+          expect(outputs).toEqual(["out", "err"])
+          const all = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const handle = yield* ChildProcess.make("echo", ["all"])
+              yield* handle.exitCode
+              return yield* decodeByteStream(handle.all)
+            }),
+          )
+          expect(all).toBe("all")
+        }
+      }),
+    )
+
+    fx.effect(
+      "output nobody reads does not hold up the exit",
+      Effect.gen(function* () {
+        const out = yield* ChildProcessSpawner.ChildProcessSpawner.use((svc) =>
+          svc.string(js('process.stderr.write("e".repeat(64 * 1024)); process.stdout.write("done")')),
+        )
+        expect(out).toBe("done")
+      }),
+    )
+  })
+
   describe("stdin", () => {
     fx.effect(
       "allows providing standard input to a command",
