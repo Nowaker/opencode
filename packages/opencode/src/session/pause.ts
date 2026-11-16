@@ -24,6 +24,22 @@ export const Held = SessionPauseEvent.Held
 export type Held = SessionPauseEvent.Held
 export const Event = SessionPauseEvent
 
+export const Expected = Schema.Struct({
+  expectedPauseAt: Schema.optional(Info.fields.at).annotate({
+    description:
+      "Only mutate a pause whose at equals this value. A changed or missing pause returns 409 without changes.",
+  }),
+  expectedPauseSource: Schema.optional(Source).annotate({
+    description:
+      "Only mutate a pause with exactly these known source fields, independent of object key order. A changed or missing pause returns 409 without changes. Omitted expectations preserve unconditional behavior.",
+  }),
+})
+export type Expected = Schema.Schema.Type<typeof Expected>
+
+export class ChangedError extends Schema.TaggedErrorClass<ChangedError>()("PauseChangedError", {
+  sessionID: SessionID,
+}) {}
+
 const decode = Schema.decodeUnknownOption(Info)
 
 export function read(metadata: Session.Info["metadata"]): Info | undefined {
@@ -95,6 +111,11 @@ export interface Interface {
   readonly get: (sessionID: SessionID) => Effect.Effect<Info | undefined>
   /** Stores the pause (or clears it with undefined), then tells status and the bus. */
   readonly write: (sessionID: SessionID, pause: Info | undefined) => Effect.Effect<void>
+  /** Check ownership and mutate durable state under the same SQLite write lock. */
+  readonly mutate: <A, E, R>(
+    input: Expected & { readonly sessionID: SessionID },
+    f: (current: Info | undefined) => Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | ChangedError, R>
   /** Every paused session of this project, read from the database. */
   readonly list: () => Effect.Effect<Map<SessionID, Info>>
 }
@@ -123,6 +144,25 @@ const layer = Layer.effect(
       yield* events.publish(Event.Updated, { sessionID, pause: pause ?? null })
     })
 
+    const mutate: Interface["mutate"] = (input, f) =>
+      db
+        .transaction(
+          () =>
+            Effect.gen(function* () {
+              const current = yield* get(input.sessionID)
+              if (input.expectedPauseAt !== undefined && current?.at !== input.expectedPauseAt)
+                return yield* new ChangedError({ sessionID: input.sessionID })
+              if (input.expectedPauseSource !== undefined) {
+                const fields = ["kind", "sessionID", "sessionTitle", "machine", "tool", "client"] as const
+                if (!current || fields.some((key) => current.source[key] !== input.expectedPauseSource?.[key]))
+                  return yield* new ChangedError({ sessionID: input.sessionID })
+              }
+              return yield* f(current)
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.catchTag("SqlError", Effect.die))
+
     const list = Effect.fn("SessionPause.list")(function* () {
       const ctx = yield* InstanceState.context
       const rows = yield* db
@@ -144,7 +184,7 @@ const layer = Layer.effect(
       )
     })
 
-    return Service.of({ get, write, list })
+    return Service.of({ get, write, mutate, list })
   }),
 )
 

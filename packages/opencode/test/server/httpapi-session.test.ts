@@ -25,6 +25,7 @@ import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/grou
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
 import { SessionRunState } from "@/session/run-state"
+import type { SessionPause } from "@/session/pause"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
@@ -953,6 +954,63 @@ describe("session HttpApi", () => {
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
+
+  for (const action of ["unpause", "discard"] as const) {
+    for (const changed of ["at", "source", "missing"] as const) {
+      it.instance(
+        `${action} returns 409 without changes when the expected pause ${changed} changed before the HTTP request`,
+        () => Effect.gen(function* () {
+          const test = yield* TestInstance
+          const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+          const session = yield* createSession({ title: "pause identity" })
+          const route = (path: string) => pathFor(path, { sessionID: session.id })
+          const observed = yield* requestJson<{ pause: SessionPause.Info }>(route(SessionPaths.pause), {
+            method: "POST", headers, body: JSON.stringify({ source: { kind: "tool", client: "move" } }),
+          })
+          const body = JSON.stringify({ expectedPauseAt: observed.pause.at, expectedPauseSource: observed.pause.source })
+          const replacement = changed === "missing" ? null : {
+            ...observed.pause,
+            ...(changed === "at" ? { at: observed.pause.at + 1 } : { source: { kind: "tui" } }),
+          }
+          yield* Session.use.setMetadata({ sessionID: session.id, metadata: { pause: replacement } })
+          const before = yield* Session.use.messages({ sessionID: session.id })
+
+          const result = yield* request(route(SessionPaths[action]), { method: "POST", headers, body })
+
+          expect(result.status).toBe(409)
+          expect(yield* responseJson(result)).toEqual({
+            _tag: "PauseChangedError", sessionID: session.id, message: "The pause changed; no action was taken",
+          })
+          expect((yield* Session.use.get(session.id)).metadata?.pause).toEqual(replacement)
+          expect(yield* Session.use.messages({ sessionID: session.id })).toEqual(before)
+        }),
+        { git: true, config: { formatter: false, lsp: false } },
+      )
+    }
+
+    it.instance(
+      `${action} accepts a matching pause identity over HTTP`,
+      () => Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "matching pause" })
+        const route = (path: string) => pathFor(path, { sessionID: session.id })
+        const observed = yield* requestJson<{ pause: SessionPause.Info }>(route(SessionPaths.pause), {
+          method: "POST", headers, body: JSON.stringify({ source: { kind: "tool", client: "move" } }),
+        })
+
+        const result = yield* requestJson(route(SessionPaths[action]), {
+          method: "POST", headers,
+          body: JSON.stringify({ expectedPauseAt: observed.pause.at, expectedPauseSource: { client: "move", kind: "tool" } }),
+        })
+
+        expect(result).toEqual(action === "unpause"
+          ? { sessionID: session.id, changed: true, deferred: 0 }
+          : { sessionID: session.id, discarded: 0 })
+      }),
+      { git: true, config: { formatter: false, lsp: false } },
+    )
+  }
 
   it.instance(
     "returns v2 public unavailable errors for unfinished session mutations",

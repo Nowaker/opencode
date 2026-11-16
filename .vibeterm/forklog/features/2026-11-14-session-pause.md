@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `session-pause`
 - First local commit: `d634b67a9be`
-- Current local commit(s): `d634b67a9be`, `e60728ae6eb`, `05d3e55825c`, `3cdb14afd61`
+- Current local commit(s): `d634b67a9be`, `e60728ae6eb`, `05d3e55825c`, `3cdb14afd61`, `f2c0ed3b578`
 - Upstream base when introduced: `006d837c50` (upstream `v1`, `v1.19.5`)
 - Last checked against upstream: `006d837c50` (upstream `v1`, `v1.19.5`)
 - Upstream: not filed; see [pr-queue entry 09](../pr-queue/09-session-pause.md). Answers [#27511](https://github.com/anomalyco/opencode/issues/27511); the v2 shape is [#63875](https://github.com/anomalyco/opencode/issues/63875) `soft`.
@@ -51,6 +51,7 @@ The user approved "build all, as recommended", and coordinator [`ses_ef8235798ff
 | `e60728ae6eb` | 2026-11-14 | Model and pin state writes log a failure instead of rejecting unhandled | `packages/tui/src/context/local.tsx` `save` |
 | `05d3e55825c` | 2026-11-14 | Drop the `@ts-expect-error` that `ToolStatePending.metadata` made unused | `packages/session-ui/src/components/message-part.tsx` `partMetadata` |
 | `3cdb14afd61` | 2026-11-14 | A cleared pause is stored as `pause: null` instead of a deleted key, so session sync's add-missing-key merge cannot bring back a peer's stale pause; the TUI reconciles `session.status` so an unpause clears the footer | `SessionPause.write` in `pause.ts`; `session.status` case in `packages/tui/src/context/sync.tsx` |
+| `f2c0ed3b578` | 2026-11-16 | Optional expected timestamp and exact source on v1 unpause/discard; identity check and durable mutation share an immediate SQLite transaction; changed or missing pause returns 409 without side effects | `SessionPause.mutate` in `pause.ts`; `SessionPrompt.release`/`discard`; `PauseChangedError` route mapping; generated legacy SDK and `server.mdx` |
 
 The wire contract (paths, bodies, events, field names) is in the [session record](../sessions/2026-11-14-session-pause.md#contract-draft-2-fixed-2026-11-14).
 
@@ -65,6 +66,7 @@ Session [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.
 ## Timeline
 
 - 2026-11-14 [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.md) - initial build of P1 and P2; installed on m4max as vt-486 together with the title fix.
+- 2026-11-16 [`ses_e1c57d050ffe4t64XczrGAzjqs`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e1c57d050ffe4t64XczrGAzjqs) - [pause identity guard](../sessions/2026-11-14-session-pause.md#follow-up-pause-identity-guard): 14 deterministic red reproductions, 73 green engine/HTTP tests, engine/SDK typechecks; source only, build/install handed to the parent.
 
 ## Current maintenance notes
 

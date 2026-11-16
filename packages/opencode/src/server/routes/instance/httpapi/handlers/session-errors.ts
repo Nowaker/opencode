@@ -3,6 +3,7 @@ import { Session } from "@/session/session"
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { SessionArchive } from "@/session/archive"
+import { SessionPause } from "@/session/pause"
 import * as ApiError from "../errors"
 
 export function mapStorageNotFound<A, R>(self: Effect.Effect<A, StorageNotFoundError, R>) {
@@ -16,6 +17,19 @@ export function mapBusy<A, E, R>(self: Effect.Effect<A, Session.BusyError | E, R
         ? new ApiError.SessionBusyError({
             sessionID: error.sessionID,
             message: `Session is busy: ${error.sessionID}`,
+          })
+        : error,
+    ),
+  )
+}
+
+export function mapPauseChanged<A, E, R>(self: Effect.Effect<A, SessionPause.ChangedError | E, R>) {
+  return self.pipe(
+    Effect.mapError((error) =>
+      error instanceof SessionPause.ChangedError
+        ? new ApiError.PauseChangedError({
+            sessionID: error.sessionID,
+            message: "The pause changed; no action was taken",
           })
         : error,
     ),
