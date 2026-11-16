@@ -49,7 +49,7 @@ import { Truncate } from "@/tool/truncate"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
-import { reply, TestLLMServer } from "../lib/llm-server"
+import { httpError, raw, reply, TestLLMServer, type Item } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -755,3 +755,157 @@ for (const action of ["unpause", "discard"] as const) {
     )
   }
 }
+
+const refusalMessage = "No routable Claude account: 3 accounts spent (incident inc_1763330000000_7)"
+const refusalBody = {
+  type: "error",
+  error: {
+    type: "rate_limit_error",
+    code: "no_routable_account",
+    message: refusalMessage,
+    reset_at: null,
+    incident_id: "inc_1763330000000_7",
+    request_id: "req_park",
+    profiles: [{ id: "work", reason: "spent", resets_at: null }],
+  },
+}
+const streamChunk = (delta: Record<string, unknown>) => ({
+  id: "chatcmpl-test",
+  object: "chat.completion.chunk",
+  choices: [{ delta }],
+})
+
+// The model requests of the turn itself, without the title request.
+const stepInputs = (inputs: Record<string, unknown>[]) =>
+  inputs.filter((input) => !JSON.stringify(input).includes("Generate a title for this conversation"))
+
+const assistants = (messages: SessionV1.WithParts[]) => messages.filter((msg) => msg.info.role === "assistant")
+
+/*
+ * Runs a turn whose first model request Meridian refuses with `first`, and checks the session parked: one request,
+ * no retry, the refused step and its partial output gone, the session paused with the refusal. Unpause must then
+ * send the same request again and finish the turn.
+ */
+const parkAndUnpause = Effect.fn("test.parkAndUnpause")(function* (first: Item) {
+  const ctx = yield* setup()
+  yield* ctx.llm.push(first)
+  yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work"))
+  expect(stepInputs(yield* ctx.llm.inputs)).toHaveLength(1)
+
+  const pause = yield* ctx.pauses.get(ctx.chat.id)
+  expect(pause?.state).toBe("paused")
+  expect(pause?.stoppedAt).toBeNumber()
+  expect(pause?.reason).toBe(refusalMessage)
+  expect(pause?.source).toEqual({ kind: "api", client: "no_routable_account" })
+  expect(pause?.error?.code).toBe("no_routable_account")
+  expect(pause?.error?.incident_id).toBe("inc_1763330000000_7")
+  const status = yield* (yield* SessionStatus.Service).get(ctx.chat.id)
+  expect(status.type).toBe("idle")
+  expect(status.paused?.reason).toBe(refusalMessage)
+  const parked = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+  expect(assistants(parked)).toEqual([])
+  expect(JSON.stringify(parked)).not.toContain("half an answer")
+
+  // A loop finds the pause and calls nothing.
+  yield* ctx.prompt.loop({ sessionID: ctx.chat.id })
+  expect(stepInputs(yield* ctx.llm.inputs)).toHaveLength(1)
+
+  yield* ctx.llm.text("answered after unpause")
+  const calls = yield* ctx.llm.calls
+  const result = yield* ctx.prompt.unpause({ sessionID: ctx.chat.id, source: { kind: "tui" } })
+  expect(result).toEqual({ sessionID: ctx.chat.id, changed: true, deferred: 0 })
+  yield* ctx.llm.wait(calls + 1)
+  yield* idle(ctx.chat.id)
+  expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+
+  const inputs = stepInputs(yield* ctx.llm.inputs)
+  expect(inputs).toHaveLength(2)
+  expect(inputs[1].messages).toEqual(inputs[0].messages)
+
+  const messages = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+  const answers = assistants(messages)
+  expect(answers).toHaveLength(1)
+  expect(answers[0].info.role === "assistant" && answers[0].info.error).toBeUndefined()
+  expect(answers[0].parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual([
+    "answered after unpause",
+  ])
+  const notices = messages.flatMap((msg) => msg.parts.filter((part) => part.type === "text" && part.ignored))
+  expect(notices.map((part) => part.type === "text" && part.metadata?.pause?.action)).toEqual(["pause", "unpause"])
+  expect(notices[0]?.type === "text" && notices[0].text).toContain(`reason: ${refusalMessage}`)
+})
+
+it.instance(
+  "a no-routable-account refusal before the stream parks the step without retrying; unpause sends the same request",
+  () => parkAndUnpause(httpError(429, refusalBody)),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "a no-routable-account refusal inside the stream drops the partial output and parks; unpause sends the same request",
+  () =>
+    parkAndUnpause(
+      raw({
+        // As @ai-sdk/anthropic passes it on: only the type and the message survive.
+        head: [
+          streamChunk({ role: "assistant" }),
+          streamChunk({ content: "half an answer" }),
+          { error: { type: "rate_limit_error", message: refusalMessage } },
+        ],
+      }),
+    ),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "an error that is not a refusal still ends the turn with the error and no pause",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      yield* ctx.llm.error(400, { error: { type: "invalid_request_error", message: "invalid request: bad things" } })
+      yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work"))
+      expect(stepInputs(yield* ctx.llm.inputs)).toHaveLength(1)
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+      const answers = assistants(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
+      expect(answers).toHaveLength(1)
+      const error = answers[0].info.role === "assistant" ? answers[0].info.error : undefined
+      expect(error?.name).toBe("APIError")
+      expect(JSON.stringify(error)).toContain("invalid request: bad things")
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "a rate limit without the refusal is still retried as before, and parks nothing",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      yield* ctx.llm.push(
+        raw({
+          head: [
+            streamChunk({ role: "assistant" }),
+            { error: { type: "rate_limit_error", message: "Claude Max rate limit reached. Wait a moment and try again." } },
+          ],
+        }),
+      )
+      yield* ctx.llm.text("recovered")
+      const retries: GlobalEvent[] = []
+      const listener = (event: GlobalEvent) => {
+        if (event.payload?.type === "session.status" && event.payload.properties?.status?.type === "retry")
+          retries.push(event)
+      }
+      GlobalBus.on("event", listener)
+      yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", listener)))
+      yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work"))
+      expect(stepInputs(yield* ctx.llm.inputs)).toHaveLength(2)
+      expect(retries.length).toBe(1)
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+      const answers = assistants(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
+      expect(answers).toHaveLength(1)
+      expect(answers[0].info.role === "assistant" && answers[0].info.error).toBeUndefined()
+    }),
+  { git: true },
+  60_000,
+)

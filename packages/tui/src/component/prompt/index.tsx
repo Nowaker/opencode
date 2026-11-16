@@ -2403,9 +2403,16 @@ export function Prompt(props: PromptProps) {
             </Match>
             <Match when={paused()}>
               <box paddingLeft={3} flexDirection="row" gap={1} flexGrow={1} flexShrink={1}>
-                <text fg={theme.warning} {...onClick(() => pauseAction("unpause"))}>
+                <text fg={theme.warning} flexShrink={0} {...onClick(() => pauseAction("unpause"))}>
                   paused <span style={{ fg: theme.textMuted }}>- /unpause to continue</span>
                 </text>
+                <Show when={paused()?.reason}>
+                  {(reason) => (
+                    <text fg={paused()?.error ? theme.error : theme.textMuted} flexShrink={1} wrapMode="none">
+                      {reason()}
+                    </text>
+                  )}
+                </Show>
                 <Show when={pauseTools().deferred > 0}>
                   <text fg={theme.textMuted}>
                     {pauseTools().deferred} deferred tool call{pauseTools().deferred === 1 ? "" : "s"}, /discard to drop

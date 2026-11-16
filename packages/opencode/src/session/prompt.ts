@@ -1319,7 +1319,7 @@ const layer = Layer.effect(
       return history.flatMap((msg) => msg.parts.filter(isDeferredToolPart))
     })
 
-    const pause = Effect.fn("SessionPrompt.pause")(function* (input: PauseInput) {
+    const pause = Effect.fn("SessionPrompt.pause")(function* (input: PauseInput, error?: SessionPause.Refusal) {
       const existing = yield* pauses.get(input.sessionID)
       if (existing) return { sessionID: input.sessionID, pause: existing, changed: false }
       const at = Date.now()
@@ -1330,19 +1330,22 @@ const layer = Layer.effect(
         state: runs.has(input.sessionID) ? "pending" : "paused",
         source,
         ...(input.reason !== undefined && { reason: input.reason }),
+        ...(error && { error }),
       }
       yield* pauses.write(input.sessionID, next)
       for (const child of yield* descendants(input.sessionID)) {
         if (yield* pauses.get(child.id)) continue
+        const { error: _, ...inherited } = next
         yield* pauses.write(child.id, {
-          ...next,
+          ...inherited,
           state: runs.has(child.id) ? "pending" : "paused",
           root: input.sessionID,
         })
       }
       yield* notice(
         input.sessionID,
-        input.notice ?? SessionPause.noticeText({ action: "pause", source, at, reason: input.reason }),
+        input.notice ??
+          SessionPause.noticeText({ action: "pause", source, at, reason: input.reason, parked: error !== undefined }),
         { action: "pause", source, at },
       )
       return { sessionID: input.sessionID, pause: next, changed: true }
@@ -1454,6 +1457,32 @@ const layer = Layer.effect(
             : Effect.succeed(false),
         )
         .pipe(Effect.catchTag("PauseChangedError", () => Effect.succeed(false)))
+    })
+
+    /*
+     * Meridian refused the step: no Claude account can serve it. The step's message and its partial output are
+     * dropped, so the history is again what the step was built from, and the session is paused with the refusal as
+     * its reason. The loop then stops at this boundary, and unpause builds the same request again. A subagent waits
+     * instead, as for an inherited pause, because its parent's task tool is still running it.
+     */
+    const park = Effect.fnUntraced(function* (input: {
+      session: Session.Info
+      messageID: MessageID
+      refusal: SessionPause.Refusal
+    }) {
+      const sessionID = input.session.id
+      yield* processor.settle(sessionID)
+      yield* sessions.removeMessage({ sessionID, messageID: input.messageID })
+      yield* Effect.logWarning("step parked: no routable account", {
+        "session.id": sessionID,
+        messageID: input.messageID,
+        incident: input.refusal.incident_id,
+      })
+      const result = yield* pause(
+        { sessionID, source: { kind: "api", client: SessionPause.REFUSAL_CODE }, reason: input.refusal.message },
+        input.refusal,
+      )
+      if (input.session.parentID) yield* waitForUnpause(sessionID, result.pause)
     })
 
     // The loop reached a step boundary while paused: the turn stops there instead of calling the model again.
@@ -1963,7 +1992,7 @@ const layer = Layer.effect(
             })
             .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
-          const outcome: "break" | "continue" = yield* Effect.gen(function* () {
+          const outcome: "break" | "continue" | "park" = yield* Effect.gen(function* () {
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
@@ -2058,6 +2087,7 @@ const layer = Layer.effect(
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+            if (handle.refusal) return "park" as const
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -2117,6 +2147,8 @@ const layer = Layer.effect(
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
           if (outcome === "break") break
+          if (outcome === "park" && handle.refusal)
+            yield* park({ session, messageID: handle.message.id, refusal: handle.refusal })
           continue
         }
 

@@ -721,6 +721,16 @@ export type SessionPauseHeld = {
   delivery?: unknown
 }
 
+export type SessionPauseRefusal = {
+  code: "no_routable_account"
+  message: string
+  incident_id?: string
+  request_id?: string
+  reset_at?: string
+  profiles?: Array<unknown>
+  api_error: unknown
+}
+
 export type SessionPause = {
   at: number
   mode: "soft"
@@ -730,6 +740,7 @@ export type SessionPause = {
   stoppedAt?: number
   root?: string
   held?: Array<SessionPauseHeld>
+  error?: SessionPauseRefusal
 }
 
 export type SessionStatus =

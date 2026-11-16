@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
+import { isRecord } from "@/util/record"
 import { SessionID } from "./schema"
 import { Session } from "./session"
 import { SessionStatus } from "./status"
@@ -69,13 +70,74 @@ export function deferredOf(metadata: Record<string, unknown>) {
   return { reason: "paused" as const, at: value.at }
 }
 
+export const Refusal = SessionPauseEvent.Refusal
+export type Refusal = SessionPauseEvent.Refusal
+
+export const REFUSAL_CODE = "no_routable_account"
+export const REFUSAL_PREFIX = "No routable Claude account: "
+
+/*
+ * Meridian's "no routable account" refusal, found in an error as opencode recorded it, or undefined for any other
+ * error. A refusal before the stream is an HTTP 429 whose body keeps every Meridian field; one inside the stream
+ * reaches us through the Anthropic SDK with only its message, so the stable message prefix is the fallback match
+ * and the incident is read from the message's "(incident inc_...)" token. Only fields of the expected type are
+ * copied, because a malformed one would make the whole stored pause undecodable.
+ */
+export function refusal(error: { name: string; data?: unknown }): Refusal | undefined {
+  const data = isRecord(error.data) ? error.data : {}
+  const found = [data.responseBody, data.message].flatMap((value) => {
+    if (typeof value !== "string") return []
+    const body = parseObject(value)
+    const inner = body && isRecord(body.error) ? body.error : body
+    if (inner && (inner.code === REFUSAL_CODE || startsWithPrefix(inner.message))) return [inner]
+    const at = value.indexOf(REFUSAL_PREFIX)
+    return at === -1 ? [] : [{ message: value.slice(at) }]
+  })[0]
+  if (!found) return undefined
+  const message = typeof found.message === "string" ? found.message : REFUSAL_PREFIX.trim()
+  const incident = string(found.incident_id) ?? /\(incident (inc_\d+_\d+)\)\s*$/.exec(message)?.[1]
+  return {
+    code: REFUSAL_CODE,
+    message,
+    ...(incident !== undefined && { incident_id: incident }),
+    ...(string(found.request_id) !== undefined && { request_id: string(found.request_id) }),
+    ...(string(found.reset_at) !== undefined && { reset_at: string(found.reset_at) }),
+    ...(Array.isArray(found.profiles) && { profiles: found.profiles }),
+    api_error: error,
+  }
+}
+
+function parseObject(value: string) {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function startsWithPrefix(value: unknown) {
+  return typeof value === "string" && value.startsWith(REFUSAL_PREFIX)
+}
+
+function string(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
 export type Action = "pause" | "unpause" | "discard"
 
 /**
  * The text of the user-only notice a pause, unpause or discard leaves in the transcript, in Vibeterm's metadata
  * block shape so the TUI shows it as provenance.
  */
-export function noticeText(input: { action: Action; source: Source; at: number; reason?: string; count?: number }) {
+export function noticeText(input: {
+  action: Action
+  source: Source
+  at: number
+  reason?: string
+  count?: number
+  parked?: boolean
+}) {
   const call = { pause: "/pause", unpause: "/unpause", discard: "/discard" }[input.action]
   const lines = [
     "[vibeterm_metadata]",
@@ -92,7 +154,9 @@ export function noticeText(input: { action: Action; source: Source; at: number; 
   ].filter((line): line is string => !!line)
   const who = describe(input.source)
   const text = {
-    pause: `Paused by ${who}. The running step finishes; nothing else runs until /unpause.`,
+    pause: input.parked
+      ? "Paused: no Claude account can take the request. The refused step was dropped; /unpause runs it again."
+      : `Paused by ${who}. The running step finishes; nothing else runs until /unpause.`,
     unpause: `Unpaused by ${who}.`,
     discard: `${input.count ?? 0} deferred tool call${input.count === 1 ? "" : "s"} discarded by ${who}.`,
   }[input.action]

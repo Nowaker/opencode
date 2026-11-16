@@ -36,6 +36,11 @@ export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
   readonly message: SessionV1.Assistant
+  /**
+   * Meridian's no-routable-account refusal that ended the step, which `process` answers with `stop`. The step is
+   * not failed: the caller drops it and pauses the session, so unpause runs it again.
+   */
+  readonly refusal: SessionPause.Refusal | undefined
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
@@ -88,6 +93,7 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
+  refusal: SessionPause.Refusal | undefined
 }
 
 type StreamEvent = LLMEvent
@@ -165,6 +171,7 @@ const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
+        refusal: undefined,
       }
       let aborted = false
       let abort: SessionAbort.Metadata | undefined
@@ -892,6 +899,12 @@ const layer = Layer.effect(
           yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           return
         }
+        // A compaction's summary is not a step to run again later, so its refusal fails it as before.
+        const refusal = ctx.assistantMessage.summary ? undefined : SessionPause.refusal(error)
+        if (refusal) {
+          ctx.refusal = refusal
+          return
+        }
         ctx.assistantMessage.error = error
         yield* events.publish(Session.Event.Error, {
           sessionID: ctx.assistantMessage.sessionID,
@@ -906,6 +919,7 @@ const layer = Layer.effect(
           messageID: input.assistantMessage.id,
         })
         ctx.needsCompaction = false
+        ctx.refusal = undefined
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
 
         return yield* Effect.gen(function* () {
@@ -947,8 +961,8 @@ const layer = Layer.effect(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => completingText ? Effect.die(Cause.squash(cause)) : Effect.fail(Cause.squash(cause)),
             ),
-            Effect.retry(
-              SessionRetry.policy({
+            Effect.retry({
+              schedule: SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
                 set: (info) => {
@@ -961,7 +975,9 @@ const layer = Layer.effect(
                   })
                 },
               }),
-            ),
+              // Meridian has already tried every account; retrying cannot help, and the step is parked instead.
+              while: (error) => !SessionPause.refusal(parse(error)),
+            }),
             Effect.andThen(() =>
               Effect.gen(function* () {
                 if (!stopSequences) return
@@ -988,6 +1004,7 @@ const layer = Layer.effect(
             Effect.ensuring(cleanup()),
           )
 
+          if (ctx.refusal) return "stop"
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
@@ -1000,6 +1017,9 @@ const layer = Layer.effect(
       return {
         get message() {
           return ctx.assistantMessage
+        },
+        get refusal() {
+          return ctx.refusal
         },
         updateToolCall,
         completeToolCall,

@@ -26,6 +26,24 @@ export const Held = Schema.Struct({
 }).annotate({ identifier: "SessionPauseHeld" })
 
 /**
+ * Meridian's terminal refusal when no Claude account can serve a request, as far as it reached opencode. Fields keep
+ * Meridian's names. Inside a stream the Anthropic SDK keeps only the message, so `incident_id` is then read from the
+ * message's trailing "(incident inc_...)" token, and the other Meridian fields are absent.
+ */
+export interface Refusal extends Schema.Schema.Type<typeof Refusal> {}
+export const Refusal = Schema.Struct({
+  code: Schema.Literal("no_routable_account"),
+  message: Schema.String,
+  incident_id: optional(Schema.String),
+  request_id: optional(Schema.String),
+  /** Omitted when Meridian sent null: no reset is known. */
+  reset_at: optional(Schema.String),
+  profiles: optional(Schema.Array(Schema.Unknown)),
+  /** The provider error opencode recorded for the failed step, before the step was dropped. */
+  api_error: Schema.Unknown,
+}).annotate({ identifier: "SessionPauseRefusal" })
+
+/**
  * The durable pause of a session, stored in `session.metadata.pause`. `pending` while the current step still drains,
  * `paused` once the loop stopped at the step boundary; a `pending` pause with no running loop reads as paused.
  */
@@ -40,6 +58,8 @@ export const Info = Schema.Struct({
   /** The ancestor session whose pause this one inherited. */
   root: optional(Schema.String),
   held: optional(Schema.Array(Held)),
+  /** The refusal that parked the session: its step is dropped and runs again on unpause. */
+  error: optional(Refusal),
 }).annotate({ identifier: "SessionPause" })
 
 export const Updated = define({
