@@ -4,9 +4,9 @@
 
 - Status: active
 - Integration branches: `dev-nowaker` (v1 source and all forklog records), `v2-nowaker` (native v2 source)
-- Development branch(es): `feat/tool-exposure-hook` (cut from `dev-nowaker`; upstreamable candidate, no PR)
+- Development branch(es): `feat/tool-exposure-hook` (cut from `dev-nowaker`; upstreamable candidate, no PR), `deferred-tool-catalog`
 - First local commit: `ac36448956`
-- Current local commit(s): v1 `ac36448956`, merge `f8f7cf2e33`; `2c4bd2a36a`, merge `cead509aa0`; native v2 `99ff4b4cc47065777136ff0d3d89b0466a21ebb7` on `native-tool-discovery` and `v2-nowaker`
+- Current local commit(s): v1 `ac36448956`, merge `f8f7cf2e33`; `2c4bd2a36a`, merge `cead509aa0`; initial catalog `e325048346f`; native v2 `99ff4b4cc47065777136ff0d3d89b0466a21ebb7` on `native-tool-discovery` and `v2-nowaker`
 - Upstream base when introduced: `006d837c50` (`v1.19.5`, `github/v1`)
 - Last checked against upstream: `006d837c50`
 
@@ -40,6 +40,7 @@
 | `f8f7cf2e33` | 2026-11-07 | Fork merge, no conflicts | - |
 | `2c4bd2a36a` | 2026-11-10 | The agent permission filter stripped `tool_search` while deferred tools it allowed stayed, so OpenAI rejected every explore request ("Deferred tools require tools.tool_search"); permissions now leave `tool_search` alone and drop it only when nothing is deferred ([session](../sessions/2026-11-10-defer-search-permission.md)) | `resolveTools` in `session/llm/request.ts`; `test/session/llm-request.test.ts` |
 | `cead509aa0` | 2026-11-10 | Fork merge, no conflicts | - |
+| `e325048346f` | 2026-11-16 | Initial name-and-purpose catalog for callable deferred tools, preserving eager schemas and internal tool repair | `session/llm/request.ts`, `session/llm.ts`, `test/session/llm-request-catalog.test.ts`; [delivery](../sessions/2026-11-16-essential-tool-exposure.md) |
 
 ## Verification
 
@@ -48,6 +49,13 @@
 - Same through opencode-tools `toolDeferral.*` settings and the opencode-lazy-mcp-plugin: both providers passed.
 - Installed `1.19.5-vt-407-006d837c50` on desktop; v2 guard gate passed.
 - 2026-11-10: `llm-request.test.ts` fails on the old code (0/2) and passes with the fix; installed `1.19.5-vt-436-006d837c50` on both hosts, and a GPT explore run answered.
+
+## V1 initial tool catalog
+
+- Every callable tool deferred for the active OpenAI or Anthropic SDK appears in initial system context, or OpenAI OAuth instructions, with its name and first description paragraph normalized and capped at 240 characters. The catalog has no tool-count cap and contains no parameter schemas.
+- The catalog and `Prepared.activeTools` share the same permission-filtered provider exposure set. The internal `invalid` handler remains available for repair but is neither advertised nor serialized as an active tool; Copilot's compatibility `_noop` remains active when needed. Eager schemas, plugin instructions and executors retain their existing paths.
+- Vibeterm's companion policy keeps essential coding, monitoring, research and routine session/worktree tools directly callable. Existing configured selectors are preserved when activating the expanded policy; specialist schemas still load through discovery.
+- Source verification passes 24 tests and 156 assertions. The installed plugin/engine suite passes 43 tests and 208 assertions, and both expanded installed-runtime cases pass independently on desktop. Both hosts install `1.19.5-vt-504-006d837c50` after their mandatory v1 database guard passes. The [session record](../sessions/2026-11-16-essential-tool-exposure.md) owns the baseline failures, review correction, typecheck limits, build artifacts and live direct-tool proof.
 
 ## Native v2 implementation
 
@@ -60,4 +68,5 @@
 
 ## Timeline
 
+- 2026-11-16 [Essential tool exposure delivery](../sessions/2026-11-16-essential-tool-exposure.md), [session](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e1cd56b7dffe2F5QL8T66T8wbd) - publish the v1 initial catalog to both mirrors, install it independently on desktop and m4max, activate the shared essential-tool policy and verify direct calls in a fresh session and the restarted delivering tab.
 - 2026-11-15 [W1 delivery](../sessions/2026-11-15-native-tool-deferral.md), [full source session](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e3832b1b0ffe6q98OeUzhgqhjQ) - native v2 port `99ff4b4cc4` is reviewed, normally published on both primary mirrors and independently installed on desktop and m4max. The earlier interrupted checkpoint remains on its original feature refs; no historical v1 verification is relabeled as v2 evidence.
