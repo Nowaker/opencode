@@ -139,6 +139,22 @@ export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree
 
 ---
 
+### Live session output in the Vibeterm fork
+
+The Vibeterm fork supplies optional `PluginInput.liveEvents`. Check that the capability exists before using it; an older engine can load the same plugin without it. This capability works inside a portless TUI and does not start an HTTP listener.
+
+`liveEvents.open({ sessionID, signal })` returns an attachment with `frames: ReadableStream<LiveFrame>` and an idempotent `close()` method. The signal is optional. Closing, cancelling or aborting the attachment releases its subscription without aborting the assistant's turn. Instance disposal and a consumer queue overflow also end the attachment.
+
+The first frame is `vibeterm.stream.snapshot` with `{version:1,sessionID,epoch,sequence:0,status,messages:[{info,parts}]}`. The snapshot combines persisted messages with unfinished text, reasoning and pending tool-input prefixes under a publication fence. Native message and part IDs remain stable. `status` is the native current session status. Completed text/reasoning parts have `time.end`; tool completion uses `state.status`.
+
+Subsequent `vibeterm.stream.event` frames carry `{version:1,sessionID,epoch,sequence,event:{type,properties}}`, increasing the attachment's sequence by one. Each engine attachment has a fresh epoch. The private stream includes native message/part/status/error updates and private `message.part.delta` tool-input chunks with `field:"state.raw"`; those tool chunks are not published on the native event bus. Updates for messages omitted by the initial snapshot cut are excluded from that attachment.
+
+With no subscriber, the capability adds no native event, database write, snapshot read or payload clone. Pending tool input and unfinished prefixes abandoned by a retry remain in ephemeral memory for late attachment. Retry retention keeps existing references, invalidates them on authoritative replacement/removal, and clears them when the processor ends. Plugins must own their attachment's lifetime and must not await an entire live stream inside a blocking model hook.
+
+Vibeterm's authenticated API transports these frames over its existing owner control channel; its [live output contract](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/vibeterm-api/README.md#opt-in-live-session-output) defines the public opt-in SSE query and AI SDK mapping.
+
+---
+
 ### Events
 
 Plugins can subscribe to events as seen below in the Examples section. Here is a list of the different events available.

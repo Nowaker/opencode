@@ -5,6 +5,7 @@ import { Effect, Layer, Context } from "effect"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionStatusEvent } from "@opencode-ai/schema/session-status-event"
 import { SessionPauseEvent } from "@opencode-ai/schema/session-pause-event"
+import { LiveEvents } from "./live-events"
 
 export const Info = SessionStatusEvent.Info
 export type Info = SessionStatusEvent.Info
@@ -25,6 +26,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const live = yield* LiveEvents.Service
 
     const state = yield* InstanceState.make(
       Effect.fn("SessionStatus.state")(() =>
@@ -62,7 +64,7 @@ const layer = Layer.effect(
         return
       }
       data.statuses.set(sessionID, withPause(status, undefined))
-    })
+    }, (work, sessionID) => live.guard(sessionID, work))
 
     const setPaused = Effect.fn("SessionStatus.setPaused")(function* (
       sessionID: SessionID,
@@ -75,12 +77,12 @@ const layer = Layer.effect(
         sessionID,
         status: withPause(data.statuses.get(sessionID) ?? { type: "idle" }, pause),
       })
-    })
+    }, (work, sessionID) => live.guard(sessionID, work))
 
     return Service.of({ get, list, set, setPaused })
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, LiveEvents.node] })
 
 export * as SessionStatus from "./status"

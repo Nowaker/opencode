@@ -34,6 +34,9 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { LiveEvents } from "@/session/live-events"
+import { SessionID } from "@/session/schema"
+import { SessionStatus } from "@/session/status"
 
 type State = {
   hooks: Hooks[]
@@ -131,11 +134,18 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
+    const sessions = yield* Session.Service
+    const live = yield* LiveEvents.Service
+    const status = yield* SessionStatus.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
         const hooks: Hooks[] = []
         const bridge = yield* EffectBridge.make()
+        const lifetime = yield* Effect.acquireRelease(
+          Effect.sync(() => new AbortController()),
+          (controller) => Effect.sync(() => controller.abort()),
+        )
 
         function publishPluginError(message: string) {
           bridge.fork(events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
@@ -153,6 +163,21 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const input: PluginInput = {
           ownerQuiescence: OwnerQuiescence.control,
+          liveEvents: {
+            open: ({ sessionID, signal }) =>
+              bridge.promise(
+                live.open(
+                  { sessionID, signal: signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal },
+                  Effect.gen(function* () {
+                    const id = SessionID.make(sessionID)
+                    const session = yield* sessions.get(id)
+                    if (session.directory !== ctx.directory)
+                      return yield* Effect.die(new Error("Session belongs to another instance"))
+                    return { messages: yield* sessions.messages({ sessionID: id }), status: yield* status.get(id) }
+                  }),
+                ),
+              ),
+          },
           client,
           project: ctx.project,
           worktree: ctx.worktree,
@@ -315,7 +340,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node],
 })
 
 export * as Plugin from "."

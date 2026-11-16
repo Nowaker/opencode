@@ -20,6 +20,8 @@ import type {
 
 import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
+import type { LiveEvents } from "./live-events.js"
+export type { LiveEvents, LiveFrame } from "./live-events.js"
 
 export * from "./tool.js"
 
@@ -60,6 +62,7 @@ export type WorkspaceAdapter = {
 }
 
 export type PluginInput = {
+  readonly liveEvents?: LiveEvents
   readonly ownerQuiescence?: {
     readonly status: () => Readonly<OwnerQuiescenceStatus>
     readonly acquire: () =>

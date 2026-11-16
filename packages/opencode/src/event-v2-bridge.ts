@@ -8,6 +8,8 @@ import { Location } from "@opencode-ai/core/location"
 import { Project } from "@opencode-ai/core/project"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Context, Effect, Layer } from "effect"
+import { LiveEvents } from "@/session/live-events"
+import { isRecord } from "@/util/record"
 
 export class Service extends Context.Service<Service, EventV2.Interface>()("@opencode/EventV2Bridge") {}
 
@@ -15,9 +17,10 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const live = yield* LiveEvents.Service
 
-    const publish: EventV2.Interface["publish"] = (definition, data, options) =>
-      Effect.gen(function* () {
+    const publish: EventV2.Interface["publish"] = (definition, data, options) => {
+      const work = Effect.gen(function* () {
         if (options?.location) return yield* events.publish(definition, data, options)
         const ctx = yield* InstanceRef
         if (!ctx) return yield* events.publish(definition, data, options)
@@ -31,9 +34,12 @@ const layer = Layer.effect(
           }),
         })
       })
+      return isRecord(data) && typeof data.sessionID === "string" ? live.guard(data.sessionID, work) : work
+    }
 
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
+        live.capture(event)
         const ctx = yield* InstanceRef
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
         GlobalBus.emit("event", {
@@ -66,6 +72,6 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2.node, LiveEvents.node] })
 
 export * as EventV2Bridge from "./event-v2-bridge"

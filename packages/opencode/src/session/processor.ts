@@ -29,6 +29,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { TransactionDiagnostic } from "@opencode-ai/core/database/transaction-diagnostic"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { textStop } from "./text-stop"
+import { LiveEvents } from "./live-events"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -75,6 +76,8 @@ type ToolCall = {
   messageID: SessionV1.ToolPart["messageID"]
   sessionID: SessionV1.ToolPart["sessionID"]
   done: Deferred.Deferred<void>
+  raw: string
+  pending?: SessionV1.ToolPart
 }
 
 interface ProcessorContext extends Input {
@@ -107,6 +110,7 @@ const layer = Layer.effect(
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
     const database = yield* Database.Service
+    const live = yield* LiveEvents.Service
 
     // Snapshots run in the background so they never delay the model request. Every snapshot a session starts
     // is tracked here until it has finished and written its hash into the step-start, step-finish or patch
@@ -164,6 +168,48 @@ const layer = Layer.effect(
       }
       let aborted = false
       let abort: SessionAbort.Metadata | undefined
+      const abandoned = new Map<PartID, SessionV1.TextPart | SessionV1.ReasoningPart>()
+      const mutate = <A, E, R>(work: Effect.Effect<A, E, R>) => live.guard(ctx.sessionID, work)
+      const clearRaw = () => {
+        for (const call of Object.values(ctx.toolcalls)) {
+          call.raw = ""
+          call.pending = undefined
+        }
+      }
+      const unregister = yield* live.register(
+        ctx.sessionID,
+        () => structuredClone([
+          ...abandoned.values(),
+          ...(ctx.currentText ? [ctx.currentText] : []),
+          ...Object.values(ctx.reasoningMap),
+          ...Object.values(ctx.toolcalls).flatMap((call) =>
+            call.pending?.state.status === "pending"
+              ? [{ ...call.pending, state: { ...call.pending.state, raw: call.raw } }]
+              : [],
+          ),
+        ]),
+        (event) => {
+          if (!abandoned.size || !isRecord(event.data)) return
+          switch (event.type) {
+            case "message.part.updated":
+              if (isRecord(event.data.part) && typeof event.data.part.id === "string") {
+                abandoned.delete(PartID.make(event.data.part.id))
+              }
+              return
+            case "message.part.removed":
+              if (typeof event.data.partID === "string") abandoned.delete(PartID.make(event.data.partID))
+              return
+            case "message.removed":
+              for (const [id, part] of abandoned) {
+                if (part.messageID === event.data.messageID) abandoned.delete(id)
+              }
+              return
+            case "session.deleted":
+              abandoned.clear()
+              return
+          }
+        },
+      )
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -176,7 +222,7 @@ const layer = Layer.effect(
         const done = ctx.toolcalls[toolCallID]?.done
         delete ctx.toolcalls[toolCallID]
         if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
-      })
+      }, mutate)
 
       const readToolCall = Effect.fn("SessionProcessor.readToolCall")(function* (toolCallID: string) {
         const call = ctx.toolcalls[toolCallID]
@@ -191,7 +237,7 @@ const layer = Layer.effect(
           return undefined
         }
         return { call, part }
-      })
+      }, mutate)
 
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
@@ -199,15 +245,22 @@ const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match) return undefined
-        const part = yield* session.updatePart(update(match.part))
+        const next = update(match.part)
+        if (next.state.status !== "pending") {
+          match.call.raw = ""
+          match.call.pending = undefined
+        }
+        const part = yield* session.updatePart(next)
         ctx.toolcalls[toolCallID] = {
           ...match.call,
           partID: part.id,
           messageID: part.messageID,
           sessionID: part.sessionID,
+          raw: part.state.status === "pending" ? match.call.raw : "",
+          pending: part.state.status === "pending" ? part : undefined,
         }
         return part
-      })
+      }, mutate)
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -233,7 +286,7 @@ const layer = Layer.effect(
           },
         })
         yield* settleToolCall(toolCallID)
-      })
+      }, mutate)
 
       /*
        * A call the paused session did not start keeps its full input as pending work. Settling it here keeps the
@@ -257,10 +310,14 @@ const layer = Layer.effect(
           state: { status: "pending", input: match.part.state.input, raw: "", metadata: { deferred } },
         })
         yield* settleToolCall(toolCallID)
-      })
+      }, mutate)
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
+        if (match) {
+          match.call.raw = ""
+          match.call.pending = undefined
+        }
         if (!match || match.part.state.status !== "running") return false
         yield* session.updatePart({
           ...match.part,
@@ -278,7 +335,7 @@ const layer = Layer.effect(
         }
         yield* settleToolCall(toolCallID)
         return true
-      })
+      }, mutate)
 
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
@@ -287,7 +344,7 @@ const layer = Layer.effect(
         ctx.reasoningMap[reasoningID].time = { ...ctx.reasoningMap[reasoningID].time, end: Date.now() }
         yield* session.updatePart(ctx.reasoningMap[reasoningID])
         delete ctx.reasoningMap[reasoningID]
-      })
+      }, mutate)
 
       const ensureToolCall = Effect.fn("SessionProcessor.ensureToolCall")(function* (input: {
         id: string
@@ -324,9 +381,11 @@ const layer = Layer.effect(
           partID: part.id,
           messageID: part.messageID,
           sessionID: part.sessionID,
+          raw: "",
+          pending: part,
         }
         return { call: ctx.toolcalls[input.id], part }
-      })
+      }, mutate)
 
       // The patch part ID is allocated when the step ends so the part keeps its place in the message even
       // though the patch itself is computed later.
@@ -363,7 +422,7 @@ const layer = Layer.effect(
           field: "text",
           delta: text,
         })
-      })
+      }, mutate)
 
       const finishText = Effect.fn("SessionProcessor.finishText")(function* (metadata?: SessionV1.TextPart["metadata"]) {
         if (!ctx.currentText) return
@@ -375,26 +434,38 @@ const layer = Layer.effect(
           }
         }
         completingText = true
-        ctx.currentText.text = (yield* plugin.trigger(
-          "experimental.text.complete",
-          {
-            sessionID: ctx.sessionID,
-            messageID: ctx.assistantMessage.id,
-            partID: ctx.currentText.id,
-          },
-          { text: ctx.currentText.text },
-        )).text
+        const text = (
+          yield* plugin.trigger(
+            "experimental.text.complete",
+            {
+              sessionID: ctx.sessionID,
+              messageID: ctx.assistantMessage.id,
+              partID: ctx.currentText.id,
+            },
+            { text: ctx.currentText.text },
+          )
+        ).text
         completingText = false
-        const end = Date.now()
-        ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-        if (metadata) ctx.currentText.metadata = metadata
-        yield* session.updatePart(ctx.currentText)
-        ctx.currentText = undefined
+        yield* mutate(
+          Effect.gen(function* () {
+            if (!ctx.currentText) return
+            ctx.currentText.text = text
+            const end = Date.now()
+            ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
+            if (metadata) ctx.currentText.metadata = metadata
+            yield* session.updatePart(ctx.currentText)
+            ctx.currentText = undefined
+          }),
+        )
       })
 
       const finishStoppedText = Effect.fn("SessionProcessor.finishStoppedText")(function* (sequenceIndex: number) {
         const localStop = { reason: "stop-sequence", sequenceIndex, finalUsage: "unavailable" }
-        if (ctx.currentText) ctx.currentText.metadata = { ...ctx.currentText.metadata, localStop }
+        yield* mutate(
+          Effect.sync(() => {
+            if (ctx.currentText) ctx.currentText.metadata = { ...ctx.currentText.metadata, localStop }
+          }),
+        )
         yield* Effect.logInfo("local stream stop", {
           sessionID: ctx.sessionID,
           messageID: ctx.assistantMessage.id,
@@ -428,38 +499,50 @@ const layer = Layer.effect(
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
         switch (value.type) {
           case "reasoning-start":
-            if (value.id in ctx.reasoningMap) return
-            ctx.reasoningMap[value.id] = {
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.assistantMessage.sessionID,
-              type: "reasoning",
-              text: "",
-              time: { start: Date.now() },
-              metadata: value.providerMetadata,
-            }
-            yield* session.updatePart(ctx.reasoningMap[value.id])
+            yield* mutate(
+              Effect.gen(function* () {
+                if (value.id in ctx.reasoningMap) return
+                ctx.reasoningMap[value.id] = {
+                  id: PartID.ascending(),
+                  messageID: ctx.assistantMessage.id,
+                  sessionID: ctx.assistantMessage.sessionID,
+                  type: "reasoning",
+                  text: "",
+                  time: { start: Date.now() },
+                  metadata: value.providerMetadata,
+                }
+                yield* session.updatePart(ctx.reasoningMap[value.id])
+              }),
+            )
             return
 
           case "reasoning-delta":
-            // Match dev: silently drop orphan deltas (no preceding reasoning-start).
-            if (!(value.id in ctx.reasoningMap)) return
-            ctx.reasoningMap[value.id].text += value.text
-            if (value.providerMetadata) ctx.reasoningMap[value.id].metadata = value.providerMetadata
-            yield* session.updatePartDelta({
-              sessionID: ctx.reasoningMap[value.id].sessionID,
-              messageID: ctx.reasoningMap[value.id].messageID,
-              partID: ctx.reasoningMap[value.id].id,
-              field: "text",
-              delta: value.text,
-            })
+            yield* mutate(
+              Effect.gen(function* () {
+                // Match dev: silently drop orphan deltas (no preceding reasoning-start).
+                if (!(value.id in ctx.reasoningMap)) return
+                ctx.reasoningMap[value.id].text += value.text
+                if (value.providerMetadata) ctx.reasoningMap[value.id].metadata = value.providerMetadata
+                yield* session.updatePartDelta({
+                  sessionID: ctx.reasoningMap[value.id].sessionID,
+                  messageID: ctx.reasoningMap[value.id].messageID,
+                  partID: ctx.reasoningMap[value.id].id,
+                  field: "text",
+                  delta: value.text,
+                })
+              }),
+            )
             return
 
           case "reasoning-end":
-            if (value.providerMetadata && value.id in ctx.reasoningMap) {
-              ctx.reasoningMap[value.id].metadata = value.providerMetadata
-            }
-            yield* finishReasoning(value.id)
+            yield* mutate(
+              Effect.gen(function* () {
+                if (value.providerMetadata && value.id in ctx.reasoningMap) {
+                  ctx.reasoningMap[value.id].metadata = value.providerMetadata
+                }
+                yield* finishReasoning(value.id)
+              }),
+            )
             return
 
           case "tool-input-start":
@@ -470,7 +553,14 @@ const layer = Layer.effect(
             return
 
           case "tool-input-delta":
-            yield* ensureToolCall(value)
+            yield* mutate(
+              Effect.gen(function* () {
+                const match = yield* ensureToolCall(value)
+                if (match.part.state.status !== "pending") return
+                match.call.raw += value.text
+                live.raw(match.part, value.text)
+              }),
+            )
             return
 
           case "tool-input-end": {
@@ -686,17 +776,21 @@ const layer = Layer.effect(
           }
 
           case "text-start":
-            boundary = stopSequences && textStop(stopSequences)
-            ctx.currentText = {
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.assistantMessage.sessionID,
-              type: "text",
-              text: "",
-              time: { start: Date.now() },
-              metadata: value.providerMetadata,
-            }
-            yield* session.updatePart(ctx.currentText)
+            yield* mutate(
+              Effect.gen(function* () {
+                boundary = stopSequences && textStop(stopSequences)
+                ctx.currentText = {
+                  id: PartID.ascending(),
+                  messageID: ctx.assistantMessage.id,
+                  sessionID: ctx.assistantMessage.sessionID,
+                  type: "text",
+                  text: "",
+                  time: { start: Date.now() },
+                  metadata: value.providerMetadata,
+                }
+                yield* session.updatePart(ctx.currentText)
+              }),
+            )
             return
 
           case "text-delta": {
@@ -722,21 +816,26 @@ const layer = Layer.effect(
           ctx.snapshot = undefined
         }
 
-        if (ctx.currentText) {
-          const end = Date.now()
-          ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-          yield* session.updatePart(ctx.currentText)
-          ctx.currentText = undefined
-        }
+        yield* mutate(
+          Effect.gen(function* () {
+            clearRaw()
+            if (ctx.currentText) {
+              const end = Date.now()
+              ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
+              yield* session.updatePart(ctx.currentText)
+              ctx.currentText = undefined
+            }
 
-        for (const part of Object.values(ctx.reasoningMap)) {
-          const end = Date.now()
-          yield* session.updatePart({
-            ...part,
-            time: { start: part.time.start ?? end, end },
-          })
-        }
-        ctx.reasoningMap = {}
+            for (const part of Object.values(ctx.reasoningMap)) {
+              const end = Date.now()
+              yield* session.updatePart({
+                ...part,
+                time: { start: part.time.start ?? end, end },
+              })
+            }
+            ctx.reasoningMap = {}
+          }),
+        )
 
         yield* Effect.forEach(
           Object.values(ctx.toolcalls),
@@ -744,29 +843,34 @@ const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
-        for (const toolCallID of Object.keys(ctx.toolcalls)) {
-          const match = yield* readToolCall(toolCallID)
-          if (!match) continue
-          const part = match.part
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
-        }
-        ctx.toolcalls = {}
+        yield* mutate(
+          Effect.gen(function* () {
+            for (const toolCallID of Object.keys(ctx.toolcalls)) {
+              const match = yield* readToolCall(toolCallID)
+              if (!match) continue
+              const part = match.part
+              const end = Date.now()
+              const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+              yield* session.updatePart({
+                ...part,
+                state: {
+                  ...part.state,
+                  status: "error",
+                  error: "Tool execution aborted",
+                  metadata: { ...metadata, interrupted: true },
+                  time: { start: "time" in part.state ? part.state.time.start : end, end },
+                },
+              })
+            }
+            ctx.toolcalls = {}
+          }),
+        )
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
+        yield* mutate(Effect.sync(clearRaw))
         const sqlite = TransactionDiagnostic.get(e)
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
@@ -806,8 +910,18 @@ const layer = Layer.effect(
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
-            ctx.currentText = undefined
-            ctx.reasoningMap = {}
+            yield* mutate(
+              Effect.sync(() => {
+                if (ctx.currentText && ctx.currentText.time?.end === undefined) {
+                  abandoned.set(ctx.currentText.id, ctx.currentText)
+                }
+                for (const part of Object.values(ctx.reasoningMap)) {
+                  if (part.time.end === undefined) abandoned.set(part.id, part)
+                }
+                ctx.currentText = undefined
+                ctx.reasoningMap = {}
+              }),
+            )
             stopped = undefined
             acceptedNarrative = false
             yield* status.set(ctx.sessionID, { type: "busy" })
@@ -878,7 +992,10 @@ const layer = Layer.effect(
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
         })
-      })
+      }, (work) => work.pipe(Effect.ensuring(Effect.sync(() => {
+        abandoned.clear()
+        unregister()
+      }))))
 
       return {
         get message() {
@@ -911,6 +1028,7 @@ export const node = LayerNode.make({
     Image.node,
     EventV2Bridge.node,
     Database.node,
+    LiveEvents.node,
   ],
 })
 
