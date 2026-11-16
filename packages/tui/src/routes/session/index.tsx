@@ -165,7 +165,7 @@ import { secondTicker } from "../../util/ticker"
 import { onClick } from "../../ui/click"
 import { DialogModel } from "../../component/dialog-model"
 import { TranscriptFilter } from "./transcript-filter"
-import { promptDeliveries, type PromptDelivery } from "./prompt-delivery"
+import { deliveryBadge, inboxWake, promptDeliveries, type PromptDelivery } from "./prompt-delivery"
 import { DialogTranscriptFilter } from "./dialog-transcript-filter"
 
 addDefaultParsers(parsers.parsers)
@@ -354,9 +354,14 @@ export function Session() {
   })
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
-  const deliveries = createMemo(() =>
-    promptDeliveries(messages(), (sync.data.session_status?.[route.sessionID]?.type ?? "idle") !== "idle"),
-  )
+  const deliveries = createMemo(() => {
+    const status = sync.data.session_status?.[route.sessionID]
+    return promptDeliveries(messages(), {
+      busy: (status?.type ?? "idle") !== "idle",
+      paused: status?.paused !== undefined,
+      inbox: (messageID) => inboxWake(sync.data.part[messageID] ?? []),
+    })
+  })
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
@@ -1761,7 +1766,10 @@ export function Session() {
                                       : undefined
                                   }
                                   queued={
-                                    deliveries().get(message.id) === "queued" &&
+                                    // A prompt held by a pause while a turn still runs can be unqueued like a queued one.
+                                    (deliveries().get(message.id)?.state === "queued" ||
+                                      (deliveries().get(message.id)?.state === "paused" &&
+                                        (sync.data.session_status?.[route.sessionID]?.type ?? "idle") !== "idle")) &&
                                     TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
                                   }
                                   sendable={
@@ -1910,13 +1918,15 @@ function UserMessage(props: {
   const [hover, setHover] = createSignal(false)
   // A notice never reaches the model, so it is never waiting for the turn to pick it up.
   const prompt = createMemo(() => TranscriptFilter.userKind(props.parts) === "prompts")
-  const queued = createMemo(() => props.delivery === "queued" && prompt())
-  const midTurn = createMemo(() => props.delivery === "mid-turn" && prompt())
+  const badge = createMemo(
+    () => prompt() && props.delivery && deliveryBadge(props.delivery, (at) => Locale.time(at, ctx.tui.datetime_format)),
+  )
+  const midTurn = createMemo(() => props.delivery?.state === "mid-turn" && prompt())
   const color = createMemo(() => local.agent.color(props.message.agent))
-  const queuedFg = createMemo(() => selectedForeground(theme, color()))
+  const badgeFg = createMemo(() => selectedForeground(theme, color()))
   const time = createMemo(() => ctx.footer("time", "user", props.message.id))
   const messageID = createMemo(() => ctx.footer("message_id", "user", props.message.id))
-  const metadataVisible = createMemo(() => queued() || midTurn() || time() || messageID())
+  const metadataVisible = createMemo(() => badge() || midTurn() || time() || messageID())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
   const shown = createMemo(() => ctx.filter()[TranscriptFilter.userKind(props.parts)].shown)
@@ -1987,7 +1997,7 @@ function UserMessage(props: {
                   fg={theme.textMuted}
                 >
                   <Show
-                    when={queued()}
+                    when={badge()}
                     fallback={
                       <Show when={time()}>
                         <span style={{ fg: theme.textMuted }}>
@@ -1996,14 +2006,14 @@ function UserMessage(props: {
                       </Show>
                     }
                   >
-                    <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                    <span style={{ bg: color(), fg: badgeFg(), bold: true }}> {badge()} </span>
                   </Show>
                   <Show when={midTurn()}>
                     <span style={{ fg: theme.textMuted }}>{time() ? " · " : ""}read mid-turn</span>
                   </Show>
                   <Show when={messageID()}>
                     <span style={{ fg: theme.textMuted }}>
-                      {queued() || midTurn() || time() ? " · " : ""}
+                      {badge() || midTurn() || time() ? " · " : ""}
                       {props.message.id}
                     </span>
                   </Show>
