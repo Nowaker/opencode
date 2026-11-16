@@ -26,6 +26,7 @@ import {
   PromptAdmissionError,
   PromptNotQueuedError,
   SendNowRefusedError,
+  PauseChangedError,
   SessionBusyError,
   SessionArchivedError,
   OwnerSealedError,
@@ -512,13 +513,13 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, UnpausePayload],
           success: described(SessionPrompt.UnpauseResult, "Unpaused"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, PauseChangedError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.unpause",
             summary: "Unpause session",
             description:
-              "Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused.",
+              "Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused. Optional expectedPauseAt and expectedPauseSource are checked atomically before changes; a changed or missing pause returns 409 PauseChangedError without changing state or running tools.",
           }),
         ),
         HttpApiEndpoint.post("discard", SessionPaths.discard, {
@@ -526,13 +527,13 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, UnpausePayload],
           success: described(SessionPrompt.DiscardResult, "Discarded deferred tool calls"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, PauseChangedError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.discard",
             summary: "Discard deferred tool calls",
             description:
-              "Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running.",
+              "Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running. Optional expectedPauseAt and expectedPauseSource are checked atomically before changes; a changed or missing pause returns 409 PauseChangedError without changing state or tool parts.",
           }),
         ),
         HttpApiEndpoint.delete("deletePart", SessionPaths.deletePart, {

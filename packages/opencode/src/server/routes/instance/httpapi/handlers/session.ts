@@ -528,7 +528,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const payload = yield* unpauseBody(ctx.request)
       yield* requireSession(ctx.params.sessionID)
-      return yield* promptSvc.unpause({ ...payload, sessionID: ctx.params.sessionID })
+      return yield* SessionError.mapPauseChanged(promptSvc.unpause({ ...payload, sessionID: ctx.params.sessionID }))
     })
 
     const discard = Effect.fn("SessionHttpApi.discard")(function* (ctx: {
@@ -537,7 +537,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const payload = yield* unpauseBody(ctx.request)
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID }))
+      return yield* SessionError.mapPauseChanged(
+        SessionError.mapBusy(promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID })),
+      )
     })
 
     const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {

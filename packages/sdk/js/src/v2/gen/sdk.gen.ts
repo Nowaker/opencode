@@ -4653,13 +4653,15 @@ export class Session2 extends HeyApiClient {
   /**
    * Unpause session
    *
-   * Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused.
+   * Run the deferred tool calls in order through the normal permission path, then continue the turn with no new user message and answer the prompts held while paused. Optional expectedPauseAt and expectedPauseSource are checked atomically before changes; a changed or missing pause returns 409 PauseChangedError without changing state or running tools.
    */
   public unpause<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
       directory?: string
       workspace?: string
+      expectedPauseAt?: number
+      expectedPauseSource?: SessionPauseSource
       source?: SessionPauseSource
       notice?: string
     },
@@ -4673,6 +4675,8 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "expectedPauseAt" },
+            { in: "body", key: "expectedPauseSource" },
             { in: "body", key: "source" },
             { in: "body", key: "notice" },
           ],
@@ -4694,13 +4698,15 @@ export class Session2 extends HeyApiClient {
   /**
    * Discard deferred tool calls
    *
-   * Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running.
+   * Give every tool call a pause deferred the result 'not run: discarded by /discard' instead of running it. The session stays paused. Fails with 409 while the paused step is still running. Optional expectedPauseAt and expectedPauseSource are checked atomically before changes; a changed or missing pause returns 409 PauseChangedError without changing state or tool parts.
    */
   public discard<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
       directory?: string
       workspace?: string
+      expectedPauseAt?: number
+      expectedPauseSource?: SessionPauseSource
       source?: SessionPauseSource
       notice?: string
     },
@@ -4714,6 +4720,8 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "expectedPauseAt" },
+            { in: "body", key: "expectedPauseSource" },
             { in: "body", key: "source" },
             { in: "body", key: "notice" },
           ],

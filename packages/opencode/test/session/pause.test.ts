@@ -7,7 +7,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -546,3 +546,113 @@ it.instance("a cleared pause stays cleared when a peer's stale copy is merged in
     expect((yield* ctx.prompt.sendNow(ctx.chat.id).pipe(Effect.flip)).reason).toBe("empty")
   }),
 )
+
+for (const action of ["unpause", "discard"] as const) {
+  for (const replacement of [
+    { name: "timestamp", at: 1 },
+    { name: "source kind", source: { kind: "api" as const } },
+    { name: "source session", source: { kind: "tui" as const, sessionID: "ses_other" } },
+    { name: "source title", source: { kind: "tui" as const, sessionTitle: "Other" } },
+    { name: "source machine", source: { kind: "tui" as const, machine: "other" } },
+    { name: "source tool", source: { kind: "tui" as const, tool: "other" } },
+    { name: "source client", source: { kind: "tui" as const, client: "other" } },
+  ]) {
+    it.instance(
+      `${action} refuses a replacement pause with a changed ${replacement.name} without changing deferred calls`,
+      () =>
+        Effect.gen(function* () {
+          const ctx = yield* pausedWithThreeCalls()
+          const observed = yield* ctx.pauses.get(ctx.chat.id)
+          if (!observed) throw new Error("expected the fixture to be paused")
+          const input = {
+            sessionID: ctx.chat.id,
+            expectedPauseAt: observed.at,
+            expectedPauseSource: observed.source,
+          }
+          const request =
+            action === "unpause"
+              ? ctx.prompt.unpause(input).pipe(Effect.asVoid)
+              : ctx.prompt.discard(input).pipe(Effect.asVoid)
+          const next = {
+            ...observed,
+            at: observed.at + (replacement.at ?? 0),
+            source: replacement.source ?? observed.source,
+          }
+          yield* ctx.pauses.write(ctx.chat.id, next)
+          const before = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+
+          const result = yield* request.pipe(Effect.exit)
+
+          expect(Exit.isFailure(result)).toBe(true)
+          expect(
+            Exit.isFailure(result) &&
+              result.cause.reasons.some(
+                (reason) => reason._tag === "Fail" && reason.error instanceof SessionPause.ChangedError,
+              ),
+          ).toBe(true)
+          expect(yield* ctx.pauses.get(ctx.chat.id)).toEqual(next)
+          expect(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).toEqual(before)
+          expect(yield* ctx.llm.calls).toBe(1)
+        }),
+      { git: true },
+      60_000,
+    )
+  }
+
+  for (const expectation of ["timestamp", "source", "both"] as const) {
+    it.instance(
+      `${action} accepts matching ${expectation} identity with reordered source keys`,
+      () =>
+        Effect.gen(function* () {
+          const ctx = yield* pausedWithThreeCalls()
+          const observed = yield* ctx.pauses.get(ctx.chat.id)
+          if (!observed) throw new Error("expected the fixture to be paused")
+          const source = {
+            kind: "tool" as const,
+            client: "vibeterm",
+            machine: "test",
+            tool: "move",
+            sessionID: "ses_owner",
+            sessionTitle: "Owner",
+          }
+          yield* ctx.pauses.write(ctx.chat.id, { ...observed, source })
+          yield* ctx.llm.text("continued")
+          const input = {
+            sessionID: ctx.chat.id,
+            ...(expectation !== "source" && { expectedPauseAt: observed.at }),
+            ...(expectation !== "timestamp" && {
+              expectedPauseSource: {
+                sessionTitle: "Owner",
+                sessionID: "ses_owner",
+                tool: "move",
+                machine: "test",
+                client: "vibeterm",
+                kind: "tool" as const,
+              },
+            }),
+          }
+
+          const result = yield* ctx.prompt[action](input)
+
+          if (action === "discard") {
+            expect(result).toEqual({ sessionID: ctx.chat.id, discarded: 3 })
+            expect((yield* ctx.pauses.get(ctx.chat.id))?.source).toEqual(source)
+            expect(
+              toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status),
+            ).toEqual(["error", "error", "error"])
+            expect(yield* ctx.llm.calls).toBe(1)
+            return
+          }
+          expect(result).toEqual({ sessionID: ctx.chat.id, changed: true, deferred: 3 })
+          yield* ctx.llm.wait(2)
+          yield* idle(ctx.chat.id)
+          expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+          expect(
+            toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status),
+          ).toEqual(["completed", "completed", "completed"])
+        }),
+      { git: true },
+      60_000,
+    )
+  }
+}

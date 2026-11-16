@@ -2828,6 +2828,12 @@ export type SessionUnpauseResult = {
   deferred: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type PauseChangedError = {
+  _tag: "PauseChangedError"
+  sessionID: string
+  message: string
+}
+
 export type SessionDiscardResult = {
   sessionID: string
   discarded: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -11190,6 +11196,8 @@ export type SessionPauseResponse = SessionPauseResponses[keyof SessionPauseRespo
 
 export type SessionUnpauseData = {
   body?: {
+    expectedPauseAt?: number
+    expectedPauseSource?: SessionPauseSource
     source?: SessionPauseSource
     /**
      * Text of the user-only notice, used as given. opencode writes one when omitted.
@@ -11215,6 +11223,10 @@ export type SessionUnpauseErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * PauseChangedError
+   */
+  409: PauseChangedError
 }
 
 export type SessionUnpauseError = SessionUnpauseErrors[keyof SessionUnpauseErrors]
@@ -11230,6 +11242,8 @@ export type SessionUnpauseResponse = SessionUnpauseResponses[keyof SessionUnpaus
 
 export type SessionDiscardData = {
   body?: {
+    expectedPauseAt?: number
+    expectedPauseSource?: SessionPauseSource
     source?: SessionPauseSource
     /**
      * Text of the user-only notice, used as given. opencode writes one when omitted.
@@ -11256,9 +11270,9 @@ export type SessionDiscardErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | PauseChangedError
    */
-  409: SessionBusyError
+  409: SessionBusyError | PauseChangedError
 }
 
 export type SessionDiscardError = SessionDiscardErrors[keyof SessionDiscardErrors]

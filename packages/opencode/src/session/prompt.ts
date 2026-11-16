@@ -228,8 +228,8 @@ export interface Interface {
   }) => Effect.Effect<SessionV1.WithParts, NotQueuedError | NotFoundError>
   readonly sendNow: (sessionID: SessionID) => Effect.Effect<MessageID[], SendNowRefusedError>
   readonly pause: (input: PauseInput) => Effect.Effect<PauseResult>
-  readonly unpause: (input: UnpauseInput) => Effect.Effect<UnpauseResult>
-  readonly discard: (input: UnpauseInput) => Effect.Effect<DiscardResult, Session.BusyError>
+  readonly unpause: (input: UnpauseInput) => Effect.Effect<UnpauseResult, SessionPause.ChangedError>
+  readonly discard: (input: UnpauseInput) => Effect.Effect<DiscardResult, Session.BusyError | SessionPause.ChangedError>
 }
 
 /**
@@ -1349,18 +1349,28 @@ const layer = Layer.effect(
     })
 
     // Clears the pause of a session and of every descendant paused through it, and wakes the subagents waiting.
-    const release = Effect.fnUntraced(function* (input: UnpauseInput, current: SessionPause.Info) {
-      const clear = Effect.fnUntraced(function* (sessionID: SessionID, pause: SessionPause.Info) {
-        yield* pauses.write(sessionID, undefined)
+    const release = Effect.fnUntraced(function* (input: UnpauseInput) {
+      const cleared = yield* pauses.mutate(input, (current) =>
+        Effect.gen(function* () {
+          if (!current) return []
+          const inherited = (yield* Effect.forEach(yield* descendants(input.sessionID), (child) =>
+            pauses.get(child.id).pipe(Effect.map((pause) => ({ sessionID: child.id, pause }))),
+          )).filter(
+            (item): item is { sessionID: SessionID; pause: SessionPause.Info } => item.pause?.root === input.sessionID,
+          )
+          const cleared = [{ sessionID: input.sessionID, pause: current }, ...inherited]
+          for (const item of cleared) yield* pauses.write(item.sessionID, undefined)
+          return cleared
+        }),
+      )
+      // Wake readers only after the transaction committed, outside its inherited connection context.
+      for (const { sessionID, pause } of cleared) {
         if (pause.held?.length) releasing.set(sessionID, [...(releasing.get(sessionID) ?? []), ...pause.held])
         const signal = waiting.get(sessionID)
         if (signal) yield* Deferred.succeed(signal, undefined)
-      })
-      yield* clear(input.sessionID, current)
-      for (const child of yield* descendants(input.sessionID)) {
-        const pause = yield* pauses.get(child.id)
-        if (pause?.root === input.sessionID) yield* clear(child.id, pause)
       }
+      const current = cleared[0]?.pause
+      if (!current) return
       const at = Date.now()
       const source = sourceOf(input.source)
       yield* notice(input.sessionID, input.notice ?? SessionPause.noticeText({ action: "unpause", source, at }), {
@@ -1368,12 +1378,12 @@ const layer = Layer.effect(
         source,
         at,
       })
+      return current
     })
 
     const unpause = Effect.fn("SessionPrompt.unpause")(function* (input: UnpauseInput) {
-      const current = yield* pauses.get(input.sessionID)
+      const current = yield* release(input)
       if (!current) return { sessionID: input.sessionID, changed: false, deferred: 0 }
-      yield* release(input, current)
       const deferred = (yield* deferredParts(input.sessionID)).length
       // A pending pause is just cancelled: the loop still running carries on. Otherwise the loop goes again only
       // when the pause left work: deferred calls, held prompts, or a turn it cut at a step boundary.
@@ -1384,28 +1394,33 @@ const layer = Layer.effect(
     })
 
     const discard = Effect.fn("SessionPrompt.discard")(function* (input: UnpauseInput) {
-      if (runs.has(input.sessionID)) return yield* new Session.BusyError({ sessionID: input.sessionID })
-      const parts = yield* deferredParts(input.sessionID)
-      const at = Date.now()
-      for (const part of parts) {
-        yield* sessions.updatePart({
-          ...part,
-          state: {
-            status: "error",
-            input: part.state.input,
-            error: "not run: discarded by /discard",
-            metadata: { ...part.state.metadata, discarded: true },
-            time: { start: at, end: at },
-          },
-        } satisfies SessionV1.ToolPart)
-      }
+      const { count, at } = yield* pauses.mutate(input, () =>
+        Effect.gen(function* () {
+          if (runs.has(input.sessionID)) return yield* new Session.BusyError({ sessionID: input.sessionID })
+          const parts = yield* deferredParts(input.sessionID)
+          const at = Date.now()
+          for (const part of parts) {
+            yield* sessions.updatePart({
+              ...part,
+              state: {
+                status: "error",
+                input: part.state.input,
+                error: "not run: discarded by /discard",
+                metadata: { ...part.state.metadata, discarded: true },
+                time: { start: at, end: at },
+              },
+            } satisfies SessionV1.ToolPart)
+          }
+          return { count: parts.length, at }
+        }),
+      )
       const source = sourceOf(input.source)
       yield* notice(
         input.sessionID,
-        input.notice ?? SessionPause.noticeText({ action: "discard", source, at, count: parts.length }),
+        input.notice ?? SessionPause.noticeText({ action: "discard", source, at, count }),
         { action: "discard", source, at },
       )
-      return { sessionID: input.sessionID, discarded: parts.length }
+      return { sessionID: input.sessionID, discarded: count }
     })
 
     const hold = Effect.fnUntraced(function* (sessionID: SessionID, message: SessionV1.WithParts) {
@@ -1654,7 +1669,7 @@ const layer = Layer.effect(
       const paused = input.noReply === true ? undefined : yield* pauses.get(input.sessionID)
       // The loop this prompt drives runs the deferred calls before it answers the prompt.
       if (paused && !heldWhilePaused(input))
-        yield* release({ sessionID: input.sessionID, source: { kind: "api", client: "prompt" } }, paused)
+        yield* release({ sessionID: input.sessionID, source: { kind: "api", client: "prompt" } }).pipe(Effect.orDie)
       const message = yield* createUserMessage(input)
       yield* Deferred.succeed(admission, undefined)
       yield* sessions.touch(input.sessionID)
@@ -2452,6 +2467,7 @@ export type PauseInput = Schema.Schema.Type<typeof PauseInput>
 
 export const UnpauseInput = Schema.Struct({
   sessionID: SessionID,
+  ...SessionPause.Expected.fields,
   source: Schema.optional(SessionPause.Source),
   notice: Schema.optional(
     Schema.String.annotate({ description: "Text of the user-only notice, used as given. opencode writes one when omitted." }),

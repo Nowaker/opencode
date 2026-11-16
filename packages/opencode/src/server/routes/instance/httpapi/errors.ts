@@ -142,6 +142,12 @@ export class SessionBusyError extends Schema.TaggedErrorClass<SessionBusyError>(
   { httpApiStatus: 409 },
 ) {}
 
+export class PauseChangedError extends Schema.TaggedErrorClass<PauseChangedError>()(
+  "PauseChangedError",
+  { sessionID: Schema.String, message: Schema.String },
+  { httpApiStatus: 409 },
+) {}
+
 export class PromptNotQueuedError extends Schema.TaggedErrorClass<PromptNotQueuedError>()(
   "PromptNotQueuedError",
   {
