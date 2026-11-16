@@ -32,6 +32,8 @@ import { SessionCompaction } from "../../src/session/compaction"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
+import { Snapshot } from "@/snapshot"
+import { LiveEvents } from "../../src/session/live-events"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionPause } from "../../src/session/pause"
 import { SessionRevert } from "../../src/session/revert"
@@ -107,6 +109,53 @@ const lsp = Layer.succeed(
   }),
 )
 
+/*
+ * A loop that stopped at its step boundary still finishes its step before its run ends: it waits for the step's
+ * snapshots, which took 13s on m4max on 2026-11-16. `hold` keeps that settle open for a paused session that has
+ * stopped, so a test can unpause it inside that window.
+ */
+const settleHold: { current?: { readonly reached: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> } } = {}
+const realProcessor = SessionProcessor.node.implementation as Layer.Layer<SessionProcessor.Service>
+const heldSettle = LayerNode.make({
+  service: SessionProcessor.Service,
+  layer: Layer.effect(
+    SessionProcessor.Service,
+    Effect.gen(function* () {
+      const real = yield* SessionProcessor.Service
+      const pauses = yield* SessionPause.Service
+      return SessionProcessor.Service.of({
+        ...real,
+        settle: (sessionID) =>
+          Effect.gen(function* () {
+            const hold = settleHold.current
+            if (hold && (yield* pauses.get(sessionID))?.stoppedAt !== undefined) {
+              settleHold.current = undefined
+              yield* Deferred.succeed(hold.reached, undefined)
+              yield* Deferred.await(hold.release)
+            }
+            return yield* real.settle(sessionID)
+          }),
+      })
+    }),
+  ).pipe(Layer.provide(realProcessor)),
+  deps: [
+    Session.node,
+    Config.node,
+    Snapshot.node,
+    AgentSvc.node,
+    LLM.node,
+    Permission.node,
+    Plugin.node,
+    SessionSummary.node,
+    SessionStatus.node,
+    Image.node,
+    EventV2Bridge.node,
+    Database.node,
+    LiveEvents.node,
+    SessionPause.node,
+  ],
+})
+
 const root = LayerNode.group([
   SessionPrompt.node,
   SessionPause.node,
@@ -154,6 +203,7 @@ const it = testEffect(
     [LSP.node, lsp],
     [MCP.node, mcp],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
+    [SessionProcessor.node, heldSettle],
   ]),
 )
 
@@ -296,6 +346,55 @@ it.instance(
       )
       expect(notices.map((part) => part.type === "text" && part.metadata?.pause?.action)).toEqual(["pause", "unpause"])
       expect(body).not.toContain("call: /pause")
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "an unpause that lands while the stopped loop is still finishing its step resumes the turn",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      const gate = yield* Deferred.make<void>()
+      yield* ctx.llm.push(
+        reply()
+          .wait(Effect.runPromise(Deferred.await(gate)))
+          .text("one tool")
+          .tool("bash", { command: "printf '%s-%s' resumed call", description: "one" }),
+      )
+      const hold = { reached: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() }
+      settleHold.current = hold
+      yield* Effect.gen(function* () {
+        const turn = yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work")).pipe(Effect.forkChild)
+        yield* ctx.llm.wait(1)
+        yield* ctx.prompt.pause({ sessionID: ctx.chat.id, source: { kind: "tui" } })
+        yield* Deferred.succeed(gate, undefined)
+        yield* Deferred.await(hold.reached).pipe(Effect.timeout("20 seconds"))
+        expect((yield* ctx.pauses.get(ctx.chat.id))?.stoppedAt).toBeNumber()
+
+        yield* ctx.llm.text("carried on")
+        const result = yield* ctx.prompt.unpause({ sessionID: ctx.chat.id, source: { kind: "tui" } })
+        expect(result).toEqual({ sessionID: ctx.chat.id, changed: true, deferred: 1 })
+        yield* Deferred.succeed(hold.release, undefined)
+        yield* Fiber.join(turn)
+        yield* pollWithTimeout(
+          ctx.llm.calls.pipe(Effect.map((calls) => (calls >= 2 ? true : undefined))),
+          "the unpaused turn never called the model again",
+          "10 seconds",
+        )
+        yield* idle(ctx.chat.id)
+        expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+        const ran = toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
+        expect(ran.map((part) => part.state.status)).toEqual(["completed"])
+      }).pipe(
+        Effect.ensuring(
+          Effect.suspend(() => {
+            settleHold.current = undefined
+            return Deferred.succeed(hold.release, undefined)
+          }),
+        ),
+      )
     }),
   { git: true },
   60_000,

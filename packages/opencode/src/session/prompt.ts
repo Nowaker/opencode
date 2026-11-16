@@ -1386,10 +1386,12 @@ const layer = Layer.effect(
       if (!current) return { sessionID: input.sessionID, changed: false, deferred: 0 }
       const deferred = (yield* deferredParts(input.sessionID)).length
       // A pending pause is just cancelled: the loop still running carries on. Otherwise the loop goes again only
-      // when the pause left work: deferred calls, held prompts, or a turn it cut at a step boundary.
+      // when the pause left work: deferred calls, held prompts, or a turn it cut at a step boundary. A loop that
+      // stopped at the boundary is still finishing its step (its snapshots took 13s on m4max, 2026-11-16) and has
+      // read history for the last time, so it is joined and told to go again as it ends rather than left to end.
       const work = deferred > 0 || (current.held?.length ?? 0) > 0 || current.stoppedAt !== undefined
-      if (!runs.has(input.sessionID) && work)
-        yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, (run) => OwnerQuiescence.fork(run, scope))
+      if (work && (current.stoppedAt !== undefined || !runs.has(input.sessionID)))
+        yield* drive(input.sessionID, undefined, () => true).pipe(Effect.ignore, (run) => OwnerQuiescence.fork(run, scope))
       return { sessionID: input.sessionID, changed: true, deferred }
     })
 
@@ -1437,10 +1439,27 @@ const layer = Layer.effect(
       })
     })
 
+    /*
+     * Records the pause the loop read as in force, but only while that same pause still holds: an unpause landing
+     * between the loop's read and this write must not bring the pause back, which left a session paused with nobody
+     * to unpause it. Answers whether it still held.
+     */
+    const markPaused = Effect.fnUntraced(function* (sessionID: SessionID, pause: SessionPause.Info, stoppedAt?: number) {
+      return yield* pauses
+        .mutate({ sessionID, expectedPauseAt: pause.at }, (current) =>
+          current
+            ? pauses
+                .write(sessionID, { ...current, state: "paused", ...(stoppedAt !== undefined && { stoppedAt }) })
+                .pipe(Effect.as(true))
+            : Effect.succeed(false),
+        )
+        .pipe(Effect.catchTag("PauseChangedError", () => Effect.succeed(false)))
+    })
+
     // The loop reached a step boundary while paused: the turn stops there instead of calling the model again.
     const stopForPause = Effect.fnUntraced(function* (sessionID: SessionID, pause: SessionPause.Info) {
-      if (pause.state === "paused" && pause.stoppedAt !== undefined) return
-      yield* pauses.write(sessionID, { ...pause, state: "paused", stoppedAt: Date.now() })
+      if (pause.state === "paused" && pause.stoppedAt !== undefined) return true
+      return yield* markPaused(sessionID, pause, Date.now())
     })
 
     /*
@@ -1448,7 +1467,7 @@ const layer = Layer.effect(
      * running it, and an ended child turn would hand the parent a half-done answer as the task's result.
      */
     const waitForUnpause = Effect.fnUntraced(function* (sessionID: SessionID, pause: SessionPause.Info) {
-      yield* stopForPause(sessionID, pause)
+      if (!(yield* stopForPause(sessionID, pause))) return
       const signal = yield* Deferred.make<void>()
       waiting.set(sessionID, signal)
       // An unpause served by another process cannot reach the signal; it shows in the database.
@@ -1755,8 +1774,8 @@ const layer = Layer.effect(
           const paused = yield* pauses.get(sessionID)
           if (paused) {
             if (!paused.root || !session.parentID) {
+              if (!(yield* stopForPause(sessionID, paused))) continue
               yield* Effect.logInfo("loop paused at step boundary", { "session.id": sessionID })
-              yield* stopForPause(sessionID, paused)
               break
             }
             yield* waitForUnpause(sessionID, paused)
@@ -2103,7 +2122,7 @@ const layer = Layer.effect(
 
         // A turn that ended on its own while a pause was pending leaves the session paused, with nothing cut.
         const pending = yield* pauses.get(sessionID)
-        if (pending?.state === "pending") yield* pauses.write(sessionID, { ...pending, state: "paused" })
+        if (pending?.state === "pending") yield* markPaused(sessionID, pending)
         yield* processor.settle(sessionID)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
         return yield* lastAssistant(sessionID)
@@ -2122,16 +2141,16 @@ const layer = Layer.effect(
      * Runs the session's loop for a prompt stored as `messageID`, or joins the run already going. A joined run may
      * already have read history for the last time: its turn ended, and it is only finishing its snapshots. Unless
      * one of its reads picked the prompt up (or the prompt was unqueued), the run goes again as it ends and
-     * answers it.
+     * answers it. `again` replaces that check, for a caller that knows the joined run has to go again.
      */
-    const drive = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
+    const drive = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID, again?: () => boolean) {
       // The session stays busy until its background snapshots are recorded, including after an abort or a
       // failure, so revert and the next turn never see a finished step without its snapshot hashes.
       return yield* state.ensureRunning(
         sessionID,
         lastAssistant(sessionID),
         tracked(sessionID, runLoop(sessionID).pipe(Effect.ensuring(processor.settle(sessionID)))),
-        messageID ? unread(sessionID, messageID) : undefined,
+        again ?? (messageID ? unread(sessionID, messageID) : undefined),
       )
     })
 
