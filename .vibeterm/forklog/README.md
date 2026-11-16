@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [PAUSED and INBOX badges on held deliveries](./features/2026-11-16-held-delivery-badges.md)
 - [Keep a fast command's output for readers that attach late](./features/2026-11-16-shell-late-output.md)
 - [Live session output for plugins](./features/session-live-stream.md)
 - [Archived sessions refuse new turns](./features/2026-11-14-archive-blocks-turns.md)

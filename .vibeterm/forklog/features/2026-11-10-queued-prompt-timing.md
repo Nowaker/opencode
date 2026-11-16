@@ -66,6 +66,7 @@ opencode-tools `2205df613b2` sets `queued_prompts: "next_step"` from the spawn p
 - 2026-11-10 [`ses_e3b33afadffe7NYeYU6qMrEk6L`](../sessions/2026-11-10-queued-prompt-timing.md) - initial build. Evidence: `68e4a9e291`, merge `3233e3566e`, vt-426 on both hosts.
 - 2026-11-10 [`ses_e38278d63ffeEgUW2xNFxMfVpm`](../sessions/2026-11-10-tail-wake.md) - fix: a prompt or OMO notice stored while a finished turn's run waits for its snapshots was never answered. Evidence: `a048180f1c`, merge `c83a1896e7`, vt-441 on desktop.
 - 2026-11-11 [`ses_e37b26ea1ffeyDu2wQLAdY0TmV`](../sessions/2026-11-11-turn-end-held-order.md) - fix: under `turn_end` a held prompt or note stayed in its stored place inside the ended turn, so the follow-up request ended with the turn's own answer and the model said the note "arrived empty"; `answerAfterTurn` moves held input after that answer. Evidence: `ed9e8785a9`, merge `85466d15f4`, vt-449 on desktop.
+- 2026-11-16 [`ses_e1ace8d28ffeR2WGjY311j34E8`](../sessions/2026-11-16-held-delivery-badges.md) - the QUEUED badge word moved into `DeliveryLabel`, beside the new PAUSED and INBOX badges ([feature](./2026-11-16-held-delivery-badges.md)). Evidence: `f2cd6fe8e3`, vt-514 on both hosts.
 
 ## Current maintenance notes
 
