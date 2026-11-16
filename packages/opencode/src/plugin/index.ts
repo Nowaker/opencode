@@ -37,6 +37,7 @@ import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { LiveEvents } from "@/session/live-events"
 import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
+import { realpathSync } from "node:fs"
 
 type State = {
   hooks: Hooks[]
@@ -171,8 +172,12 @@ const layer = Layer.effect(
                   Effect.gen(function* () {
                     const id = SessionID.make(sessionID)
                     const session = yield* sessions.get(id)
-                    if (session.directory !== ctx.directory)
-                      return yield* Effect.die(new Error("Session belongs to another instance"))
+                    const directory = yield* Effect.try({
+                      try: () => realpathSync(session.directory),
+                      catch: () => new LiveEvents.DirectoryError(404, "Session directory is unavailable"),
+                    })
+                    if (directory !== ctx.directory)
+                      return yield* Effect.fail(new LiveEvents.DirectoryError(409, "Session belongs to another instance"))
                     return { messages: yield* sessions.messages({ sessionID: id }), status: yield* status.get(id) }
                   }),
                 ),

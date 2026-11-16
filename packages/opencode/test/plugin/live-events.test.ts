@@ -1,5 +1,9 @@
 import { expect } from "bun:test"
 import { Cause, Effect } from "effect"
+import { mkdir, symlink } from "node:fs/promises"
+import { eq } from "drizzle-orm"
+import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -24,11 +28,63 @@ import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([
-  Plugin.node, Session.node, SessionStatus.node, SessionProjector.node, CrossSpawnSpawner.node,
+  Plugin.node, Session.node, SessionStatus.node, SessionProjector.node, CrossSpawnSpawner.node, Database.node,
 ]), [
   [Auth.node, AuthTest.empty], [Account.node, AccountTest.empty], [Npm.node, NpmTest.noop],
   [RuntimeFlags.node, RuntimeFlags.layer({ disableDefaultPlugins: true, experimentalEventSystem: true })],
 ]))
+
+for (const spelling of ["symlink", "foreign", "missing"] as const) {
+  it.instance(`a plugin live attachment resolves a stored ${spelling} project directory before checking ownership`, () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const directory = path.join(instance.directory, "projects")
+      switch (spelling) {
+        case "symlink": yield* Effect.promise(() => symlink(instance.directory, directory, "dir")); break
+        case "foreign": yield* Effect.promise(() => mkdir(directory)); break
+        case "missing": break
+        default: throw new Error(spelling satisfies never)
+      }
+      const file = path.join(instance.directory, "directory-plugin.ts")
+      yield* Effect.promise(() => Bun.write(file, [
+        "export default async (input) => ({",
+        '  "experimental.chat.system.transform": async (request, output) => {',
+        "    const attachment = await input.liveEvents.open({ sessionID: request.sessionID })",
+        "    try { output.system.push(JSON.stringify((await attachment.frames.getReader().read()).value)) }",
+        "    finally { attachment.close() }",
+        "  },",
+        "})",
+      ].join("\n")))
+      yield* Effect.promise(() => Bun.write(path.join(instance.directory, "opencode.json"), JSON.stringify({
+        plugin: [pathToFileURL(file).href],
+      })))
+      const session = yield* Session.Service
+      const database = yield* Database.Service
+      const plugin = yield* Plugin.Service
+      const chat = yield* session.create()
+      yield* database.db.update(SessionTable).set({ directory }).where(eq(SessionTable.id, chat.id))
+      const output = { system: [] as string[] }
+      const result = yield* plugin.trigger("experimental.chat.system.transform", {
+        sessionID: chat.id, model: { providerID: ProviderV2.ID.anthropic, modelID: ModelV2.ID.make("test") },
+      }, output).pipe(Effect.exit)
+      switch (result._tag) {
+        case "Success":
+          expect(spelling).toBe("symlink")
+          expect(JSON.parse(output.system[0])).toMatchObject({
+            type: "vibeterm.stream.snapshot", properties: { sessionID: chat.id, messages: [] },
+          })
+          break
+        case "Failure":
+          expect(spelling).not.toBe("symlink")
+          expect(Cause.squash(result.cause)).toMatchObject({
+            name: "LiveEventsDirectoryError", status: spelling === "missing" ? 404 : 409,
+          })
+          break
+        default: throw new Error(result satisfies never)
+      }
+    }),
+  )
+}
 
 it.instance("a loaded plugin opens the captured instance capability and receives live frames without starting an HTTP listener", () =>
   Effect.gen(function* () {

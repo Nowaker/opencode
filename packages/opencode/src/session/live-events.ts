@@ -42,6 +42,12 @@ export class Overflow extends Error {
     this.name = "LiveEventsOverflow"
   }
 }
+export class DirectoryError extends Error {
+  constructor(readonly status: 404 | 409, message: string) {
+    super(message)
+    this.name = "LiveEventsDirectoryError"
+  }
+}
 const generation = randomUUID()
 const relevant = new Set([
   "message.updated", "message.removed", "message.part.updated", "message.part.removed",

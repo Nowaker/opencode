@@ -145,6 +145,8 @@ The Vibeterm fork supplies optional `PluginInput.liveEvents`. Check that the cap
 
 `liveEvents.open({ sessionID, signal })` returns an attachment with `frames: ReadableStream<LiveFrame>` and an idempotent `close()` method. The signal is optional. Closing, cancelling or aborting the attachment releases its subscription without aborting the assistant's turn. Instance disposal and a consumer queue overflow also end the attachment.
 
+Ownership compares the session directory's physical path with the engine instance, so a stored symlink spelling remains valid. A missing or inaccessible directory rejects with `name:"LiveEventsDirectoryError"`, `status:404`; a different physical directory rejects with the same error name and `status:409`. Both carry a clear `message` and do not start an attachment.
+
 The first frame is `vibeterm.stream.snapshot` with `{version:1,sessionID,epoch,sequence:0,status,messages:[{info,parts}]}`. The snapshot combines persisted messages with unfinished text, reasoning and pending tool-input prefixes under a publication fence. Native message and part IDs remain stable. `status` is the native current session status. Completed text/reasoning parts have `time.end`; tool completion uses `state.status`.
 
 Subsequent `vibeterm.stream.event` frames carry `{version:1,sessionID,epoch,sequence,event:{type,properties}}`, increasing the attachment's sequence by one. Each engine attachment has a fresh epoch. The private stream includes native message/part/status/error updates and private `message.part.delta` tool-input chunks with `field:"state.raw"`; those tool chunks are not published on the native event bus. Updates for messages omitted by the initial snapshot cut are excluded from that attachment.
