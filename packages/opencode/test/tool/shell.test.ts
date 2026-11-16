@@ -2,6 +2,7 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
@@ -1149,6 +1150,35 @@ describe("tool.shell abort", () => {
         expect(result.output).toContain("first")
         expect(result.output).toContain("second")
         expect(updates.length).toBeGreaterThan(1)
+      }),
+    ),
+  )
+
+  it.live("keeps a fast command's output when the child exits before the reader attaches", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+        const exitsBeforeReading = ChildProcessSpawner.make((command) =>
+          spawner.spawn(command).pipe(Effect.tap((handle) => handle.exitCode)),
+        )
+        for (let i = 0; i < 20; i++) {
+          const updates: string[] = []
+          const result = yield* run(
+            { command: `echo rig-tool-ok-${i}` },
+            {
+              ...ctx,
+              metadata: (input) =>
+                Effect.sync(() => {
+                  const output = (input.metadata as { output?: string })?.output
+                  if (output) updates.push(output)
+                }),
+            },
+          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, exitsBeforeReading))
+          expect(result.output).toBe(`rig-tool-ok-${i}\n`)
+          expect(result.metadata.output).toBe(`rig-tool-ok-${i}\n`)
+          expect(updates).toContain(`rig-tool-ok-${i}\n`)
+        }
       }),
     ),
   )
