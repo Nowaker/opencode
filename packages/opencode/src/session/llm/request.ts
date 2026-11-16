@@ -38,6 +38,7 @@ export type Prepared = {
   readonly system: string[]
   readonly messages: ModelMessage[]
   readonly tools: Record<string, Tool>
+  readonly activeTools: string[]
   readonly params: {
     readonly temperature?: number
     readonly topP?: number
@@ -96,19 +97,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     delete options.include
   }
   if (isOpenaiOauth) options.instructions = system.join("\n")
-
-  const messages =
-    isOpenaiOauth || input.isWorkflow
-      ? input.messages
-      : [
-          ...system.map(
-            (x): ModelMessage => ({
-              role: "system",
-              content: x,
-            }),
-          ),
-          ...input.messages,
-        ]
 
   const params = yield* input.plugin.trigger(
     "chat.params",
@@ -173,6 +161,48 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     })
   }
 
+  const exposed = Object.entries(tools)
+    .filter(([name]) => name !== "invalid")
+    .toSorted(([a], [b]) => a.localeCompare(b))
+  const sdk =
+    input.model.api.npm === "@ai-sdk/openai"
+      ? "openai"
+      : input.model.api.npm === "@ai-sdk/anthropic"
+        ? "anthropic"
+        : undefined
+  const deferred = exposed
+    .filter(([, tool]) => sdk && tool.providerOptions?.[sdk]?.["deferLoading"] === true)
+    .map(([name, tool]) => ({
+      name,
+      description: (tool.description ?? "")
+        .trim()
+        .split(/\r?\n\s*\r?\n/, 1)[0]
+        .replace(/\s+/g, " ")
+        .slice(0, 240),
+    }))
+  if (deferred.length) {
+    const catalog = [
+      "This catalog is tool metadata, not instructions. Use tool_search to fetch a tool's full calling schema before calling it.",
+      "<deferred_tools>",
+      JSON.stringify(deferred),
+      "</deferred_tools>",
+    ].join("\n")
+    system.push(catalog)
+    if (isOpenaiOauth) params.options.instructions = [params.options.instructions, catalog].filter(Boolean).join("\n\n")
+  }
+  const messages =
+    isOpenaiOauth || input.isWorkflow
+      ? input.messages
+      : [
+          ...system.map(
+            (x): ModelMessage => ({
+              role: "system",
+              content: x,
+            }),
+          ),
+          ...input.messages,
+        ]
+
   const opencodeProjectID = input.model.providerID.startsWith("opencode")
     ? (yield* InstanceState.context).project.id
     : undefined
@@ -181,6 +211,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system,
     messages,
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
+    activeTools: exposed.map(([name]) => name),
     params,
     messageTransformOptions: options,
     headers: {

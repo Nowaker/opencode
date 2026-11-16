@@ -358,6 +358,8 @@ export const DeferTools: Plugin = async () => ({
 
 The `tool.deferral` hook runs once per tool for every request, built-in, plugin and MCP tools alike, with `toolID`, `providerID`, `modelID` and the provider's `npm` package. A tool with `output.deferred = true` is sent with `defer_loading: true`. With `@ai-sdk/openai` opencode also adds the Responses `tool_search` tool. With `@ai-sdk/anthropic` the endpoint must supply the search, as a proxy that adds its own does; the Anthropic API rejects deferred tools without one, so defer only for providers that support it. Other providers ignore the flag.
 
+For `@ai-sdk/openai` and `@ai-sdk/anthropic`, every callable tool marked deferred for that SDK remains visible in a compact name-and-description catalog on each request. Agent permissions, session permissions and the user's disabled tools are applied before catalog construction. The catalog uses the provider's active tool set, excluding internal repair handlers. Each description uses its first paragraph, normalized to one line and limited to 240 characters; all remaining names are included. The catalog contains metadata only and directs the model to `tool_search` for the calling schema. It is appended after plugin system and parameter transforms, through system messages or OpenAI OAuth instructions. Tools exposed directly retain their full schemas and do not appear in this catalog. No catalog is added when no tool is deferred for the active SDK.
+
 ### Compaction hooks
 
 Customize the context included when a session is compacted:
