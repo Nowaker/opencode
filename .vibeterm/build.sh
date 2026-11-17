@@ -71,6 +71,17 @@
 # way. OPENCODE_SKIP_V2_GUARD_GATE=1 skips the gate, loudly; it is for a host
 # without opencode-tools, never for a failing gate.
 #
+# Retry-header cap: the fork keeps opencode-tools'
+# docs/opencode-patches/retry-header-delay-cap.patch applied but uncommitted
+# in packages/opencode/src/session/retry.ts (it is reversed for every upstream
+# merge), so a build from a clean worktree used to install a binary without it,
+# and every tab then waited out a provider's retry-after literally (8 h seen).
+# A v1 source whose retry.ts lacks OPENCODE_RETRY_MAX_HEADER_DELAY_MS gets the
+# patch applied for the build and reversed afterwards; it is OPENCODE_RETRY_CAP_PATCH,
+# else the one in the opencode-tools checkout found like the guard below. A
+# built binary without the marker is not installed. OPENCODE_ALLOW_MISSING_RETRY_CAP=1
+# skips both, loudly.
+#
 # The running opencode-serve units keep the OLD binary via still-open
 # file descriptors after this script swaps the on-disk inode (mv+cp).
 # New binary activates on the NEXT service restart (do that yourself;
@@ -159,8 +170,14 @@ UPSTREAM_REF="${OPENCODE_UPSTREAM_REF:-$TAG_REMOTE/v1}"
 LOCKFILE="$SRC/bun.lock"
 LOCKFILE_BACKUP=""
 V2_SCRATCH=""
+RETRY_CAP_MARKER=OPENCODE_RETRY_MAX_HEADER_DELAY_MS
+RETRY_CAP_APPLIED=""
 
 restore_lockfile() {
+  if [ -n "$RETRY_CAP_APPLIED" ]; then
+    git -C "$SRC" apply -R "$RETRY_CAP_APPLIED" || echo "WARNING: could not reverse $RETRY_CAP_APPLIED in $SRC" >&2
+    RETRY_CAP_APPLIED=""
+  fi
   if [ -n "$LOCKFILE_BACKUP" ] && [ -f "$LOCKFILE_BACKUP" ]; then
     cp "$LOCKFILE_BACKUP" "$LOCKFILE"
     rm -f "$LOCKFILE_BACKUP"
@@ -276,6 +293,57 @@ if [ -f "$LOCKFILE" ]; then
   trap restore_lockfile EXIT
 fi
 
+# opencode-tools checkouts that may hold a command or the retry patch: the ones
+# opencode's config loads plugins from, then one beside this checkout.
+opencode_tools_dirs() {
+  local config="${XDG_CONFIG_HOME:-${HOME-}/.config}/opencode"
+  {
+    { grep -ho 'file://[^"]*/opencode-vibeterm-[^/"]*' \
+        "$config/opencode.json" "$config/opencode.jsonc" "$config/tui.json" "$config/tui.jsonc" 2>/dev/null || true; } |
+      sed 's#^file://##; s#/opencode-vibeterm-[^/]*$##'
+    printf '%s\n' "$(dirname "$(dirname "$GIT_COMMON")")/opencode-tools"
+  } | awk '!seen[$0]++'
+}
+retry_cap_source() {
+  [ "$V2" = 0 ] || return 0
+  if [ "${OPENCODE_ALLOW_MISSING_RETRY_CAP-}" = 1 ]; then
+    echo "WARNING: OPENCODE_ALLOW_MISSING_RETRY_CAP=1 - building $VERSION without checking for the retry-header cap" >&2
+    return 0
+  fi
+  local retry="$SRC/packages/opencode/src/session/retry.ts" patch="${OPENCODE_RETRY_CAP_PATCH-}" tools
+  if grep -q "$RETRY_CAP_MARKER" "$retry" 2>/dev/null; then return 0; fi
+  if [ -z "$patch" ]; then
+    while IFS= read -r tools; do
+      if [ -f "$tools/docs/opencode-patches/retry-header-delay-cap.patch" ]; then
+        patch="$tools/docs/opencode-patches/retry-header-delay-cap.patch"
+        break
+      fi
+    done < <(opencode_tools_dirs)
+  fi
+  if [ -z "$patch" ] || [ ! -f "$patch" ]; then
+    echo "error: $retry lacks the retry-header cap and its patch was not found; set OPENCODE_RETRY_CAP_PATCH to" >&2
+    echo "       opencode-tools' docs/opencode-patches/retry-header-delay-cap.patch (or OPENCODE_ALLOW_MISSING_RETRY_CAP=1)" >&2
+    return 1
+  fi
+  if ! git -C "$SRC" apply --check "$patch"; then
+    echo "error: $patch does not apply to $SRC; update the patch to the moved seam before building" >&2
+    return 1
+  fi
+  git -C "$SRC" apply "$patch"
+  RETRY_CAP_APPLIED="$patch"
+  trap restore_lockfile EXIT
+  echo "Applied the retry-header cap for this build: $patch"
+}
+retry_cap_gate() {
+  [ "$V2" = 0 ] || return 0
+  [ "${OPENCODE_ALLOW_MISSING_RETRY_CAP-}" = 1 ] && return 0
+  if ! grep -q -a "$RETRY_CAP_MARKER" "$BUILT"; then
+    echo "error: $BUILT lacks the retry-header cap ($RETRY_CAP_MARKER); NOT installing." >&2
+    return 1
+  fi
+}
+retry_cap_source || exit 1
+
 echo "Building opencode @ $VERSION from $SRC ..."
 if [ "$V2" = 1 ]; then
   (cd "$SRC" && run_v2 env BUN_INSTALL_CACHE_DIR="$BUN_CACHE" bun install --frozen-lockfile)
@@ -299,19 +367,14 @@ BUILT="${BUILT_CANDIDATES[0]}"
 # An opencode-tools command (vibeterm-opencode-client/bin/<name>): PATH, the
 # checkout opencode's config loads plugins from, or one beside this checkout.
 vibeterm_tool() {
-  local config="${XDG_CONFIG_HOME:-${HOME-}/.config}/opencode" tools
+  local tools
   if command -v "$1"; then return 0; fi
   while IFS= read -r tools; do
     if [ -x "$tools/vibeterm-opencode-client/bin/$1" ]; then
       printf '%s\n' "$tools/vibeterm-opencode-client/bin/$1"
       return 0
     fi
-  done < <(
-    { grep -ho 'file://[^"]*/opencode-vibeterm-[^/"]*' \
-        "$config/opencode.json" "$config/opencode.jsonc" "$config/tui.json" "$config/tui.jsonc" 2>/dev/null || true; } |
-      sed 's#^file://##; s#/opencode-vibeterm-[^/]*$##' | awk '!seen[$0]++'
-    printf '%s\n' "$(dirname "$(dirname "$GIT_COMMON")")/opencode-tools"
-  )
+  done < <(opencode_tools_dirs)
   return 0
 }
 v2_guard_gate() {
@@ -348,7 +411,7 @@ v2_probe_gate() {
     return 1
   fi
 }
-if [ "$V2" = 1 ]; then v2_probe_gate || exit 1; else v2_guard_gate || exit 1; fi
+if [ "$V2" = 1 ]; then v2_probe_gate || exit 1; else retry_cap_gate || exit 1; v2_guard_gate || exit 1; fi
 
 mkdir -p "$(dirname "$INSTALL")"
 

@@ -12,7 +12,9 @@ export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EM
 SOURCE="$ROOT/source"
 MANAGED="$SOURCE/.vibeterm/worktrees/v2-nowaker"
 INSTALL_ROOT="$ROOT/opencode-build/bin"
-mkdir -p "$SOURCE/.vibeterm" "$SOURCE/packages/opencode" "$ROOT/bin" "$INSTALL_ROOT"
+mkdir -p "$SOURCE/.vibeterm" "$SOURCE/packages/opencode/src/session" "$ROOT/bin" "$INSTALL_ROOT"
+RETRY="$SOURCE/packages/opencode/src/session/retry.ts"
+printf 'export const RETRY = 1\nexport const OPENCODE_RETRY_MAX_HEADER_DELAY_MS = 1\n' > "$RETRY"
 cp "$SCRIPT" "$SOURCE/.vibeterm/build.sh"
 git init -q "$SOURCE"
 TREE="$(git -C "$SOURCE" hash-object -t tree -w --stdin </dev/null)"
@@ -49,6 +51,9 @@ set -euo pipefail
 if [[ "$PWD" == */packages/opencode ]]; then
   mkdir -p dist/opencode-native/bin
   printf '#!/usr/bin/env bash\nprintf "fixture-v1\\n"\n' > dist/opencode-native/bin/opencode
+  if grep -q OPENCODE_RETRY_MAX_HEADER_DELAY_MS src/session/retry.ts && [ ! -f ../../drop-marker ]; then
+    printf '# OPENCODE_RETRY_MAX_HEADER_DELAY_MS\n' >> dist/opencode-native/bin/opencode
+  fi
   exit 0
 fi
 case "$HOME" in */.vibeterm/tmp/build-v2.*/home) ;; *) exit 40 ;; esac
@@ -111,6 +116,8 @@ SRC_OVERRIDE=""
 INSTALL_OVERRIDE=""
 VERSION_OVERRIDE=""
 CACHE_OVERRIDE=""
+RETRY_PATCH_OVERRIDE=""
+ALLOW_MISSING_CAP=""
 run() {
   STATUS=0
   OUT="$(cd "$HERE" && env -i PATH="$ROOT/bin:$TEST_PATH" HOME="$ROOT/live-home" \
@@ -118,6 +125,7 @@ run() {
     OPENCODE_SRC="$SRC_OVERRIDE" OPENCODE_INSTALL="$INSTALL_OVERRIDE" \
     OPENCODE_VERSION="$VERSION_OVERRIDE" VIBETERM_V2_GUARD="$GUARD_OVERRIDE" \
     BUN_INSTALL_CACHE_DIR="$CACHE_OVERRIDE" \
+    OPENCODE_RETRY_CAP_PATCH="$RETRY_PATCH_OVERRIDE" OPENCODE_ALLOW_MISSING_RETRY_CAP="$ALLOW_MISSING_CAP" \
     VIBETERM_V2_PROBE="$PROBE_OVERRIDE" BUILD_TEST_PROBE_FAILURE="$ROOT/fail-probe" \
     BUILD_TEST_EXPECTED_BINARY="${SRC_OVERRIDE:-$MANAGED}/packages/cli/dist/cli-native/bin/opencode" \
     XDG_DATA_HOME="$ROOT/live-data" XDG_CONFIG_HOME="$ROOT/live-config" \
@@ -309,4 +317,52 @@ equal "$(inode "$INSTALL_ROOT/opencode")" "$PREVIOUS_INODE"
 GUARD_OVERRIDE="$ROOT/bin/guard"
 PROBE_OVERRIDE="$ROOT/bin/probe"
 printf 'PASS: without VIBETERM_V2_GUARD or PATH, guard and probe come from the config-loaded opencode-tools, then a sibling; none fails closed\n'
+
+# The retry-header cap: applied for the build when the source lacks it, required in the binary.
+printf 'export const RETRY = 1\n' > "$RETRY"
+cat > "$ROOT/retry-cap.patch" <<'PATCH'
+--- a/packages/opencode/src/session/retry.ts
++++ b/packages/opencode/src/session/retry.ts
+@@ -1 +1,2 @@
+ export const RETRY = 1
++export const OPENCODE_RETRY_MAX_HEADER_DELAY_MS = 1
+PATCH
+PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode")"
+run
+status 1
+[[ "$(<"$ROOT/error")" == *'lacks the retry-header cap and its patch was not found'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode")" "$PREVIOUS_INODE"
+mkdir -p "$ROOT/opencode-tools/docs/opencode-patches"
+cp "$ROOT/retry-cap.patch" "$ROOT/opencode-tools/docs/opencode-patches/retry-header-delay-cap.patch"
+run
+status 0
+[[ "$OUT" == *'Applied the retry-header cap for this build'* ]]
+grep -q -a OPENCODE_RETRY_MAX_HEADER_DELAY_MS "$INSTALL_ROOT/opencode"
+equal "$(<"$RETRY")" 'export const RETRY = 1'
+rm -rf "$ROOT/opencode-tools/docs"
+RETRY_PATCH_OVERRIDE="$ROOT/retry-cap.patch"
+run
+status 0
+grep -q -a OPENCODE_RETRY_MAX_HEADER_DELAY_MS "$INSTALL_ROOT/opencode"
+equal "$(<"$RETRY")" 'export const RETRY = 1'
+printf 'export const RETRY = 2\n' > "$RETRY"
+PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode")"
+run
+status 1
+[[ "$(<"$ROOT/error")" == *'does not apply'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode")" "$PREVIOUS_INODE"
+RETRY_PATCH_OVERRIDE=""
+printf 'export const RETRY = 1\nexport const OPENCODE_RETRY_MAX_HEADER_DELAY_MS = 1\n' > "$RETRY"
+touch "$SOURCE/drop-marker"
+run
+status 1
+[[ "$(<"$ROOT/error")" == *'lacks the retry-header cap (OPENCODE_RETRY_MAX_HEADER_DELAY_MS); NOT installing'* ]]
+equal "$(inode "$INSTALL_ROOT/opencode")" "$PREVIOUS_INODE"
+ALLOW_MISSING_CAP=1
+run
+status 0
+[[ "$(<"$ROOT/error")" == *'OPENCODE_ALLOW_MISSING_RETRY_CAP=1'* ]]
+ALLOW_MISSING_CAP=""
+rm "$SOURCE/drop-marker"
+printf 'PASS: a v1 source without the retry-header cap gets the canonical patch for the build only; a missing or stale patch, or a binary without the marker, installs nothing unless OPENCODE_ALLOW_MISSING_RETRY_CAP=1\n'
 printf 'BUILD SCRIPT TESTS PASSED\n'
