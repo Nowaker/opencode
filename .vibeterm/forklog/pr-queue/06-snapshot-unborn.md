@@ -1,6 +1,6 @@
 # 06 - Skip nested repositories without a commit in snapshots
 
-Status: READY TO FILE, NOT FILED - all three author PR slots are occupied ([#54578](https://github.com/anomalyco/opencode/pull/54578), [#63062](https://github.com/anomalyco/opencode/pull/63062), [#63063](https://github.com/anomalyco/opencode/pull/63063) as listed in `03-snapshot-lock.md`). Opening a PR or issue requires separate authorization and a free slot.
+Status: FILED 2026-11-14T06:03:52Z as [anomalyco/opencode#63897](https://github.com/anomalyco/opencode/pull/63897), base `v1`, head `d8087e0352fdd3ba72ff54f390e1a0bc24f18e35`, after #54578 closed unmerged and freed its slot. Open with 3/3 checks green on 2026-11-17; slot and nudge history live in [`00-open-slots.md`](00-open-slots.md). The filing command below was used and must not be run again.
 
 - Repository and base: `anomalyco/opencode`, `v1` at `acc8c26da40f918e1ce222cb03c3342242c3ed6a`.
 - Head: `Nowaker:snapshot-unborn-upstream`, `d8087e0352fdd3ba72ff54f390e1a0bc24f18e35`; one commit above `v1`. `git ls-remote` showed this head on both `origin` and `nowaker-github` on 2026-11-14.
