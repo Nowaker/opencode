@@ -57,7 +57,7 @@ Session [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routab
 
 ## Timeline
 
-- 2026-11-16 [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routable-account.md) - initial build; installed on desktop as `1.19.5-vt-518-006d837c50` (m4max pending its memory gate).
+- 2026-11-16 [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routable-account.md) - initial build; installed on desktop as `1.19.5-vt-518-006d837c50`; m4max runs it in `1.19.5-vt-521-006d837c50`, built by `ses_e1d8f706fffe` from `f171dd4d50`.
 
 ## Current maintenance notes
 

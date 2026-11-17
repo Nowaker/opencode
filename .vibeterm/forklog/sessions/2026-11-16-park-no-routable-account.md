@@ -60,7 +60,9 @@ Contract amendments from the Meridian coordinator [`ses_fe8a27c6effe6KEx3TRNvOLg
 
 ## Build and install
 
-- m4max: not built. Available memory stayed at 7.5-20 GB from 23:15Z to 01:23Z, under the 30 GB gate. At 01:18Z coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv) moved the first build to desktop; m4max installs once its gate clears.
+- m4max: not built. Available memory stayed at 7.5-20 GB from 23:15Z to 01:23Z, under the 30 GB gate. At 01:18Z coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv) moved the first build to desktop.
+- Installed artifact (m4max): not built by this session. m4max runs `1.19.5-vt-521-006d837c50` (inode 107234381, 21:17 CST), built from `dev-nowaker` `f171dd4d50` (which contains `54423dac1b`) by session [`ses_e1d8f706fffe`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e1d8f706fffe) (full id TBD). The binary contains `No routable Claude account` and `no_routable_account`. `.vibeterm/smoke.sh <installed binary>` - SMOKE OK (2026-11-17 03:4xZ).
+- m4max finding: vt-521 and the archived vt-517 lack the retry-cap marker `OPENCODE_RETRY_MAX_HEADER_DELAY_MS`, while archived vt-514 and vt-511 contain it, so the m4max builds since vt-517 were made without `retry-header-delay-cap.patch`. Reported to the coordinator; not rebuilt here.
 - desktop: detached worktree `.vibeterm/worktrees/park-no-routable-build` at `54423dac1b` with the canonical `retry-header-delay-cap.patch` applied (the primary checkout's dirty retry diff reverse-applied cleanly against it). Gate checked right before start: MemAvailable 52 GB. `bun install --frozen-lockfile` (2334 packages, ok), then `OPENCODE_SRC=<worktree> .vibeterm/build.sh` under `systemd-run --user --unit=opencode-build-park-no-routable`. Log: desktop `.vibeterm/tmp/build-park-no-routable-desktop.log`.
 - Installed artifact (desktop): `1.19.5-vt-518-006d837c50`, `/home/nowaker/projekty/webapps/opencode-build/bin/opencode`, inode 49951435 (previous `vt-517` archived as `opencode.prev-1794878626`). v2 migration guard gate PASSED (2026-11-17T01:23:34Z). Binary contains the retry marker `OPENCODE_RETRY_MAX_HEADER_DELAY_MS` and the strings `No routable Claude account` and `no_routable_account`.
 - Smoke: the chained `smoke.sh` call lacked its binary argument and failed with `$1: unbound variable`; rerun as `.vibeterm/smoke.sh <installed binary>` - SMOKE OK.
@@ -73,6 +75,5 @@ Contract amendments from the Meridian coordinator [`ses_fe8a27c6effe6KEx3TRNvOLg
 
 ## Unknowns and blocked verification
 
-- m4max build and install wait on its memory gate.
 - Joint end-to-end with Meridian (hop, exhaust, park, unpause) waits on the install. Per the Meridian coordinator (2026-11-16 23:26Z), Meridian `ec674e39` is live on m4max @dev but stays in plain active mode until [`qst_1e64c2011001S8YpL36hs018aq`](https://portal.vibeterm.desktop.ts.nowaker.net/question/qst_1e64c2011001S8YpL36hs018aq) is answered, so the joint run uses a scratch Meridian from worktree `ec674e39` in active+priority mode on a loopback port.
 - Meridian's built refusal also carries `retry_after` (seconds). The park doesn't copy it into `pause.error`, but the full pre-stream body stays in `pause.error.api_error`.
