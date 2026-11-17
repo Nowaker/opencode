@@ -636,14 +636,13 @@ export function Session(props: {
     restore()
   }
 
+  // A startup draft submitted with Enter is the composer's own submission; only --prompt auto-submits from here.
   createEffect(() => {
     const current = prompt()
     if (sent || !current || !synced() || !local.model.ready || !local.model.catalogReady) return
     if (!local.agent.current() || !local.model.current()) return
     if (startup && !startup.settled(route.sessionID)) return
-    if (!startup?.takeSubmit(route.sessionID)) {
-      if (!args.prompt || route.prompt?.text !== args.prompt || current.current.text !== args.prompt) return
-    }
+    if (!args.prompt || route.prompt?.text !== args.prompt || current.current.text !== args.prompt) return
     sent = true
     current.submit()
   })
@@ -1667,6 +1666,9 @@ export function Session(props: {
                     visible={true}
                     ref={bind}
                     muted={props.promptMuted}
+                    onSubmitRequest={() => {
+                      sent = true
+                    }}
                     onSubmit={() => {
                       if (config.session?.submit_scroll !== "keep") toBottom()
                     }}

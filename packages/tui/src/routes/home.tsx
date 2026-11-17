@@ -69,19 +69,16 @@ export function Home() {
     untrack(() => composer.set(prompt))
   })
 
-  // Wait for everything submit needs before auto-submitting --prompt, or a startup draft submitted with Enter before
-  // this composer took it over; it runs once.
+  // Wait for everything submit needs before auto-submitting --prompt; it runs once. A startup draft submitted with
+  // Enter is the composer's own submission.
   createEffect(() => {
     const r = ref()
     if (sent) return
-    if (!r) return
+    if (!r || !args.prompt) return
     if (!local.model.ready || !local.model.catalogReady) return
     if (!local.agent.current() || !local.model.current()) return
     if (startup && !startup.settled(undefined)) return
-    if (!startup?.takeSubmit(undefined)) {
-      if (!args.prompt) return
-      if (r.current.text !== args.prompt) return
-    }
+    if (r.current.text !== args.prompt) return
     sent = true
     r.submit()
   })
@@ -107,7 +104,14 @@ export function Home() {
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />
         <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+          <Prompt
+            ref={bind}
+            placeholders={placeholder}
+            disabled={forms().length > 0}
+            onSubmitRequest={() => {
+              sent = true
+            }}
+          />
         </box>
         <box flexGrow={1} minHeight={0} />
       </box>

@@ -3,6 +3,7 @@ import { CliRenderEvents, KeyEvent, PasteEvent, type TextareaRenderable } from "
 import { createEffect, createSignal, onCleanup, onMount, splitProps, type Accessor } from "solid-js"
 import { useRoute } from "../../context/route"
 import { isPromptTraits, promptSelectionOccupancy } from "../../prompt/traits"
+import type { SubmitTicket } from "./submit-intent"
 
 export type PendingInput =
   | { readonly type: "key"; readonly event: KeyEvent }
@@ -13,7 +14,7 @@ type Props = Omit<
   "width" | "minHeight" | "onKeyDown" | "onSubmit" | "onPaste" | "selectionOccupancy"
 > & {
   readonly disabled: boolean
-  readonly submit: () => void
+  readonly submit: () => SubmitTicket
   readonly input: Accessor<TextareaRenderable | undefined>
   readonly onReadyChange: (ready: boolean) => void
   readonly active: Accessor<boolean>
@@ -195,8 +196,12 @@ export function PromptTextarea(props: Props) {
       }}
       onSubmit={() => {
         if (local.disabled) return
-        // IME: double-defer so the last composed character is flushed before submission.
-        setTimeout(() => setTimeout(local.submit, 0), 0)
+        // IME: double-defer so the last composed character is flushed before submission. The ticket is taken now, so
+        // a submission that starts or an intent that ends in between leaves both callbacks inert.
+        const ticket = local.submit()
+        setTimeout(() => {
+          if (ticket.live()) setTimeout(ticket.submit, 0)
+        }, 0)
       }}
     />
   )

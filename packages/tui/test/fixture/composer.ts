@@ -12,8 +12,8 @@ export async function mountComposer(input: Parameters<typeof createAppFixture>[0
   takeDraft("ses_observation_a")
   takeDraft("ses_observation_b")
   const plugin = await copyPlugin("composer-observation")
-  const setup = await createTestRenderer({ width: 100, height: 35, kittyKeyboard: true })
-  await setup.renderer.setupTerminal()
+  const setup = input.setup ?? (await createTestRenderer({ width: 100, height: 35, kittyKeyboard: true }))
+  if (!input.setup) await setup.renderer.setupTerminal()
   const context = Promise.withResolvers<Context>()
   const changes: ComposerObservation[] = []
   setup.renderer.on("fixture.composer-change", (value: ComposerObservation) => changes.push(value))

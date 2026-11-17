@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createSignal, onCleanup } from "solid-js"
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -43,6 +43,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
+    // Counts accepted agent, model and variant choices; seeding and reconciliation leave it alone.
+    const [choice, setChoice] = createSignal(0)
+    const chose = () => setChoice((value) => value + 1)
 
     function isModelValid(model: ModelPreferenceModel) {
       return !!models()?.some((item) => item.providerID === model.providerID && item.id === model.modelID)
@@ -82,20 +85,24 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           (first, second) => first.equals(second),
         )
       })
+      // The agent this route asks for, before it is matched against the loaded catalog.
+      function requested() {
+        const draft = route.data.type === "session" ? agentStore.draftBySession[route.data.sessionID] : undefined
+        return route.data.type === "session"
+          ? (draft?.agent ??
+              (draft ? undefined : args.agent) ??
+              data.session.get(route.data.sessionID)?.agent ??
+              agentStore.current)
+          : agentStore.current
+      }
       return {
         list() {
           return agents()
         },
+        requested,
         current() {
-          const draft = route.data.type === "session" ? agentStore.draftBySession[route.data.sessionID] : undefined
-          const selected =
-            route.data.type === "session"
-              ? (draft?.agent ??
-                (draft ? undefined : args.agent) ??
-                data.session.get(route.data.sessionID)?.agent ??
-                agentStore.current)
-              : agentStore.current
-          return agents().find((agent) => agent.id === selected) ?? agents().at(0)
+          const id = requested()
+          return agents().find((agent) => agent.id === id) ?? agents().at(0)
         },
         set(id: string) {
           if (!agents().some((agent) => agent.id === id))
@@ -105,6 +112,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               duration: 3000,
             })
           batch(() => {
+            chose()
             const changed = this.current()?.id !== id
             if (changed) model.remember()
             setAgentStore("current", id)
@@ -263,13 +271,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
       }
 
+      function sessionChoice(sessionID: string, agentID: string) {
+        const session = data.session.get(sessionID)
+        return (
+          selectionState.selectionBySessionAgent[sessionID]?.[agentID] ??
+          (!session?.agent || session.agent === agentID ? durableSelection(sessionID) : undefined)
+        )
+      }
+
       function sessionSelection(sessionID: string) {
         const current = agent.current()
         if (!current) return
-        const session = data.session.get(sessionID)
-        const selected =
-          selectionState.selectionBySessionAgent[sessionID]?.[current.id] ??
-          (!session?.agent || session.agent === current.id ? durableSelection(sessionID) : undefined)
+        const selected = sessionChoice(sessionID, current.id)
         if (selected) {
           const info = models()?.find((item) => item.providerID === selected.providerID && item.id === selected.modelID)
           return {
@@ -315,12 +328,31 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               ? current
               : preferredSelection(model),
           )
+          chose()
           return true
         }
         const current = agent.current()
         if (!current) return false
         setSelectionState("newSessionModelByLocationAgent", locationAgentKey(current.id), model)
+        chose()
         return true
+      }
+
+      function describe(value: ModelPreferenceModel | undefined) {
+        if (!value) {
+          return {
+            provider: "Connect a provider",
+            model: "No provider selected",
+            reasoning: false,
+          }
+        }
+        const provider = providers()?.find((item) => item.id === value.providerID)
+        const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+        return {
+          provider: provider?.name ?? value.providerID,
+          model: info?.name ?? `${value.modelID} (unavailable)`,
+          reasoning: (info?.variants?.length ?? 0) !== 0,
+        }
       }
 
       function reconcileSessionSelection(sessionID: string) {
@@ -354,6 +386,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return {
         current: currentModel,
         selection: currentSelection,
+        requested() {
+          if (route.data.type !== "session") return currentSelection()
+          const agentID = agent.requested() ?? agent.current()?.id
+          return agentID === undefined
+            ? currentSelection()
+            : (sessionChoice(route.data.sessionID, agentID) ?? currentSelection())
+        },
         remember() {
           const current = agent.current()
           const selection = currentSelection()
@@ -395,23 +434,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         favorite() {
           return preferences.favorite
         },
-        parsed: createMemo(() => {
-          const value = currentSelection()
-          if (!value) {
-            return {
-              provider: "Connect a provider",
-              model: "No provider selected",
-              reasoning: false,
-            }
-          }
-          const provider = providers()?.find((item) => item.id === value.providerID)
-          const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
-          return {
-            provider: provider?.name ?? value.providerID,
-            model: info?.name ?? `${value.modelID} (unavailable)`,
-            reasoning: (info?.variants?.length ?? 0) !== 0,
-          }
-        }),
+        parsed: createMemo(() => describe(currentSelection())),
+        describe,
         cycle(direction: 1 | -1) {
           const current = currentSelection()
           if (!current) return
@@ -488,6 +512,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           set(value: string | undefined) {
             const m = currentSelection()
             if (!m) return
+            chose()
             if (route.data.type === "session") {
               setSessionDraft(route.data.sessionID, { ...m, variant: normalizeModelVariant(value) })
             }
@@ -609,6 +634,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       session,
       permission,
+      choice,
     }
     return result
   },

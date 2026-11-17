@@ -20,7 +20,7 @@ export async function createAppFixture(
     // A renderer whose owner already set up its terminal, such as the simulation renderer.
     setup?: TestRendererSetup
     // A draft the startup input handed over, as the early terminal owner would.
-    startup?: StartupInput.Snapshot
+    startup?: StartupInput.Snapshot | StartupComposer.Composer
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -59,11 +59,13 @@ export async function createAppFixture(
         mode: "dark",
         complete: ready.resolve,
         startup: input.startup
-          ? StartupComposer.create(setup.renderer, {
-              route: input.args?.sessionID || input.args?.continue ? "session" : "home",
-              snapshot: input.startup,
-              resume: () => {},
-            })
+          ? "active" in input.startup
+            ? input.startup
+            : StartupComposer.create(setup.renderer, {
+                route: input.args?.sessionID || input.args?.continue ? "session" : "home",
+                snapshot: input.startup,
+                resume: () => {},
+              })
           : undefined,
       }),
       args: input.args ?? {},

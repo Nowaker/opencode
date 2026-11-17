@@ -9,7 +9,19 @@ import {
   stripAnsiSequences,
   type KeyEvent,
 } from "@opentui/core"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  onMount,
+  createSignal,
+  onCleanup,
+  on,
+  untrack,
+  Show,
+  Switch,
+  Match,
+  For,
+} from "solid-js"
 import path from "path"
 import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
@@ -35,6 +47,8 @@ import { captureDraft, registerComposer, saveDraft, savePendingInput, takeDraft 
 import { createDraftObservation } from "./observation"
 import { PromptTextarea, type PendingInput } from "./textarea"
 import { createPasteQueue } from "./paste-queue"
+import { createSubmitIntent, type SubmitBinding, type SubmitResolution } from "./submit-intent"
+import { createSubmitSelection } from "./submit-selection"
 import { Skill } from "@opencode/schema/skill"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
@@ -81,6 +95,7 @@ export type PromptProps = {
   disabled?: boolean
   muted?: boolean
   onSubmit?: () => void
+  onSubmitRequest?: () => void
   onEmptySubmit?: () => boolean | Promise<boolean>
   ref?: (ref: PromptRef | undefined) => void
   placeholders?: {
@@ -376,6 +391,12 @@ export function Prompt(props: PromptProps) {
     extmarkToPart: new Map(),
     interrupt: 0,
   })
+  function setMode(mode: "normal" | "shell") {
+    if (store.mode === mode) return
+    setStore("mode", mode)
+    submitIntent.edited()
+  }
+
   let disposed = false
   const enqueuePaste = createPasteQueue(
     () => {
@@ -490,7 +511,7 @@ export function Prompt(props: PromptProps) {
           if (!input.focused) return
           // TODO: this should be its own command
           if (store.mode === "shell") {
-            setStore("mode", "normal")
+            setMode("normal")
             return
           }
           if (!props.sessionID) return
@@ -679,13 +700,12 @@ export function Prompt(props: PromptProps) {
     blur() {
       input.blur()
     },
-    setMode(mode) {
-      setStore("mode", mode)
-    },
+    setMode,
     set(prompt) {
       input.setText(prompt.text)
       setStore("prompt", prompt)
       restoreExtmarksFromPrompt(prompt)
+      submitIntent.edited()
       input.gotoBufferEnd()
     },
     reset() {
@@ -701,6 +721,7 @@ export function Prompt(props: PromptProps) {
     setStore("prompt", emptyPrompt())
     setStore("extmarkToPart", new Map())
     input.clear()
+    submitIntent.edited()
   }
 
   // Captured once: the session route is keyed by sessionID, so this Prompt
@@ -976,7 +997,7 @@ export function Prompt(props: PromptProps) {
           group: "Prompt",
           run: () => {
             setStore("placeholder", randomIndex(shell().length))
-            setStore("mode", "shell")
+            setMode("shell")
           },
         },
       ],
@@ -989,13 +1010,13 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: inputTarget() !== undefined && !disabled() && store.mode === "shell",
       commands: [
-        { bind: "escape", title: "Exit shell mode", group: "Prompt", run: () => setStore("mode", "normal") },
+        { bind: "escape", title: "Exit shell mode", group: "Prompt", run: () => setMode("normal") },
         {
           bind: "ctrl+c",
           title: "Exit shell mode",
           group: "Prompt",
           enabled: () => store.prompt.text === "",
-          run: () => setStore("mode", "normal"),
+          run: () => setMode("normal"),
         },
       ],
     }
@@ -1009,7 +1030,7 @@ export function Prompt(props: PromptProps) {
         return inputTarget() !== undefined && !disabled() && store.mode === "shell" && input?.visualCursor.offset === 0
       })(),
       commands: [
-        { bind: "backspace", title: "Exit shell mode", group: "Prompt", run: () => setStore("mode", "normal") },
+        { bind: "backspace", title: "Exit shell mode", group: "Prompt", run: () => setMode("normal") },
       ],
     }
   })
@@ -1041,7 +1062,7 @@ export function Prompt(props: PromptProps) {
             if (!item) return false
             input.setText(item.text)
             setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
+            setMode(item.mode ?? "normal")
             restoreExtmarksFromPrompt(item)
             input.cursorOffset = 0
           },
@@ -1081,7 +1102,7 @@ export function Prompt(props: PromptProps) {
             if (!item) return false
             input.setText(item.text)
             setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
+            setMode(item.mode ?? "normal")
             restoreExtmarksFromPrompt(item)
             input.cursorOffset = measure(item.text)
           },
@@ -1090,8 +1111,71 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  const submitSelection = createSubmitSelection({
+    sessionID: stashSessionID,
+    mode: () => store.mode,
+    warnModel: promptModelWarning,
+  })
+  const submitIntent = createSubmitIntent({
+    renderer,
+    owner: () => {
+      if (suspended() || props.visible === false) return
+      const current = route.data
+      switch (current.type) {
+        case "home":
+          return stashSessionID === undefined ? submitSelection.key() : undefined
+        case "session":
+          return current.sessionID === stashSessionID ? submitSelection.key() : undefined
+        case "plugin":
+          return undefined
+        default: {
+          const exhaustive: never = current
+          return exhaustive
+        }
+      }
+    },
+    choice: local.choice,
+    capture: () => submitSelection.capture(promptDisplay()),
+    content: () => JSON.stringify({
+      text: input?.plainText ?? store.prompt.text,
+      files: store.prompt.files ?? [],
+      agents: store.prompt.agents ?? [],
+      skills: store.prompt.skills ?? [],
+      pasted: store.prompt.pasted,
+      mode: store.mode,
+    }),
+    load: submitSelection.load,
+    resolve: (binding) => submitSelection.resolve(binding, true),
+    displayed: (binding) => {
+      const shown = promptDisplay()
+      return (
+        shown.location === binding.location &&
+        shown.sessionID === binding.sessionID &&
+        shown.agentID === binding.agentID &&
+        shown.providerID === binding.providerID &&
+        shown.modelID === binding.modelID &&
+        shown.variant === binding.variant &&
+        agentMetaAlpha() === 1 &&
+        modelMetaAlpha() === 1 &&
+        (binding.variant === undefined || variantMetaAlpha() === 1)
+      )
+    },
+    fail: (error) => toast.show({ title: "Failed to send prompt", message: errorMessage(error), variant: "error" }),
+    consume: (delivery, binding) => void submit(delivery, binding),
+  })
+  // An Enter pressed in the startup editor submits here once that draft and its selection are in place; a
+  // catalog that is still loading turns it into the pending intent like any other Enter.
+  createEffect(() => {
+    if (!startup || disabled() || startup.adopting() || !startup.settled(stashSessionID)) return
+    if (startup.takeSubmit(stashSessionID)) untrack(() => void submit())
+  })
+
   let submitting = false
-  async function submit(delivery: SessionInbox.Delivery = "steer") {
+  async function submit(
+    delivery: SessionInbox.Delivery = "steer",
+    binding?: SubmitBinding,
+    requested?: { readonly captured: SubmitBinding | undefined },
+  ) {
     if (disabled()) return false
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
@@ -1100,15 +1184,22 @@ export function Prompt(props: PromptProps) {
     // ultimately reads the now-empty store — sending a phantom empty prompt
     // to a freshly created session.
     if (submitting) return false
+    // Enter while a submission waits for its catalogs joins that submission.
+    if (submitIntent.pending()) return false
+    submitIntent.enter()
     submitting = true
     try {
-      return await submitInner(delivery)
+      return await submitInner(delivery, binding, requested)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner(delivery: SessionInbox.Delivery) {
+  async function submitInner(
+    delivery: SessionInbox.Delivery,
+    binding: SubmitBinding | undefined,
+    requested: { readonly captured: SubmitBinding | undefined } | undefined,
+  ) {
     // IME: double-defer may fire before onContentChange flushes the last
     // composed character (e.g. Korean hangul) to the store, so read
     // plainText directly and sync before any downstream reads.
@@ -1157,22 +1248,25 @@ export function Prompt(props: PromptProps) {
       toast.show({ message: "Editor context cannot be queued", variant: "warning" })
       return false
     }
-    const agent = local.agent.current()
-    if (!agent) return false
-    const selection = local.model.selection()
-    if (!selection) {
-      void promptModelWarning()
-      return false
+    props.onSubmitRequest?.()
+    if (!binding && data.location.agent.list(currentLocation.ref) !== undefined && !local.agent.current()) return false
+    const resolution: SubmitResolution = binding ? { type: "ready", binding } : submitSelection.resolve(requested?.captured)
+    switch (resolution.type) {
+      case "loading":
+        submitIntent.request(delivery, requested)
+        return false
+      case "unavailable":
+        resolution.show()
+        return false
+      case "ready":
+        break
+      default: {
+        const exhaustive: never = resolution
+        return exhaustive
+      }
     }
-    const usesModel = !props.sessionID || store.mode !== "shell"
-    if (usesModel && !local.model.available(selection)) {
-      toast.show({
-        title: "Model unavailable",
-        message: `${selection.providerID}/${selection.modelID} is not available in this session's location`,
-        variant: "warning",
-      })
-      return false
-    }
+    // A pending submission sends with the pair it bound and showed, not whatever the selection reads now.
+    const chosen = resolution.binding
 
     // Snapshot the composer and clear it synchronously, before the first await.
     // Everything below reads the snapshot: text typed while a request is in
@@ -1190,7 +1284,7 @@ export function Prompt(props: PromptProps) {
       if (disposed || input.isDestroyed || input.plainText !== "") return
       input.setText(entry.text)
       setStore("prompt", entry)
-      setStore("mode", entry.mode ?? "normal")
+      setMode(entry.mode ?? "normal")
       restoreExtmarksFromPrompt(entry)
       input.cursorOffset = measure(entry.text)
     }
@@ -1208,7 +1302,7 @@ export function Prompt(props: PromptProps) {
       )
     }
 
-    const variant = selection.variant
+    const variant = chosen.variant
     let sessionID = props.sessionID
     let session = sessionID ? data.session.get(sessionID) : undefined
     let finishMoveProgress = false
@@ -1234,10 +1328,10 @@ export function Prompt(props: PromptProps) {
       const created = data.session.create({
         id: newSessionID,
         location: directory ? { directory } : location,
-        agent: agent.id,
+        agent: chosen.agentID,
         model: {
-          providerID: selection.providerID,
-          id: selection.modelID,
+          providerID: chosen.providerID,
+          id: chosen.modelID,
           variant,
         },
       })
@@ -1279,13 +1373,13 @@ export function Prompt(props: PromptProps) {
         await data.session.sync(target)
         session = data.session.get(target)
       }
-      if (session?.agent !== agent.id) {
-        await client.api.session.switchAgent({ sessionID: target, agent: agent.id })
+      if (session?.agent !== chosen.agentID) {
+        await client.api.session.switchAgent({ sessionID: target, agent: chosen.agentID })
       }
     }
     const commitModel = () => {
-      const model = { providerID: selection.providerID, id: selection.modelID, variant }
-      const cancelCommit = local.model.trackSessionCommit(target, model, agent.id)
+      const model = { providerID: chosen.providerID, id: chosen.modelID, variant }
+      const cancelCommit = local.model.trackSessionCommit(target, model, chosen.agentID)
       return client.api.session.switchModel({ sessionID: target, model }).catch((error) => {
         cancelCommit()
         throw new Error(`Failed to switch model: ${errorMessage(error)}`, { cause: error })
@@ -1311,7 +1405,7 @@ export function Prompt(props: PromptProps) {
       void (newSession ? newSession.gate.then(send) : send()).catch((error) =>
         newSession ? newSession.recover(error) : fail("Failed to run shell command", error),
       )
-      setStore("mode", "normal")
+      setMode("normal")
     } else if (slashHead && isCommand) {
       const send = async () => {
         // Commands inherit the composer selection; command-specific overrides
@@ -1541,15 +1635,16 @@ export function Prompt(props: PromptProps) {
   }
 
   // Keep the last resolved prompt display visible while destination catalogs load;
-  // availability and submission still use the live location-scoped catalog.
-  const promptDisplay = createMemo<{
-    agentLabel: string | undefined
-    agentColor: RGBA | undefined
-    modelLabel: string
-    providerLabel: string
-    variant: string | undefined
-  }>(
+  // availability and submission still use the live location-scoped catalog. Each
+  // display carries the identity and location it describes, so a kept label never
+  // stands in for the pair a pending submission is bound to; that pair is shown
+  // as bound until it is sent.
+  const describePrompt = submitSelection.describe
+  const promptDisplay = createMemo<ReturnType<typeof describePrompt>>(
     (previous) => {
+      const bound = submitIntent.binding()
+      if (bound) return describePrompt(bound.location, bound.agentID, bound)
+
       const location = currentLocation.ref ?? data.location.default()
       const sessionLocation = props.sessionID ? data.session.get(props.sessionID)?.location : location
       if (!sessionLocation || locationKey(sessionLocation) !== locationKey(location)) return previous
@@ -1559,23 +1654,9 @@ export function Prompt(props: PromptProps) {
       const failed = error && locationKey(error.location) === locationKey(location)
       if (loading && !failed) return previous
 
-      const agent = local.agent.current()
-      const model = local.model.parsed()
-      return {
-        agentLabel: agent ? Locale.titlecase(agent.id) : undefined,
-        agentColor: agent ? local.agent.color(agent.id) : undefined,
-        modelLabel: model.model,
-        providerLabel: model.provider,
-        variant: local.model.variant.current(),
-      }
+      return describePrompt(locationKey(location), local.agent.current()?.id, local.model.selection())
     },
-    {
-      agentLabel: undefined,
-      agentColor: undefined,
-      modelLabel: local.model.parsed().model,
-      providerLabel: local.model.parsed().provider,
-      variant: undefined,
-    },
+    describePrompt(undefined, undefined, local.model.selection()),
   )
   // What the workspace's limits leave for the selected model, once it is running low. Only OpenCode Console limits
   // models, so only a model it serves loads them.
@@ -1596,16 +1677,19 @@ export function Prompt(props: PromptProps) {
     if (store.mode === "shell") return theme.text.action.primary.selected
     return promptDisplay().agentColor ?? theme.border.base
   })
-  const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
+  // A bound shell submission shows its agent/model for the single publication frame.
+  const metadataMode = () => (submitIntent.binding() ? "normal" : store.mode)
+  const agentLabel = createMemo(() => (metadataMode() === "shell" ? "Shell" : promptDisplay().agentLabel))
   const animateMetadata = !revealedPromptMetadata.has(local)
-  const metadataAnimationsEnabled = () => animationsEnabled() && animateMetadata
+  // A bound pair is sent right after the frame that shows it, so it appears at full strength.
+  const metadataAnimationsEnabled = () => animationsEnabled() && animateMetadata && !submitIntent.binding()
   const agentMetaAlpha = createFadeIn(() => !!agentLabel(), metadataAnimationsEnabled)
   const modelMetaAlpha = createFadeIn(
-    () => !!promptDisplay().agentLabel && store.mode === "normal",
+    () => !!promptDisplay().agentLabel && metadataMode() === "normal",
     metadataAnimationsEnabled,
   )
   const variantMetaAlpha = createFadeIn(
-    () => !!promptDisplay().agentLabel && store.mode === "normal" && !!promptDisplay().variant,
+    () => !!promptDisplay().agentLabel && metadataMode() === "normal" && !!promptDisplay().variant,
     metadataAnimationsEnabled,
   )
   createEffect(() => {
@@ -1772,7 +1856,7 @@ export function Prompt(props: PromptProps) {
             </Show>
             <PromptTextarea
               disabled={disabled()}
-              submit={() => void submit()}
+              submit={() => submitIntent.ticket((captured) => void submit("steer", undefined, { captured }))}
               input={inputTarget}
               onReadyChange={setInputReady}
               sessionID={stashSessionID}
@@ -1796,6 +1880,7 @@ export function Prompt(props: PromptProps) {
                 setStore("prompt", "text", value)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
+                submitIntent.edited()
                 setCursorVersion((value) => value + 1)
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
@@ -1859,7 +1944,7 @@ export function Prompt(props: PromptProps) {
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <PromptMetadataRow
-                mode={store.mode}
+                mode={metadataMode()}
                 agent={agentLabel()}
                 auto={local.permission.mode === "autoaccept"}
                 model={promptDisplay().modelLabel}
@@ -1901,6 +1986,12 @@ export function Prompt(props: PromptProps) {
             }
           />
         </box>
+        {/* The waiting text needs 25 content cells; narrower rows use native truncation. */}
+        <Show when={submitIntent.pending()}>
+          <text width="100%" fg={theme.text.feedback.info.base} wrapMode="none" truncate>
+            Waiting for model list...
+          </text>
+        </Show>
         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
           <Slot path="prompt.footer" input={footerInput()}>
             <Slot path="prompt.footer.status" input={footerInput()}>
@@ -2020,6 +2111,7 @@ export function Prompt(props: PromptProps) {
         input={() => input}
         setPrompt={(cb) => {
           setStore("prompt", produce(cb))
+          submitIntent.edited()
         }}
         setExtmark={(part, extmarkId) => {
           setStore("extmarkToPart", (map: Map<number, PromptPartRef>) => {
