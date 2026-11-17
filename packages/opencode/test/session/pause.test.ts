@@ -156,6 +156,35 @@ const heldSettle = LayerNode.make({
   ],
 })
 
+/*
+ * A chat.message hook that throws while the unpause notice is created: on desktop on 2026-11-17 a Vibeterm plugin's
+ * hook failed there with "database is locked" after the pause record was already cleared.
+ */
+const failingNotice: { action?: SessionPause.Action } = {}
+const realPlugin = Plugin.node.implementation as Layer.Layer<Plugin.Service>
+const flakyPlugin = LayerNode.make({
+  service: Plugin.Service,
+  layer: Layer.effect(
+    Plugin.Service,
+    Effect.gen(function* () {
+      const real = yield* Plugin.Service
+      return Plugin.Service.of({
+        ...real,
+        trigger: (name, input, output) => {
+          const parts = (output as { parts?: readonly { metadata?: { pause?: { action?: string } } }[] }).parts ?? []
+          const action = failingNotice.action
+          if (name === "chat.message" && action && parts.some((part) => part.metadata?.pause?.action === action)) {
+            failingNotice.action = undefined
+            return Effect.die(new Error("SQLiteError: database is locked"))
+          }
+          return real.trigger(name, input, output)
+        },
+      })
+    }),
+  ).pipe(Layer.provide(realPlugin)),
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node],
+})
+
 const root = LayerNode.group([
   SessionPrompt.node,
   SessionPause.node,
@@ -204,6 +233,7 @@ const it = testEffect(
     [MCP.node, mcp],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
     [SessionProcessor.node, heldSettle],
+    [Plugin.node, flakyPlugin],
   ]),
 )
 
@@ -346,6 +376,43 @@ it.instance(
       )
       expect(notices.map((part) => part.type === "text" && part.metadata?.pause?.action)).toEqual(["pause", "unpause"])
       expect(body).not.toContain("call: /pause")
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "an unpause whose notice cannot be written still resumes the turn and runs its deferred calls",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* pausedWithThreeCalls()
+      yield* ctx.llm.text("all three ran")
+      failingNotice.action = "unpause"
+      const result = yield* ctx.prompt
+        .unpause({ sessionID: ctx.chat.id, source: { kind: "tui" } })
+        .pipe(Effect.ensuring(Effect.sync(() => (failingNotice.action = undefined))))
+      expect(result).toEqual({ sessionID: ctx.chat.id, changed: true, deferred: 3 })
+      yield* ctx.llm.wait(2)
+      yield* idle(ctx.chat.id)
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+      const ran = toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
+      expect(ran.map((part) => part.state.status)).toEqual(["completed", "completed", "completed"])
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "a pause whose notice cannot be written is still reported as taken",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      failingNotice.action = "pause"
+      const result = yield* ctx.prompt
+        .pause({ sessionID: ctx.chat.id, source: { kind: "tui" } })
+        .pipe(Effect.ensuring(Effect.sync(() => (failingNotice.action = undefined))))
+      expect(result.changed).toBe(true)
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeDefined()
     }),
   { git: true },
   60_000,

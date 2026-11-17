@@ -1302,7 +1302,22 @@ const layer = Layer.effect(
           variant: info.model.variant,
         }),
         parts: [{ type: "text", text, ignored: true, metadata: { pause } }],
-      }).pipe(Effect.orDie)
+      }).pipe(
+        Effect.orDie,
+        Effect.asVoid,
+        /* The notice only records an action already committed. A failure writing it (a plugin's chat.message hook
+           hitting "database is locked" on desktop, 2026-11-17) must not fail that action: an unpause that died here
+           had cleared the pause and never started the turn it was meant to resume. */
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("pause notice not written", {
+                "session.id": sessionID,
+                action: pause.action,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      )
     })
 
     const descendants = (sessionID: SessionID): Effect.Effect<Session.Info[]> =>
