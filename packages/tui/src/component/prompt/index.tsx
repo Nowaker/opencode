@@ -31,8 +31,10 @@ import { expandPromptInputPastedText, realignPromptInputMentions } from "../../p
 import { parseSlashHead } from "../../prompt/parse"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { emptyPrompt, usePromptHistory, type PromptInfo, type PromptPartRef } from "../../prompt/history"
-import { registerComposer, saveDraft, takeDraft } from "./draft-stash"
+import { captureDraft, registerComposer, saveDraft, savePendingInput, takeDraft } from "./draft-stash"
 import { createDraftObservation } from "./observation"
+import { PromptTextarea, type PendingInput } from "./textarea"
+import { createPasteQueue } from "./paste-queue"
 import { Skill } from "@opencode/schema/skill"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
@@ -189,9 +191,12 @@ export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
+  const [inputReady, setInputReady] = createSignal(false)
+  let pendingInput: readonly PendingInput[] | undefined
 
   const enabled = useInteractivity()
-  const disabled = () => props.disabled || !enabled()
+  const suspended = () => props.disabled || !enabled()
+  const disabled = () => suspended() || !inputReady()
   const leader = Keymap.useLeaderActive()
   const muted = () => leader() || props.muted
   const local = useLocal()
@@ -216,7 +221,6 @@ export function Prompt(props: PromptProps) {
   const status = createMemo(() => data.session.status(props.sessionID ?? ""))
   const history = usePromptHistory()
   const stash = usePromptStash()
-  const keymap = Keymap.use()
   const renderer = useRenderer()
   const measure = (text: string) => measureEditText(text, { widthMethod: renderer.widthMethod })
   const exit = useExit()
@@ -373,28 +377,15 @@ export function Prompt(props: PromptProps) {
     interrupt: 0,
   })
   let disposed = false
-  let pasteQueue = Promise.resolve()
-
-  function enqueuePaste(run: (changed: () => boolean) => Promise<void>) {
-    pasteQueue = pasteQueue
-      .then(async () => {
-        if (disposed || input.isDestroyed || disabled()) return
-        const before = { sessionID: props.sessionID, mode: store.mode, text: input.plainText }
-        await run(
-          () =>
-            disposed ||
-            input.isDestroyed ||
-            disabled() ||
-            props.sessionID !== before.sessionID ||
-            store.mode !== before.mode ||
-            input.plainText !== before.text,
-        )
-      })
-      .catch((error) => {
-        if (!disposed) toast.error(error)
-      })
-    return pasteQueue
-  }
+  const enqueuePaste = createPasteQueue(
+    () => {
+      if (disposed || input.isDestroyed || disabled()) return
+      return { input, sessionID: props.sessionID, mode: store.mode }
+    },
+    (error) => {
+      if (!disposed) toast.error(error)
+    },
+  )
 
   const imageAttachments = createMemo(() =>
     (deduplicatePromptImages(store.prompt.files) ?? []).filter((file) => file.uri.startsWith("data:image/")),
@@ -478,20 +469,7 @@ export function Prompt(props: PromptProps) {
         run: (_input: string | undefined, event?: KeyEvent) => {
           event?.preventDefault()
           event?.stopPropagation()
-          return enqueuePaste(async (changed) => {
-            const content = await clipboard.read()
-            if (changed()) return
-            if (content?.mime.startsWith("image/")) {
-              pasteAttachment({
-                filename: "clipboard",
-                uri: `data:${content.mime};base64,${content.data}`,
-              })
-              return
-            }
-            if (content?.mime === "text/plain") {
-              await pasteInputText(content.data, changed)
-            }
-          })
+          return enqueuePaste(pasteClipboard)
         },
       },
       {
@@ -676,7 +654,13 @@ export function Prompt(props: PromptProps) {
   const observe = createDraftObservation(inputTarget, () => ({ ...store.prompt, mode: store.mode }), cursorVersion)
   const ref: PromptRef = {
     observe() {
-      if (props.visible === false || startup?.adopting() || (startup && !startup.settled(props.sessionID))) return
+      if (
+        !inputReady() ||
+        props.visible === false ||
+        startup?.adopting() ||
+        (startup && !startup.settled(props.sessionID))
+      )
+        return
       return observe()
     },
     get focused() {
@@ -743,6 +727,7 @@ export function Prompt(props: PromptProps) {
     // Only an untouched startup editor restores an older saved draft; an edited one consumes it when claimed.
     if (startup?.owns(stashSessionID)) return
     const saved = takeDraft(stashSessionID)
+    pendingInput = saved?.pendingInput
     if (store.prompt.text) return
     if (saved && saved.prompt.text) {
       input.setText(saved.prompt.text)
@@ -754,25 +739,11 @@ export function Prompt(props: PromptProps) {
 
   onCleanup(() => {
     disposed = true
-    if (store.prompt.text) {
-      saveDraft(stashSessionID, { prompt: unwrap(store.prompt), cursor: input.cursorOffset })
+    if (input.plainText) {
+      saveDraft(stashSessionID, captureDraft(unwrap(store.prompt), input))
     }
     setInputTarget(undefined)
     props.ref?.(undefined)
-  })
-
-  createEffect(() => {
-    if (!input || input.isDestroyed) return
-    if (props.visible === false || disabled() || dialog.stack.length > 0) {
-      if (input.focused) input.blur()
-      input.focusable = false
-      return
-    }
-
-    input.focusable = true
-    // Slot/plugin updates can remount the background prompt while a dialog is open.
-    // Keep focus with the dialog and let the prompt reclaim it after the dialog closes.
-    if (!input.focused) input.focus()
   })
 
   createEffect(() => {
@@ -1468,44 +1439,53 @@ export function Prompt(props: PromptProps) {
     return true
   }
 
-  async function pasteInputText(text: string, changed: () => boolean) {
+  async function pasteClipboard() {
+    const content = await clipboard.read()
+    if (content?.mime.startsWith("image/")) {
+      return () => pasteAttachment({ filename: "clipboard", uri: `data:${content.mime};base64,${content.data}` })
+    }
+    if (content?.mime === "text/plain") return pasteInputText(content.data)
+  }
+
+  async function pasteInputText(text: string) {
     const normalizedText = stripAnsiSequences(text).replace(/\r\n?/g, "\n")
     const pastedContent = normalizedText.trim()
     const attachments = await resolvePastedAttachments(pastedContent, terminalEnvironment.platform)
-    if (changed()) return
-    if (attachments) {
-      attachments.forEach((attachment) => {
-        if (attachment.type === "text") {
-          pasteText(attachment.content, `[SVG: ${attachment.filename || "image"}]`)
-          return
-        }
-        pasteAttachment(attachment)
-      })
-      return
+    return () => {
+      if (attachments) {
+        attachments.forEach((attachment) => {
+          if (attachment.type === "text") {
+            pasteText(attachment.content, `[SVG: ${attachment.filename || "image"}]`)
+            return
+          }
+          pasteAttachment(attachment)
+        })
+        return
+      }
+
+      const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1
+      if ((lineCount >= 3 || pastedContent.length > 150) && config.prompt?.paste !== "full") {
+        const extmark = input.extmarks.getAllForTypeId(promptPartTypeId).find((extmark) => {
+          const ref = store.extmarkToPart.get(extmark.id)
+          return (
+            (extmark.end === input.cursorOffset || extmark.end + 1 === input.cursorOffset) &&
+            ref?.type === "pasted" &&
+            store.prompt.pasted[ref.index]?.text === pastedContent
+          )
+        })
+        if (extmark && expandPastedText(extmark.id)) return
+        pasteText(pastedContent, `[Pasted ~${lineCount} lines]`)
+        return
+      }
+
+      input.insertText(normalizedText)
+
+      setTimeout(() => {
+        if (!input || input.isDestroyed) return
+        input.invalidateIntrinsicSize()
+        renderer.requestRender()
+      }, 0)
     }
-
-    const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1
-    if ((lineCount >= 3 || pastedContent.length > 150) && config.prompt?.paste !== "full") {
-      const extmark = input.extmarks.getAllForTypeId(promptPartTypeId).find((extmark) => {
-        const ref = store.extmarkToPart.get(extmark.id)
-        return (
-          (extmark.end === input.cursorOffset || extmark.end + 1 === input.cursorOffset) &&
-          ref?.type === "pasted" &&
-          store.prompt.pasted[ref.index]?.text === pastedContent
-        )
-      })
-      if (extmark && expandPastedText(extmark.id)) return
-      pasteText(pastedContent, `[Pasted ~${lineCount} lines]`)
-      return
-    }
-
-    input.insertText(normalizedText)
-
-    setTimeout(() => {
-      if (!input || input.isDestroyed) return
-      input.invalidateIntrinsicSize()
-      renderer.requestRender()
-    }, 0)
   }
 
   function pasteAttachment(file: { filename?: string; uri: string; path?: string }) {
@@ -1790,13 +1770,25 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
-            <textarea
-              width="100%"
+            <PromptTextarea
+              disabled={disabled()}
+              submit={() => void submit()}
+              input={inputTarget}
+              onReadyChange={setInputReady}
+              sessionID={stashSessionID}
+              active={() => !suspended() && props.visible !== false && dialog.stack.length === 0}
+              takePendingInput={() => {
+                const events = pendingInput
+                pendingInput = undefined
+                return events
+              }}
+              onPendingInput={(events) =>
+                savePendingInput(stashSessionID, events, () => captureDraft(unwrap(store.prompt), input))
+              }
               placeholder={placeholderText()}
               placeholderColor={theme.text.muted}
               textColor={muted() ? theme.text.muted : theme.text.base}
               focusedTextColor={muted() ? theme.text.muted : theme.text.base}
-              minHeight={1}
               maxHeight={maxHeight()}
               cursorStyle={cursorStyle()}
               onContentChange={() => {
@@ -1807,22 +1799,10 @@ export function Prompt(props: PromptProps) {
                 setCursorVersion((value) => value + 1)
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
-                if (disabled()) {
-                  e.preventDefault()
-                  return
-                }
-              }}
-              onSubmit={() => {
-                if (disabled()) return
-                // IME: double-defer so the last composed character (e.g. Korean
-                // hangul) is flushed to plainText before we read it for submission.
-                setTimeout(() => setTimeout(() => submit(), 0), 0)
-              }}
-              onPaste={(event: PasteEvent) => {
+              onPaste={(event: PasteEvent, applied) => {
                 if (disabled()) {
                   event.preventDefault()
-                  return
+                  return Promise.resolve()
                 }
 
                 // Normalize line endings at the boundary
@@ -1833,15 +1813,15 @@ export function Prompt(props: PromptProps) {
                 // Windows Terminal <1.25 can surface image-only clipboard as an
                 // empty bracketed paste. Windows Terminal 1.25+ does not.
                 if (event.bytes.byteLength === 0) {
-                  keymap.dispatch("prompt.paste")
-                  return
+                  event.preventDefault()
+                  return enqueuePaste(pasteClipboard, applied)
                 }
 
                 // Once we cross an async boundary below, the terminal may perform its
                 // default paste unless we suppress it first and handle insertion ourselves.
                 event.preventDefault()
 
-                void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
+                return enqueuePaste(() => pasteInputText(normalizedText), applied)
               }}
               ref={(r: TextareaRenderable) => {
                 input = r

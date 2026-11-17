@@ -12,6 +12,10 @@ export type PromptTraits = EditorTraits & {
   role: "prompt"
 }
 
+export function isPromptTraits(traits: EditorTraits): traits is PromptTraits {
+  return "owner" in traits && traits.owner === "opencode" && "role" in traits && traits.role === "prompt"
+}
+
 /** The managed textarea keymap owns `suspend`; these traits only describe capture and status. */
 export function computePromptTraits(input: PromptTraitsInput): PromptTraits {
   const capture =

@@ -1,14 +1,20 @@
-import type { WidthMethod } from "@opentui/core"
+import type { TextareaRenderable, WidthMethod } from "@opentui/core"
 import { createSignal } from "solid-js"
+import { clone } from "remeda"
 import { appendPrompt, type PromptInfo } from "../../prompt/history"
 import type { PromptRef } from "./index"
+import type { PendingInput } from "./textarea"
 
 // Holds one in-progress draft per tab across Prompt remounts. A draft is
 // consumed on take: restoring it moves it out of the stash, so a stale copy
 // never shadows newer input.
-export type DraftEntry = { prompt: PromptInfo; cursor: number }
+export type DraftEntry = { prompt: PromptInfo; cursor: number; pendingInput?: readonly PendingInput[] }
 
 const byTab = new Map<string | undefined, DraftEntry>()
+
+export function captureDraft(prompt: PromptInfo, input: TextareaRenderable): DraftEntry {
+  return { prompt: { ...clone(prompt), text: input.plainText }, cursor: input.cursorOffset }
+}
 
 export function takeDraft(sessionID: string | undefined) {
   const entry = byTab.get(sessionID)
@@ -17,7 +23,19 @@ export function takeDraft(sessionID: string | undefined) {
 }
 
 export function saveDraft(sessionID: string | undefined, entry: DraftEntry) {
-  byTab.set(sessionID, entry)
+  byTab.set(sessionID, { ...byTab.get(sessionID), ...entry })
+}
+
+export function savePendingInput(
+  sessionID: string | undefined,
+  events: readonly PendingInput[],
+  fallback: () => DraftEntry,
+) {
+  const draft = byTab.get(sessionID) ?? fallback()
+  saveDraft(sessionID, {
+    ...draft,
+    pendingInput: [...(draft.pendingInput ?? []), ...events],
+  })
 }
 
 const composers = new Map<string | undefined, PromptRef>()
@@ -47,8 +65,12 @@ export function registerComposer(sessionID: string | undefined, composer: Prompt
 export function appendToSessionPrompt(sessionID: string, prompt: PromptInfo, widthMethod: WidthMethod) {
   const composer = composers.get(sessionID)
   if (!composer) {
-    const draft = takeDraft(sessionID)?.prompt
-    saveDraft(sessionID, { prompt: draft ? appendPrompt(draft, prompt, widthMethod) : prompt, cursor: Infinity })
+    const draft = takeDraft(sessionID)
+    saveDraft(sessionID, {
+      ...draft,
+      prompt: draft ? appendPrompt(draft.prompt, prompt, widthMethod) : prompt,
+      cursor: Infinity,
+    })
     return
   }
   composer.setMode("normal")
