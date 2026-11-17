@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Park no-routable-account refusals as a session pause](./features/2026-11-16-park-no-routable-account.md)
 - [PAUSED and INBOX badges on held deliveries](./features/2026-11-16-held-delivery-badges.md)
 - [Keep a fast command's output for readers that attach late](./features/2026-11-16-shell-late-output.md)
 - [Live session output for plugins](./features/session-live-stream.md)
