@@ -8,6 +8,7 @@ import {
   type KeyEvent,
   type RGBA,
 } from "@opentui/core"
+import { promptSelectionOccupancy } from "../prompt/traits"
 import { destroyRenderer } from "../util/renderer"
 import { StartupFrame } from "./frame"
 import type { StartupInput } from "./index"
@@ -77,6 +78,7 @@ export function create(renderer: CliRenderer, route: StartupFrame.Route, snapsho
     minHeight: 1,
     maxHeight: 10,
     wrapMode: "word",
+    selectionOccupancy: promptSelectionOccupancy,
     placeholder: "Ask anything…",
   })
   textarea.onKeyDown = (key: KeyEvent) => {

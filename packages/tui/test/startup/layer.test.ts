@@ -3,6 +3,30 @@ import { TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { StartupLayer } from "../../src/startup/layer"
 
+test("startup key selection uses crossed boundaries from an interior caret", async () => {
+  await using setup = await fixture({
+    text: "w15-draft-12345678",
+    caret: 18,
+    anchor: 18,
+    touched: true,
+    submit: false,
+  })
+  const editor = setup.layer.textarea
+  const read = () => ({ caret: editor.cursorOffset, range: editor.getSelection(), text: editor.getSelectedText() })
+  expect(read()).toEqual({ caret: 18, range: null, text: "" })
+  setup.renderer.stdin.emit("data", Buffer.from("\x1b[D"))
+  expect(read()).toEqual({ caret: 17, range: null, text: "" })
+  setup.renderer.stdin.emit("data", Buffer.from("\x1b[D"))
+  expect(read()).toEqual({ caret: 16, range: null, text: "" })
+  setup.renderer.stdin.emit("data", Buffer.from("\x1b[1;2D"))
+  const first = read()
+  setup.renderer.stdin.emit("data", Buffer.from("\x1b[1;2D"))
+  expect([first, read()]).toEqual([
+    { caret: 15, range: { start: 15, end: 16 }, text: "6" },
+    { caret: 14, range: { start: 14, end: 16 }, text: "56" },
+  ])
+})
+
 test.each([
   { action: "type", expected: "abcZ" },
   { action: "paste", expected: "abcZ" },
@@ -102,16 +126,10 @@ test.each(["key", "paste"] as const)("releasing startup input preserves subseque
   expect(setup.underlying.plainText).toBe("ZP")
 })
 
-async function fixture() {
+async function fixture(snapshot = { text: "abcdef", caret: 3, anchor: 6, touched: true, submit: false }) {
   const setup = await createTestRenderer({ width: 80, height: 24, kittyKeyboard: true, useMouse: true })
   await setup.renderer.setupTerminal()
-  const layer = StartupLayer.create(setup.renderer, "home", {
-    text: "abcdef",
-    caret: 3,
-    anchor: 6,
-    touched: true,
-    submit: false,
-  })
+  const layer = StartupLayer.create(setup.renderer, "home", snapshot)
   const underlying = new TextareaRenderable(setup.renderer, { id: "underlying", width: 20, height: 1 })
   setup.renderer.root.add(underlying)
   underlying.setText("another composer")

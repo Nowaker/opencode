@@ -2,7 +2,7 @@ import { useRenderer, type JSX } from "@opentui/solid"
 import { CliRenderEvents, KeyEvent, PasteEvent, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, onMount, splitProps, type Accessor } from "solid-js"
 import { useRoute } from "../../context/route"
-import { isPromptTraits } from "../../prompt/traits"
+import { isPromptTraits, promptSelectionOccupancy } from "../../prompt/traits"
 
 export type PendingInput =
   | { readonly type: "key"; readonly event: KeyEvent }
@@ -186,7 +186,7 @@ export function PromptTextarea(props: Props) {
       {...textarea}
       width="100%"
       minHeight={1}
-      selectionOccupancy="boundary"
+      selectionOccupancy={promptSelectionOccupancy}
       onPaste={(event) => {
         pasteSettled = local.onPaste(event, pasteApplied)
       }}

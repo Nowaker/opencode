@@ -1,5 +1,7 @@
 import type { EditorTraits } from "@opentui/core"
 
+export const promptSelectionOccupancy = "boundary"
+
 export type PromptMode = "normal" | "shell"
 
 export interface PromptTraitsInput {

@@ -6,6 +6,52 @@ import { selectBeforeLayout, shiftedKeys } from "./fixture/composer-selection"
 
 beforeEach(() => takeDraft(undefined))
 
+test("startup boundary selection reaches the final composer with its direction intact", async () => {
+  const requested = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  await using setup = await mountComposer({
+    args: { sessionID: "ses_observation_a" },
+    startup: { text: "", caret: 0, anchor: 0, touched: false, submit: false },
+    fetch: async (url) => {
+      if (url.pathname === "/api/session/ses_observation_a") {
+        requested.resolve()
+        await release.promise
+      }
+      return undefined
+    },
+  })
+  try {
+    await requested.promise
+    expect(setup.composer.current()).toEqual({ status: "unavailable", reason: "not-mounted" })
+    const editor = composerEditor(setup)
+    expect(editor.id).toBe("startup-composer-input")
+    await setup.mockInput.typeText("w15-draft-12345678")
+    setup.renderer.stdin.emit("data", Buffer.from("\x1b[D"))
+    setup.renderer.stdin.emit("data", Buffer.from("\x1b[D"))
+    setup.renderer.stdin.emit("data", Buffer.from("\x1b[1;2D"))
+    setup.renderer.stdin.emit("data", Buffer.from("\x1b[1;2D"))
+    expect({ caret: editor.cursorOffset, range: editor.getSelection(), text: editor.getSelectedText() }).toEqual({
+      caret: 14,
+      range: { start: 14, end: 16 },
+      text: "56",
+    })
+    expect(setup.composer.current()).toEqual({ status: "unavailable", reason: "not-mounted" })
+  } finally {
+    release.resolve()
+  }
+  await setup.waitFor(() => setup.composer.current().status === "ready")
+  expect(setup.composer.current()).toMatchObject({
+    kind: "final",
+    sessionID: "ses_observation_a",
+    draft: { text: "w15-draft-12345678", caret: 14, selection: { anchor: 16, focus: 14 } },
+  })
+  const editor = composerEditor(setup)
+  expect({ range: editor.getSelection(), text: editor.getSelectedText() }).toEqual({
+    range: { start: 14, end: 16 },
+    text: "56",
+  })
+})
+
 test("decoded stepwise ShiftLeft selects only the crossed cells with a fixed boundary anchor", async () => {
   await using setup = await mountComposer()
   await setup.waitFor(() => setup.composer.current().status === "ready")
