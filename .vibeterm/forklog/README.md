@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [The TUI's pick follows the session's latest agent, model and variant](./features/2026-11-18-follow-latest-selection.md)
 - [Stacks for logged errors and records of survived ones](./features/2026-11-18-survived-error-records.md)
 - [Native v2 composer observation and consistent startup selection](./features/2026-11-15-v2-composer.md)
 - [Park no-routable-account refusals as a session pause](./features/2026-11-16-park-no-routable-account.md)
