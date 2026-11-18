@@ -451,29 +451,43 @@ export function Prompt(props: PromptProps) {
     )
   }
 
-  // Initialize agent/model/variant from last user message when session changes
-  let syncedSessionID: string | undefined
+  // The pick follows the session's newest user message, whichever client wrote it: a submission here, a prompt from
+  // Portal, or a delivery whose ticket rewrote the row under the same ID. Only a change of that message's identity
+  // moves it, never a re-render. While a dialog is open the move waits, and a pick the person changed meanwhile wins.
+  const adopted = { sessionID: undefined as string | undefined, key: undefined as string | undefined, held: undefined as string | undefined }
   createEffect(() => {
     const sessionID = props.sessionID
     const msg = lastUserMessage()
-
-    if (sessionID !== syncedSessionID) {
-      if (!sessionID || !msg) return
-
-      syncedSessionID = sessionID
-
-      // Only set agent if it's a primary agent (not a subagent)
-      const isPrimaryAgent = local.agent.list().some((x) => x.name === msg.agent)
-      if (msg.agent && isPrimaryAgent) {
-        // Keep command line --agent if specified.
-        if (!args.agent) local.agent.set(msg.agent)
-        if (msg.model) {
-          local.model.set(msg.model)
-          local.model.variant.set(msg.model.variant)
-        }
-      }
+    if (!sessionID || !msg || !sync.ready || !local.model.ready) return
+    const key = [msg.id, msg.agent, msg.model?.providerID, msg.model?.modelID, msg.model?.variant].join("\0")
+    const switched = sessionID !== adopted.sessionID
+    if (!switched && key === adopted.key) return
+    if (!switched && dialog.stack.length > 0) {
+      adopted.held ??= untrack(currentPick)
+      return
     }
+    const held = adopted.held
+    Object.assign(adopted, { sessionID, key, held: undefined })
+    if (held !== undefined && held !== untrack(currentPick)) return
+    // A submission from here names the pick it was made with; setting it again would rewrite model.json each turn.
+    if (key.slice(msg.id.length + 1) === untrack(currentPick)) return
+    untrack(() => {
+      // Only a primary agent, not a subagent, and never over a command line --agent.
+      if (!msg.agent || !local.agent.list().some((x) => x.name === msg.agent)) return
+      if (!args.agent) local.agent.set(msg.agent)
+      if (!msg.model) return
+      // Opening a session reports a model this TUI does not have; following another client skips it quietly.
+      if (!switched && !sync.data.provider.find((item) => item.id === msg.model.providerID)?.models[msg.model.modelID])
+        return
+      local.model.set(msg.model)
+      local.model.variant.set(msg.model.variant)
+    })
   })
+
+  function currentPick() {
+    const model = local.model.current()
+    return [local.agent.current()?.name, model?.providerID, model?.modelID, local.model.variant.current()].join("\0")
+  }
 
   const promptCommands = createMemo(() =>
     [

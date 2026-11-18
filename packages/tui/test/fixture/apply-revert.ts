@@ -65,7 +65,14 @@ export type Rig = ReturnType<typeof createRig>
  * the scenario starts `turns` itself.
  */
 export async function withApp(
-  options: { width: number; reverted?: boolean; mode?: "dark" | "light"; turns?: boolean },
+  options: {
+    width: number
+    reverted?: boolean
+    mode?: "dark" | "light"
+    turns?: boolean
+    /** A second primary agent, `plan`, and a second model, `other`, with variants, to choose between. */
+    choices?: boolean
+  },
   body: (rig: Rig) => Promise<void>,
 ) {
   await using tmp = await tmpdir()
@@ -88,7 +95,15 @@ export async function withApp(
     if (url.pathname === `/session/${sessionID}/message`) return json(server.messages)
     if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
     if (url.pathname === "/agent")
-      return json([{ name: "build", mode: "primary", permission: [], options: {}, hidden: false }])
+      return json(
+        ["build", ...(options.choices ? ["plan"] : [])].map((name) => ({
+          name,
+          mode: "primary",
+          permission: [],
+          options: {},
+          hidden: false,
+        })),
+      )
     if (url.pathname === "/config/providers")
       return json({
         providers: [
@@ -98,7 +113,19 @@ export async function withApp(
             source: "config",
             env: [],
             options: {},
-            models: { [model.modelID]: { id: model.modelID, name: "Model", providerID: model.providerID } },
+            models: {
+              [model.modelID]: { id: model.modelID, name: "Model", providerID: model.providerID },
+              ...(options.choices
+                ? {
+                    other: {
+                      id: "other",
+                      name: "Other",
+                      providerID: model.providerID,
+                      variants: { high: {}, max: {} },
+                    },
+                  }
+                : {}),
+            },
           },
         ],
         default: { [model.providerID]: model.modelID },
