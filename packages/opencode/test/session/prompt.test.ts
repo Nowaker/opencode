@@ -3,7 +3,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
@@ -255,6 +255,53 @@ const withMcpInstructions = testEffect(
 )
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
+
+noLLMServer.instance("a failed second part leaves no user message or published prompt events", () =>
+  Effect.gen(function* () {
+    const instance = yield* TestInstance
+    yield* writeConfig(instance.directory, cfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const events = yield* EventV2Bridge.Service
+    const session = yield* sessions.create({})
+    const input = {
+      sessionID: session.id,
+      messageID: MessageID.ascending(),
+      model: ref,
+      noReply: true,
+      parts: [
+        { type: "text", text: "first" },
+        { type: "text", text: "reject this part" },
+      ],
+    } satisfies SessionPrompt.PromptInput
+    const published: string[] = []
+    const unsubscribe = yield* events.listen((event) =>
+      Effect.sync(() => {
+        if (event.durable?.aggregateID === session.id && event.type.startsWith("message.")) published.push(event.type)
+      }),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+    const rejected = yield* Effect.acquireUseRelease(
+      database.db.run(sql`CREATE TEMP TRIGGER reject_prompt_part BEFORE INSERT ON part
+        WHEN json_extract(NEW.data, '$.text') = 'reject this part'
+        BEGIN SELECT RAISE(ABORT, 'prompt part rejected'); END`),
+      () => prompt.prompt(input).pipe(Effect.exit),
+      () => database.db.run(sql`DROP TRIGGER reject_prompt_part`).pipe(Effect.orDie),
+    )
+    expect(Exit.isFailure(rejected)).toBe(true)
+    expect(yield* sessions.messages({ sessionID: session.id })).toEqual([])
+    expect(published).toEqual([])
+
+    yield* prompt.prompt(input)
+    expect(yield* sessions.messages({ sessionID: session.id })).toMatchObject([
+      { info: { id: input.messageID }, parts: [{ text: "first" }, { text: "reject this part" }] },
+    ])
+    expect(published).toEqual(["message.updated", "message.part.updated", "message.part.updated"])
+  }),
+  {},
+  90_000,
+)
 
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.

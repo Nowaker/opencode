@@ -5,6 +5,7 @@ import { Event } from "@opencode-ai/schema/event"
 import type { Data, Definition, Payload } from "@opencode-ai/schema/event"
 import { and, asc, eq, gt, inArray } from "drizzle-orm"
 import { Database } from "./database/database"
+import { DatabaseTransaction } from "./database/transaction"
 import { EventSequenceTable, EventTable } from "./event/sql"
 import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
@@ -352,10 +353,14 @@ export const layerWith = (options?: LayerOptions) =>
                     )
                     .pipe(Effect.orDie)
                   if (committed) {
-                    yield* Effect.forEach(
-                      pubsub.durable.get(committed.aggregateID) ?? [],
-                      (wake) => PubSub.publish(wake, undefined),
-                      { discard: true },
+                    yield* DatabaseTransaction.afterCommit(
+                      Effect.suspend(() =>
+                        Effect.forEach(
+                          pubsub.durable.get(committed.aggregateID) ?? [],
+                          (wake) => PubSub.publish(wake, undefined),
+                          { discard: true },
+                        ),
+                      ),
                     )
                   }
                   return committed
@@ -404,16 +409,18 @@ export const layerWith = (options?: LayerOptions) =>
         )
 
       function notify(event: Payload, isolateListeners: boolean) {
-        return Effect.gen(function* () {
-          yield* Effect.forEach(
-            listeners,
-            (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
-            { discard: true },
-          )
-          const typed = pubsub.typed.get(event.type)
-          if (typed) yield* PubSub.publish(typed, event)
-          yield* PubSub.publish(pubsub.all, event)
-        })
+        return DatabaseTransaction.afterCommit(
+          Effect.gen(function* () {
+            yield* Effect.forEach(
+              listeners,
+              (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
+              { discard: true },
+            )
+            const typed = pubsub.typed.get(event.type)
+            if (typed) yield* PubSub.publish(typed, event)
+            yield* PubSub.publish(pubsub.all, event)
+          }),
+        )
       }
 
       function publish<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {

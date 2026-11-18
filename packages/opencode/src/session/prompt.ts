@@ -49,6 +49,7 @@ import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { eq } from "drizzle-orm"
@@ -1043,8 +1044,13 @@ const layer = Layer.effect(
         })
       }
 
-      yield* sessions.updateMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
+      yield* DatabaseTransaction.batch(
+        database.db,
+        Effect.gen(function* () {
+          yield* sessions.updateMessage(info)
+          for (const part of parts) yield* sessions.updatePart(part)
+        }),
+      ).pipe(Effect.orDie)
 
       return { info, parts }
     }, Effect.scoped)
