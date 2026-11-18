@@ -25,6 +25,7 @@ import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/grou
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
 import { SessionRunState } from "@/session/run-state"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import type { SessionPause } from "@/session/pause"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
@@ -33,7 +34,7 @@ import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideInstanceEffect, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { TestLLMServer } from "../lib/llm-server"
@@ -50,6 +51,7 @@ const appLayer = AppNodeBuilder.build(
     InstanceStore.node,
     Project.node,
     Session.node,
+    EventV2Bridge.node,
     SessionRunState.node,
     Workspace.node,
     Database.node,
@@ -245,6 +247,72 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  for (const variant of ["xhigh", undefined]) {
+    it.instance(`model-only PATCH acknowledges the stored model and preserves activity with variant ${variant}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* createSession({
+          agent: "build",
+          model: { id: ModelV2.ID.make("old"), providerID: ProviderV2.ID.make("test"), variant: "old" },
+          metadata: { owner: "retained" },
+        })
+        const { db } = yield* Database.Service
+        yield* db.update(SessionTable).set({ time_updated: 1234 }).where(eq(SessionTable.id, session.id)).run()
+        const before = yield* Session.use.get(session.id)
+        const events = yield* EventV2Bridge.Service
+        const updates: unknown[] = []
+        const unsubscribe = yield* events.listen((event) =>
+          Effect.sync(() => {
+            if (event.type === "session.updated") updates.push(event.data)
+          }),
+        )
+        yield* Effect.addFinalizer(() => unsubscribe)
+        const model = {
+          id: ModelV2.ID.make("next"),
+          providerID: ProviderV2.ID.make("test"),
+          ...(variant ? { variant } : {}),
+        }
+        const url = new URL(pathFor(SessionPaths.update, { sessionID: session.id }), "http://localhost")
+        url.searchParams.set("directory", test.directory)
+
+        const response = yield* request(url.href, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model }),
+        })
+
+        expect(response.status).toBe(200)
+        expect(response.headers["x-vibeterm-session-model"]).toBe("1")
+        expect(response.headers["access-control-expose-headers"]).toContain("x-vibeterm-session-model")
+        const updated = yield* json<Session.Info>(response)
+        expect(updated).toEqual({ ...before, model })
+        const stored = yield* Session.use.get(session.id)
+        expect(stored).toEqual({ ...before, model })
+        expect(updates).toEqual([{ sessionID: session.id, info: { ...before, model } }])
+        const inputs = yield* db.select({ count: sql<number>`count(*)` }).from(SessionInputTable).get()
+        expect(inputs?.count).toBe(0)
+        expect(yield* Session.use.messages({ sessionID: session.id })).toEqual([])
+      }),
+    )
+  }
+
+  it.instance("model PATCH rejects an invalid model without acknowledgement or mutation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const session = yield* createSession({ title: "preserved" })
+      const url = new URL(pathFor(SessionPaths.update, { sessionID: session.id }), "http://localhost")
+      url.searchParams.set("directory", test.directory)
+      const response = yield* request(url.href, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: { modelID: "wrong-shape", providerID: "test" } }),
+      })
+      expect(response.status).toBe(400)
+      expect(response.headers["x-vibeterm-session-model"]).toBeUndefined()
+      expect(yield* Session.use.get(session.id)).toEqual(session)
+    }),
+  )
+
   for (const client of ["tui", "api"] as const) {
     it.instance(`unarchive records the ${client} actor and retains archive announcement history`, () =>
       Effect.gen(function* () {

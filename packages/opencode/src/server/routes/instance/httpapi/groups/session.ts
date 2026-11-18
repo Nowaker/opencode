@@ -73,6 +73,9 @@ export const AbortQuery = Schema.Struct({
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
+  model: Schema.optional(Session.Model).annotate({
+    description: "Set the next-turn model without recording activity. A model-only PATCH preserves session timestamps and returns x-vibeterm-session-model: 1.",
+  }),
   metadata: Schema.optional(Session.Metadata),
   permission: Schema.optional(PermissionV1.Ruleset),
   time: Schema.optional(

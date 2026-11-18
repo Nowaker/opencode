@@ -9,6 +9,7 @@ import { Decimal } from "decimal.js"
 import type { ProviderMetadata, Usage } from "@opencode-ai/llm"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { SessionMaintenance } from "@opencode-ai/core/database/session-maintenance"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@opencode-ai/core/session"
@@ -255,7 +256,7 @@ const Revert = Schema.Struct({
   diff: optional(Schema.String),
 })
 
-const Model = Schema.Struct({
+export const Model = Schema.Struct({
   id: ModelV2.ID,
   providerID: ProviderV2.ID,
   variant: optional(Schema.String),
@@ -509,6 +510,7 @@ export interface Interface {
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
+  readonly setModel: (input: { sessionID: SessionID; model: NonNullable<Info["model"]> }) => Effect.Effect<void>
   readonly setAgentModel: (input: {
     sessionID: SessionID
     agent: string
@@ -850,19 +852,22 @@ const layer: Layer.Layer<
     })
 
     const patch = (sessionID: SessionID, info: Patch) =>
-      Effect.gen(function* () {
-        const current = yield* get(sessionID)
-        const next = {
-          ...current,
-          ...info,
-          time: info.time ? { ...current.time, ...info.time } : current.time,
-          share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
-          summary: info.summary === null ? undefined : (info.summary ?? current.summary),
-          revert: info.revert === null ? undefined : (info.revert ?? current.revert),
-          permission: info.permission === null ? undefined : (info.permission ?? current.permission),
-        } as Info
-        yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
-      })
+      DatabaseTransaction.immediate(db, () =>
+        Effect.gen(function* () {
+          // The full-row projector must use a snapshot read under the same write lock.
+          const current = yield* get(sessionID)
+          const next = {
+            ...current,
+            ...info,
+            time: info.time ? { ...current.time, ...info.time } : current.time,
+            share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
+            summary: info.summary === null ? undefined : (info.summary ?? current.summary),
+            revert: info.revert === null ? undefined : (info.revert ?? current.revert),
+            permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+          } as Info
+          yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
+        }),
+      ).pipe(Effect.orDie)
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
@@ -870,6 +875,13 @@ const layer: Layer.Layer<
 
     const setTitle = Effect.fn("Session.setTitle")(function* (input: { sessionID: SessionID; title: string }) {
       yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
+    })
+
+    const setModel = Effect.fn("Session.setModel")(function* (input: {
+      sessionID: SessionID
+      model: NonNullable<Info["model"]>
+    }) {
+      yield* patch(input.sessionID, { model: input.model })
     })
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
@@ -1043,6 +1055,7 @@ const layer: Layer.Layer<
       setTitle,
       setArchived,
       setMetadata,
+      setModel,
       setAgentModel,
       setPermission,
       setRevert,

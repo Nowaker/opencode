@@ -237,6 +237,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
       }
+      if (ctx.payload.model !== undefined) {
+        yield* session.setModel({ sessionID: ctx.params.sessionID, model: ctx.payload.model })
+        yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+          Effect.succeed(
+            response.status >= 400
+              ? response
+              : HttpServerResponse.setHeaders(response, {
+                  "x-vibeterm-session-model": "1",
+                  "access-control-expose-headers": "x-vibeterm-session-model",
+                }),
+          ),
+        )
+      }
       return yield* requireSession(ctx.params.sessionID)
     })
 

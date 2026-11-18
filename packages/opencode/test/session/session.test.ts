@@ -16,24 +16,42 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { eq } from "drizzle-orm"
 
-const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([
-      SessionNs.node,
-      EventV2Bridge.node,
-      SessionProjector.node,
-      CrossSpawnSpawner.node,
-      InstanceStore.node,
-    ]),
-    [
-      [RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkspaces: false })],
-      [
-        InstanceBootstrap.node,
-        Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
-      ],
-    ],
-  ),
+const root = LayerNode.group([
+  SessionNs.node,
+  Database.node,
+  EventV2Bridge.node,
+  SessionProjector.node,
+  CrossSpawnSpawner.node,
+  InstanceStore.node,
+])
+const replacements = [
+  [RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkspaces: false })],
+  [InstanceBootstrap.node, Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))],
+] as const
+const it = testEffect(AppNodeBuilder.build(root, replacements))
+const concurrent = testEffect(
+  AppNodeBuilder.build(root, [
+    ...replacements,
+    [EventV2Bridge.node, LayerNode.make({
+      service: EventV2Bridge.Service,
+      layer: Layer.effect(EventV2Bridge.Service, Effect.gen(function* () {
+        const events = yield* EventV2.Service
+        return EventV2Bridge.Service.of({
+          ...events,
+          publish: (definition, data, options) => Effect.yieldNow.pipe(
+            Effect.andThen(events.publish(definition, data, options)),
+          ),
+        })
+      })),
+      deps: [EventV2.node],
+    })],
+  ]),
 )
 
 const awaitDeferred = <T>(deferred: Deferred.Deferred<T>, message: string) =>
@@ -238,6 +256,32 @@ describe("Session", () => {
         vibeterm: { lineage: { sessionId: fork.id, kind: "native-fork", originalObjectId: created.id } },
       })
       expect(fork.metadata).not.toBe(meta)
+    }),
+  )
+
+  concurrent.instance("model changes preserve concurrent session title and activity updates", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const created = yield* Effect.acquireRelease(session.create({ title: "initial" }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const model = { id: ModelV2.ID.make("next"), providerID: ProviderV2.ID.make("test") }
+      const { db } = yield* Database.Service
+      yield* db.update(SessionTable).set({ time_updated: 1 }).where(eq(SessionTable.id, created.id)).run()
+
+      yield* Effect.all(
+        [
+          session.setTitle({ sessionID: created.id, title: "concurrent title" }),
+          session.touch(created.id),
+          session.setModel({ sessionID: created.id, model }),
+        ],
+        { concurrency: "unbounded" },
+      )
+
+      const updated = yield* session.get(created.id)
+      expect(updated.title).toBe("concurrent title")
+      expect(updated.model).toEqual(model)
+      expect(updated.time.updated).toBeGreaterThan(1)
     }),
   )
 

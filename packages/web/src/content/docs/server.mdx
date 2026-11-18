@@ -235,7 +235,7 @@ or the separately generated SDK v2 for the HTTP surface.
 | `GET`    | `/session/status`                        | Get session status for all sessions   | Returns `{ [sessionID: string]: `<a href={typesUrl}>SessionStatus</a>` }`          |
 | `GET`    | `/session/:id`                           | Get session details                   | Returns <a href={typesUrl}><code>Session</code></a>                                |
 | `DELETE` | `/session/:id`                           | Delete a session and all its data     | Returns `boolean`                                                                  |
-| `PATCH`  | `/session/:id`                           | Update session properties             | body: `{ title? }`, returns <a href={typesUrl}><code>Session</code></a>            |
+| `PATCH`  | `/session/:id`                           | Update session properties             | body: `{ title?, model?, metadata?, permission?, time?: { archived? } }`, returns <a href={typesUrl}><code>Session</code></a> |
 | `GET`    | `/session/:id/children`                  | Get a session's child sessions        | Returns <a href={typesUrl}><code>Session[]</code></a>                              |
 | `GET`    | `/session/:id/todo`                      | Get the todo list for a session       | Returns <a href={typesUrl}><code>Todo[]</code></a>                                 |
 | `POST`   | `/session/:id/init`                      | Analyze app and create `AGENTS.md`    | body: `{ messageID, providerID, modelID }`, returns `boolean`                      |
@@ -253,6 +253,10 @@ or the separately generated SDK v2 for the HTTP surface.
 | `POST`   | `/session/:id/discard`                   | Give the deferred tool calls a "not run" result | body: `{ source?, notice?, expectedPauseAt?, expectedPauseSource? }`, returns `{ sessionID, discarded }`; `409` while the paused step still runs or `409 PauseChangedError` when a supplied expectation does not match |
 | `POST`   | `/session/:id/send-now`                   | Send now: start a turn that reads every queued note | Returns `{ sessionID, messageIDs }` and runs the turn in the background; `409` `SendNowRefusedError` with `reason` `busy`, `empty` or `paused` |
 | `POST`   | `/session/:id/permissions/:permissionID` | Respond to a permission request       | body: `{ response, remember? }`, returns `boolean`                                 |
+
+The fork's v1 `PATCH /session/:id` accepts `model: { id, providerID, variant? }`, matching the stored session model. Send the model alone to change the default for the next turn while preserving the session's timestamps, agent, metadata, and messages. Omitting `variant` clears the old variant. The engine publishes its normal durable `session.updated` event and returns the actual stored model in the PATCH response and subsequent GET responses. Explicit prompt and agent model choices retain their existing precedence.
+
+A successful PATCH containing `model` carries `x-vibeterm-session-model: 1`, exposed to browser clients through `Access-Control-Expose-Headers`. Callers must require this acknowledgement before reporting support: older engines may accept the request and silently discard unknown fields. A missing header means this extension is unsupported, even when the status is `200`; an invalid model returns `400` without the header. Other fields in a combined PATCH retain their usual activity behavior, so including metadata or permissions may advance the session timestamp. This extension does not change v2's model API.
 
 ---
 

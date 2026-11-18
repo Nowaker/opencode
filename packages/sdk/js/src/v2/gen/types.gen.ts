@@ -10194,6 +10194,11 @@ export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
 export type SessionUpdateData = {
   body?: {
     title?: string
+    model?: {
+      id: string
+      providerID: string
+      variant?: string
+    }
     /**
      * Session metadata; vibeterm.lastExecution is the latest actual same-session runner admission, ordered by at, executionId, machineId.
      */
