@@ -57,6 +57,8 @@ async function submitWhileScrolledUp(
   config: Info,
   before?: (api: TuiPluginApi) => void,
   kv: Record<string, unknown> = {},
+  // Waits for the jump to the bottom instead of waiting out its 50 ms deferral, which a loaded machine can overrun.
+  jumps = false,
 ) {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, JSON.stringify(kv))
@@ -162,8 +164,13 @@ async function submitWhileScrolledUp(
     })
     expect(submitted.status).toBe("submitted")
     await wait(() => prompts.length === 1)
-    // The jump to the bottom is deferred by 50 ms after submit.
-    await Bun.sleep(150)
+    if (jumps)
+      await wait(() => {
+        void render()
+        return frame().includes("turn 29 closing")
+      })
+    // The jump to the bottom is deferred by 50 ms after submit; a view that must stay put is read once that passed.
+    if (!jumps) await Bun.sleep(150)
     await render()
 
     const after = frame()
@@ -181,7 +188,7 @@ function transcriptLines(frame: string) {
 }
 
 test("submitting a prompt scrolls a scrolled-up session to the bottom by default", async () => {
-  const view = await submitWhileScrolledUp({})
+  const view = await submitWhileScrolledUp({}, undefined, {}, true)
 
   expect(view.after).toContain("turn 29 closing")
 })
