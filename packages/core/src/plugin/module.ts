@@ -38,7 +38,12 @@ export const make = Effect.fn("PluginModule.make")(function* () {
     yield* Deferred.await(ready)
   })
   const sources = yield* Effect.acquireRelease(
-    Effect.sync(() => createPluginSources((file) => runPromise(watch(file)))),
+    Effect.sync(() =>
+      createPluginSources(
+        (file) => runPromise(watch(file)),
+        () => PubSub.publishUnsafe(changes, undefined),
+      ),
+    ),
     (sources) => Effect.sync(() => sources.dispose()),
   )
   return {

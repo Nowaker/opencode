@@ -322,7 +322,7 @@ test.each(["", "?mode=plugin", "?mode=plugin#section"])(
     const helper = new URL("./helper.mjs", import.meta.url)
     const suffix = ${JSON.stringify(suffix)}
     const watched = []
-    const sources = createPluginSources(async file => { watched.push(file) })
+    const sources = createPluginSources(async file => { watched.push(file) }, () => {})
     try {
       const library = new URL("./shared/index.mjs", import.meta.url)
       await mkdir(new URL("./shared", import.meta.url), { recursive: true })
@@ -857,9 +857,9 @@ test.each(["ts", "tsx"])("%s wildcard package barrels retain live exports", asyn
   expect(loaded).toMatchObject({ count: 1 })
 })
 
-async function fixture(watch: (file: string) => Promise<void> = async () => {}) {
+async function fixture(watch: (file: string) => Promise<void> = async () => {}, changed = () => {}) {
   const dir = await tmpdir()
-  const sources = createPluginSources(watch)
+  const sources = createPluginSources(watch, changed)
   return {
     ...sources,
     url: pathToFileURL(dir.path + path.sep),

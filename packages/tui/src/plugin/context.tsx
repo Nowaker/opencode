@@ -253,19 +253,20 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // local entrypoints (see watch.ts for the mechanics), debounced into a
   // serialized reconcile so bursts of events rebuild the generation once.
   let pending: ReturnType<typeof setTimeout> | undefined
-  const watcher = createSourceWatcher(() => {
+  const schedule = () => {
     clearTimeout(pending)
     pending = setTimeout(() => {
       // Observe failures immediately: a plugin cleanup that throws would
       // otherwise surface as an unhandled rejection until the next trigger.
       void enqueue(reconcile).catch(() => undefined)
     }, 100)
-  })
+  }
+  const watcher = createSourceWatcher(schedule)
   const stopWatching = () => {
     clearTimeout(pending)
     watcher.dispose()
   }
-  const sources = createPluginSources(watcher.wait)
+  const sources = createPluginSources(watcher.wait, schedule)
   onCleanup(stopWatching)
 
   // Rebuild the plugin generation as resolve → compare → swap, mirroring the

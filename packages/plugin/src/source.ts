@@ -5,25 +5,28 @@ import { Hash } from "@opencode/util/hash"
 
 // Keep source fingerprints and import attempts together. Filesystem events
 // should reload changed local graphs, not repeat unchanged evaluations.
-export function createPluginSources(watch: (file: string) => Promise<void>) {
+//
+// A read does not wait for its watches: arming one per graph file can take a
+// long time, and the plugin should not wait for it. An edit landing before a
+// watch is armed produces no event, so once every watch of a read has settled
+// the graph is fingerprinted again, and a difference reports one change.
+export function createPluginSources(watch: (file: string) => Promise<void>, changed: () => void) {
   const sources = new Map<string, Source>()
   const cleanups: Array<() => void> = []
-  const watching = new Set<Promise<void>>()
   return {
     read: async (entrypoint: string) => {
-      await Promise.all(watching)
       const previous = sources.get(entrypoint)
-      if (previous && [...previous.files].every(([file, item]) => item.digest === digest(file, item.directory)))
-        return previous.loaded
+      if (previous && current(previous.files)) return previous.loaded
 
       const files: Source["files"] = new Map()
+      const arming: Promise<void>[] = []
       const track = (file: string, directory = false) => {
         if (files.has(file)) return
         files.set(file, { digest: digest(file, directory), directory })
-        const pending = watch(file).finally(() => watching.delete(pending))
-        watching.add(pending)
+        const pending = watch(file)
         // Watch setup can be interrupted while module evaluation is still pending.
         void pending.catch(() => {})
+        arming.push(pending)
       }
       track(fileURLToPath(entrypoint))
       const { prepareSource } = await import("#plugin-source")
@@ -36,7 +39,15 @@ export function createPluginSources(watch: (file: string) => Promise<void>) {
       // not repeat import-time effects on every filesystem notification.
       const loaded = prepared.load().then((module) => ({ version: prepared.version, module }))
       sources.set(entrypoint, { loaded, files })
-      return loaded.finally(() => Promise.all(watching))
+      // Node's loader tracks dependencies while it evaluates, so every watch of
+      // this read has been requested only once the attempt settles.
+      void loaded
+        .catch(() => undefined)
+        .then(() => Promise.allSettled(arming))
+        .then(() => {
+          if (sources.get(entrypoint)?.files === files && !current(files)) changed()
+        })
+      return loaded
     },
     dispose: () => {
       for (const cleanup of cleanups.splice(0)) cleanup()
@@ -48,6 +59,10 @@ export function createPluginSources(watch: (file: string) => Promise<void>) {
 type Source = {
   loaded: Promise<{ version: string; module: unknown }>
   files: Map<string, { digest: string; directory: boolean }>
+}
+
+function current(files: Source["files"]) {
+  return [...files].every(([file, item]) => item.digest === digest(file, item.directory))
 }
 
 function digest(file: string, directory: boolean) {

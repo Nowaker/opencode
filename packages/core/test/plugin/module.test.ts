@@ -1,7 +1,21 @@
 import { expect } from "bun:test"
 import { cp, mkdir } from "node:fs/promises"
 import path from "node:path"
-import { Brand, Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schedule, Schema, Scope, Stream } from "effect"
+import {
+  Brand,
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Ref,
+  Schedule,
+  Schema,
+  Scope,
+  Stream,
+} from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
@@ -112,6 +126,70 @@ it.live("interrupts pending watcher setup when the loader scope closes during mo
     yield* Effect.promise(() => Bun.write(release, "release"))
     // Let the uncancellable native import finish; Bun's test runner detects unhandled rejections.
     yield* Effect.promise(() => Bun.sleep(50))
+  }),
+)
+
+// Source watches whose native subscriptions stay pending until the test releases them.
+const heldWatcher = (release: Deferred.Deferred<void>) =>
+  Watcher.Service.of({
+    subscribe: (_input, onReady = Effect.void) =>
+      Effect.succeed(Stream.unwrap(Deferred.await(release).pipe(Effect.andThen(onReady), Effect.as(Stream.never)))),
+  })
+
+it.live("activates a local plugin while its source watches are still arming", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const setup = path.join(directory.path, "setup")
+    const release = yield* Deferred.make<void>()
+    yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined))
+    yield* Effect.promise(() =>
+      writeFiles(directory.path, {
+        "index.ts": `import { label } from "./helper.ts"
+        export default { id: label, async setup() { await Bun.write(${JSON.stringify(setup)}, "ran") } }`,
+        "helper.ts": 'export const label = "arming"',
+      }),
+    )
+    const modules = yield* PluginModule.make().pipe(Effect.provideService(Watcher.Service, heldWatcher(release)))
+    const plugins = yield* Plugin.Service
+    const loaded = yield* modules.load({ type: "add", target: directory.path, options: {} })
+    if ("pending" in loaded || "blocked" in loaded) return yield* Effect.die(new Error("The plugin was not loaded"))
+    yield* plugins.activate([loaded])
+    yield* plugins.awaitActivation
+    expect(yield* Effect.promise(() => Bun.file(setup).exists())).toBe(true)
+    expect(yield* Deferred.isDone(release)).toBe(false)
+  }),
+)
+
+it.live("reloads an edit made while source watches were arming once they are armed", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const helper = path.join(directory.path, "helper.ts")
+    const release = yield* Deferred.make<void>()
+    yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined))
+    yield* Effect.promise(() =>
+      writeFiles(directory.path, {
+        "index.ts": 'import { label } from "./helper.ts"\nexport default { id: label, async setup() {} }',
+        "helper.ts": 'export const label = "before"',
+      }),
+    )
+    const modules = yield* PluginModule.make().pipe(Effect.provideService(Watcher.Service, heldWatcher(release)))
+    const operation = { type: "add" as const, target: directory.path, options: {} }
+    expect(yield* modules.load(operation)).toMatchObject({ id: "before" })
+    // The pending watches cannot report this edit; only the check that follows arming can.
+    yield* Effect.promise(() => Bun.write(helper, 'export const label = "after"'))
+    const changes = yield* Ref.make(0)
+    const first = yield* Deferred.make<void>()
+    yield* modules.changes().pipe(
+      Stream.runForEach(() =>
+        Ref.update(changes, (count) => count + 1).pipe(Effect.andThen(Deferred.succeed(first, undefined))),
+      ),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    expect(yield* Ref.get(changes)).toBe(0)
+    yield* Deferred.succeed(release, undefined)
+    yield* Deferred.await(first)
+    expect(yield* modules.load(operation)).toMatchObject({ id: "after" })
+    expect(yield* Ref.get(changes)).toBe(1)
   }),
 )
 
