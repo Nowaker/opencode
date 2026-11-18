@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test"
+import { expect, mock, setDefaultTimeout, test } from "bun:test"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect } from "effect"
@@ -7,6 +7,9 @@ import type { Info } from "../../../src/config"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { createEventSource, createFetch, directory, json } from "../../fixture/tui-sdk"
+
+// Each case starts the whole app, which took over 5 s at load average 140.
+setDefaultTimeout(30_000)
 
 const sessionID = "ses_keep_scroll"
 const session = {
