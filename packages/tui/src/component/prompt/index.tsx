@@ -451,36 +451,59 @@ export function Prompt(props: PromptProps) {
     )
   }
 
-  // The pick follows the session's newest user message, whichever client wrote it: a submission here, a prompt from
-  // Portal, or a delivery whose ticket rewrote the row under the same ID. Only a change of that message's identity
-  // moves it, never a re-render. While a dialog is open the move waits, and a pick the person changed meanwhile wins.
-  const adopted = { sessionID: undefined as string | undefined, key: undefined as string | undefined, held: undefined as string | undefined }
+  // The pick follows the session's own agent and model, whichever client changed them: a submission here, a prompt
+  // from Portal, a delivery whose ticket rewrote its row under the same ID, or a Vibeterm model bump, which changes
+  // only the session row. Opening a session takes the row, which opencode keeps current on every submission, and
+  // falls back to the newest user message. After that, whichever of the two changes moves the pick; a re-render never
+  // does. While a dialog is open the move waits, and a pick the person changed meanwhile wins.
+  const sessionPick = createMemo(() => {
+    const model = props.sessionID ? sync.session.get(props.sessionID)?.model : undefined
+    if (!model) return
+    const agent = sync.session.get(props.sessionID!)?.agent
+    const variant = model.variant === "default" ? undefined : model.variant
+    return { agent, model: { providerID: model.providerID, modelID: model.id, variant } }
+  })
+  const messagePick = createMemo(() => {
+    const msg = lastUserMessage()
+    if (!msg) return
+    return { id: msg.id, agent: msg.agent, model: msg.model }
+  })
+  const adopted = {
+    sessionID: undefined as string | undefined,
+    row: undefined as string | undefined,
+    message: undefined as string | undefined,
+    held: undefined as string | undefined,
+  }
   createEffect(() => {
     const sessionID = props.sessionID
-    const msg = lastUserMessage()
-    if (!sessionID || !msg || !sync.ready || !local.model.ready) return
-    const key = [msg.id, msg.agent, msg.model?.providerID, msg.model?.modelID, msg.model?.variant].join("\0")
+    const row = sessionPick()
+    const message = messagePick()
+    if (!sessionID || (!row && !message) || !sync.ready || !local.model.ready) return
+    const identity = (pick?: { agent?: string; model?: { providerID: string; modelID: string; variant?: string } }) =>
+      pick && [pick.agent, pick.model?.providerID, pick.model?.modelID, pick.model?.variant].join("\0")
+    const keys = { row: identity(row), message: message && [message.id, identity(message)].join("\0") }
     const switched = sessionID !== adopted.sessionID
-    if (!switched && key === adopted.key) return
+    if (!switched && keys.row === adopted.row && keys.message === adopted.message) return
     if (!switched && dialog.stack.length > 0) {
       adopted.held ??= untrack(currentPick)
       return
     }
+    const next = switched || keys.row !== adopted.row ? (row ?? message) : message
     const held = adopted.held
-    Object.assign(adopted, { sessionID, key, held: undefined })
-    if (held !== undefined && held !== untrack(currentPick)) return
-    // A submission from here names the pick it was made with; setting it again would rewrite model.json each turn.
-    if (key.slice(msg.id.length + 1) === untrack(currentPick)) return
+    Object.assign(adopted, { sessionID, ...keys, held: undefined })
+    if (!next || (held !== undefined && held !== untrack(currentPick))) return
     untrack(() => {
+      // A submission from here names the pick it was made with; setting it again would rewrite model.json each turn.
+      if (identity(next) === currentPick()) return
       // Only a primary agent, not a subagent, and never over a command line --agent.
-      if (!msg.agent || !local.agent.list().some((x) => x.name === msg.agent)) return
-      if (!args.agent) local.agent.set(msg.agent)
-      if (!msg.model) return
+      if (!next.agent || !local.agent.list().some((x) => x.name === next.agent)) return
+      if (!args.agent) local.agent.set(next.agent)
+      const model = next.model
+      if (!model) return
       // Opening a session reports a model this TUI does not have; following another client skips it quietly.
-      if (!switched && !sync.data.provider.find((item) => item.id === msg.model.providerID)?.models[msg.model.modelID])
-        return
-      local.model.set(msg.model)
-      local.model.variant.set(msg.model.variant)
+      if (!switched && !sync.data.provider.find((item) => item.id === model.providerID)?.models[model.modelID]) return
+      local.model.set({ providerID: model.providerID, modelID: model.modelID })
+      local.model.variant.set(model.variant)
     })
   })
 
