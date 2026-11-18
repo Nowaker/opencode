@@ -6,6 +6,7 @@ import { Session } from "@opencode-ai/schema/session"
 import { SessionEvent } from "@opencode-ai/schema/session-event"
 import { SessionV1 } from "@opencode-ai/schema/session-v1"
 import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
@@ -151,6 +152,45 @@ describe("EventV2", () => {
 
       expect(Array.from(yield* Fiber.join(typed))).toEqual([event])
       expect(Array.from(yield* Fiber.join(wildcard))).toEqual([event])
+    }),
+  )
+
+  it.effect("observers only see committed event batches and read all their durable rows", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const database = yield* Database.Service
+      const id = EventV2.ID.create()
+      const read = database.db
+        .select({ seq: EventTable.seq })
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, id))
+        .all()
+      const seen: Array<{ seq: number; visible: number }> = []
+      const unsubscribe = yield* events.listen((event) =>
+        Effect.gen(function* () {
+          if (!event.durable || event.durable.aggregateID !== id) return
+          const rows = yield* read.pipe(Effect.orDie)
+          seen.push({ seq: event.durable.seq, visible: rows.length })
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      const failed = yield* DatabaseTransaction.batch(
+        database.db,
+        events.publish(SyncMessage, { id, text: "rolled back" }).pipe(Effect.andThen(Effect.fail("rollback"))),
+      ).pipe(Effect.exit)
+      expect(failed).toEqual(Exit.fail("rollback"))
+      expect(yield* read).toEqual([])
+      expect(seen).toEqual([])
+
+      yield* DatabaseTransaction.batch(
+        database.db,
+        Effect.gen(function* () {
+          yield* events.publish(SyncMessage, { id, text: "first" })
+          yield* events.publish(SyncMessage, { id, text: "second" })
+        }),
+      )
+      expect(seen).toEqual([{ seq: 0, visible: 2 }, { seq: 1, visible: 2 }])
     }),
   )
 

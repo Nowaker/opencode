@@ -1,10 +1,32 @@
 export * as DatabaseTransaction from "./transaction"
 
-import { Cause, Clock, Effect, Exit, Option } from "effect"
+import { Cause, Clock, Context, Effect, Exit, Option } from "effect"
 import { isSqlError, type SqlError } from "effect/unstable/sql/SqlError"
 import type { Database } from "./database"
 import { SqliteFailure } from "./sqlite-error"
 import { TransactionDiagnostic } from "./transaction-diagnostic"
+
+const PostCommit = Context.Reference<Array<Effect.Effect<void>> | undefined>("opencode/DatabaseTransaction.PostCommit", {
+  defaultValue: () => undefined,
+})
+
+export const afterCommit = (work: Effect.Effect<void>) =>
+  Effect.gen(function* () {
+    const pending = yield* PostCommit
+    if (!pending) return yield* work
+    pending.push(work)
+  })
+
+/** Defer observer effects until the whole batch commits; rollback drops them. */
+export const batch = <A, E, R>(db: Database.Interface["db"], work: Effect.Effect<A, E, R>) =>
+  Effect.suspend(() => {
+    const pending: Array<Effect.Effect<void>> = []
+    return immediate(
+      db,
+      () => work.pipe(Effect.provideService(PostCommit, pending)),
+      () => Effect.forEach(pending, afterCommit, { discard: true }),
+    )
+  })
 
 export function immediate<A, E, R, E2 = never, R2 = never>(
   db: Database.Interface["db"],

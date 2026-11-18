@@ -347,10 +347,14 @@ export const layerWith = (options?: LayerOptions) =>
                     }),
                   (committed) =>
                     committed
-                      ? Effect.forEach(
-                          pubsub.durable.get(committed.aggregateID) ?? [],
-                          (wake) => PubSub.publish(wake, undefined),
-                          { discard: true },
+                      ? DatabaseTransaction.afterCommit(
+                          Effect.suspend(() =>
+                            Effect.forEach(
+                              pubsub.durable.get(committed.aggregateID) ?? [],
+                              (wake) => PubSub.publish(wake, undefined),
+                              { discard: true },
+                            ),
+                          ),
                         )
                       : Effect.void,
                 ).pipe(Effect.orDie)
@@ -399,16 +403,18 @@ export const layerWith = (options?: LayerOptions) =>
         )
 
       function notify(event: Payload, isolateListeners: boolean) {
-        return Effect.gen(function* () {
-          yield* Effect.forEach(
-            listeners,
-            (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
-            { discard: true },
-          )
-          const typed = pubsub.typed.get(event.type)
-          if (typed) yield* PubSub.publish(typed, event)
-          yield* PubSub.publish(pubsub.all, event)
-        })
+        return DatabaseTransaction.afterCommit(
+          Effect.gen(function* () {
+            yield* Effect.forEach(
+              listeners,
+              (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
+              { discard: true },
+            )
+            const typed = pubsub.typed.get(event.type)
+            if (typed) yield* PubSub.publish(typed, event)
+            yield* PubSub.publish(pubsub.all, event)
+          }),
+        )
       }
 
       function publish<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {
