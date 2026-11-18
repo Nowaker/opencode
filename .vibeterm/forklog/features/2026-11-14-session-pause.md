@@ -65,6 +65,7 @@ Session [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.
 
 ## Timeline
 
+- 2026-11-18 [Atomic prompt admission and pause handoff](../sessions/2026-11-18-atomic-prompt-admission.md) - commit the hold with the prompt before acknowledging it. The regression runs unpause at acknowledgement while the admitting fiber is still blocked on its activity update.
 - 2026-11-14 [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.md) - initial build of P1 and P2; installed on m4max as vt-486 together with the title fix.
 - 2026-11-16 [`ses_e1c57d050ffe4t64XczrGAzjqs`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e1c57d050ffe4t64XczrGAzjqs) - [pause identity guard](../sessions/2026-11-14-session-pause.md#follow-up-pause-identity-guard): 14 deterministic red reproductions, 73 green engine/HTTP tests, engine/SDK typechecks; source only, build/install handed to the parent.
 - 2026-11-16 [`ses_e1ace8d28ffeR2WGjY311j34E8`](../sessions/2026-11-16-held-delivery-badges.md) - prompts held by a pause read PAUSED in the transcript ([feature](./2026-11-16-held-delivery-badges.md)). Evidence: `f2cd6fe8e3`, vt-514 on both hosts.

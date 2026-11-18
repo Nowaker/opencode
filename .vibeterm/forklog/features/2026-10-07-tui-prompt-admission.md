@@ -143,6 +143,7 @@ text vanished from the composer and was retyped.
 
 ## Timeline
 
+- 2026-11-18 [Atomic prompt admission and pause handoff](../sessions/2026-11-18-atomic-prompt-admission.md) - commit the user message, initial parts and any pause hold together. A rejected second part rolls back the whole prompt; the same ID can be retried.
 - 2026-10-14 [`ses_ec6f8faa7ffeQU4hWGG3qv7cSp`](../sessions/2026-10-14-prompt-admission.md) -
   async endpoint admission contract and concurrent rejection proof, generated
   SDK, Oracle-reviewed candidate `313bc88cfe`, desktop install
@@ -173,9 +174,7 @@ text vanished from the composer and was retyped.
 - `POST /session/:id/prompt_async` returns 204 after admission, not after the
   assistant turn. Confirmed absence on admission failure returns 400
   `{name: "PromptAdmissionError", data: {message, possiblyAccepted: false}}`.
-  A partial user/part save returns 204 plus a session error event, never a
-  safe-to-retry rejection; an unreadable persistence outcome remains a server
-  error. Message and part persistence is not atomic.
+  A failed message or part write rolls back admission, including any pause hold. An unreadable persistence outcome remains a server error.
 - Async same-ID duplicates forward successful admission while joining the
   original turn. They terminate on shared rejection. Later explicit retries
   remain possible; synchronous callers keep their existing completion behavior.
