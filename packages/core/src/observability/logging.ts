@@ -6,7 +6,7 @@ import { runID } from "./shared"
 function formatter(id: string = runID) {
   return Logger.map(Logger.formatStructured, (output) => {
     const messages = Array.isArray(output.message) ? output.message : [output.message]
-    return [
+    const entries: Array<readonly [string, unknown]> = [
       ["timestamp", output.timestamp],
       ["level", output.level],
       ["run", id],
@@ -15,9 +15,26 @@ function formatter(id: string = runID) {
       ...flatten(output.spans),
       ...flatten(output.annotations),
     ]
+    return entries
+      .flatMap((entry) => (output.level === "ERROR" || output.level === "FATAL" ? withStack(entry) : [entry]))
       .map(([key, value]) => `${key}=${format(value)}`)
       .join(" ")
   })
+}
+
+const MAX_STACK_FRAMES = 50
+
+// An Error renders as `Type: message`, which is all a reader of an error line
+// needs to see but not enough to find where it came from. On error lines each
+// Error value gets its stack beside it as `<key>.stack`, bounded to its first
+// frames. A failure cause needs nothing: it is already rendered with its stack.
+function withStack(entry: readonly [string, unknown]): Array<readonly [string, unknown]> {
+  const [key, error] = entry
+  if (!(error instanceof Error) || typeof error.stack !== "string" || error.stack === "") return [entry]
+  const lines = error.stack.split("\n")
+  let frames = 0
+  const bounded = lines.filter((line) => !line.trimStart().startsWith("at ") || ++frames <= MAX_STACK_FRAMES)
+  return [entry, [`${key}.stack`, bounded.join("\n")]]
 }
 
 function flatten(

@@ -10,12 +10,24 @@ import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { Global } from "@opencode-ai/core/global"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { ErrorRecord } from "@opencode-ai/core/observability/error-record"
+import path from "path"
 
 Heap.start()
 
-const onUnhandledRejection = (_error: unknown) => {}
+// The worker survives what it catches here, so a session is not lost to one
+// bad promise; the record is what keeps the error from vanishing with it.
+const errors = ErrorRecord.writer({
+  file: path.join(Global.Path.log, "errors.jsonl"),
+  process: "tui-worker",
+  version: InstallationVersion,
+})
 
-const onUncaughtException = (_error: Error) => {}
+const onUnhandledRejection = (error: unknown) => errors.record(error, "unhandledRejection")
+
+const onUncaughtException = (error: Error) => errors.record(error, "uncaughtException")
 
 process.on("unhandledRejection", onUnhandledRejection)
 process.on("uncaughtException", onUncaughtException)

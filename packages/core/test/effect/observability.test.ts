@@ -217,3 +217,59 @@ describe("file logger after the log file is moved", () => {
     expect(await messages(log.file)).toEqual(["before", "after"])
   })
 })
+
+describe("file logger on error lines", () => {
+  async function logged(program: Effect.Effect<void>) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-log-test-"))
+    try {
+      const file = path.join(dir, "opencode.log")
+      await program.pipe(
+        Effect.provide(Logger.layer([fileLogger(file, "run-a")]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
+        Effect.scoped,
+        Effect.runPromise,
+      )
+      return (await Bun.file(file).text()).trim()
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  function thrownHere() {
+    return new TypeError("bad value")
+  }
+
+  test("carries the stack of an error value beside it", async () => {
+    const line = await logged(Effect.logError("stream error", { error: { error: thrownHere() } }))
+
+    expect(line.split("\n")).toHaveLength(1)
+    expect(line).toContain('error.error="TypeError: bad value"')
+    const stack = line.match(/ error\.error\.stack=("(?:[^"\\]|\\.)*")/)?.[1]
+    expect(stack).toBeDefined()
+    expect(JSON.parse(stack!)).toMatch(/^TypeError: bad value\n\s+at .*observability\.test\.ts:\d+:\d+/)
+  })
+
+  test("renders a failure cause with its stack", async () => {
+    const line = await logged(Effect.fail(thrownHere()).pipe(Effect.catchCause((cause) => Effect.logError("failed", cause))))
+
+    const cause = line.match(/ cause=("(?:[^"\\]|\\.)*")/)?.[1]
+    expect(cause).toBeDefined()
+    expect(JSON.parse(cause!)).toMatch(/^TypeError: bad value\n\s+at .*observability\.test\.ts:\d+:\d+/)
+  })
+
+  test("keeps the stack bounded", async () => {
+    const error = new Error("deep")
+    error.stack = ["Error: deep", ...Array.from({ length: 500 }, (_, index) => `    at frame${index} (/x.ts:1:1)`)].join("\n")
+
+    const line = await logged(Effect.logError("deep", { error }))
+
+    const stack = JSON.parse(line.match(/ error\.stack=("(?:[^"\\]|\\.)*")/)![1]!) as string
+    expect(stack.split("\n").filter((frame) => frame.trimStart().startsWith("at "))).toHaveLength(50)
+  })
+
+  test("leaves lines below error level as they were", async () => {
+    const line = await logged(Effect.logWarning("retrying", { error: thrownHere() }))
+
+    expect(line).toContain('error="TypeError: bad value"')
+    expect(line).not.toContain(".stack=")
+  })
+})
