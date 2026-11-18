@@ -70,7 +70,8 @@ describe("instant editor matches opentui's textarea", () => {
       }
     }
     expect(mismatches).toEqual([])
-  })
+    // Thousands of real textarea edits: measured 10-29 s at load average 90-140, past bun's 5 s default.
+  }, 60_000)
 
   test("zsh line discard from every caret position", async () => {
     const zsh = await createParity(width, "zsh")
