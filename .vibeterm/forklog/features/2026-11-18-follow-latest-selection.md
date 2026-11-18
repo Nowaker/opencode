@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `adopt-latest-model`, `follow-model-bump`
 - First local commit: `3f66b2094a`
-- Current local commit(s): `3f66b2094a`, `031bf5bc24`
+- Current local commit(s): `3f66b2094a`, `031bf5bc24`, `85601844ca`
 - Upstream base when introduced: `006d837c50` (merge-base with `github/v1`)
 - Last checked against upstream: `006d837c50`
 
@@ -46,6 +46,7 @@
 |---|---|---|---|
 | `3f66b2094a` | 2026-11-18 | follow the newest user message's identity from any client, dialog hold, person's-own-pick-wins | `packages/tui/src/component/prompt/index.tsx` follow effect after `pauseAction`; upstream comment "Initialize agent/model/variant from last user message when session changes" |
 | `031bf5bc24` | 2026-11-18 | also follow the session row's `agent`/`model` from `session.updated`; the row wins on open | same effect, `sessionPick` / `messagePick` |
+| `85601844ca` | 2026-11-18 | change the stored next-turn model through a model-only PATCH without touching session activity time; publish the normal `session.updated` | `packages/opencode/src/session/session.ts` `setModel` and the v1 `SessionHttpApi.update` handler |
 
 ## Verification
 
@@ -53,13 +54,15 @@
 - `bun typecheck` in `packages/tui` - clean.
 - Full `packages/tui` suite - 906 pass, 1 skip, 1 fail at load average 222: `prompt-undo` "undo brings back a line deleted with ctrl+u", which passed 2/2 in isolation both with and without this change at load 38-55; a keystroke delayed past `PromptUndoPauseMs` (1 s) splits its undo group. Pre-existing load flakes fixed alongside: `329b87dfc7`, `69ef861397`, `ce2f63eb5f`.
 - Manual surface, isolated v1 TUI (scratch XDG/DB, throwaway tmux socket, fake provider): `prompt_async` naming `plan`/`other-model`/`high` -> footer `Plan · Other Model · high`, next typed prompt stored as `plan`/`other-model`/`high`. Unchanged `dev-nowaker` control: footer stayed `Build · Fake Model`, typed prompt `build`/`fake-model`.
-- Manual surface, same rig: session row `model` written directly, then `PATCH /session/{id} {metadata}` -> footer `Build · Other Model · high`, next typed prompt `build`/`other-model`/`high`. Control never left the old model.
+- Initial manual surface, same rig: a direct row write followed by a metadata PATCH updated the footer and next prompt, but that PATCH advanced `time.updated`. Vibeterm commit [`4897aee`](https://gitlab.com/Nowaker/opencode-tools/-/commit/4897aee) replaces this path. Its two isolated real-engine tests verify that the model-only PATCH preserves the time in the persisted row and live event, and the next prompt uses the new model. The fork's session and HTTP suites passed 55 tests; disabling the write transaction made the concurrent-update regression fail.
 
 ## Timeline
 
 - 2026-11-18 [`ses_e125a808bffe4hXOhbX6YgWjvL`](../sessions/2026-11-18-follow-latest-selection.md) - initial build.
+- 2026-11-18 [`ses_e121d0821ffePgkVtkTFCzTEv6`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e121d0821ffePgkVtkTFCzTEv6) - preserve activity time when setting the next-turn model; restore two confirmed historical timestamp changes from adjacent events.
 
 ## Current maintenance notes
 
 - On an upstream bump, check that `createUserMessage` still calls `Session.setAgentModel` when a turn's profile differs, and that `sync.tsx` still reconciles `session.updated` into `store.session`.
+- A model-only PATCH acknowledges support with `x-vibeterm-session-model: 1`; an older engine may return `200` while dropping the field. The full-row snapshot and its projection share a write transaction so a model switch cannot revert another writer's activity or title.
 - Upstreamable as one TUI change; see [pr-queue entry 11](../pr-queue/11-follow-latest-selection.md).
