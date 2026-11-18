@@ -7,7 +7,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -48,7 +48,7 @@ import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { TestInstance } from "../fixture/fixture"
-import { pollWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { httpError, raw, reply, TestLLMServer, type Item } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
@@ -185,6 +185,29 @@ const flakyPlugin = LayerNode.make({
   deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node],
 })
 
+const BeforeTouch = Context.Reference("test/BeforeTouch", {
+  defaultValue: () => Effect.void,
+})
+const heldTouch = LayerNode.make({
+  service: Session.Service,
+  layer: Layer.effect(
+    Session.Service,
+    Effect.gen(function* () {
+      const real = yield* Session.Service
+      return Session.Service.of({
+        ...real,
+        touch: (sessionID) =>
+          Effect.gen(function* () {
+            const beforeTouch = yield* BeforeTouch
+            yield* beforeTouch
+            yield* real.touch(sessionID)
+          }),
+      })
+    }),
+  ).pipe(Layer.provide(Session.node.implementation as Layer.Layer<Session.Service>)),
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+})
+
 const root = LayerNode.group([
   SessionPrompt.node,
   SessionPause.node,
@@ -234,6 +257,7 @@ const it = testEffect(
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
     [SessionProcessor.node, heldSettle],
     [Plugin.node, flakyPlugin],
+    [Session.node, heldTouch],
   ]),
 )
 
@@ -543,6 +567,46 @@ it.instance(
       yield* idle(ctx.chat.id)
       expect(JSON.stringify((yield* ctx.llm.inputs)[1])).toContain("held words")
       expect(released.map((event) => event.payload.properties.held[0].messageID)).toEqual([held.info.id])
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "unpause at async admission answers the held prompt even before its activity update",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      yield* ctx.prompt.pause({ sessionID: ctx.chat.id })
+      yield* ctx.llm.text("answer to the admitted prompt")
+      const input = text(ctx.chat.id, "admitted while paused")
+      const admission = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
+      const touching = yield* Deferred.make<void>()
+      const resume = yield* Deferred.make<void>()
+      const turn = yield* ctx.prompt.prompt(input, admission).pipe(
+        Effect.provideService(
+          BeforeTouch,
+          Deferred.succeed(touching, undefined).pipe(Effect.andThen(Deferred.await(resume))),
+        ),
+        Effect.forkChild,
+      )
+      yield* awaitWithTimeout(
+        Effect.raceFirst(
+          Deferred.await(touching),
+          Fiber.join(turn).pipe(Effect.andThen(Effect.die(new Error("prompt ended before its activity update")))),
+        ),
+        "prompt did not reach its activity update",
+        "15 seconds",
+      )
+      yield* awaitWithTimeout(Deferred.await(admission), "prompt did not acknowledge admission")
+
+      yield* ctx.prompt.unpause({ sessionID: ctx.chat.id })
+      yield* Deferred.succeed(resume, undefined)
+      yield* Fiber.join(turn)
+      yield* awaitWithTimeout(ctx.llm.wait(1), "unpause stranded the acknowledged prompt", "10 seconds")
+      yield* idle(ctx.chat.id)
+      expect(JSON.stringify((yield* ctx.llm.inputs)[0])).toContain("admitted while paused")
+      expect(yield* ctx.llm.calls).toBe(1)
     }),
   { git: true },
   60_000,

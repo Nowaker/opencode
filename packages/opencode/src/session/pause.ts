@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionPauseEvent } from "@opencode-ai/schema/session-pause-event"
 import { and, eq, sql } from "drizzle-orm"
@@ -204,7 +205,7 @@ const layer = Layer.effect(
       // A cleared pause stays as `null`, never a deleted key: Vibeterm's session sync adds every key the local row
       // lacks from the other machine's copy, so a deleted key came back from a peer still holding the old pause.
       yield* sessions.setMetadata({ sessionID, metadata: { ...current, pause: pause ?? null } })
-      yield* status.setPaused(sessionID, pause)
+      yield* DatabaseTransaction.afterCommit(status.setPaused(sessionID, pause))
       yield* events.publish(Event.Updated, { sessionID, pause: pause ?? null })
     })
 

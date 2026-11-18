@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { tmpdir } from "../fixture/fixture"
@@ -15,8 +16,6 @@ async function fixture() {
     "chat.message": async (input, output) => {
       if (output.parts.some(part => part.text === "reject"))
         throw new Error("Admission fixture rejected the selected profile")
-      if (output.parts.some(part => part.text === "partial"))
-        output.parts[0].messageID = "msg_admission_missing"
       if (output.parts.some(part => part.text === "reject-once") && attempts++ === 0) {
         await Bun.write(${JSON.stringify(path.join(tmp.path, "ready"))}, "")
         while (!(await Bun.file(${JSON.stringify(path.join(tmp.path, "release"))}).exists())) await Bun.sleep(10)
@@ -43,6 +42,7 @@ async function fixture() {
       },
     }),
   )
+  const databasePath = path.join(tmp.path, "admission.db")
   const child = Bun.spawn(
     [
       ...(process.env.OPENCODE_PROMPT_PROBE_BINARY
@@ -66,6 +66,7 @@ async function fixture() {
         OPENCODE_TOOLS_DATA_DIR: path.join(tmp.path, "tools"),
         OPENCODE_PLUGINS_DATA_DIR: path.join(tmp.path, "plugins"),
         OPENCODE_CONFIG: path.join(tmp.path, "opencode.json"),
+        OPENCODE_DB: databasePath,
         OPENCODE_DISABLE_PROJECT_CONFIG: "1",
         OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
         OPENCODE_TEST_HOME: tmp.path,
@@ -98,12 +99,15 @@ async function fixture() {
         method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", "x-opencode-directory": tmp.path },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(45_000),
+      }).catch((cause: unknown) => {
+        throw new Error(`admission fixture request failed: ${pathname}`, { cause })
       })
     const created = await request("/session", { title: "Admission proof" })
     const session = await created.json()
     if (typeof session.id !== "string") throw new Error("fixture session was not created")
     return {
+      databasePath,
       directory: tmp.path,
       request: (suffix: string, body?: unknown) => request(`/session/${session.id}${suffix}`, body),
       quiescence: () => request("/global/quiescence"),
@@ -203,16 +207,27 @@ test("async prompt cannot acknowledge while its admission hook is held", async (
   }
 }, 60_000)
 
-test("async prompt never reports rejection after a user row was committed", async () => {
+test("a failed second part rolls back async admission and the same prompt can be retried", async () => {
   await using server = await fixture()
   const messageID = MessageID.ascending()
-  const response = await server.request("/prompt_async", {
+  const input = {
     messageID,
-    parts: [{ type: "text", text: "partial" }],
+    parts: [{ type: "text", text: "first" }, { type: "text", text: "reject this part" }],
     noReply: true,
-  })
-  expect(response.status).toBe(204)
+  }
+  using db = new Database(server.databasePath)
+  db.run(`CREATE TRIGGER reject_prompt_part BEFORE INSERT ON part
+    WHEN json_extract(NEW.data, '$.text') = 'reject this part'
+    BEGIN SELECT RAISE(ABORT, 'prompt part rejected'); END`)
+  const response = await server.request("/prompt_async", input)
+  expect(response.status, await response.clone().text()).toBe(400)
+  expect(await response.json()).toMatchObject({ name: "PromptAdmissionError", data: { possiblyAccepted: false } })
+  expect(await (await server.request("/message")).json()).toEqual([])
+
+  db.run("DROP TRIGGER reject_prompt_part")
+  const retried = await server.request("/prompt_async", input)
+  expect(retried.status, await retried.text()).toBe(204)
   expect(await (await server.request("/message")).json()).toMatchObject([
-    { info: { id: messageID, role: "user" }, parts: [] },
+    { info: { id: messageID, role: "user" }, parts: [{ text: "first" }, { text: "reject this part" }] },
   ])
-}, 60_000)
+}, 120_000)

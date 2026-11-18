@@ -59,6 +59,8 @@ import { SessionAbort } from "./abort"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
+import { LiveEvents } from "./live-events"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { and, eq } from "drizzle-orm"
@@ -288,6 +290,7 @@ const layer = Layer.effect(
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
+    const live = yield* LiveEvents.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const { db } = database
@@ -1174,28 +1177,37 @@ const layer = Layer.effect(
         })
       }
 
-      const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      if (
-        current.agent !== info.agent ||
-        current.model?.providerID !== info.model.providerID ||
-        current.model?.id !== info.model.modelID ||
-        (current.model?.variant === "default" ? undefined : current.model?.variant) !== info.model.variant
-      ) {
-        yield* sessions.setAgentModel({
-          sessionID: input.sessionID,
-          agent: info.agent,
-          model: {
-            id: info.model.modelID,
-            providerID: info.model.providerID,
-            variant: info.model.variant ?? "default",
-          },
-          time: info.time.created,
-        })
-      }
-      yield* sessions.createMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
-
-      return { info, parts }
+      return yield* live.guard(
+        input.sessionID,
+        DatabaseTransaction.batch(
+          db,
+          Effect.gen(function* () {
+            const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+            if (
+              current.agent !== info.agent ||
+              current.model?.providerID !== info.model.providerID ||
+              current.model?.id !== info.model.modelID ||
+              (current.model?.variant === "default" ? undefined : current.model?.variant) !== info.model.variant
+            ) {
+              yield* sessions.setAgentModel({
+                sessionID: input.sessionID,
+                agent: info.agent,
+                model: {
+                  id: info.model.modelID,
+                  providerID: info.model.providerID,
+                  variant: info.model.variant ?? "default",
+                },
+                time: info.time.created,
+              })
+            }
+            yield* sessions.createMessage(info)
+            for (const part of parts) yield* sessions.updatePart(part)
+            const message = { info, parts }
+            const held = input.noReply !== true && heldWhilePaused(input) && (yield* hold(input.sessionID, message))
+            return { message, held }
+          }),
+        ).pipe(Effect.orDie),
+      )
     }, Effect.scoped)
 
     /*
@@ -1445,7 +1457,7 @@ const layer = Layer.effect(
 
     const hold = Effect.fnUntraced(function* (sessionID: SessionID, message: SessionV1.WithParts) {
       const current = yield* pauses.get(sessionID)
-      if (!current) return
+      if (!current) return false
       const text = message.parts.find((part) => part.type === "text")
       const delivery = text?.type === "text" ? text.metadata?.vibeterm : undefined
       yield* pauses.write(sessionID, {
@@ -1455,6 +1467,7 @@ const layer = Layer.effect(
           { messageID: message.info.id, at: message.info.time.created, ...(delivery !== undefined && { delivery }) },
         ],
       })
+      return true
     })
 
     /*
@@ -1733,7 +1746,7 @@ const layer = Layer.effect(
       // The loop this prompt drives runs the deferred calls before it answers the prompt.
       if (paused && !heldWhilePaused(input))
         yield* release({ sessionID: input.sessionID, source: { kind: "api", client: "prompt" } }).pipe(Effect.orDie)
-      const message = yield* createUserMessage(input)
+      const { message, held } = yield* createUserMessage(input)
       yield* Deferred.succeed(admission, undefined)
       yield* sessions.touch(input.sessionID)
 
@@ -1746,11 +1759,7 @@ const layer = Layer.effect(
         yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
       }
 
-      if (input.noReply === true) return message
-      if (paused && heldWhilePaused(input)) {
-        yield* hold(input.sessionID, message)
-        return message
-      }
+      if (input.noReply === true || held) return message
       return yield* drive(input.sessionID, message.info.id)
     })
 
@@ -2691,6 +2700,7 @@ export const node = LayerNode.make({
     SystemPrompt.node,
     LLM.node,
     EventV2Bridge.node,
+    LiveEvents.node,
     RuntimeFlags.node,
     Database.node,
   ],
