@@ -6,6 +6,8 @@ import { resolve, ConfigProvider, Info, useConfig, type Interface } from "../src
 import { settings } from "../src/component/dialog-config"
 import { TuiKeybind } from "../src/config/keybind"
 import { CommandMap, Definitions } from "../src/config/v1/keybind"
+import { LogProvider, type LogLevel, type LogTags } from "../src/context/log"
+import { tmpdir } from "./fixture/fixture"
 
 const decodeInfo = Schema.decodeUnknownSync(Info)
 
@@ -332,4 +334,38 @@ test("provides config and its host interface", async () => {
   } finally {
     app.renderer.destroy()
   }
+})
+
+// The file watch is real; the test waits on the log line it expects, so a missing line fails by timeout.
+async function reloadLog(get: Interface["get"], message: string) {
+  await using directory = await tmpdir()
+  const file = `${directory.path}/cli.json`
+  const logged = Promise.withResolvers<{ level: LogLevel; tags: LogTags }>()
+  const service: Interface = { path: file, get, update: async () => ({}) }
+  const app = await testRender(() => (
+    <LogProvider log={(level, text, tags) => text === message && logged.resolve({ level, tags })}>
+      <ConfigProvider config={resolve({}, { terminalSuspend: true })} service={service}>
+        <text>config</text>
+      </ConfigProvider>
+    </LogProvider>
+  ))
+  try {
+    await Bun.write(file, JSON.stringify({ mouse: false }))
+    return await logged.promise
+  } finally {
+    app.renderer.destroy()
+  }
+}
+
+test("logs a failed cli config reload with its cause", async () => {
+  const cause = new Error("unreadable cli config")
+  const entry = await reloadLog(() => Promise.reject(cause), "cli config reload failed")
+  expect(entry.level).toBe("error")
+  expect(entry.tags).toMatchObject({ component: "config", error: cause })
+})
+
+test("logs an applied cli config reload", async () => {
+  const entry = await reloadLog(async () => ({ mouse: false }), "cli config applied")
+  expect(entry.level).toBe("info")
+  expect(entry.tags).toMatchObject({ component: "config" })
 })

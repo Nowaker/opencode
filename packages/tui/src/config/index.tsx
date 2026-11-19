@@ -6,6 +6,7 @@ import { Schema } from "effect"
 import { createContext, createMemo, onCleanup, type JSX, useContext } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { safeWatch } from "../util/watch"
+import { useLog } from "../context/log"
 import path from "path"
 import { TuiKeybind } from "./keybind"
 
@@ -360,13 +361,17 @@ export function ConfigProvider(props: {
     apply(info)
     return info
   }
+  const log = host?.path ? useLog({ component: "config", path: host.path }) : undefined
   let reload = Promise.resolve()
   const watcher = host?.path
     ? safeWatch(path.dirname(host.path), () => {
         reload = reload
           .then(() => host.get())
-          .then(apply)
-          .catch(() => {})
+          .then((info) => {
+            apply(info)
+            log?.info("cli config applied")
+          })
+          .catch((error: unknown) => log?.error("cli config reload failed", { error }))
       })
     : undefined
   onCleanup(() => watcher?.close())
