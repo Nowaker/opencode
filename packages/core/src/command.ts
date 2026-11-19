@@ -7,6 +7,7 @@ import type { SessionInbox } from "@opencode/schema/session-inbox"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Bus } from "./bus.js"
+import { EngineStop } from "./engine-stop.js"
 import { State } from "./state.js"
 
 export const Info = Command.Info
@@ -45,7 +46,7 @@ export interface Interface extends State.Transformable<Editor> {
   readonly execute: (input: {
     readonly name: string
     readonly invocation: Invocation
-  }) => Effect.Effect<void, NotFoundError | ExecutionError>
+  }) => Effect.Effect<void, NotFoundError | ExecutionError | EngineStop.RefusedError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
@@ -54,6 +55,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    const claims = yield* EngineStop.Service
     const info = (definition: Definition) =>
       Info.make({
         name: definition.name,
@@ -87,9 +89,17 @@ export const layer = Layer.effect(
           return yield* new NotFoundError({ command: input.name, message: `Command not found: ${input.name}` })
         return yield* definition.execute(input.invocation).pipe(
           Effect.tapError((error) => Effect.logError("command execution failed", { command: input.name, error })),
-          Effect.mapError((error) => new ExecutionError({ command: input.name, message: errorMessage(error) })),
+          Effect.mapError((error) =>
+            new ExecutionError({
+              command: input.name,
+              // Dispatch may already have run shell templates or created children; a nested refusal is not replay-safe.
+              message: error instanceof EngineStop.RefusedError
+                ? "Command stopped after dispatch began; effects may already have occurred."
+                : errorMessage(error),
+            }),
+          ),
         )
-      }),
+      }, claims.within),
     })
   }),
 )
@@ -97,7 +107,7 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node],
+  deps: [Bus.node, EngineStop.node],
 })
 
 function errorMessage(error: unknown) {

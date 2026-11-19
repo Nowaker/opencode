@@ -609,7 +609,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               Effect.mapError((error) =>
                 error._tag === "Session.NotFoundError"
                   ? missingSession(error)
-                  : new ServiceUnavailableError({ message: error.message, service: "session generation" }),
+                  : error._tag === "EngineStop.RefusedError"
+                    ? error
+                    : new ServiceUnavailableError({ message: error.message, service: "session generation" }),
               ),
             )
           return { data: result }

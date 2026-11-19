@@ -16,6 +16,7 @@ import { TestLLM } from "@opencode/ai/testing"
 import type { StreamOptions } from "@opencode/ai/route"
 import { Agent } from "@opencode/core/agent"
 import { Database } from "@opencode/core/database/database"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { llmClient } from "@opencode/core/effect/app-node-platform"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -155,6 +156,7 @@ const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
       Database.node,
+      EngineStop.node,
       Bus.node,
       Project.node,
       SessionProjector.node,

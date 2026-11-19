@@ -52,17 +52,17 @@ export const makeSchedule = Effect.gen(function* () {
     get: (id: Schedule.ID) => find(id).pipe(Effect.map((data) => ({ data }))),
     pause: (id: Schedule.ID) =>
       find(id).pipe(
-        Effect.andThen(schedules.pause(id).pipe(Effect.mapError(missingSchedule))),
+        Effect.andThen(schedules.pause(id).pipe(Effect.catchTag("Schedule.NotFoundError", missingSchedule))),
         Effect.map((data) => ({ data })),
       ),
     resume: (id: Schedule.ID) =>
       find(id).pipe(
-        Effect.andThen(schedules.resume(id).pipe(Effect.mapError(missingSchedule))),
+        Effect.andThen(schedules.resume(id).pipe(Effect.catchTag("Schedule.NotFoundError", missingSchedule))),
         Effect.map((data) => ({ data })),
       ),
     remove: (id: Schedule.ID) =>
       find(id).pipe(
-        Effect.andThen(schedules.remove(id).pipe(Effect.mapError(missingSchedule))),
+        Effect.andThen(schedules.remove(id).pipe(Effect.catchTag("Schedule.NotFoundError", missingSchedule))),
         Effect.as(HttpApiSchema.NoContent.make()),
       ),
   }

@@ -14,6 +14,7 @@ import { ShellResult } from "../../shell/result.js"
 import { SubagentCompletion } from "../subagent-completion.js"
 import { SubagentGroup } from "../subagent-group.js"
 import { Database } from "../../database/database.js"
+import { EngineStop } from "../../engine-stop.js"
 
 const CONTINUE_AFTER_SERVER_RESTART =
   "The server restarted while you were working. Continue from where you left off without repeating completed work."
@@ -73,6 +74,7 @@ export const layer = (options?: Options) =>
       const execution = yield* SessionExecution.Service
       const bus = yield* Bus.Service
       const jobs = yield* Job.Service
+      const claims = yield* EngineStop.Service
       const sessions = yield* Session.Service
       const db = (yield* Database.Service).db
       const scope = yield* Effect.scope
@@ -165,7 +167,7 @@ export const layer = (options?: Options) =>
             Effect.orDie,
           )
         yield* jobs.completeBackground(background.notificationID)
-      })
+      }, claims.within)
 
       const recoverSubagent = Effect.fnUntraced(function* (
         background: Job.Background,
@@ -178,6 +180,7 @@ export const layer = (options?: Options) =>
             yield* SubagentGroup.update(db, recovery.group, { status: "cancelled", error: "Subagent session is unavailable" })
             const state = yield* SubagentGroup.get(db, recovery.parentSessionID, recovery.group.id)
             if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: suspended.has(recovery.parentSessionID) ? false : undefined }).pipe(
+              Effect.provideService(EngineStop.Service, claims),
               Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, recovery.parentSessionID)),
               Effect.orDie,
             )
@@ -193,7 +196,11 @@ export const layer = (options?: Options) =>
             db,
             notificationID: background.notificationID,
             resume: suspended.has(recovery.parentSessionID) ? false : undefined,
-          }).pipe(Effect.orDie)
+          }).pipe(
+            Effect.provideService(EngineStop.Service, claims),
+            Effect.catchTag("EngineStop.RefusedError", () => Effect.void),
+            Effect.orDie,
+          )
         })
 
         if (background.status !== "running") {
@@ -206,22 +213,26 @@ export const layer = (options?: Options) =>
           return
         }
 
-        yield* jobs.start({
-          id: background.id,
-          type: "subagent",
-          title: recovery.description,
-          notificationID: background.notificationID,
-          recovery,
-          run: execution.resume(recovery.childSessionID).pipe(
-            Effect.andThen(SubagentCompletion.read(db, recovery)),
-          ),
-        })
+        yield* Effect.scoped(Effect.gen(function* () {
+          const claim = yield* claims.retain().pipe(Effect.catchTag("EngineStop.OwnershipError", Effect.die))
+          return yield* jobs.start({
+            id: background.id,
+            type: "subagent",
+            title: recovery.description,
+            notificationID: background.notificationID,
+            recovery,
+            claim,
+            run: execution.resume(recovery.childSessionID).pipe(
+              Effect.andThen(SubagentCompletion.read(db, recovery)),
+            ),
+          })
+        }))
         yield* jobs.background(background.id)
         yield* jobs.wait({ id: background.id }).pipe(
           Effect.flatMap((result) => (result.info ? notify(result.info) : Effect.void)),
           Effect.forkIn(scope),
         )
-      })
+      }, claims.within)
 
       return Service.of({
         resumeSuspendedSessions: Effect.gen(function* () {
@@ -246,37 +257,46 @@ export const layer = (options?: Options) =>
               const recovery = background.recovery
               if (recovery.kind !== "subagent") return yield* recoverToolJob(background, recovery)
               yield* recoverSubagent(background, recovery, suspended)
-            }),
+            }, (effect) => effect.pipe(Effect.catchTag("EngineStop.RefusedError", () => Effect.void))),
             { discard: true },
           )
 
           // Background completion can wake a parent, so inspect local ownership only after recovery.
           for (const group of groups) {
-            for (const slot of group.slots) {
-              if (slot.status !== "running" || pending.some((job) => job.notificationID === slot.generation)) continue
-              yield* SubagentGroup.update(db, { parentSessionID: group.parentSessionID, id: group.id, notificationID: group.notificationID, index: slot.index, generation: slot.generation }, {
-                status: "cancelled", error: "Subagent launch interrupted by server restart",
-              })
-            }
-            const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
-            if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: suspended.has(group.parentSessionID) ? false : undefined }).pipe(
-              Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, group.parentSessionID)),
-              Effect.orDie,
-            )
+            yield* Effect.gen(function* () {
+              for (const slot of group.slots) {
+                if (slot.status !== "running" || pending.some((job) => job.notificationID === slot.generation)) continue
+                yield* SubagentGroup.update(db, { parentSessionID: group.parentSessionID, id: group.id, notificationID: group.notificationID, index: slot.index, generation: slot.generation }, {
+                  status: "cancelled", error: "Subagent launch interrupted by server restart",
+                })
+              }
+              const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
+              if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state, resume: suspended.has(group.parentSessionID) ? false : undefined }).pipe(
+                Effect.provideService(EngineStop.Service, claims),
+                Effect.catchTag("Session.NotFoundError", () => SubagentGroup.remove(db, group.parentSessionID)),
+                Effect.orDie,
+              )
+            }).pipe(claims.within, Effect.catchTag("EngineStop.RefusedError", () => Effect.void))
           }
 
           const resumed = yield* execution.active
           yield* Effect.forEach(
             (yield* store.listSuspended()).filter((sessionID) => !resumed.has(sessionID)),
             (sessionID) =>
-              execution
-                .resume(sessionID)
-                .pipe(Effect.ignore, Effect.forkIn(scope), Effect.when(prepareResume(sessionID))),
-            { concurrency: "unbounded", discard: true },
+              Effect.scoped(Effect.gen(function* () {
+                if (!(yield* prepareResume(sessionID))) return
+                const claim = yield* claims.retain().pipe(Effect.catchTag("EngineStop.OwnershipError", Effect.die))
+                yield* claim.fork(
+                  execution.resume(sessionID).pipe(Effect.ignore),
+                  scope,
+                  Effect.void,
+                ).pipe(Effect.orDie)
+              })),
+            { discard: true },
           )
           // Async observers consult this set at delivery; later completions wake parents normally.
           suspended.clear()
-        }),
+        }).pipe(claims.within, Effect.catchTag("EngineStop.RefusedError", () => Effect.void)),
       })
     }),
   )
@@ -284,5 +304,5 @@ export const layer = (options?: Options) =>
 export const node = makeGlobalNode({
   service: Service,
   layer: layer(),
-  deps: [SessionStore.node, SessionExecution.node, Bus.node, Job.node, Session.node, Database.node],
+  deps: [SessionStore.node, SessionExecution.node, Bus.node, Job.node, Session.node, Database.node, EngineStop.node],
 })

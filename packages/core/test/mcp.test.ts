@@ -42,6 +42,7 @@ import { Session } from "@opencode/core/session"
 import { State } from "@opencode/core/state"
 import { McpTool } from "@opencode/core/tool/mcp"
 import { Command } from "@opencode/core/command"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { CommandPlugin } from "@opencode/core/plugin/command"
 import { McpResourceTools } from "@opencode/core/tool/plugin/mcp-resource"
 import { Tool } from "@opencode/core/tool"
@@ -3657,7 +3658,7 @@ describe("MCP pool", () => {
               )) as Bus.Interface["subscribe"],
           })
           const b = yield* open(config, pool, directories[1], { bus })
-          const command = Context.get(yield* Layer.build(Command.layer.pipe(Layer.provide(bus))), Command.Service)
+          const command = Context.get(yield* Layer.build(Command.layer.pipe(Layer.provide(bus), Layer.provide(EngineStop.layer))), Command.Service)
           yield* CommandPlugin.Plugin.effect(
             host({
               command: {

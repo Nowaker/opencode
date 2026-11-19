@@ -4,6 +4,7 @@ import type { FileSystem } from "../filesystem.js"
 import { LLMClient, Message, type AIError } from "@opencode/ai/effect"
 import { Effect } from "effect"
 import { Bus } from "../bus.js"
+import { EngineStop } from "../engine-stop.js"
 import { Database } from "../database/database.js"
 import { Instance } from "../instance/service.js"
 import { Plugin } from "../plugin/service.js"
@@ -24,6 +25,7 @@ export type Error =
   | SessionRunnerModel.Error
   | AIError
   | FileSystem.DirectoryNotFoundError
+  | EngineStop.RefusedError
 
 export type Result = SessionUsage.Recorded & { readonly text: string }
 
@@ -73,6 +75,7 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
     const response = yield* llm.generate(prepared.request, prepared.options).pipe(ModelRetry.retry)
     const usage = SessionUsage.record(response.usage, model.cost)
     yield* bus.publish(SessionEvent.UsageRecorded, { sessionID: selection.session.id, source: "generate", ...usage })
+      .pipe(Effect.uninterruptible)
     return { text: response.text, ...usage }
   }).pipe(instances.provide(input.session))
-})
+}, (effect) => EngineStop.Service.use((claims) => claims.within(effect)))

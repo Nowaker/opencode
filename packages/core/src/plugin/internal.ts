@@ -16,6 +16,7 @@ import { Provider } from "../provider.js"
 import { Command } from "../command.js"
 import { Config } from "../config.js"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { Credential } from "../credential.js"
 import { llmClient } from "../effect/app-node-platform.js"
 import { ConfigAgentPlugin } from "../config/plugin/agent.js"
@@ -131,6 +132,7 @@ const services = [
   Command.Service,
   Config.Service,
   Database.Service,
+  EngineStop.Service,
   Credential.Service,
   Bus.Service,
   Environment.Service,
@@ -192,6 +194,7 @@ export const requirements = LayerNode.group([
   Command.node,
   Config.node,
   Database.node,
+  EngineStop.node,
   Credential.node,
   Bus.node,
   Environment.node,

@@ -8,21 +8,23 @@ import { Session } from "../session.js"
 import { SubagentCompletion } from "./subagent-completion.js"
 import { Database } from "../database/database.js"
 import { KeyedMutex } from "../effect/keyed-mutex.js"
+import { EngineStop } from "../engine-stop.js"
 
 type Recovery = Extract<Job.Recovery, { kind: "subagent" }>
 
 export interface Interface {
   admit: <A, E, R>(childSessionID: Recovery["childSessionID"], launch: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
-  start: (recovery: Recovery) => Effect.Effect<Job.Info>
-  background: (recovery: Recovery) => Effect.Effect<void>
+  start: (recovery: Recovery) => Effect.Effect<Job.Info, EngineStop.RefusedError>
+  background: (recovery: Recovery) => Effect.Effect<void, EngineStop.RefusedError>
   notify: (recovery: Recovery, startedAt: number) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SubagentJob") {}
 
-const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Database.Service | Scope.Scope> = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sessions = yield* Session.Service
   const jobs = yield* Job.Service
+  const claims = yield* EngineStop.Service
   const db = (yield* Database.Service).db
   const scope = yield* Scope.Scope
   const admissions = yield* KeyedMutex.make<Recovery["childSessionID"]>()
@@ -48,6 +50,8 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
       }
       if (info) yield* SubagentCompletion.deliver(sessions, jobs, { ...info, recovery: canonical, db })
     }).pipe(
+      Effect.provideService(EngineStop.Service, claims),
+      Effect.catchTag("EngineStop.RefusedError", () => Effect.void),
       Effect.ensuring(Effect.sync(() => notifications.delete(key))),
       // The global context drops the caller's span annotations; delivery is the parent session's work.
       Effect.annotateSpans("session.id", recovery.parentSessionID),
@@ -58,25 +62,28 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
 
   return Service.of({
     admit: (childSessionID, launch) => admissions.withLock(childSessionID)(launch),
-    start: (recovery: Recovery) =>
-      jobs
-        .start({
+    start: Effect.fn("SubagentJob.start")(function* (recovery: Recovery) {
+      return yield* Effect.scoped(Effect.gen(function* () {
+        const claim = yield* claims.retain().pipe(Effect.catchTag("EngineStop.OwnershipError", Effect.die))
+        return yield* jobs.start({
           id: recovery.childSessionID,
           type: "subagent",
           title: recovery.description,
           metadata: {},
           recovery,
+          claim,
           ...(recovery.group ? { notificationID: recovery.group.generation } : {}),
           run: Effect.gen(function* () {
             yield* sessions.resume(recovery.childSessionID)
             return yield* SubagentCompletion.read(db, recovery)
           }),
-        })
-        .pipe(Effect.setContext(context)),
+        }).pipe(Effect.setContext(context))
+      }))
+    }, claims.within),
     background: Effect.fn("SubagentJob.background")(function* (recovery: Recovery) {
       const info = yield* jobs.background(recovery.childSessionID)
       if (info) yield* notify(recovery, info.started_at)
-    }),
+    }, claims.within),
     notify,
   })
 })
@@ -84,5 +91,5 @@ const make: Effect.Effect<Interface, never, Session.Service | Job.Service | Data
 export const node: LayerNode.Provider<Service, never, typeof Node.tags.values.global> = Node.makeGlobalNode({
   service: Service,
   layer: Layer.effect(Service, make),
-  deps: [Session.node, Job.node, Database.node],
+  deps: [Session.node, Job.node, Database.node, EngineStop.node],
 })

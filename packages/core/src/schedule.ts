@@ -1,7 +1,6 @@
 export * as Schedule from "./schedule.js"
 
-import { randomUUID } from "node:crypto"
-import { and, asc, eq, gt, isNull, lte, min, or, sql } from "drizzle-orm"
+import { and, asc, eq, gt, isNull, lte, min, or } from "drizzle-orm"
 import { Cause, Clock, Context, Cron, DateTime, Effect, Latch, Layer, Option, Result, Schedule as EffectSchedule, Schema } from "effect"
 import { Node, makeGlobalNode } from "@opencode/util/effect/app-node"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -25,7 +24,6 @@ import { Database } from "./database/database.js"
 import { FileSystem } from "./filesystem.js"
 import { Flag } from "./flag.js"
 import { Instance } from "./instance/service.js"
-import { KVTable } from "./kv/sql.js"
 import type { Permission } from "./permission.js"
 import { Session } from "./session.js"
 import { SessionExecution } from "./session/execution.js"
@@ -34,6 +32,8 @@ import { SessionSchema } from "./session/schema.js"
 import { SessionInboxTable } from "./session/sql.js"
 import { ScheduleCheck } from "./schedule/check.js"
 import { ScheduleTable } from "./schedule/sql.js"
+import { EngineStop } from "./engine-stop.js"
+import { ScheduleOwnership } from "./schedule/ownership.js"
 
 export { ID, Info, CreateInput, Request, Condition, ConditionInput, When, Status, Outcome, toCreateInput }
 
@@ -62,16 +62,16 @@ export class DisabledError extends Schema.TaggedError<DisabledError>()("Schedule
 export interface Interface {
   readonly create: (
     input: CreateInput,
-  ) => Effect.Effect<Info, InvalidError | DisabledError | Session.NotFoundError | Permission.Error>
+  ) => Effect.Effect<Info, InvalidError | DisabledError | Session.NotFoundError | Permission.Error | EngineStop.RefusedError>
   readonly list: (input?: { readonly sessionID?: SessionSchema.ID }) => Effect.Effect<Info[]>
   readonly get: (id: ID) => Effect.Effect<Info, NotFoundError>
-  readonly pause: (id: ID) => Effect.Effect<Info, NotFoundError>
-  readonly resume: (id: ID) => Effect.Effect<Info, NotFoundError>
-  readonly remove: (id: ID) => Effect.Effect<void, NotFoundError>
+  readonly pause: (id: ID) => Effect.Effect<Info, NotFoundError | EngineStop.RefusedError>
+  readonly resume: (id: ID) => Effect.Effect<Info, NotFoundError | EngineStop.RefusedError>
+  readonly remove: (id: ID) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
   /** Whether experimental.schedules is on in the config where the Session lives. */
   readonly enabled: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, Session.NotFoundError>
   /** Fires every schedule that is due now, at most once each. */
-  readonly tick: Effect.Effect<void>
+  readonly tick: Effect.Effect<void, EngineStop.RefusedError>
   /**
    * Runs `tick` whenever a schedule falls due, until interrupted. Elects at most one active leader per SQLite
    * database via a lease row, so auxiliary processes (`opencode acp`, `--standalone`) sharing a data directory
@@ -94,7 +94,6 @@ const DEFAULT_UNTIL_AFTER = 24 * HOUR
 const LATE_AFTER = 60_000
 /** The loop re-reads the table at least this often, so clock jumps and missed doorbells are caught. */
 const MAX_SLEEP = 30_000
-const LEADER_KEY = "schedule:leader"
 const LEADER_TTL = 2 * MAX_SLEEP
 /** How long a due schedule waits before its location's flag is read again, while schedules are off there. */
 const DISABLED_RETRY = HOUR
@@ -212,6 +211,7 @@ const layer = Layer.effect(
     const sessions = yield* Session.Service
     const instances = yield* Instance.Service
     const execution = yield* SessionExecution.Service
+    const claims = yield* EngineStop.Service
     const doorbell = yield* Latch.make()
 
     // Config is per location, so a schedule follows the config where its Session lives.
@@ -298,7 +298,7 @@ const layer = Layer.effect(
               messageID: SessionMessage.ID.make(`msg_${row.id}_check_${row.checks + 1}`),
               now,
               checks: row.checks,
-            }).pipe(instances.provide(session))
+            }).pipe(instances.provide(session), Effect.interruptible)
 
       if (!outcome.ok) {
         const strikes = row.failures + 1
@@ -419,7 +419,7 @@ const layer = Layer.effect(
         .where(eq(ScheduleTable.id, row.id))
         .run()
         .pipe(Effect.orDie)
-    })
+    }, Effect.uninterruptible)
 
     const step = Effect.fnUntraced(function* (row: Row, now: number) {
       const due = row.next_due_at
@@ -433,18 +433,19 @@ const layer = Layer.effect(
         return
       }
       if (row.last_message_id !== null && (yield* pending(row.last_message_id))) {
-        // The wake that followed admission may have been lost; waking again is harmless.
-        yield* execution.wake(session.id)
-        const next = following(row, now)
-        const done = finished(row, next, row.remaining_runs)
-        yield* update(row, {
-          last_outcome: "skipped",
-          retry_at: null,
-          status: done ? "done" : "active",
-          next_due_at: done ? null : next,
-          time_updated: now,
-        })
-        return
+        return yield* Effect.uninterruptible(Effect.gen(function* () {
+          // The wake that followed admission may have been lost; waking again is harmless.
+          yield* execution.wake(session.id)
+          const next = following(row, now)
+          const done = finished(row, next, row.remaining_runs)
+          yield* update(row, {
+            last_outcome: "skipped",
+            retry_at: null,
+            status: done ? "done" : "active",
+            next_due_at: done ? null : next,
+            time_updated: now,
+          })
+        }))
       }
       yield* fire(row, session, due, now)
     })
@@ -476,15 +477,16 @@ const layer = Layer.effect(
                   last_outcome: "failed",
                   retry_at: null,
                   time_updated: now,
-                })
+                }).pipe(Effect.uninterruptible)
               }
               // Back off rather than retrying a failing prompt on every tick.
               return Effect.logWarning("schedule failed to fire", { scheduleID: row.id, cause }).pipe(
                 Effect.andThen(
                   update(row, { last_outcome: "failed", retry_at: now + FAILED_RETRY, time_updated: now }),
                 ),
-              )
+              ).pipe(Effect.uninterruptible)
             }),
+            claims.within,
           ),
         { discard: true, concurrency: due.length > 1 ? TICK_CONCURRENCY : 1 },
       )
@@ -515,7 +517,7 @@ const layer = Layer.effect(
       .pipe(
         Effect.orDie,
         Effect.flatMap((rows) =>
-          Effect.forEach(rows, (row) => (row.sessionID === null ? Effect.void : execution.wake(row.sessionID)), {
+          Effect.forEach(rows, (row) => claims.within(row.sessionID === null ? Effect.void : execution.wake(row.sessionID)), {
             discard: true,
           }),
         ),
@@ -532,41 +534,18 @@ const layer = Layer.effect(
         Effect.map((row) => row !== undefined),
       )
 
-    const ownerID = randomUUID()
+    const ownership = yield* ScheduleOwnership.make(db, claims, LEADER_TTL)
     let leading = false
     let bootChecked = false
-
-    const claimLeader = Effect.fnUntraced(function* (now: number) {
-      const value = { owner: ownerID, until: now + LEADER_TTL }
-      const claimed = yield* db
-        .insert(KVTable)
-        .values({ key: LEADER_KEY, value, time_created: now, time_updated: now })
-        .onConflictDoUpdate({
-          target: KVTable.key,
-          set: { value, time_updated: now },
-          where: sql`json_extract(${KVTable.value}, '$.owner') = ${ownerID} or json_extract(${KVTable.value}, '$.until') <= ${now}`,
-        })
-        .returning({ key: KVTable.key })
-        .get()
-        .pipe(Effect.orDie)
-      return claimed !== undefined
-    })
+    const claimLeader = ownership.claim
 
     const releaseLeader = Effect.sync(() => {
       leading = false
-    }).pipe(
-      Effect.andThen(
-        db
-          .delete(KVTable)
-          .where(and(eq(KVTable.key, LEADER_KEY), sql`json_extract(${KVTable.value}, '$.owner') = ${ownerID}`))
-          .run()
-          .pipe(Effect.ignore),
-      ),
-    )
+    }).pipe(Effect.andThen(ownership.release))
 
     const heartbeat = Clock.currentTimeMillis.pipe(
       Effect.flatMap(claimLeader),
-      Effect.ignore,
+      Effect.catchTag("EngineStop.RefusedError", () => claims.awaitOpen.pipe(Effect.as(false))),
       Effect.schedule(EffectSchedule.spaced(LEADER_TTL / 3)),
     )
 
@@ -612,7 +591,8 @@ const layer = Layer.effect(
       if (wait > 0) yield* doorbell.await.pipe(Effect.timeoutOption(wait))
     })
 
-    const run = Effect.forever(loop).pipe(Effect.ensuring(releaseLeader))
+    const run = Effect.forever(loop.pipe(Effect.catchTag("EngineStop.RefusedError", () => claims.awaitOpen)))
+      .pipe(Effect.ensuring(releaseLeader))
 
     const resolveZone = (tz: string | undefined) => {
       if (tz === undefined) return Effect.succeed(DateTime.zoneMakeLocal())
@@ -764,7 +744,7 @@ const layer = Layer.effect(
         if (seeded.matched) return toInfo(row, seeded.message)
         yield* doorbell.open
         return toInfo(row)
-      }),
+      }, claims.within),
       list: Effect.fn("Schedule.list")(function* (input) {
         const rows = yield* db
           .select()
@@ -784,7 +764,7 @@ const layer = Layer.effect(
         const now = yield* Clock.currentTimeMillis
         yield* update(row, { status: "paused", time_updated: now })
         return toInfo(yield* find(id))
-      }),
+      }, claims.within),
       resume: Effect.fn("Schedule.resume")(function* (id) {
         const row = yield* find(id)
         if (row.status !== "paused") return toInfo(row)
@@ -807,11 +787,11 @@ const layer = Layer.effect(
           .pipe(Effect.orDie)
         yield* doorbell.open
         return toInfo(yield* find(id))
-      }),
+      }, claims.within),
       remove: Effect.fn("Schedule.remove")(function* (id) {
         yield* find(id)
         yield* db.delete(ScheduleTable).where(eq(ScheduleTable.id, id)).run().pipe(Effect.orDie)
-      }),
+      }, claims.within),
       enabled: Effect.fn("Schedule.enabled")(function* (sessionID) {
         const session = yield* sessions.get(sessionID)
         return yield* settings(session).pipe(
@@ -828,5 +808,5 @@ const layer = Layer.effect(
 export const node: LayerNode.Provider<Service, never, typeof Node.tags.values.global> = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, Session.node, SessionExecution.node, Instance.node],
+  deps: [Database.node, Session.node, SessionExecution.node, Instance.node, EngineStop.node],
 })

@@ -15,6 +15,7 @@ import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { SubagentGroup } from "../../session/subagent-group.js"
 import { Database } from "../../database/database.js"
+import { EngineStop } from "../../engine-stop.js"
 
 export const name = "subagent"
 
@@ -85,6 +86,7 @@ export const Plugin = {
     const permission = yield* Permission.Service
     const models = yield* Model.Service
     const subagents = yield* SubagentJob.Service
+    const claims = yield* EngineStop.Service
     const db = (yield* Database.Service).db
 
     const resolveModel = Effect.fn("SubagentTool.resolveModel")(function* (input: string) {
@@ -328,6 +330,8 @@ export const Plugin = {
                     }
                     if (group && result)
                       yield* SubagentCompletion.deliver(sessions, jobs, { ...result.info, recovery, db }).pipe(
+                        Effect.provideService(EngineStop.Service, claims),
+                        Effect.catchTag("EngineStop.RefusedError", () => Effect.void),
                         Effect.orDie,
                       )
                     // Failure surfaces keep the sessionID visible so the model can continue the child.
@@ -353,7 +357,11 @@ export const Plugin = {
                       Effect.andThen(
                         Effect.gen(function* () {
                           const state = yield* SubagentGroup.get(db, group.parentSessionID, group.id)
-                          if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state }).pipe(Effect.orDie)
+                          if (state) yield* SubagentCompletion.deliverGroup(sessions, { db, state }).pipe(
+                            Effect.provideService(EngineStop.Service, claims),
+                            Effect.catchTag("EngineStop.RefusedError", () => Effect.void),
+                            Effect.orDie,
+                          )
                         }),
                       ),
                     )
@@ -361,6 +369,8 @@ export const Plugin = {
                 )
               }),
             ).pipe(
+              claims.within,
+              Effect.catchTag("EngineStop.RefusedError", (error) => Effect.fail(new ToolFailure({ message: error.message }))),
               Effect.map((output) => ({
                 output,
                 content:

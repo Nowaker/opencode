@@ -182,11 +182,17 @@ export const control = (state: State, claims: Claims) =>
         )
       })
 
+    const awaitOpen: Effect.Effect<void> = Effect.suspend(() => {
+      if (!state.barrier) return Effect.void
+      return Deferred.await(state.changed).pipe(Effect.andThen(awaitOpen))
+    })
+
     return {
       get: (operationID?: EngineStop.OperationID) => Effect.sync(() => state.info(operationID)),
       prepare,
       cancel,
       awaitOperation,
       registerSchedulerProbe,
+      awaitOpen,
     }
   })

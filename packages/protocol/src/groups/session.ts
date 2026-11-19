@@ -350,7 +350,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ ...Location.PublicRef.fields, delivery: SessionInbox.Delivery.pipe(Schema.optional) }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, InvalidRequestError],
+        error: [SessionNotFoundError, InvalidRequestError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.move",
@@ -665,7 +665,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           // Same `tokens` and `cost` an assistant message reports for a step.
           data: Schema.Struct({ text: Schema.String, tokens: TokenUsage.Info, cost: Money.USD }),
         }).annotate({ identifier: "SessionGenerateResponse" }),
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [SessionNotFoundError, ServiceUnavailableError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

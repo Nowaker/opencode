@@ -7,6 +7,7 @@ import { LayerNodePlatform } from "@opencode/core/effect/app-node-platform"
 import { Watcher } from "@opencode/core/filesystem/watcher"
 import { Database } from "@opencode/core/database/database"
 import { Bus } from "@opencode/core/bus"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { Agent } from "@opencode/core/agent"
 import { Job } from "@opencode/core/job"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
@@ -45,6 +46,7 @@ export const it = testEffect(
         SubagentJob.node,
         Database.node,
         Bus.node,
+        EngineStop.node,
       ]),
       [
         Global.node.replace(tempGlobalLayer),

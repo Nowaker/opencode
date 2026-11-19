@@ -3,9 +3,11 @@ import { Session } from "@opencode/schema/session"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiSchema, OpenApi } from "effect/http-api"
 import { ForbiddenError, InvalidRequestError, ScheduleNotFoundError, SessionNotFoundError } from "../errors.js"
+import { EngineStopRefusedError } from "../engine-stop.js"
 
 const EXPERIMENTAL = "Experimental: needs experimental.schedules in the Session's config and may change without notice."
 const errors = [ScheduleNotFoundError, ForbiddenError] as const
+const mutationErrors = [...errors, EngineStopRefusedError] as const
 const params = { scheduleID: Schedule.ID }
 const annotations = (identifier: string, summary: string, description: string) =>
   OpenApi.annotations({
@@ -26,7 +28,7 @@ export const ScheduleEndpoints = [
   HttpApiEndpoint.post("schedule.create", "/api/experimental/schedule", {
     payload: CreatePayload,
     success: Schema.Struct({ data: Schedule.Info }),
-    error: [InvalidRequestError, SessionNotFoundError, ForbiddenError],
+    error: [InvalidRequestError, SessionNotFoundError, ForbiddenError, EngineStopRefusedError],
   }).annotateMerge(
     annotations(
       "create",
@@ -47,12 +49,12 @@ export const ScheduleEndpoints = [
   HttpApiEndpoint.post("schedule.pause", "/api/experimental/schedule/:scheduleID/pause", {
     params,
     success: Schema.Struct({ data: Schedule.Info }),
-    error: errors,
+    error: mutationErrors,
   }).annotateMerge(annotations("pause", "Pause schedule", "Stop a schedule from firing until it is resumed.")),
   HttpApiEndpoint.post("schedule.resume", "/api/experimental/schedule/:scheduleID/resume", {
     params,
     success: Schema.Struct({ data: Schedule.Info }),
-    error: errors,
+    error: mutationErrors,
   }).annotateMerge(
     annotations(
       "resume",
@@ -63,6 +65,6 @@ export const ScheduleEndpoints = [
   HttpApiEndpoint.delete("schedule.delete", "/api/experimental/schedule/:scheduleID", {
     params,
     success: HttpApiSchema.NoContent,
-    error: errors,
+    error: mutationErrors,
   }).annotateMerge(annotations("delete", "Delete schedule", "Delete a schedule.")),
 ] as const

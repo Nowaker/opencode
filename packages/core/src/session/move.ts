@@ -8,6 +8,7 @@ import { Cause, Context, Effect, Layer, Schema } from "effect"
 import path from "path"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { Instance } from "../instance/service.js"
 import { Location } from "../location.js"
 import { LocationServiceMap } from "../location-service-map.js"
@@ -45,7 +46,7 @@ export interface Interface {
     delivery?: SessionInbox.Delivery
   }) => Effect.Effect<
     void,
-    NotFoundError | DestinationNotFoundError | DestinationNotDirectoryError | DestinationUnavailableError
+    NotFoundError | DestinationNotFoundError | DestinationNotDirectoryError | DestinationUnavailableError | EngineStop.RefusedError
   >
 }
 
@@ -64,6 +65,7 @@ const layer = Layer.effect(
     const admission = yield* SessionInbox.Service
     const database = yield* Database.Service
     const bus = yield* Bus.Service
+    const claims = yield* EngineStop.Service
 
     const get = Effect.fn("SessionMove.get")(function* (sessionID: Session.ID) {
       const session = yield* store.get(sessionID)
@@ -126,6 +128,9 @@ const layer = Layer.effect(
           payload: destination,
           delivery: input.delivery ?? "steer",
         })
+        // Waiting for the inbox lock stays interruptible. Once the locked body commits, its wake runs even when an
+        // interruption arrives while the lock is being released, so an admitted move is never left without its wake.
+        const committed = { value: false }
         yield* SessionInbox.serialized(
           input.sessionID,
           Effect.gen(function* () {
@@ -152,10 +157,12 @@ const layer = Layer.effect(
                 item,
               })
               .pipe(Effect.orDie)
-          }),
-        )
-        yield* execution.wake(input.sessionID)
-      }),
+          }).pipe(
+            Effect.andThen(Effect.sync(() => (committed.value = true))),
+            Effect.uninterruptible,
+          ),
+        ).pipe(Effect.onExit(() => (committed.value ? execution.wake(input.sessionID) : Effect.void)))
+      }, claims.within),
     })
   }),
 )
@@ -175,5 +182,6 @@ export const node = makeGlobalNode({
     Database.node,
     Bus.node,
     SessionProjector.node,
+    EngineStop.node,
   ],
 })

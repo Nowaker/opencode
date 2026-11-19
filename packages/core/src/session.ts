@@ -259,7 +259,7 @@ export interface Interface {
     delivery?: SessionInbox.Delivery
   }) => Effect.Effect<
     void,
-    NotFoundError | Command.NotFoundError | Command.ExecutionError | FileSystem.DirectoryNotFoundError
+    NotFoundError | Command.NotFoundError | Command.ExecutionError | FileSystem.DirectoryNotFoundError | EngineStop.RefusedError
   >
   readonly shell: (
     input: Parameters<Session.Handle["shell"]>[0] & { sessionID: SessionSchema.ID },
@@ -593,6 +593,7 @@ const layer = Layer.effect(
       generate: Effect.fn("Session.generate")(function* (input) {
         const session = yield* result.get(input.sessionID)
         return yield* SessionGenerate.generate({ session, prompt: input.prompt }).pipe(
+          Effect.provideService(EngineStop.Service, claims),
           Effect.provideService(Instance.Service, instances),
           Effect.provideService(Database.Service, database),
           Effect.provideService(LLMClient.Service, llm),
@@ -604,7 +605,7 @@ const layer = Layer.effect(
         return yield* SessionCommand.execute({ ...input, session }).pipe(
           Effect.provideService(Instance.Service, instances),
         )
-      }),
+      }, claims.within),
       shell: (input) => sessions.forSession(input.sessionID).shell(input),
       skill: (input) => sessions.forSession(input.sessionID).skill(input),
       switchAgent: (input) => sessions.forSession(input.sessionID).switchAgent(input),

@@ -11,6 +11,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { makeGlobalNode, makeLocationNode } from "@opencode/util/effect/app-node"
 import { Database } from "@opencode/core/database/database"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { Bus } from "@opencode/core/bus"
 import { Config } from "@opencode/core/config"
 import { Location } from "@opencode/core/location"
@@ -135,6 +136,7 @@ const subagentPluginSupervisor = makeLocationNode({
     SubagentJob.node,
     Tool.node,
     PluginHooks.node,
+    EngineStop.node,
   ],
 })
 

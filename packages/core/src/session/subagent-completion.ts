@@ -9,8 +9,12 @@ import type { Database } from "../database/database.js"
 import { SubagentGroup } from "./subagent-group.js"
 import { SessionHistory } from "./history.js"
 import { SessionMessageTable } from "./sql.js"
+import { EngineStop } from "../engine-stop.js"
 
 export const NO_TEXT = "Subagent completed without a text response."
+
+const within = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  EngineStop.Service.use((claims) => claims.within(effect))
 
 export function text(message: SessionMessage.Info | undefined) {
   if (message?.type !== "assistant") return NO_TEXT
@@ -92,7 +96,7 @@ export const deliver = Effect.fnUntraced(function* (
     metadata: { source: "subagent", childID: recovery.childSessionID, agent: recovery.agent, state: input.status },
   })
   if (input.notificationID) yield* jobs.completeBackground(input.notificationID)
-})
+}, Effect.uninterruptible, within)
 
 export const deliverGroup = Effect.fnUntraced(function* (
   sessions: Pick<Session.Interface, "synthetic">,
@@ -111,4 +115,4 @@ export const deliverGroup = Effect.fnUntraced(function* (
     metadata: { source: "subagent-group", groupID: state.id, total: state.total },
   })
   yield* SubagentGroup.acknowledge(input.db, state)
-})
+}, Effect.uninterruptible, within)

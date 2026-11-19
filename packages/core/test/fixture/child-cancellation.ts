@@ -15,6 +15,8 @@ import { SessionRestart } from "@opencode/core/session/execution/restart"
 import { SessionRunner } from "@opencode/core/session/runner/index"
 import { SessionRunnerLLM } from "@opencode/core/session/runner/llm"
 import { SessionStore } from "@opencode/core/session/store"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { makeGlobalNode, makeLocationNode } from "@opencode/util/effect/app-node"
 import { Global } from "@opencode/util/global"
@@ -54,6 +56,8 @@ export const childCancellationLayer = AppNodeBuilder.build(
     Bus.node,
     Instance.node,
     EngineStop.node,
+    SessionInbox.node,
+    SubagentJob.node,
     drainsNode,
   ]),
   [

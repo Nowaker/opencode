@@ -4,6 +4,7 @@ import { asc, eq, or } from "drizzle-orm"
 import { Array, Cause, Clock, Context, Deferred, Effect, Exit, Layer, Schema, Scope, SynchronizedRef } from "effect"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Database } from "./database/database.js"
+import type { EngineStop } from "./engine-stop.js"
 import { JobList } from "./job/list.js"
 import { type Recovery, RecoverySchema } from "./job/recovery.js"
 import { JobTable } from "./job/sql.js"
@@ -95,6 +96,7 @@ export type StartInput = {
   recovery?: Recovery
   notificationID?: SessionMessage.ID
   run: Effect.Effect<string, unknown>
+  readonly claim?: EngineStop.Reservation
 }
 
 export type WaitInput = {
@@ -351,13 +353,15 @@ export const make = Effect.gen(function* () {
             return [{ info: snapshot(job), scope }, new Map(jobs).set(input.id, job)]
           }),
         )
-        if ("scope" in result)
-          yield* restore(input.run).pipe(
+        if ("scope" in result) {
+          const body = restore(input.run).pipe(
             Effect.exit,
             Effect.flatMap((exit) => settle(input.id, result.scope, exit)),
             Effect.asVoid,
-            Effect.forkIn(result.scope, { startImmediately: true }),
           )
+          if (input.claim) yield* input.claim.fork(body, result.scope, Effect.void).pipe(Effect.orDie)
+          else yield* body.pipe(Effect.forkIn(result.scope, { startImmediately: true }))
+        }
         return result.info
       }),
     )
