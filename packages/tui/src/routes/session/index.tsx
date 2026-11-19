@@ -83,7 +83,7 @@ import {
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { detectFiletype, filetype } from "../../util/filetype"
 import { highlightCached } from "../../util/highlight-cache"
-import { forgivingMarkdown, USER_MARKDOWN_LIMIT } from "../../util/user-markdown"
+import { forgivingMarkdown, TRANSCRIPT_MARKDOWN_LIMIT } from "../../util/user-markdown"
 import { messageSegments, yamlSegments, type MessageSegment } from "../../util/message-blocks"
 import {
   messageProvenance,
@@ -2357,8 +2357,9 @@ function ReasoningHeader(props: {
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  const text = createMemo(() => props.part.text.trim())
   return (
-    <Show when={props.part.text.trim()}>
+    <Show when={text()}>
       <box
         id={props.part.id}
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
@@ -2366,16 +2367,21 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
         marginTop={1}
         flexShrink={0}
       >
-        <markdown
-          syntaxStyle={syntax()}
-          streaming={true}
-          internalBlockMode="top-level"
-          content={props.part.text.trim()}
-          tableOptions={{ style: "grid" }}
-          conceal={ctx.conceal()}
-          fg={theme.markdownText}
-          bg={theme.background}
-        />
+        <Show
+          when={text().length <= TRANSCRIPT_MARKDOWN_LIMIT}
+          fallback={<text fg={theme.markdownText}>{text()}</text>}
+        >
+          <markdown
+            syntaxStyle={syntax()}
+            streaming={true}
+            internalBlockMode="top-level"
+            content={text()}
+            tableOptions={{ style: "grid" }}
+            conceal={ctx.conceal()}
+            fg={theme.markdownText}
+            bg={theme.background}
+          />
+        </Show>
         <Show when={ctx.footer("time", "text", props.message.id, props.part.id) && props.part.time?.end}>
           {(end) => <text fg={theme.textMuted}>{Locale.todayTimeOrDateFirst(end(), ctx.tui.datetime_format)}</text>}
         </Show>
@@ -2789,7 +2795,7 @@ function UserText(props: { text: string }) {
   const pluginRuntime = usePluginRuntime()
   const markdown = createMemo(() => ctx.tui.syntax?.user_messages === true)
   const segments = createMemo(() => {
-    if (props.text.length > USER_MARKDOWN_LIMIT) return []
+    if (props.text.length > TRANSCRIPT_MARKDOWN_LIMIT) return []
     return messageSegments(props.text, [...(ctx.tui.syntax?.blocks ?? []), ...pluginRuntime.blocks()])
   })
   const [highlighted, setHighlighted] = createSignal<{

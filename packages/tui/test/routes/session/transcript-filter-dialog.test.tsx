@@ -106,7 +106,14 @@ type Rig = {
 
 async function withSession(
   body: (rig: Rig) => Promise<void>,
-  options: { width: number; height?: number; config?: Info; kv?: Record<string, unknown>; until?: string },
+  options: {
+    width: number
+    height?: number
+    config?: Info
+    kv?: Record<string, unknown>
+    until?: string
+    messages?: typeof transcript
+  },
 ) {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, JSON.stringify(options.kv ?? {}))
@@ -116,7 +123,7 @@ async function withSession(
   const calls = createFetch((url) => {
     if (url.pathname === "/session") return json([session])
     if (url.pathname === `/session/${sessionID}`) return json(session)
-    if (url.pathname === `/session/${sessionID}/message`) return json(transcript)
+    if (url.pathname === `/session/${sessionID}/message`) return json(options.messages ?? transcript)
     if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
     if (url.pathname === "/agent")
       return json([{ name: "build", mode: "primary", permission: [], options: {}, hidden: false }])
@@ -208,6 +215,26 @@ async function withSession(
     mock.restore()
   }
 }
+
+test("resumes with oversized assistant Markdown shown literally and the composer mounted", async () => {
+  const finalLine = "**end of large answer**"
+  const longAnswer = `${"> quoted transcript body\n\n".repeat(4_100)}${finalLine}`
+  await withSession(
+    async ({ api, frame, render }) => {
+      await render()
+      expect(api.prompt.snapshot()).toMatchObject({ ready: true, sessionID })
+      expect(frame()).toContain(finalLine)
+    },
+    {
+      width: 120,
+      until: "end of large answer",
+      messages: [
+        ...transcript.slice(0, -1),
+        { info: assistantInfo("msg_0003", "stop"), parts: [part("msg_0003", 0, { type: "text", text: longAnswer })] },
+      ],
+    },
+  )
+})
 
 const SPACE = " "
 const DOWN = "\x1b[B"
