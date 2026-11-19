@@ -728,6 +728,10 @@ export type SessionPauseRefusal = {
   request_id?: string
   reset_at?: string
   profiles?: Array<unknown>
+  model?: {
+    providerID: string
+    modelID: string
+  }
   api_error: unknown
 }
 

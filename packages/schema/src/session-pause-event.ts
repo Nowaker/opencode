@@ -39,6 +39,12 @@ export const Refusal = Schema.Struct({
   /** Omitted when Meridian sent null: no reset is known. */
   reset_at: optional(Schema.String),
   profiles: optional(Schema.Array(Schema.Unknown)),
+  /**
+   * The route the refused step was sent on: what is refused is one provider and model (a pool, a CVP requirement,
+   * a pinned account), not the session. A prompt naming another route is not held by the park. Absent in a park an
+   * older build wrote.
+   */
+  model: optional(Schema.Struct({ providerID: Schema.String, modelID: Schema.String })),
   /** The provider error opencode recorded for the failed step, before the step was dropped. */
   api_error: Schema.Unknown,
 }).annotate({ identifier: "SessionPauseRefusal" })

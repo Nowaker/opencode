@@ -291,6 +291,18 @@ const setup = Effect.fn("test.setup")(function* (config?: Partial<ConfigV1.Info>
               cost: { input: 0, output: 0 },
               options: {},
             },
+            "other-model": {
+              id: "other-model",
+              name: "Other Model",
+              attachment: false,
+              reasoning: false,
+              temperature: false,
+              tool_call: true,
+              release_date: "2025-01-01",
+              limit: { context: 100000, output: 10000 },
+              cost: { input: 0, output: 0 },
+              options: {},
+            },
           },
           options: { apiKey: "test-key", baseURL: llm.url },
         },
@@ -985,6 +997,89 @@ it.instance(
         ],
       }),
     ),
+  { git: true },
+  60_000,
+)
+
+const other = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("other-model") }
+
+const answerTexts = (messages: SessionV1.WithParts[]) =>
+  assistants(messages).flatMap((msg) => msg.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])))
+
+/*
+ * ses_e13fbe595ffeLpn236oxJ7OIZe, 2026-11-19 07:06Z: a step on a route no account could serve was in flight when
+ * the user sent a prompt naming another route; the refusal parked the session and that prompt waited for a person.
+ */
+it.instance(
+  "a refused step whose session has a newer prompt naming another model answers that prompt instead of parking",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      const gate = yield* Deferred.make<void>()
+      yield* ctx.llm.push(
+        raw({
+          head: [streamChunk({ role: "assistant" })],
+          wait: Effect.runPromise(Deferred.await(gate)),
+          tail: [{ error: { type: "rate_limit_error", message: refusalMessage } }],
+        }),
+      )
+      yield* ctx.llm.text("answered on the other model")
+      const turn = yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work")).pipe(Effect.forkChild)
+      yield* ctx.llm.wait(1)
+      const next = yield* ctx.prompt.prompt(text(ctx.chat.id, "continue", { model: other })).pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const messages = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+          return messages.some((msg) => msg.parts.some((part) => part.type === "text" && part.text === "continue"))
+            ? true
+            : undefined
+        }),
+        "the second prompt was never stored",
+        "10 seconds",
+      )
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(turn)
+      yield* Fiber.join(next)
+      yield* idle(ctx.chat.id)
+
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+      const inputs = stepInputs(yield* ctx.llm.inputs)
+      expect(inputs.map((input) => input.model)).toEqual(["test-model", "other-model"])
+      const messages = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+      expect(answerTexts(messages)).toEqual(["answered on the other model"])
+      const answer = assistants(messages)[0]?.info
+      expect(answer?.role === "assistant" ? String(answer.modelID) : undefined).toBe("other-model")
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "a refusal park holds a prompt on the refused model, and a prompt naming another model lifts it and runs",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      yield* ctx.llm.push(httpError(429, refusalBody))
+      yield* ctx.prompt.prompt(text(ctx.chat.id, "do the work"))
+      const parked = yield* ctx.pauses.get(ctx.chat.id)
+      expect(parked?.error?.model).toEqual({ providerID: "test", modelID: "test-model" })
+
+      yield* ctx.prompt.prompt(text(ctx.chat.id, "same route again"))
+      const held = yield* ctx.pauses.get(ctx.chat.id)
+      expect(held?.at).toBe(parked!.at)
+      expect(held?.held).toHaveLength(1)
+      expect(stepInputs(yield* ctx.llm.inputs)).toHaveLength(1)
+
+      yield* ctx.llm.text("answered on the other model")
+      yield* ctx.prompt.prompt(text(ctx.chat.id, "switch", { model: other }))
+      yield* idle(ctx.chat.id)
+      expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
+      const inputs = stepInputs(yield* ctx.llm.inputs)
+      expect(inputs.map((input) => input.model)).toEqual(["test-model", "other-model"])
+      expect(answerTexts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))).toEqual([
+        "answered on the other model",
+      ])
+    }),
   { git: true },
   60_000,
 )

@@ -201,6 +201,23 @@ function heldWhilePaused(input: PromptInput) {
   return input.unpause !== true
 }
 
+type Route = { readonly providerID: string; readonly modelID: string }
+
+function sameRoute(left: Route, right: Route) {
+  return left.providerID === right.providerID && left.modelID === right.modelID
+}
+
+/*
+ * A no-routable-account park refuses one route - a provider and model, which carries the pool, a CVP requirement
+ * or a pinned account - not the session. A prompt that names another route is not held by it: the park lifts and
+ * that prompt runs (ses_e13fbe595ffeLpn236oxJ7OIZe, 2026-11-19: a prompt pinned to an account with allowance
+ * waited behind a park on the cybersec route until a person unpaused it).
+ */
+function liftedByRoute(pause: SessionPause.Info, prompt: SessionV1.User) {
+  const refused = pause.error?.model
+  return refused !== undefined && pause.root === undefined && !sameRoute(refused, prompt.model)
+}
+
 type DeferredToolPart = SessionV1.ToolPart & { state: SessionV1.ToolStatePending }
 
 function isDeferredToolPart(part: SessionV1.Part): part is DeferredToolPart {
@@ -1458,6 +1475,7 @@ const layer = Layer.effect(
     const hold = Effect.fnUntraced(function* (sessionID: SessionID, message: SessionV1.WithParts) {
       const current = yield* pauses.get(sessionID)
       if (!current) return false
+      if (message.info.role === "user" && liftedByRoute(current, message.info)) return false
       const text = message.parts.find((part) => part.type === "text")
       const delivery = text?.type === "text" ? text.metadata?.vibeterm : undefined
       yield* pauses.write(sessionID, {
@@ -1497,6 +1515,7 @@ const layer = Layer.effect(
       session: Session.Info
       messageID: MessageID
       refusal: SessionPause.Refusal
+      route: Route
     }) {
       const sessionID = input.session.id
       yield* processor.settle(sessionID)
@@ -1508,9 +1527,39 @@ const layer = Layer.effect(
       })
       const result = yield* pause(
         { sessionID, source: { kind: "api", client: SessionPause.REFUSAL_CODE }, reason: input.refusal.message },
-        input.refusal,
+        { ...input.refusal, model: { providerID: input.route.providerID, modelID: input.route.modelID } },
       )
       if (input.session.parentID) yield* waitForUnpause(sessionID, result.pause)
+    })
+
+    /*
+     * The newest prompt of the session when it names another route than the refused step's: it was sent while that
+     * step was in flight, and answering it is what the user asked for, so the refusal parks nothing.
+     */
+    const promptOnAnotherRoute = Effect.fnUntraced(function* (sessionID: SessionID, refused: SessionV1.User) {
+      const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+        Effect.provideService(Database.Service, database),
+      )
+      const newest = MessageV2.latest(pickUp(sessionID, history)).user
+      if (!newest || newest.id === refused.id || sameRoute(newest.model, refused.model)) return undefined
+      return newest
+    })
+
+    const dropRefused = Effect.fnUntraced(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+      refusal: SessionPause.Refusal
+      prompt: SessionV1.User
+    }) {
+      yield* processor.settle(input.sessionID)
+      yield* sessions.removeMessage({ sessionID: input.sessionID, messageID: input.messageID })
+      yield* Effect.logWarning("refused step dropped: a newer prompt names another route", {
+        "session.id": input.sessionID,
+        messageID: input.messageID,
+        incident: input.refusal.incident_id,
+        prompt: input.prompt.id,
+        route: `${input.prompt.model.providerID}/${input.prompt.model.modelID}`,
+      })
     })
 
     // The loop reached a step boundary while paused: the turn stops there instead of calling the model again.
@@ -1747,6 +1796,12 @@ const layer = Layer.effect(
       if (paused && !heldWhilePaused(input))
         yield* release({ sessionID: input.sessionID, source: { kind: "api", client: "prompt" } }).pipe(Effect.orDie)
       const { message, held } = yield* createUserMessage(input)
+      if (paused && !held && message.info.role === "user" && liftedByRoute(paused, message.info))
+        yield* release({
+          sessionID: input.sessionID,
+          expectedPauseAt: paused.at,
+          source: { kind: "api", client: "prompt" },
+        }).pipe(Effect.catchTag("PauseChangedError", () => Effect.void))
       yield* Deferred.succeed(admission, undefined)
       yield* sessions.touch(input.sessionID)
 
@@ -1776,6 +1831,7 @@ const layer = Layer.effect(
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
+        let answerNewest = false
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1785,7 +1841,8 @@ const layer = Layer.effect(
           const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
             Effect.provideService(Database.Service, database),
           )
-          const holding = (yield* config.get()).queued_prompts === "turn_end"
+          const holding = !answerNewest && (yield* config.get()).queued_prompts === "turn_end"
+          answerNewest = false
           let msgs = pickUp(sessionID, holding ? answerAfterTurn(holdForTurnEnd(history)) : history)
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
@@ -2171,8 +2228,16 @@ const layer = Layer.effect(
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
           if (outcome === "break") break
-          if (outcome === "park" && handle.refusal)
-            yield* park({ session, messageID: handle.message.id, refusal: handle.refusal })
+          if (outcome === "park" && handle.refusal) {
+            const newer = yield* promptOnAnotherRoute(sessionID, lastUser)
+            if (newer) {
+              yield* dropRefused({ sessionID, messageID: handle.message.id, refusal: handle.refusal, prompt: newer })
+              // The refused turn ends here; holding prompts for its end would hide the one to answer.
+              answerNewest = true
+              continue
+            }
+            yield* park({ session, messageID: handle.message.id, refusal: handle.refusal, route: lastUser.model })
+          }
           continue
         }
 
