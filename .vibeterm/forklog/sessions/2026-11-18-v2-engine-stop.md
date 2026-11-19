@@ -1,4 +1,4 @@
-# W1 v2 engine stop (W24) and its desktop install
+# W1 v2 engine stop (W24, W24b) and its desktop installs
 
 ## Identity
 
@@ -7,9 +7,9 @@
 - Agent/platform: `opencode 1.19.5-vt-432-006d837c50`, `anthropic/claude-opus-5-5` / `linux`
 - Repository: `Nowaker/opencode` (gitlab `origin`, github `nowaker-github`); `Nowaker/opencode-tools` for the probe fix
 - Integration branch: `v2-nowaker` (source), `dev-nowaker` (this record)
-- Development branch(es): `client-test-baseline`, `engine-stop-seal`; `engine-stop-w24b` (uncommitted)
+- Development branch(es): `client-test-baseline`, `engine-stop-seal`, `engine-stop-w24b`
 - Upstream base: `v2.2.7` (`fedc6f208a`)
-- Source result commit(s): `235c6a4b6e`, `2f2c119414`; opencode-tools `07452e75e0`
+- Source result commit(s): `235c6a4b6e`, `2f2c119414`, `fbf2fbe0fd`; opencode-tools `07452e75e0`
 - Forklog commit: this file's introducing commit
 
 ## User requests
@@ -18,7 +18,7 @@ No human prompt in this session; the work came from the v2 coordinator [`ses_e38
 
 ## Goals
 
-- Land W24 on both mirrors, install it on desktop, and prepare W24b.
+- Land W24 and W24b on both mirrors and install them on desktop.
 
 ## Constraints and non-goals
 
@@ -30,13 +30,14 @@ No human prompt in this session; the work came from the v2 coordinator [`ses_e38
 |---|---|---|---|---|
 | `Nowaker/opencode` | `v2-nowaker` | `6db5c23fcf` | `235c6a4b6e` | test fix: recovered-child cancellation observed through its notice |
 | `Nowaker/opencode` | `v2-nowaker` | `235c6a4b6e` | `2f2c119414` | W24 engine stop (45 files, blobs equal to manifest `12b72ba2`) |
+| `Nowaker/opencode` | `v2-nowaker` | `2f2c119414` | `fbf2fbe0fd` | W24b remaining owner fences (33 files, blobs equal to manifest `12934180`) |
 | `Nowaker/opencode-tools` | `master` | `d63164337be` | `07452e75e0` | probe fixture gate on a held loopback request |
 
 ## Features touched
 
 | Feature | Outcome | Evidence |
 |---|---|---|
-| [Native v2 engine stop](../features/2026-11-18-v2-engine-stop.md) | introduced | W24 v8 packet `48e0d45a`, build packet `95e5cd26` |
+| [Native v2 engine stop](../features/2026-11-18-v2-engine-stop.md) | introduced | W24 v8 packet `48e0d45a`, build packet `95e5cd26`; W24b v3 packet `54992dd5`, build packet `bd5a96de` |
 
 ## Other delivered work
 
@@ -46,17 +47,19 @@ No human prompt in this session; the work came from the v2 coordinator [`ses_e38
 
 - `235c6a4b6e`: v7-pre packet `88862f5d` green (recovered-child test 11/0 without W24).
 - `2f2c119414`: W24 v8 packet `48e0d45a`, 28 rows green (W15, desktop, 2026-11-19T04:34Z).
+- `fbf2fbe0fd`: W24b v3 packet `54992dd5`, 33/33 rows (W15, desktop, 2026-11-19T13:52Z, result `4e83a4044a3697c1`). Before it, two coordinator-granted diagnostics (not evidence) installed each of the 13 mutants and saw each red on its named assertion, with every restore verified; the second also logged slice io.pressure before each row (0.12-2.22).
 - Probe diagnostics (not evidence, coordinator grants): old gate vt-46 3/3 green, vt-50 2/3 red (build run and run a), a different location stalling each time, the engine at ~0 CPU in sleep state with no log lines; event gate vt-50 3/3 green and vt-46 1/1 green. 3 runs is not proof of absence.
 
 ## Build and install
 
 - Build command: `.vibeterm/build.sh --v2`, packet `w24-build/packet.json` `95e5cd26` (probe library pinned to `07452e75e0`), unit `w1-w24-desktop-2f2c119`.
 - Installed artifact: desktop `opencode2` `v2.2.7-vt-50-5f76acb125`, sha256 `1d8cef6b...`, inode 49949420; probe 12/0/0; vt-46 archived as `opencode2.prev-1795067500`.
+- W24b: packet `w24b-build/packet.json` `bd5a96de` (adds a gate: the build unit's parent-slice io.pressure some avg10 < 5), unit `w1-w24b-desktop-fbf2fbe`. Installed artifact: desktop `opencode2` `v2.2.7-vt-51-5f76acb125`, sha256 `f68bf347...`, inode 49951211; probe 12/0/0; vt-50 archived as `opencode2.prev-1795098677`.
 - Running services: v1 binary and the system and user `opencode-serve-*` identities unchanged; nothing restarted.
 
 ## Commit provenance
 
-- `235c6a4b6e`, `2f2c119414` (opencode); `07452e75e0` (opencode-tools).
+- `235c6a4b6e`, `2f2c119414`, `fbf2fbe0fd` (opencode); `07452e75e0` (opencode-tools).
 - Required trailer: `AI-Session-ID: ses_e3832b1b0ffe6q98OeUzhgqhjQ`
 
 ```sh
@@ -71,5 +74,5 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
 ## Unknowns and blocked verification
 
 - The original W24 assignment prompt is not in this session's retained history: TBD.
-- W24b: source in `engine-stop-w24b`, gates packet v1 `679aded9` awaiting the coordinator's slot grant; not landed.
+- W24b process slips, recorded: v1 froze with four new tests never run (all four were test defects), and v2 froze with mutant reds only predicted (the command keeper could not tell the outer fence from the inner one). The first W24b build launch ran its unit from a waiter unit without the agent-units shim on `PATH`, so it landed in `app.slice` and its gate refused it before building; the relaunch put the shim on `PATH`.
 - m4max install: deferred while m4max travels.
