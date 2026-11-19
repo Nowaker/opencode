@@ -37,10 +37,46 @@ export type TuiComposerCaret = {
 
 /** What the composer holds, for a plugin that keeps or restores drafts. */
 export type TuiComposerDraft = Pick<TuiComposerSnapshot, "generation" | "revision" | "ready" | "reason" | "sessionID" | "mode"> & {
+  /** Logical draft UUID. Absent on older hosts and custom prompt providers. */
+  draftID?: string
   input: string
   parts: TuiPromptInfo["parts"]
   /** Null when the composer cannot report its caret. Moving the caret does not advance `revision`. */
   caret: TuiComposerCaret | null
+}
+
+type TuiComposerTypingContext = {
+  readonly draftID: string
+  readonly sessionID: string | null
+  /** Producer Date.now(), shared with the submit gesture clock. */
+  readonly timeMs: number
+}
+
+/** Count-only observations from the standard interactive composer, never the CLI run footer. */
+export type TuiComposerTypingEvent = TuiComposerTypingContext & (
+  | { readonly kind: "started" | "focus_gained" | "focus_lost" | "cleared" | "restored" }
+  | { readonly kind: "abandoned"; readonly reason: string }
+  | {
+      readonly kind: "edit"
+      readonly insertedChars: number
+      readonly deletedChars: number
+      readonly isPaste: boolean
+      readonly pasteChars: number
+    }
+)
+
+export type TuiComposerTypingSubmit = {
+  readonly draftID: string
+  readonly sessionID: string
+  readonly messageID: string
+  readonly timeMs: number
+}
+
+export type TuiComposerTypingObserver = {
+  /** Runs on the input thread: enqueue only, with no disk or process I/O. No text is exposed. */
+  event(event: TuiComposerTypingEvent): void
+  /** Resolve only once the intent is durable. Rejection preserves the composer and prevents dispatch. */
+  beforeSubmit(event: TuiComposerTypingSubmit): Promise<void>
 }
 
 /**
@@ -105,6 +141,16 @@ export type TuiComposerDeliverResult =
 
 export type TuiComposerApi = {
   /**
+   * Observes standard native composers, including Unicode code point edit counts and terminal focus reports
+   * when the terminal/tmux forwards them. Draft activity begins on an edit, explicit restore or submit intent;
+   * empty mounts, clears and sends do not start another record. A subscription receives active draft identity and focus;
+   * earlier edits are not replayed. Programmatic writes and external editors do not count as typing.
+   * beforeSubmit gates interactive prompt and server slash command dispatch with their exact message ID.
+   * Shell dispatch ends the draft with abandoned/sent_to_shell, since its user message is synthetic.
+   * It records an intent, not admission: only a persisted user message proves acceptance.
+   */
+  observeTyping?(observer: TuiComposerTypingObserver): () => void
+  /**
     * Pauses composer input synchronously until release. Keys, pastes, mouse input, navigation and legacy prompt
     * mutations are blocked, not queued or accepted; the TUI shows persistent paused feedback. `replace()`/`submit()`
     * answer `not-ready` (`reason: "disabled"`). Release accepts fresh input only; blocked attempts must be retried.
@@ -120,7 +166,7 @@ export type TuiComposerApi = {
    * `promptParts` defaults to none; given, they must describe ranges of `text`.
    * `caret` defaults to the end of `text`; offsets past it are clamped.
    */
-  replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"]; caret?: TuiComposerCaret }): TuiComposerResult
+  replace(request: TuiComposerGuard & { text: string; promptParts?: TuiPromptInfo["parts"]; caret?: TuiComposerCaret; draftID?: string }): TuiComposerResult
   /** A submitted receipt acknowledges invocation, not server admission. */
   submit(request: TuiComposerGuard): TuiComposerResult
   /**

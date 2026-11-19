@@ -5,6 +5,8 @@ import {
   MouseEvent,
   PasteEvent,
   decodePasteBytes,
+  CliRenderEvents,
+  RenderableEvents,
   type KeyEvent,
   type Renderable,
 } from "@opentui/core"
@@ -77,6 +79,9 @@ import { InstantCaret } from "../../instant/caret"
 import { InstantCache } from "../../instant/cache"
 import { InstantRecord } from "../../instant/record"
 import { copyText, onClick } from "../../ui/click"
+import { usePromptRef } from "../../context/prompt"
+import { codePoints, createComposerTyping, type TypingBuffer } from "./typing"
+import { discardLine } from "../../util/line-discard"
 
 registerOpencodeSpinner()
 
@@ -218,9 +223,11 @@ export function Prompt(props: PromptProps) {
   const renderer = useRenderer()
   const exit = useExit()
   const composerSeal = useComposerSeal()
+  const typingObservers = usePromptRef().typing
+  const [recordingSubmit, setRecordingSubmit] = createSignal(false)
   const sealed = () => composerSeal?.sealed() === true
-  const disabled = () => props.disabled === true || sealed()
-  const whileOpen = (work: () => void) => (composerSeal ? composerSeal.whileOpen(work) : work())
+  const disabled = () => props.disabled === true || sealed() || recordingSubmit()
+  const whileOpen = (work: () => void) => recordingSubmit() ? undefined : (composerSeal ? composerSeal.whileOpen(work) : work())
   // Async work that can still change the prompt once it resumes. A seal refuses while any runs.
   const whilePending = <T,>(work: () => Promise<T>) => (composerSeal ? composerSeal.track(work) : work())
   const dimensions = useTerminalDimensions()
@@ -360,6 +367,30 @@ export function Prompt(props: PromptProps) {
     mode: "normal",
     extmarkToPartIndex: new Map(),
     interrupt: 0,
+  })
+
+  function typingBuffer(): TypingBuffer {
+    const text = input.plainText
+    const offset = (cell: number) => input.getTextRange(0, cell).length
+    const selection = input.getSelection()
+    return {
+      text,
+      spans: input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((mark) => {
+        const index = store.extmarkToPartIndex.get(mark.id)
+        const part = index === undefined ? undefined : store.prompt.parts[index]
+        return part ? [{ start: offset(mark.start), end: offset(mark.end), text: part.type === "text" ? part.text : "" }] : []
+      }).sort((a, b) => a.start - b.start),
+      ...(selection ? { selection: { start: offset(selection.start), end: offset(selection.end) } } : {}),
+    }
+  }
+  const typing = createComposerTyping({ observers: typingObservers, sessionID: () => props.sessionID, buffer: typingBuffer })
+  const typingFocus = () => typing.focus(!!input && !input.isDestroyed && input.focused && renderer.terminalFocused !== false && !disabled() && props.visible !== false && dialog.stack.length === 0)
+  renderer.on(CliRenderEvents.FOCUS, typingFocus)
+  renderer.on(CliRenderEvents.BLUR, typingFocus)
+  onCleanup(() => {
+    renderer.off(CliRenderEvents.FOCUS, typingFocus)
+    renderer.off(CliRenderEvents.BLUR, typingFocus)
+    typing.dispose()
   })
 
   createEffect(
@@ -799,7 +830,7 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
-    enabled: !sealed(),
+    enabled: !sealed() && !recordingSubmit(),
     commands: promptCommands(),
   }))
 
@@ -909,7 +940,7 @@ export function Prompt(props: PromptProps) {
       return input.focused
     },
     get current() {
-      return { ...store.prompt, input: input.plainText, mode: store.mode }
+      return { ...store.prompt, input: input.plainText, mode: store.mode, draftID: typing.draftID }
     },
     focus() {
       input.focus()
@@ -919,6 +950,7 @@ export function Prompt(props: PromptProps) {
     },
     set(prompt) {
       whileOpen(() => {
+        typing.replace(prompt.draftID, prompt.draftID === typing.draftID ? undefined : "replaced")
         input.setText(prompt.input)
         setStore("prompt", prompt)
         if (prompt.mode !== undefined) setStore("mode", prompt.mode)
@@ -928,6 +960,7 @@ export function Prompt(props: PromptProps) {
     },
     reset() {
       whileOpen(() => {
+        typing.replace(undefined, "cleared")
         input.clear()
         input.extmarks.clear()
         setStore("prompt", {
@@ -959,6 +992,7 @@ export function Prompt(props: PromptProps) {
     stashed = undefined
     if (store.prompt.input) return
     if (saved && saved.prompt.input) {
+      typing.replace(saved.prompt.draftID)
       input.setText(saved.prompt.input)
       setStore("prompt", saved.prompt)
       restoreExtmarksFromParts(saved.prompt.parts)
@@ -970,7 +1004,7 @@ export function Prompt(props: PromptProps) {
 
   onCleanup(() => {
     if (store.prompt.input) {
-      stashed = { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
+      stashed = { prompt: { ...unwrap(store.prompt), draftID: typing.draftID }, cursor: input.cursorOffset }
     }
     setInputTarget(undefined)
     props.ref?.(undefined)
@@ -978,14 +1012,16 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || dialog.stack.length > 0) {
+    if (props.visible === false || dialog.stack.length > 0 || disabled()) {
       if (input.focused) input.blur()
+      typingFocus()
       return
     }
 
     // Slot/plugin updates can remount the background prompt while a dialog is open.
     // Keep focus with the dialog and let the prompt reclaim it after the dialog closes.
     if (!input.focused) input.focus()
+    typingFocus()
   })
 
   createEffect(() => {
@@ -1032,6 +1068,10 @@ export function Prompt(props: PromptProps) {
   }
 
   function stepUndo(direction: "undo" | "redo") {
+    typing.capture(() => applyUndo(direction))
+  }
+
+  function applyUndo(direction: "undo" | "redo") {
     if (!input || input.isDestroyed) return
     if (!undoApplying) promptUndo.observe(undoState())
     const current = undoState()
@@ -1167,6 +1207,7 @@ export function Prompt(props: PromptProps) {
   // with the caret on the same character it was on.
   function giveBack(draft: PromptInfo) {
     if (!input.plainText && store.prompt.parts.length === 0) {
+      typing.replace(draft.draftID)
       input.setText(draft.input)
       setStore("prompt", { input: draft.input, parts: draft.parts })
       restoreExtmarksFromParts(draft.parts)
@@ -1177,6 +1218,7 @@ export function Prompt(props: PromptProps) {
     const merged = mergeFailedPrompt(draft, structuredClone(unwrap({ ...store.prompt, input: input.plainText })))
     if (!merged) return "already in the prompt"
     const caret = readCaret()
+    typing.replace(undefined, "merged_rejected_draft")
     input.setText(merged.prompt.input)
     setStore("prompt", merged.prompt)
     restoreExtmarksFromParts(merged.prompt.parts)
@@ -1202,12 +1244,13 @@ export function Prompt(props: PromptProps) {
   }
 
   function recoverArchived(details: SessionArchive.Details, draft: PromptInfo, send: () => void) {
-    const newer = structuredClone(unwrap({ ...store.prompt, input: input.plainText, mode: store.mode }))
+    const newer = structuredClone(unwrap({ ...store.prompt, input: input.plainText, mode: store.mode, draftID: typing.draftID }))
     giveBack(draft)
     if (!newer.input && !newer.parts.length) setStore("mode", draft.mode ?? "normal")
     const restored = JSON.stringify({ input: input.plainText, parts: unwrap(store.prompt.parts) })
     showArchived(details, () => {
       if (JSON.stringify({ input: input.plainText, parts: unwrap(store.prompt.parts) }) === restored) {
+        typing.replace(newer.draftID)
         input.setText(newer.input)
         setStore("prompt", { input: newer.input, parts: newer.parts })
         setStore("mode", newer.mode)
@@ -1289,9 +1332,11 @@ export function Prompt(props: PromptProps) {
         run: () => {
           if (!store.prompt.input) return
           stash.push({
+            draftID: typing.draftID,
             input: store.prompt.input,
             parts: store.prompt.parts,
           })
+          typing.replace()
           input.extmarks.clear()
           input.clear()
           setStore("prompt", { input: "", parts: [] })
@@ -1307,6 +1352,7 @@ export function Prompt(props: PromptProps) {
         run: () => {
           const entry = stash.pop()
           if (entry) {
+            typing.replace(entry.draftID, store.prompt.input ? "stash_pop_replaced" : undefined)
             input.setText(entry.input)
             setStore("prompt", { input: entry.input, parts: entry.parts })
             restoreExtmarksFromParts(entry.parts)
@@ -1324,6 +1370,7 @@ export function Prompt(props: PromptProps) {
           dialog.replace(() => (
             <DialogStash
               onSelect={(entry) => {
+                typing.replace(entry.draftID, store.prompt.input ? "stash_restore_replaced" : undefined)
                 input.setText(entry.input)
                 setStore("prompt", { input: entry.input, parts: entry.parts })
                 restoreExtmarksFromParts(entry.parts)
@@ -1340,7 +1387,7 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
-    enabled: !sealed(),
+    enabled: !sealed() && !recordingSubmit(),
     commands: stashCommands(),
   }))
 
@@ -1367,6 +1414,12 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: inputTarget() !== undefined && !disabled(),
       commands: [
+        {
+          name: "input.delete.to.line.start",
+          title: "Delete to line start",
+          category: "Prompt",
+          run: () => typing.capture(() => discardLine(input, tuiConfig.input?.line_discard)),
+        },
         {
           name: "input.undo",
           title: "Undo in prompt",
@@ -1457,6 +1510,7 @@ export function Prompt(props: PromptProps) {
 
             const item = history.move(-1, input.plainText, props.sessionID)
             if (!item) return false
+            typing.replace(undefined, store.prompt.input ? "history_recall" : undefined)
             input.setText(item.input)
             setStore("prompt", item)
             setStore("mode", item.mode ?? "normal")
@@ -1493,6 +1547,7 @@ export function Prompt(props: PromptProps) {
 
             const item = history.move(1, input.plainText, props.sessionID)
             if (!item) return false
+            typing.replace(undefined, store.prompt.input ? "history_recall" : undefined)
             input.setText(item.input)
             setStore("prompt", item)
             setStore("mode", item.mode ?? "normal")
@@ -1515,14 +1570,15 @@ export function Prompt(props: PromptProps) {
     // to a freshly created session.
     if (submitting) return false
     submitting = true
+    const timeMs = Date.now()
     try {
-      return await submitInner(expected, unarchive)
+      return await submitInner(expected, unarchive, timeMs)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner(expected?: { input: string; parts: number }, unarchive = false) {
+  async function submitInner(expected: { input: string; parts: number } | undefined, unarchive: boolean, timeMs: number) {
     workspace.clearNotice()
     if (startupNotice()?.type === "changed") setStartupNotice(undefined)
 
@@ -1625,7 +1681,7 @@ export function Prompt(props: PromptProps) {
 
     // Capture mode before it gets reset
     const currentMode = store.mode
-    const draft = structuredClone(unwrap({ ...store.prompt, mode: currentMode }))
+    const draft = structuredClone(unwrap({ ...store.prompt, mode: currentMode, draftID: typing.draftID }))
     const editorSelection = editorContext()
     const editorParts =
       editorSelection && editor.labelState() === "pending"
@@ -1644,10 +1700,32 @@ export function Prompt(props: PromptProps) {
           ]
         : []
 
+    const messageID = Identifier.ascending("message")
+    if (currentMode !== "shell" && typingObservers.observed) {
+      typing.start(timeMs)
+      const revision = handoffRevision
+      setRecordingSubmit(true)
+      try {
+        await typingObservers.beforeSubmit({ draftID: typing.draftID, sessionID, messageID, timeMs })
+      } catch {
+        toast.show({ message: "Could not record draft submission. Prompt was not sent; your draft is unchanged.", variant: "error" })
+        if (finishMoveProgress) move.finishSubmit()
+        return false
+      } finally {
+        setRecordingSubmit(false)
+      }
+      if (input.isDestroyed || handoffRevision !== revision) {
+        toast.show({ message: "Draft changed while recording submission. Prompt was not sent.", variant: "error" })
+        if (finishMoveProgress) move.finishSubmit()
+        return false
+      }
+    }
+
     if (store.mode === "shell") {
       move.startSubmit()
       sendAction((unarchive) => sdk.client.session.shell({
         sessionID,
+        messageID,
         agent: agent.name,
         model: {
           providerID: selectedModel.providerID,
@@ -1671,6 +1749,7 @@ export function Prompt(props: PromptProps) {
 
       sendAction((unarchive) => sdk.client.session.command({
         sessionID,
+        messageID,
         command: command.slice(1),
         arguments: args,
         agent: agent.name,
@@ -1684,14 +1763,13 @@ export function Prompt(props: PromptProps) {
       move.startSubmit()
       // IDs are generated here so a failed send can be looked up and resent without a duplicate. Only the leading
       // parts get one: the server gives the rest IDs later, which keeps the parts in the order they were sent.
-      const messageID = Identifier.ascending("message")
       const leading = editorParts.map((part) => ({ ...part, id: Identifier.ascending("part") }))
       const textPartID = Identifier.ascending("part")
       admission.submit({
         messageID,
         sessionID,
         textPartID,
-        prompt: structuredClone(unwrap({ ...store.prompt, mode: currentMode })),
+        prompt: draft,
         body: {
           sessionID,
           messageID,
@@ -1715,6 +1793,7 @@ export function Prompt(props: PromptProps) {
       },
       sessionID,
     )
+    typing.replace(undefined, currentMode === "shell" ? "sent_to_shell" : undefined)
     input.extmarks.clear()
     setStore("prompt", {
       input: "",
@@ -1739,6 +1818,10 @@ export function Prompt(props: PromptProps) {
   }
 
   function pasteText(text: string, virtualText: string, after = " ") {
+    return typing.capture(() => pasteTextInner(text, virtualText, after), { pasteChars: codePoints(text), replaceSelection: true })
+  }
+
+  function pasteTextInner(text: string, virtualText: string, after: string) {
     const currentOffset = input.cursorOffset
     const extmarkStart = currentOffset
     const extmarkEnd = extmarkStart + promptOffsetWidth(virtualText)
@@ -1810,7 +1893,7 @@ export function Prompt(props: PromptProps) {
   }
 
   function insertPastedText(text: string) {
-    input.insertText(text)
+    typing.capture(() => input.insertText(text), { pasteChars: codePoints(text), replaceSelection: true })
 
     setTimeout(() => {
       if (!input || input.isDestroyed) return
@@ -1949,6 +2032,7 @@ export function Prompt(props: PromptProps) {
     const part = partIndex === undefined ? undefined : store.prompt.parts[partIndex]
     if (!extmark || partIndex === undefined || part?.type !== "text" || !part.source) return
     const content = normalizeLineEndings(text)
+    if (content !== part.text) typing.edit({ insertedChars: codePoints(content), deletedChars: codePoints(part.text), isPaste: false, pasteChars: 0 })
     const label = pasteLabel(content, tuiConfig.prompt?.paste_summary)
     if (!inline && content && label === part.source.text.value) {
       setStore(
@@ -1965,11 +2049,12 @@ export function Prompt(props: PromptProps) {
     if (!start || !end) return
     input.editBuffer.deleteRange(start.row, start.col, end.row, end.col)
     input.cursorOffset = extmark.start
-    if (inline || !content) insertPastedText(content)
-    else pasteText(content, label, "")
+    if (inline || !content) input.insertText(content)
+    else pasteTextInner(content, label, "")
   }
 
   function clearPrompt() {
+    typing.replace(undefined, "cleared")
     if (store.prompt.input.trim().length >= DRAFT_RETENTION_MIN_CHARS || store.prompt.parts.length > 0) {
       history.append(
         {
@@ -2240,6 +2325,16 @@ export function Prompt(props: PromptProps) {
             }}
             ref={(r: TextareaRenderable) => {
               input = r
+              const handleKeyPress = r.handleKeyPress.bind(r)
+              r.handleKeyPress = (key) => typing.capture(() => handleKeyPress(key), {
+                replaceSelection: !key.ctrl && !key.meta && !key.super && !key.hyper && /^[^\u0000-\u001f\u007f-\u009f]+$/u.test(key.sequence),
+              })
+              for (const method of ["deleteChar", "deleteCharBackward", "deleteLine", "deleteToLineEnd", "deleteToLineStart", "deleteWordForward", "deleteWordBackward", "newLine"] as const) {
+                const original = r[method].bind(r)
+                r[method] = () => typing.capture(original)
+              }
+              r.on(RenderableEvents.FOCUSED, typingFocus)
+              r.on(RenderableEvents.BLURRED, typingFocus)
               Object.assign(r, {
                 getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
               })

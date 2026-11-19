@@ -41,6 +41,9 @@ export type {
   TuiComposerSealRefusal,
   TuiComposerSealResult,
   TuiComposerSnapshot,
+  TuiComposerTypingEvent,
+  TuiComposerTypingSubmit,
+  TuiComposerTypingObserver,
 } from "./tui-prompt.js"
 
 export type { CliRenderer, KeyEvent, Renderable, SlotMode } from "@opentui/core"
@@ -196,6 +199,8 @@ export type TuiDialogSelectProps<Value = unknown> = {
 }
 
 export type TuiPromptInfo = {
+  /** Explicit restore/move of an existing draft; omitted text replacements create a new identity. */
+  draftID?: string
   input: string
   mode?: "normal" | "shell"
   parts: (

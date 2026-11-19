@@ -7,6 +7,7 @@ import { appendText, readText, writeText } from "../util/persistence"
 import type { PromptInfo } from "./history"
 
 export type StashEntry = {
+  draftID?: string
   input: string
   parts: PromptInfo["parts"]
   timestamp: number

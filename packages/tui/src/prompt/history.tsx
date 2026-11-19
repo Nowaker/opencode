@@ -8,6 +8,7 @@ import { useTuiConfig } from "../config"
 import { appendText, readText, writeText } from "../util/persistence"
 
 export type PromptInfo = {
+  draftID?: string
   input: string
   mode?: "normal" | "shell"
   parts: (

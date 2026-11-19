@@ -1,6 +1,7 @@
 import { createSimpleContext } from "./helper"
 import type { PromptRef } from "../component/prompt"
 import type { PromptHeld } from "../plugin/prompt-control"
+import { createTypingObservers } from "../component/prompt/typing"
 
 export const { use: usePromptRef, provider: PromptRefProvider } = createSimpleContext({
   name: "PromptRef",
@@ -9,6 +10,7 @@ export const { use: usePromptRef, provider: PromptRefProvider } = createSimpleCo
     let held: (() => PromptHeld | undefined) | undefined
 
     return {
+      typing: createTypingObservers(),
       get current() {
         return current
       },

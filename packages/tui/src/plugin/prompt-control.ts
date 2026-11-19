@@ -64,6 +64,7 @@ export function createPromptControl(
     return {
       generation, revision: handoff?.revision ?? 0, ready: reason === "ready", reason, sessionID: flags.sessionID,
       mode: current?.mode ?? "normal", input: current?.input ?? "", parts: current?.parts ?? [],
+      ...(current?.draftID === undefined ? {} : { draftID: current.draftID }),
       caret: handoff?.caret?.() ?? null,
     }
   }
@@ -158,6 +159,7 @@ export function createPromptControl(
         createHash("sha256").update(request.text).digest("hex"),
         createHash("sha256").update(JSON.stringify(parts)).digest("hex"),
         request.caret ?? null,
+        request.draftID ?? null,
       ])
       const replacement = replacements.get(request.correlationId)
       if (replacement) {
@@ -166,12 +168,13 @@ export function createPromptControl(
       }
       if (!matches(request, current)) return { status: "conflict", snapshot: current }
       if (!current.ready || !active) return { status: "not-ready", snapshot: current }
-      active.set({ input: request.text, parts: structuredClone(parts) })
+      active.set({ input: request.text, parts: structuredClone(parts), ...(request.draftID === undefined ? {} : { draftID: request.draftID }) })
       if (request.caret) active.handoff?.place?.(request.caret)
       const accepted = snapshot()
       const exact = active?.current.input === request.text
         && JSON.stringify(active.current.parts) === JSON.stringify(parts)
         && accepted.generation === current.generation && accepted.mode === "normal"
+        && (request.draftID === undefined || active.current.draftID === request.draftID)
       const receipt: TuiComposerResult = { status: exact ? "accepted" : "mismatch", snapshot: accepted }
       replacements.set(request.correlationId, { key: requestKey, receipt })
       return receipt

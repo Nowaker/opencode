@@ -182,17 +182,20 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
   return {
     app: appApi(input.version),
     attention: input.attention,
-    prompt: createPromptControl(
-      () => input.promptRef?.current,
-      () => ({
-        dialog: input.dialog.stack.length > 0,
-        ready: input.sync.ready,
-        sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
-        held: input.promptRef?.held,
-      }),
-      input.composerSeal,
-      input.promptSend,
-    ),
+    prompt: {
+      ...createPromptControl(
+        () => input.promptRef?.current,
+        () => ({
+          dialog: input.dialog.stack.length > 0,
+          ready: input.sync.ready,
+          sessionID: input.route.data.type === "session" ? input.route.data.sessionID : null,
+          held: input.promptRef?.held,
+        }),
+        input.composerSeal,
+        input.promptSend,
+      ),
+      ...(input.promptRef ? { observeTyping: input.promptRef.typing.observe } : {}),
+    },
     // Keep deprecated `api.command` working for v1 plugins; remove in v2.
     command: createCommandShim(input.keymap, input.dialog, input.tuiConfig.keybinds),
     click: input.click,
