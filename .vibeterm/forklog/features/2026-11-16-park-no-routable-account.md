@@ -6,7 +6,7 @@
 - Integration branch: `dev-nowaker`
 - Development branch(es): `park-no-routable`
 - First local commit: `54423dac1b`
-- Current local commit(s): `54423dac1b`
+- Current local commit(s): `54423dac1b`, `02caa6450b`
 - Upstream base when introduced: `006d837c50` (upstream `v1`, `v1.19.5`)
 - Last checked against upstream: `006d837c50`
 
@@ -30,6 +30,16 @@ Relayed by coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeter
 - No automatic unpause; Vibeterm's collector (part D) decides when to unpause or move sessions.
 - A compaction summary refused this way still fails as before; it is not a step to run again.
 
+## Route-aware park (2026-11-19)
+
+Relayed by the Meridian coordinator [`ses_fe8a27c6effe6KEx3TRNvOLgUo`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_fe8a27c6effe6KEx3TRNvOLgUo) after [`ses_e13fbe595ffeLpn236oxJ7OIZe`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e13fbe595ffeLpn236oxJ7OIZe) held two prompts on `anthropic-meridian/n-dh-c2/claude-mythos-5-2` behind a park on `anthropic-cybersec/claude-opus-5-5`:
+
+> if i pick mythos on specific account n-dn-c2, which i know HAS allotment, it must NOT pause the turn UNLESS the model actually rejects serving the request.
+
+- The park records the refused step's route as `pause.error.model` (`SessionPauseEvent.Refusal.model`, optional).
+- A prompt admitted into a refusal park that names another provider or model is not held and lifts the park (`expectedPauseAt`); a prompt on the refused route is still held; an inherited park (`root`) is left to its ancestor.
+- A refused step whose session already has a newer prompt on another route parks nothing: the step is dropped and the loop answers that prompt, with turn-end holding skipped for that step.
+
 ## Rationale and constraints
 
 - Inside a 200 stream, `@ai-sdk/anthropic` parses the SSE error frame with a zod schema `{type, error:{type, message}}` that strips unknown keys, so only the message reaches opencode. Hence the prefix fallback, and the incident is read from the message's trailing `(incident inc_<ms>_<seq>)` token, which Meridian added to the contract for this reason. A pre-stream HTTP 429 keeps the full body.
@@ -43,6 +53,7 @@ Relayed by coordinator [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeter
 
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
+| `02caa6450b` | 2026-11-19 | A refusal park holds only its own route | `liftedByRoute`, `promptOnAnotherRoute`, `dropRefused`, `park({route})` in `prompt.ts`; `Refusal.model` in `session-pause-event.ts`; `SessionPauseRefusal.model` in the SDK; two route tests in `test/session/pause.test.ts` |
 | `54423dac1b` | 2026-11-16 | Detect the refusal, skip retry, drop the step, pause with reason and refusal, show reason in the footer | `SessionPause.refusal`, `REFUSAL_CODE`, `REFUSAL_PREFIX`, `noticeText({parked})` in `packages/opencode/src/session/pause.ts`; `Handle.refusal` and the `Effect.retry({ while })` guard in `processor.ts`; `park` and the `"park"` outcome in `runLoop` in `prompt.ts`; `SessionPauseEvent.Refusal` and `Info.error` in `packages/schema/src/session-pause-event.ts`; `SessionPauseRefusal` in `packages/sdk/js/src/v2/gen/types.gen.ts`; paused footer in `packages/tui/src/component/prompt/index.tsx`; `test/session/pause-refusal.test.ts`, refusal cases in `test/session/pause.test.ts` |
 
 ## Verification
@@ -56,6 +67,8 @@ Session [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routab
 - Real TUI on throwaway tmux socket `park-e2e` against a scripted Anthropic Messages endpoint: pre-stream 429 parked (PAUSED, reason with incident `inc_1794870000000_1`); `/unpause` sent the same request, which the endpoint refused in-stream after partial text, parked again with `inc_1794870000000_2`, partial text never shown or stored; restart of the TUI with `-s` still showed the park; `/unpause` answered "Recovered after unpause." All three turn requests carried identical `messages`. Evidence: `.vibeterm/tmp/park-e2e-evidence/` (pane captures, requests.jsonl, server.ts, run.sh).
 
 ## Timeline
+
+- 2026-11-19 [`ses_e0d56ddd9ffessGDbwhaZsBHiv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0d56ddd9ffessGDbwhaZsBHiv) - route-aware park `02caa6450b`: red first (both route tests failed on `76888120c7`), then `pause.test.ts` + `pause-refusal.test.ts` 46/46, `prompt-admission.test.ts` + `prompt.test.ts` 111/111, typecheck clean, SDK regenerated. Installed `1.19.5-vt-559-006d837c50` on desktop and m4max. Live on desktop: [`ses_e0cedca36ffeqHVJ3glFUVHpmT`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0cedca36ffeqHVJ3glFUVHpmT) parked on `anthropic-cybersec/claude-opus-5-5` with `error.model` recorded; a prompt on `anthropic-meridian/n-dh-c2/claude-mythos-5-2` lifted it within a second (`/unpause`, `client: prompt`) and reached Meridian on `profile=n-dh-c2`.
 
 - 2026-11-16 [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routable-account.md) - initial build; installed on desktop as `1.19.5-vt-518-006d837c50`; m4max runs it in `1.19.5-vt-521-006d837c50`, built by `ses_e1d8f706fffe` from `f171dd4d50`.
 
