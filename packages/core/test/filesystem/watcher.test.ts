@@ -183,6 +183,39 @@ describe("Watcher lifecycle", () => {
     ),
   )
 
+  it.live("watches every immediate entry when no names are given", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const native = yield* Watcher.Native
+          const events: Watcher.Update[] = []
+          const reported = yield* Deferred.make<void>()
+          yield* Effect.acquireRelease(
+            native.subscribe({
+              type: "entries",
+              target: tmp.path,
+              ignore: [],
+              publish: (update) => {
+                events.push(update)
+                if (update.path === path.join(tmp.path, "any.ts")) Deferred.doneUnsafe(reported, Effect.void)
+              },
+            }),
+            (subscription) => Effect.promise(() => subscription?.unsubscribe() ?? Promise.resolve()),
+          )
+          yield* Effect.promise(async () => {
+            await fs.mkdir(path.join(tmp.path, "nested"))
+            await fs.writeFile(path.join(tmp.path, "nested", "deep.ts"), "ignored")
+            await fs.writeFile(path.join(tmp.path, "any.ts"), "reported")
+          })
+          yield* Deferred.await(reported)
+          expect(
+            events.every((update) => path.dirname(update.path) === tmp.path || update.path === tmp.path),
+          ).toBe(true)
+        }).pipe(Effect.provide(Watcher.nativeLayer)),
+      ),
+    ),
+  )
+
   it.effect("interrupting a consumer interrupts a pending acquisition", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>()

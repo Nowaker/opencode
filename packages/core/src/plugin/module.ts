@@ -24,18 +24,41 @@ export const make = Effect.fn("PluginModule.make")(function* () {
   const runPromise = yield* FiberSet.makeRuntimePromise()
   const changes = yield* PubSub.unbounded<void>()
   const watched = new Set<string>()
-  const watch = Effect.fn("PluginModule.watch")(function* (file: string) {
-    if (watched.has(file)) return
-    watched.add(file)
-    const ready = yield* Deferred.make<void>()
-    const target = yield* Effect.promise(() => watchTarget(file))
-    const updates = yield* watcher.subscribe(target, Deferred.succeed(ready, undefined))
+  // A local plugin's import graph can hold thousands of files. Files share one watch of their directory, and a
+  // file found later joins its directory's watch by name.
+  const directories = new Map<string, { names: Set<string>; ready: Deferred.Deferred<void> }>()
+  const subscribe = Effect.fnUntraced(function* (
+    input: Watcher.WatchInput,
+    ready: Deferred.Deferred<void>,
+    accept: (update: Watcher.Update) => boolean,
+  ) {
+    const updates = yield* watcher.subscribe(input, Deferred.succeed(ready, undefined))
     yield* updates.pipe(
+      Stream.filter(accept),
       Stream.runForEach(() => PubSub.publish(changes, undefined)),
       Effect.ensuring(Deferred.succeed(ready, undefined)),
       Effect.forkIn(scope, { startImmediately: true }),
     )
     yield* Deferred.await(ready)
+  })
+  const watch = Effect.fn("PluginModule.watch")(function* (file: string) {
+    if (watched.has(file)) return
+    watched.add(file)
+    const target = yield* Effect.promise(() => watchTarget(file))
+    if (target.type !== "file") return yield* subscribe(target, yield* Deferred.make<void>(), () => true)
+    const directory = path.dirname(file)
+    const ready = yield* Deferred.make<void>()
+    const existing = directories.get(directory)
+    if (existing) {
+      existing.names.add(path.basename(file))
+      return yield* Deferred.await(existing.ready)
+    }
+    const entries = { names: new Set([path.basename(file)]), ready }
+    directories.set(directory, entries)
+    // A directory event without a filename reports the directory itself; it may concern any watched name.
+    yield* subscribe({ path: directory, type: "entries" }, entries.ready, (update) =>
+      update.path === directory || entries.names.has(path.basename(update.path)),
+    )
   })
   const sources = yield* Effect.acquireRelease(
     Effect.sync(() =>

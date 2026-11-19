@@ -4,6 +4,7 @@ import path from "node:path"
 import {
   Brand,
   Cause,
+  Context,
   Deferred,
   Effect,
   Exit,
@@ -190,6 +191,56 @@ it.live("reloads an edit made while source watches were arming once they are arm
     yield* Deferred.await(first)
     expect(yield* modules.load(operation)).toMatchObject({ id: "after" })
     expect(yield* Ref.get(changes)).toBe(1)
+  }),
+)
+
+it.live("watches a local plugin's files through one watch per directory, including files found later", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const lib = path.join(directory.path, "lib")
+    const watchers = Context.get(yield* Layer.build(Watcher.testLayer), Watcher.Test)
+    const modules = yield* PluginModule.make().pipe(Effect.provideService(Watcher.Service, watchers))
+    const operation = { type: "add" as const, target: directory.path, options: {} }
+    // Each entry edits a dependency while it evaluates, after the read fingerprinted it. Only the check that runs
+    // once every watch of the read is armed reports that edit, so its change means all those watches exist.
+    const entry = (dependency: string, name: string, edit: readonly [string, string]) =>
+      [
+        'import { label } from "./helper.ts"',
+        `import { ${name} } from "./lib/${dependency}"`,
+        `await Bun.write(${JSON.stringify(path.join(directory.path, edit[0]))}, ${JSON.stringify(edit[1])})`,
+        `export default { id: label + ${name}, async setup() {} }`,
+      ].join("\n")
+    const armed = <A, E, R>(load: Effect.Effect<A, E, R>) =>
+      Effect.gen(function* () {
+        const changed = yield* modules.changes().pipe(Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+        const loaded = yield* load
+        yield* Fiber.join(changed)
+        return loaded
+      })
+    yield* Effect.promise(() =>
+      writeFiles(directory.path, {
+        "index.ts": entry("suffix.ts", "suffix", ["helper.ts", 'export const label = "two"']),
+        "helper.ts": 'export const label = "one"',
+        "lib/suffix.ts": 'export const suffix = "-dir"',
+        "lib/late.ts": 'export const late = "-late"',
+      }),
+    )
+    expect(yield* armed(modules.load(operation))).toMatchObject({ id: "one-dir" })
+    yield* Effect.promise(() =>
+      Bun.write(
+        path.join(directory.path, "index.ts"),
+        entry("late.ts", "late", ["lib/late.ts", 'export const late = "-later"']),
+      ),
+    )
+    expect(yield* armed(modules.load(operation))).toMatchObject({ id: "two-late" })
+    expect((yield* watchers.subscriptions()).toSorted((a, b) => a.path.localeCompare(b.path))).toEqual([
+      { path: directory.path, type: "entries" },
+      { path: lib, type: "entries" },
+    ])
+
+    const changed = yield* modules.changes().pipe(Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+    yield* watchers.emit({ path: path.join(lib, "late.ts"), type: "update" })
+    yield* Fiber.join(changed)
   }),
 )
 

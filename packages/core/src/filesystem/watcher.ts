@@ -33,7 +33,8 @@ export type Update = ParcelWatcher.Event
 
 export type WatchInput =
   | { readonly path: string; readonly type: "file" }
-  | { readonly path: string; readonly type: "entries"; readonly names: readonly string[] }
+  /** Immediate entries of `path`; without `names`, every entry. */
+  | { readonly path: string; readonly type: "entries"; readonly names?: readonly string[] }
   | { readonly path: string; readonly type: "directory"; readonly ignore?: readonly string[] }
 
 type Subscription = {
@@ -46,7 +47,7 @@ type Target = {
   readonly target: string
   readonly ignore: readonly string[]
 } & (
-  | { readonly type: "entries"; readonly names: readonly string[] }
+  | { readonly type: "entries"; readonly names?: readonly string[] }
   | { readonly type: "file" | "directory"; readonly names?: readonly string[] }
 )
 
@@ -127,7 +128,7 @@ export const layer = (options?: Options) =>
       const subscribe = Effect.fnUntraced(function* (input: WatchInput, onReady: Effect.Effect<void> = Effect.void) {
         const target = path.resolve(input.path)
         const ignore = [...new Set(input.type === "directory" ? (input.ignore ?? []) : [])].toSorted()
-        const names = [...new Set(input.type === "entries" ? input.names : [])].toSorted()
+        const names = input.type !== "entries" ? [] : input.names && [...new Set(input.names)].toSorted()
         yield* Effect.logInfo("watcher subscribe", {
           path: target,
           type: input.type,
@@ -160,7 +161,9 @@ export const testLayer = Layer.effectContext(
             input.type === "file"
               ? { path: input.target, type: "file" }
               : input.type === "entries"
-                ? { path: input.target, type: "entries", names: input.names }
+                ? input.names
+                  ? { path: input.target, type: "entries", names: input.names }
+                  : { path: input.target, type: "entries" }
                 : input.ignore.length > 0
                   ? { path: input.target, type: "directory", ignore: input.ignore }
                   : { path: input.target, type: "directory" },
@@ -172,7 +175,9 @@ export const testLayer = Layer.effectContext(
           active.set(input.publish, (target) => {
             if (input.type === "file") return target === input.target
             if (input.type === "entries")
-              return path.dirname(target) === input.target && input.names.includes(path.basename(target))
+              return (
+                path.dirname(target) === input.target && (!input.names || input.names.includes(path.basename(target)))
+              )
             return FSUtil.contains(input.target, target) && !ignored.some((entry) => FSUtil.contains(entry, target))
           })
           return {
@@ -205,12 +210,14 @@ export const nativeLayer = Layer.succeed(
     subscribe: (input) => {
       if (input.type === "file" || input.type === "entries") {
         const directory = input.type === "file" ? path.dirname(input.target) : input.target
-        const names = new Set(input.type === "file" ? [path.basename(input.target)] : input.names)
+        const names =
+          input.type === "file" ? new Set([path.basename(input.target)]) : input.names && new Set(input.names)
         return Effect.try({
           try: () =>
             watch(directory, { recursive: false }, (_event, file) => {
-              if (file && !names.has(file)) return
-              for (const name of file ? [file] : names) {
+              if (file && names && !names.has(file)) return
+              // Without a filename the directory itself is reported when every entry is watched.
+              for (const name of file ? [file] : (names ?? [""])) {
                 input.publish({ path: path.join(directory, name), type: "update" })
               }
             }),
