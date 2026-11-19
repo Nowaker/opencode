@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [Native v2 engine stop: seal admission for idle stop and restart](./features/2026-11-18-v2-engine-stop.md)
 - [Shift+arrow in the prompt selects only the crossed cells](./features/2026-11-18-prompt-keyboard-selection.md)
 - [The TUI's pick follows the session's latest agent, model and variant](./features/2026-11-18-follow-latest-selection.md)
 - [Stacks for logged errors and records of survived ones](./features/2026-11-18-survived-error-records.md)
@@ -172,6 +173,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-18 W1 v2 engine stop](./sessions/2026-11-18-v2-engine-stop.md) - W24 seals engine admission for idle stop and force restart (`2f2c119414` on `v2-nowaker`); vt-50 on desktop after opencode-tools `07452e75e0` replaced the probe's racy `fs.watchFile` gate; W24b (remaining owners) gated, not landed.
 - [2026-11-18 W1 prompt keyboard selection](./sessions/2026-11-18-prompt-keyboard-selection.md) - shift+arrow in the v1 prompt selected one cell too many (OpenTUI 0.4.5 reuses cell-inclusive mouse selection); the prompt renders a boundary-selection `TextareaRenderable` subclass and the instant startup editor stops copying the old rule; `b08907771b`; vt-556 on desktop; upstream `v1` branch `selection-boundary-v1` (`7c9c67ee2a`), pr-queue 14.
 - [2026-11-18 atomic prompt admission and pause handoff](./sessions/2026-11-18-atomic-prompt-admission.md) - save the prompt, its parts and any pause hold before acknowledgement; queue the atomic-write fix for upstream `v1`.
 - [2026-11-17 W1 cold-submit continuation](./sessions/2026-11-15-native-tool-deferral.md#cold-submit-contract-and-verification) - extend the existing composer record with source `24042aa0df`, 32 tests / 160 assertions, both independent vt42 installs through 12/12 probes and W15's once-only successful cold-draft delivery; CR focus/catalog metadata remains unavailable, so the original vt41 timeout's cause remains unproven. [Current feature contract](./features/2026-11-15-v2-composer.md#cold-submit-behavior).
