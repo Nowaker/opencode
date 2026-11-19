@@ -259,12 +259,9 @@ export function create(input: Partial<Snapshot> = {}, options: { lineDiscard?: L
 
   const snapshot = (): Snapshot => ({ text: state.text, caret: state.caret, anchor: state.anchor })
   const restore = (value: Snapshot) => Object.assign(state, value, { goal: undefined })
-  // opentui keeps the anchor's own cell selected when the caret moves back
-  // past it, so a backward selection reaches one cell further than the anchor.
   const selection = () => {
     if (state.anchor === undefined || state.anchor === state.caret) return
-    if (state.caret > state.anchor) return { start: state.anchor, end: state.caret }
-    return { start: state.caret, end: Math.min(state.text.length, nextBoundary(state.anchor)) }
+    return { start: Math.min(state.anchor, state.caret), end: Math.max(state.anchor, state.caret) }
   }
 
   function record(coalesce = false) {

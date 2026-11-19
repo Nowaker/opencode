@@ -51,7 +51,7 @@ const actions = [
   "select_all",
 ] as const
 
-describe("instant editor matches opentui's textarea", () => {
+describe("instant editor matches the prompt's textarea", () => {
   let parity: Awaited<ReturnType<typeof createParity>>
   beforeAll(async () => {
     parity = await createParity(width)

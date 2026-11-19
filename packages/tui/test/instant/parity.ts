@@ -1,16 +1,16 @@
 import { createTestRenderer } from "@opentui/core/testing"
-import { TextareaRenderable } from "@opentui/core"
+import { PromptTextareaRenderable } from "../../src/component/prompt/textarea"
 import { InstantEditor } from "../../src/instant/editor"
 import { gotoLineEdge } from "../../src/util/line-edge"
 import { discardLine, type LineDiscard } from "../../src/util/line-discard"
 
-// Runs one editing action through opentui's own textarea and through the
+// Runs one editing action through the prompt's textarea and through the
 // instant prompt's editor, from the same text and caret, and reports both.
 // Line start/end go through the TUI's gotoLineEdge and delete to line start
 // through its discardLine, as the keymap runs them.
 export async function createParity(width: number, lineDiscard?: LineDiscard) {
   const setup = await createTestRenderer({ width: width + 10, height: 40 })
-  const textarea = new TextareaRenderable(setup.renderer, { width, height: 30 })
+  const textarea = new PromptTextareaRenderable(setup.renderer, { width, height: 30 })
   setup.renderer.root.add(textarea)
   await setup.renderOnce()
 

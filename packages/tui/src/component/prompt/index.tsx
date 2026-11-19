@@ -81,6 +81,7 @@ import { InstantRecord } from "../../instant/record"
 import { copyText, onClick } from "../../ui/click"
 import { usePromptRef } from "../../context/prompt"
 import { codePoints, createComposerTyping, type TypingBuffer } from "./typing"
+import "./textarea"
 import { discardLine } from "../../util/line-discard"
 
 registerOpencodeSpinner()
@@ -2252,7 +2253,7 @@ export function Prompt(props: PromptProps) {
         onSizeChange={measureChrome}
       >
         <PromptFrame color={borderHighlight()}>
-          <textarea
+          <prompt_textarea
             width="100%"
             placeholder={placeholderText()}
             placeholderColor={theme.textMuted}
