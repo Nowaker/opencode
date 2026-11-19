@@ -1,5 +1,6 @@
 import {
   BoxRenderable,
+  CliRenderEvents,
   RGBA,
   TextareaRenderable,
   MouseEvent,
@@ -9,7 +10,19 @@ import {
   stripAnsiSequences,
   type KeyEvent,
 } from "@opentui/core"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  onMount,
+  createSignal,
+  onCleanup,
+  on,
+  untrack,
+  Show,
+  Switch,
+  Match,
+  For,
+} from "solid-js"
 import path from "path"
 import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
@@ -1095,9 +1108,75 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  type SubmitSelection = {
+    agent: NonNullable<ReturnType<typeof local.agent.current>>
+    selection: NonNullable<ReturnType<typeof local.model.selection>>
+  }
+  // Submit resolves its agent and model from these. Before they load it would fall back to catalog defaults
+  // or find nothing, so an explicit submit waits as the one pending submit below instead of being dropped.
+  const agentsLoaded = () => data.location.agent.list(currentLocation.ref) !== undefined
+  const sessionLoaded = () => props.sessionID === undefined || data.session.get(props.sessionID) !== undefined
+  const selectionLoading = () => !agentsLoaded() || !sessionLoaded() || !local.model.catalogReady || !local.model.ready
+  const submitLocation = () => locationKey(currentLocation.ref ?? data.location.default())
+  // The session route moves to its session's location once that loads, so a session, not a location, owns it.
+  const submitOwner = () => props.sessionID ?? submitLocation()
+  const draftContent = () => JSON.stringify({ prompt: store.prompt, mode: store.mode })
+  const [pendingSubmit, setPendingSubmit] = createSignal<{
+    delivery: SessionInbox.Delivery
+    owner: string
+    content: string
+    choice: number
+    known: SubmitSelection | undefined
+  }>()
+  // Set once the selection is loaded: the pending submit is sent after the frame that shows that selection.
+  let publication: (() => void) | undefined
+
+  function cancelPendingSubmit() {
+    if (publication) renderer.off(CliRenderEvents.FRAME, publication)
+    publication = undefined
+    setPendingSubmit(undefined)
+  }
+
+  // Changed content, an explicit agent, model or variant choice, another session or location, or hiding the
+  // composer ends a pending submit for good; caret movement does not. The draft stays in the composer.
+  createEffect(() => {
+    const pending = pendingSubmit()
+    if (!pending) return
+    const error = currentLocation.error
+    if (error && locationKey(error.location) === submitLocation())
+      return untrack(() => {
+        cancelPendingSubmit()
+        toast.show({ title: "Failed to send prompt", message: errorMessage(error.cause), variant: "error" })
+      })
+    if (
+      draftContent() !== pending.content ||
+      local.choice() !== pending.choice ||
+      submitOwner() !== pending.owner ||
+      props.visible === false
+    )
+      untrack(cancelPendingSubmit)
+  })
+
+  createEffect(() => {
+    const pending = pendingSubmit()
+    if (!pending || publication || selectionLoading() || disabled()) return
+    publication = () => {
+      publication = undefined
+      if (pendingSubmit() !== pending) return
+      setPendingSubmit(undefined)
+      void submit(pending.delivery, pending.known)
+    }
+    renderer.once(CliRenderEvents.FRAME, publication)
+    renderer.requestRender()
+  })
+
+  onCleanup(cancelPendingSubmit)
+
   let submitting = false
-  async function submit(delivery: SessionInbox.Delivery = "steer") {
+  async function submit(delivery: SessionInbox.Delivery = "steer", known?: SubmitSelection) {
     if (disabled()) return false
+    // Enter while a submit waits for its selection joins that submit.
+    if (pendingSubmit()) return false
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -1107,13 +1186,13 @@ export function Prompt(props: PromptProps) {
     if (submitting) return false
     submitting = true
     try {
-      return await submitInner(delivery)
+      return await submitInner(delivery, known)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner(delivery: SessionInbox.Delivery) {
+  async function submitInner(delivery: SessionInbox.Delivery, known: SubmitSelection | undefined) {
     // IME: double-defer may fire before onContentChange flushes the last
     // composed character (e.g. Korean hangul) to the store, so read
     // plainText directly and sync before any downstream reads.
@@ -1162,9 +1241,24 @@ export function Prompt(props: PromptProps) {
       toast.show({ message: "Editor context cannot be queued", variant: "warning" })
       return false
     }
-    const agent = local.agent.current()
+    const agent = known?.agent ?? local.agent.current()
+    const selection = known?.selection ?? local.model.selection()
+    if (!known && selectionLoading()) {
+      setPendingSubmit({
+        delivery,
+        owner: submitOwner(),
+        content: draftContent(),
+        choice: local.choice(),
+        // Without the model list, a resolved pair comes from the session or an explicit choice rather than a
+        // catalog default, so it is kept; anything else resolves through the normal defaults once loaded.
+        known:
+          !local.model.catalogReady && agentsLoaded() && sessionLoaded() && agent && selection
+            ? { agent, selection }
+            : undefined,
+      })
+      return false
+    }
     if (!agent) return false
-    const selection = local.model.selection()
     if (!selection) {
       void promptModelWarning()
       return false
@@ -1910,6 +2004,13 @@ export function Prompt(props: PromptProps) {
                 }}
               >
                 <Switch>
+                  <Match when={pendingSubmit()}>
+                    <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+                      <text fg={theme.text.feedback.info.base} wrapMode="none" truncate>
+                        Waiting for model list...
+                      </text>
+                    </box>
+                  </Match>
                   <Match when={status() === "running"}>
                     <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
                       <box marginLeft={1}>

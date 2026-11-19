@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createSignal, onCleanup } from "solid-js"
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -43,6 +43,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
+    // Counts accepted agent, model and variant choices; seeding and reconciliation leave it alone.
+    const [choice, setChoice] = createSignal(0)
+    const chose = () => setChoice((value) => value + 1)
 
     function isModelValid(model: ModelPreferenceModel) {
       return !!models()?.some((item) => item.providerID === model.providerID && item.id === model.modelID)
@@ -105,6 +108,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               duration: 3000,
             })
           batch(() => {
+            chose()
             const changed = this.current()?.id !== id
             if (changed) model.remember()
             setAgentStore("current", id)
@@ -315,11 +319,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               ? current
               : preferredSelection(model),
           )
+          chose()
           return true
         }
         const current = agent.current()
         if (!current) return false
         setSelectionState("newSessionModelByLocationAgent", locationAgentKey(current.id), model)
+        chose()
         return true
       }
 
@@ -488,6 +494,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           set(value: string | undefined) {
             const m = currentSelection()
             if (!m) return
+            chose()
             if (route.data.type === "session") {
               setSessionDraft(route.data.sessionID, { ...m, variant: normalizeModelVariant(value) })
             }
@@ -609,6 +616,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       session,
       permission,
+      choice,
     }
     return result
   },
