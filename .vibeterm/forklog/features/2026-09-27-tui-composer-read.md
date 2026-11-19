@@ -53,6 +53,7 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
 | Commit | Workday | Change | Stable seam |
 |---|---|---|---|
 | `2638af5a71` | 2026-09-27 | `api.prompt.read()` returns input, parts, mode, generation, revision, readiness, `reason`, session ID; `replace()` accepts `promptParts` and accepts only an exact readback of text and parts | `packages/plugin/src/tui-prompt.ts` `TuiComposerDraft`, `TuiComposerApi`; `packages/tui/src/plugin/prompt-control.ts` `createPromptControl`; `packages/tui/test/prompt-control.test.ts` |
+| `fe286c02ed` | 2026-11-18 | The interactive native composer exposes count-only `observeTyping`; `read().draftID` and `replace({ draftID })` preserve explicitly restored identity, and prompt/slash submit waits for plugin storage of the intent with the exact outgoing message ID. | `packages/plugin/src/tui-prompt.ts`, `packages/tui/src/component/prompt/typing.ts`, `packages/tui/test/component/prompt-typing.test.tsx` |
 
 ## Verification
 
@@ -66,6 +67,8 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
   server for a session tab and a sessionless tab, and are never submitted.
 
 ## Timeline
+
+- 2026-11-18 [durable draft typing](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0ec4a79affeAzulh14tlAN545) - Native observer tests passed (12 tests, 63 assertions) and the TUI package typecheck passed. Vibeterm owns durable storage, replication, and admission confirmation. The existing bounded Up/Down prompt recall is unchanged.
 
 - 2026-10-06 [`ses_eec44ad14ffeownfvFKtEeqk4N`](../sessions/2026-10-06-tui-composer-caret.md) -
   extended by [the composer caret](./2026-10-06-tui-composer-caret.md):
