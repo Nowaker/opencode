@@ -1,7 +1,7 @@
 import type { SimpleHighlight } from "@opentui/core"
 
-// Longer messages stay plain: a pasted log is not worth a parse.
-export const USER_MARKDOWN_LIMIT = 100_000
+// Large transcript parts stay plain to bound parser and renderable allocation.
+export const TRANSCRIPT_MARKDOWN_LIMIT = 100_000
 
 // Markdown highlights for text a person typed, kept where they read as the person meant them.
 // People write markdown loosely, so the constructs a strict parser finds by accident are dropped:
