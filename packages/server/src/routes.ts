@@ -1,6 +1,7 @@
 import { Database } from "@opencode/core/database/database"
 import { V1Migration } from "@opencode/core/database/v1-migration"
 import { App } from "@opencode/core/app"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Node } from "@opencode/util/effect/app-node"
 import { fetchLayer, httpClient, httpFetch } from "@opencode/util/effect/app-node-platform"
@@ -56,6 +57,7 @@ import type { ServerOptions } from "./options"
 
 const applicationServiceNodes = [
   App.node,
+  EngineStop.node,
   Global.node,
   FSUtil.node,
   Database.node,

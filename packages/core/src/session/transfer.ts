@@ -11,6 +11,7 @@ import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { DatabaseBatch } from "../database/batch.js"
 import { Instance } from "../instance/service.js"
 import { Location } from "../location.js"
@@ -41,7 +42,7 @@ export interface Interface {
   readonly import: (input: {
     data: Data
     location: Location.Ref
-  }) => Effect.Effect<Session.Info, ImportConflictError | Session.NotFoundError>
+  }) => Effect.Effect<Session.Info, ImportConflictError | Session.NotFoundError | EngineStop.RefusedError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionTransfer") {}
@@ -55,6 +56,7 @@ const layer = Layer.effect(
     const instances = yield* Instance.Service
     const projects = yield* Project.Service
     const sessions = yield* Session.Service
+    const claims = yield* EngineStop.Service
     const encodeMessage = Schema.encodeSync(SessionMessage.Info)
 
     return Service.of({
@@ -190,7 +192,7 @@ const layer = Layer.effect(
             ),
           )
         return yield* sessions.get(sessionID).pipe(Effect.orDie)
-      }),
+      }, claims.within),
     })
   }),
 )
@@ -198,7 +200,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [App.node, Bus.node, Database.node, Instance.node, Project.node, Session.node],
+  deps: [App.node, Bus.node, Database.node, Instance.node, Project.node, Session.node, EngineStop.node],
 })
 
 function isSettled(message: SessionMessage.Info) {

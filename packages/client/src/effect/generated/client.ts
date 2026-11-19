@@ -277,6 +277,12 @@ import type {
   ExperimentalJobListOutput,
   ExperimentalJobCancelInput,
   ExperimentalJobCancelOutput,
+  ExperimentalServerStopGetInput,
+  ExperimentalServerStopGetOutput,
+  ExperimentalServerStopPrepareInput,
+  ExperimentalServerStopPrepareOutput,
+  ExperimentalServerStopCancelInput,
+  ExperimentalServerStopCancelOutput,
   ShellListInput,
   ShellListOutput,
   ShellCreateInput,
@@ -1768,6 +1774,37 @@ const EndpointExperimentalJobCancel = (raw: RawClient["server.experimental"]) =>
     ),
   )
 
+const EndpointExperimentalServerStopGet =
+  (raw: RawClient["server.experimental"]) => (input?: ExperimentalServerStopGetInput) =>
+    preserveEffect<ExperimentalServerStopGetOutput>()(
+      raw["server.stop.get"]({ query: { operationID: input?.["operationID"], waitMs: input?.["waitMs"] } }).pipe(
+        Effect.mapError(mapClientError),
+      ),
+    )
+
+type ExperimentalServerStopPrepareRequest = Parameters<RawClient["server.experimental"]["server.stop.prepare"]>[0] & {
+  readonly responseMode?: "decoded-only"
+}
+const EndpointExperimentalServerStopPrepare =
+  (raw: RawClient["server.experimental"]) => (input: ExperimentalServerStopPrepareInput) =>
+    preserveEffect<ExperimentalServerStopPrepareOutput>()(
+      raw["server.stop.prepare"]({ payload: input["payload"] } as ExperimentalServerStopPrepareRequest).pipe(
+        Effect.mapError(mapClientError),
+      ),
+    )
+
+const EndpointExperimentalServerStopCancel =
+  (raw: RawClient["server.experimental"]) => (input: ExperimentalServerStopCancelInput) =>
+    preserveEffect<ExperimentalServerStopCancelOutput>()(
+      raw["server.stop.cancel"]({
+        payload: {
+          expectedGeneration: input["expectedGeneration"],
+          operationID: input["operationID"],
+          token: input["token"],
+        },
+      }).pipe(Effect.mapError(mapClientError)),
+    )
+
 const adaptGroupExperimental = (raw: RawClient["server.experimental"]) => ({
   persistentPty: {
     read: EndpointExperimentalPersistentPtyRead(raw),
@@ -1799,6 +1836,13 @@ const adaptGroupExperimental = (raw: RawClient["server.experimental"]) => ({
     delete: EndpointExperimentalArtifactsDelete(raw),
   },
   job: { list: EndpointExperimentalJobList(raw), cancel: EndpointExperimentalJobCancel(raw) },
+  server: {
+    stop: {
+      get: EndpointExperimentalServerStopGet(raw),
+      prepare: EndpointExperimentalServerStopPrepare(raw),
+      cancel: EndpointExperimentalServerStopCancel(raw),
+    },
+  },
 })
 
 const EndpointShellList = (raw: RawClient["server.shell"]) => (input?: ShellListInput) =>

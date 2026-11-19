@@ -11,6 +11,7 @@ import { DateTimeUtcFromMillis, NonNegativeInt, PositiveInt, optional } from "@o
 import { Event } from "@opencode/schema/event"
 import { SessionLegacy } from "@opencode/schema/session-legacy"
 import { Context, Schema, SchemaGetter, Struct } from "effect"
+import { EngineStopRefusedError } from "../engine-stop.js"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/http-api"
 import {
   ConflictError,
@@ -178,7 +179,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           permissions: Permission.Ruleset.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: PublicSessionInfo }),
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.create",
@@ -196,7 +197,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           location: Location.PublicRef.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: PublicSessionInfo }),
-        error: [ConflictError, SessionNotFoundError],
+        error: [ConflictError, SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "experimental.session.import",
@@ -263,7 +264,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.delete("session.remove", "/api/session/:sessionID", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.remove",
@@ -277,7 +278,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ before: SessionMessage.ID.pipe(Schema.optional) }),
         success: Schema.Struct({ data: PublicSessionInfo }),
-        error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError],
+        error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.fork",
@@ -292,7 +293,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ agent: Agent.ID }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.switchAgent",
@@ -306,7 +307,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ model: Model.Ref }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.switchModel",
@@ -334,7 +335,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           }).pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, LocationNotFoundError],
+        error: [SessionNotFoundError, LocationNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.update",
@@ -370,7 +371,13 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: SessionInbox.User }),
-        error: [ConflictError, InvalidRequestError, SessionNotFoundError, SessionPromptGuardError],
+        error: [
+          ConflictError,
+          InvalidRequestError,
+          SessionNotFoundError,
+          SessionPromptGuardError,
+          EngineStopRefusedError,
+        ],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -390,7 +397,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           delivery: SessionInbox.Delivery.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, CommandNotFoundError, CommandExecutionError],
+        error: [SessionNotFoundError, CommandNotFoundError, CommandExecutionError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -409,7 +416,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, SkillNotFoundError],
+        error: [SessionNotFoundError, SkillNotFoundError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -425,7 +432,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Session.SyntheticInput,
         success: Schema.Struct({ data: Session.SyntheticResult }),
-        error: [ConflictError, SessionNotFoundError, InvalidRequestError],
+        error: [ConflictError, SessionNotFoundError, InvalidRequestError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.synthetic",
@@ -443,7 +450,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           command: Schema.String,
         }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -463,7 +470,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           delivery: SessionInbox.Delivery.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: SessionInbox.Compaction }),
-        error: [ConflictError, SessionNotFoundError],
+        error: [ConflictError, SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.compact",
@@ -491,7 +498,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ messageID: SessionMessage.ID, files: Schema.Boolean.pipe(Schema.optional) }),
         success: Schema.Struct({ data: Session.Revert }),
-        error: [MessageNotFoundError, SessionNotFoundError, SessionBusyError, UnknownError],
+        error: [MessageNotFoundError, SessionNotFoundError, SessionBusyError, UnknownError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -506,7 +513,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.delete("session.revert.clear", "/api/session/:sessionID/revert", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, SessionBusyError, UnknownError],
+        error: [SessionNotFoundError, SessionBusyError, UnknownError, EngineStopRefusedError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(OpenApi.annotations({ identifier: "session.revert.clear", summary: "Clear staged revert" })),
@@ -515,7 +522,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.post("session.revert.commit", "/api/session/:sessionID/revert/commit", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, SessionBusyError],
+        error: [SessionNotFoundError, SessionBusyError, EngineStopRefusedError],
       }).annotateMerge(OpenApi.annotations({ identifier: "session.revert.commit", summary: "Commit staged revert" })),
     )
     .add(
@@ -574,7 +581,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.delete("session.inbox.cancel", "/api/session/:sessionID/inbox/:inboxID", {
         params: { sessionID: Session.ID, inboxID: SessionMessage.ID },
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.inbox.cancel",
@@ -588,7 +595,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID, inboxID: SessionMessage.ID },
         payload: Schema.Struct({ delivery: SessionInbox.Delivery }),
         success: HttpApiSchema.NoContent,
-        error: [ConflictError, SessionNotFoundError],
+        error: [ConflictError, SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.inbox.update",
@@ -622,7 +629,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           params: { sessionID: Session.ID, key: InstructionEntry.Key },
           payload: Schema.Struct({ value: Schema.Json }),
           success: HttpApiSchema.NoContent,
-          error: [SessionNotFoundError, InstructionEntry.ValueTooLargeError],
+          error: [SessionNotFoundError, InstructionEntry.ValueTooLargeError, EngineStopRefusedError],
         },
       ).annotateMerge(
         OpenApi.annotations({
@@ -640,7 +647,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         {
           params: { sessionID: Session.ID, key: InstructionEntry.Key },
           success: HttpApiSchema.NoContent,
-          error: SessionNotFoundError,
+          error: [SessionNotFoundError, EngineStopRefusedError],
         },
       ).annotateMerge(
         OpenApi.annotations({
@@ -714,7 +721,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
       HttpApiEndpoint.post("session.background", "/api/session/:sessionID/background", {
         params: { sessionID: Session.ID },
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.background",
@@ -820,7 +827,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ variables: Schema.Record(Schema.String, Schema.String) }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.environment",
@@ -834,7 +841,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ idle: DateTimeUtcFromMillis }),
         success: HttpApiSchema.NoContent,
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, EngineStopRefusedError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "session.view",

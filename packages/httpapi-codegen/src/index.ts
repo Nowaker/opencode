@@ -855,11 +855,13 @@ function renderImportedEffectFiles(
         options.shapeModule === undefined
           ? result
           : `${item.operation.success === "stream" ? "preserveStream" : "preserveEffect"}<${prefix}Output>()(${result})`
+      // Parameters of the overloaded raw call resolve to its last, response-returning overload; pin the decoded one.
+      const requestType = `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.identifier)}]>[0] & { readonly responseMode?: "decoded-only" }\n`
       const declarations =
         options.shapeModule === undefined && item.operation.inputMode !== "none"
-          ? `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.identifier)}]>[0]\ntype ${prefix}Input = { ${input} }\n`
+          ? `${requestType}type ${prefix}Input = { ${input} }\n`
           : isOpaquePayload(item)
-            ? `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.identifier)}]>[0]\n`
+            ? requestType
             : ""
       return `${declarations}const ${adapter} = (raw: ${rawGroup}) => (${argument}) => ${output}`
     })

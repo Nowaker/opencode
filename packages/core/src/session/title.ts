@@ -5,6 +5,7 @@ import { LLMClient, LLMEvent, Message, SystemPart } from "@opencode/ai/effect"
 import type { Agent } from "@opencode/schema/agent"
 import { Context, DateTime, Effect, Layer, Stream } from "effect"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { Bus } from "../bus.js"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { isExactRootFallback } from "@opencode/util/session-title-fallback"
@@ -25,7 +26,7 @@ const titleChanged = Symbol("Session title changed")
 
 export interface Interface {
   /** Generates an initial title or regenerates one from bounded conversation history. */
-  readonly generate: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  readonly generate: (sessionID: SessionSchema.ID) => Effect.Effect<void, EngineStop.RefusedError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionTitle") {}
@@ -50,6 +51,7 @@ export const layer = Layer.effect(
     const context = yield* SessionContext.Service
     const store = yield* SessionStore.Service
     const db = (yield* Database.Service).db
+    const claims = yield* EngineStop.Service
 
     const attempt = Effect.fn("SessionTitle.attempt")(function* (input: {
       readonly session: SessionSchema.Info
@@ -162,7 +164,7 @@ export const layer = Layer.effect(
           { commit: (sequence) => (sequence === expectedSequence ? Effect.void : Effect.die(titleChanged)) },
         )
         .pipe(Effect.catchDefect((defect) => (defect === titleChanged ? Effect.void : Effect.die(defect))))
-    })
+    }, claims.within)
     return Service.of({ generate })
   }),
 )
@@ -170,5 +172,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, llmClient, SessionContext.node, SessionStore.node, Database.node],
+  deps: [Bus.node, llmClient, SessionContext.node, SessionStore.node, Database.node, EngineStop.node],
 })

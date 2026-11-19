@@ -4,6 +4,7 @@ import { and, asc, eq, isNotNull, isNull, ne, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { InstructionEntry } from "@opencode/schema/instruction-entry"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Instructions } from "../instructions/index.js"
 import { SessionSchema } from "./schema.js"
@@ -81,8 +82,11 @@ export interface Interface {
     readonly sessionID: SessionSchema.ID
     readonly key: Key
     readonly value: Schema.Json
-  }) => Effect.Effect<void, InstructionEntry.ValueTooLargeError>
-  readonly remove: (input: { readonly sessionID: SessionSchema.ID; readonly key: Key }) => Effect.Effect<void>
+  }) => Effect.Effect<void, InstructionEntry.ValueTooLargeError | EngineStop.RefusedError>
+  readonly remove: (input: {
+    readonly sessionID: SessionSchema.ID
+    readonly key: Key
+  }) => Effect.Effect<void, EngineStop.RefusedError>
   /** Produces one Instructions source per stored entry, keyed `api/<key>`. */
   readonly load: (sessionID: SessionSchema.ID) => Effect.Effect<Instructions.List>
 }
@@ -116,6 +120,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const claims = yield* EngineStop.Service
 
     const list = Effect.fn("InstructionEntry.list")(function* (sessionID: SessionSchema.ID) {
       return (yield* rows(db, sessionID, false)).map((row) => ({ key: row.key, value: row.value }))
@@ -143,7 +148,7 @@ const layer = Layer.effect(
         })
         .run()
         .pipe(Effect.orDie)
-    })
+    }, claims.within)
 
     const remove = Effect.fn("InstructionEntry.remove")(function* (input: Parameters<Interface["remove"]>[0]) {
       yield* db
@@ -158,7 +163,7 @@ const layer = Layer.effect(
         )
         .run()
         .pipe(Effect.orDie)
-    })
+    }, claims.within)
 
     const load = Effect.fn("InstructionEntry.load")(function* (sessionID: SessionSchema.ID) {
       return Instructions.combine((yield* rows(db, sessionID, true)).map(source))
@@ -168,4 +173,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, EngineStop.node] })

@@ -1,5 +1,6 @@
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Database } from "@opencode/core/database/database"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { Config } from "@opencode/core/config"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { Bus } from "@opencode/core/bus"
@@ -52,6 +53,7 @@ export const childCancellationLayer = AppNodeBuilder.build(
     Database.node,
     Bus.node,
     Instance.node,
+    EngineStop.node,
     drainsNode,
   ]),
   [

@@ -1,6 +1,9 @@
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
+import { EngineStop } from "@opencode/schema/engine-stop"
+import { optional } from "@opencode/schema/schema"
 import { UnauthorizedError } from "../errors.js"
+import { EngineStopControlError } from "../engine-stop.js"
 
 export const ServerInfo = Schema.Struct({
   version: Schema.String,
@@ -16,6 +19,9 @@ export const ServerInfo = Schema.Struct({
   capabilities: Schema.optional(
     Schema.Struct({
       persistentPty: Schema.optional(Schema.Boolean),
+      engineStop: Schema.optional(Schema.Boolean).annotate({
+        description: "Experimental process-local admission sealing for idle stop and forced restart.",
+      }),
       toolDeferral: Schema.optional(Schema.Boolean).annotate({
         description: "Awaited session context hooks can defer ordinary tools through native provider tool search.",
       }),
@@ -89,6 +95,49 @@ const PAIRING_CONNECT_URL = /^\/auth\/connect\/[^/]+$/
 export function isPairingConnectURL(url: URL) {
   return PAIRING_CONNECT_URL.test(url.pathname)
 }
+
+/** `server.stop.*` in the `server.experimental` group. */
+export const ServerStopEndpoints = [
+  HttpApiEndpoint.get("server.stop.get", "/api/experimental/server/stop", {
+    query: Schema.Struct({
+      ...EngineStop.GetQuery.fields,
+      waitMs: Schema.NumberFromString.pipe(Schema.decodeTo(EngineStop.WaitMillis), optional),
+    }),
+    success: EngineStop.Info,
+    error: EngineStopControlError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "experimental.server.stop.get",
+      summary: "Get engine stop state",
+      description:
+        "Experimental: may change without compatibility guarantees. Read the current incarnation and activity revision before checking quiescence, or await a named stop operation for up to waitMs (0 through 30000).",
+    }),
+  ),
+  HttpApiEndpoint.post("server.stop.prepare", "/api/experimental/server/stop/prepare", {
+    payload: EngineStop.PrepareInput,
+    success: EngineStop.Operation,
+    error: EngineStopControlError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "experimental.server.stop.prepare",
+      summary: "Prepare engine stop",
+      description:
+        "Experimental: may change without compatibility guarantees. Seal fresh admissions for idle stop or forced restart. A preparing receipt is not permission to close the process; waitMs bounds only this request's settlement wait.",
+    }),
+  ),
+  HttpApiEndpoint.post("server.stop.cancel", "/api/experimental/server/stop/cancel", {
+    payload: EngineStop.CancelInput,
+    success: EngineStop.Operation,
+    error: EngineStopControlError,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "experimental.server.stop.cancel",
+      summary: "Cancel engine stop",
+      description:
+        "Experimental: may change without compatibility guarantees. Reopen only the matching generation, operation and token; already dispatched work interruption is not undone.",
+    }),
+  ),
+] as const
 
 export const ServerGroup = HttpApiGroup.make("server.server")
   .add(

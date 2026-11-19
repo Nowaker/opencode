@@ -24,6 +24,7 @@ import { makeMediaGet } from "./media"
 import { type Outbound, runPtySocket } from "./pty-socket"
 import { makeSchedule } from "./schedule"
 import { makeEventReplay } from "./event-replay"
+import { makeServerStop } from "./server-stop"
 
 export const PersistentPtyHandler = HttpApiBuilder.group(Api, "server.experimental", (handlers) =>
   Effect.gen(function* () {
@@ -35,12 +36,16 @@ export const PersistentPtyHandler = HttpApiBuilder.group(Api, "server.experiment
     const mediaGet = yield* makeMediaGet
     const schedule = yield* makeSchedule
     const replay = yield* makeEventReplay
+    const stop = yield* makeServerStop
 
     return handlers
       .handle("event.replay", (ctx) => replay(ctx.payload))
       .handleRaw("media.get", (ctx) => mediaGet(ctx.params.hash, ctx.request))
       .handle("job.list", (ctx) => job.list(ctx.query))
       .handle("job.cancel", (ctx) => job.cancel(ctx.params))
+      .handle("server.stop.get", (ctx) => stop.get(ctx.query))
+      .handle("server.stop.prepare", (ctx) => stop.prepare(ctx.payload))
+      .handle("server.stop.cancel", (ctx) => stop.cancel(ctx.payload))
       .handle("artifacts.providers", (ctx) => artifact.providers(ctx.query, ctx.request))
       .handle("artifacts.list", (ctx) => artifact.list(ctx.query, ctx.request))
       .handle("artifacts.create", (ctx) => artifact.create(ctx.query, ctx.payload, ctx.request))

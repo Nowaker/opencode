@@ -49,6 +49,7 @@ import { Vcs } from "@opencode/core/vcs"
 import { WebSearch } from "@opencode/core/websearch"
 import { Worktree } from "@opencode/core/worktree"
 import { WorktreeStrategies } from "@opencode/core/worktree/strategies"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { Effect, Layer } from "effect"
 import { tempLocationLayer } from "../fixture/location"
 import { emptyMcpLayer } from "../fixture/mcp"
@@ -115,6 +116,7 @@ export const makePluginTestLayer = (
       Generate.node,
       LayerNodePlatform.httpClient,
       Plugin.node,
+      EngineStop.node,
       Agent.node,
       Artifact.node,
       AISDK.node,

@@ -13,6 +13,7 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Bus } from "../src/bus.js"
 import { Database } from "../src/database/database.js"
+import { EngineStop } from "../src/engine-stop.js"
 import { EventTable } from "../src/event/sql.js"
 import { Image } from "../src/image.js"
 import { Instance } from "../src/instance/service.js"
@@ -50,6 +51,7 @@ const it = testEffect(
       SessionStore.node,
       SessionInbox.node,
       FSUtil.node,
+      EngineStop.node,
     ]),
     {
       replacements: [Bus.node.replace(Bus.configured({ persist: true })), Global.node.replace(tempGlobalLayer)],
@@ -171,6 +173,7 @@ const setup = Effect.fnUntraced(function* (options?: {
       | Instance.Service
       | SessionExecution.Service
       | SessionInbox.Service
+      | EngineStop.Service
       | Scope.Scope
     >(),
     Effect.provideService(Instance.Service, instances),

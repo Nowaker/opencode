@@ -9,6 +9,7 @@ export type ServerInfo = {
   capabilities?:
     | {
         persistentPty?: boolean | undefined
+        engineStop?: boolean | undefined
         toolDeferral?: boolean | undefined
         jobControl?: boolean | undefined
         jobResults?: boolean | undefined
@@ -391,6 +392,16 @@ export type ArtifactTime = { created: number; updated: number }
 export type JobStatus = "running" | "completed" | "error" | "cancelled"
 
 export type JobTime = { started: number; completed?: number }
+
+export type EngineStopGeneration = string
+
+export type EngineStopActivityRevision = number
+
+export type EngineStopOperationID = string
+
+export type EngineStopToken = string
+
+export type EngineStopMode = "idle" | "force-restart"
 
 export type ReferenceGitSource = { type: "git"; repository: string; branch?: string }
 
@@ -1023,6 +1034,42 @@ export type JobImage = {
   time: JobTime
   path: string
   model: string
+}
+
+export type EngineStopRefused = {
+  generation: EngineStopGeneration
+  operationID: EngineStopOperationID
+  mode: "idle"
+  token: EngineStopToken
+  status: "refused"
+  reason:
+    | { type: "work-active"; activeClaims: number }
+    | { type: "activity-changed"; activityRevision: EngineStopActivityRevision }
+    | { type: "native-schedule-armed"; scheduleIDs: Array<ScheduleID> }
+}
+
+export type EngineStopPreparing = {
+  generation: EngineStopGeneration
+  operationID: EngineStopOperationID
+  mode: EngineStopMode
+  token: EngineStopToken
+  status: "preparing"
+}
+
+export type EngineStopSealed = {
+  generation: EngineStopGeneration
+  operationID: EngineStopOperationID
+  mode: EngineStopMode
+  token: EngineStopToken
+  status: "sealed"
+}
+
+export type EngineStopCancelled = {
+  generation: EngineStopGeneration
+  operationID: EngineStopOperationID
+  mode: EngineStopMode
+  token: EngineStopToken
+  status: "cancelled"
 }
 
 export type VcsInfo = { provider?: string; branch: VcsBranch }
@@ -2307,6 +2354,8 @@ export type ArtifactContent = { info: ArtifactInfo; files: { [x: string]: string
 
 export type JobInfo = JobShell | JobSubagent | JobImage
 
+export type EngineStopOperation = EngineStopRefused | EngineStopPreparing | EngineStopSealed | EngineStopCancelled
+
 export type SessionInboxMove = {
   id: SessionMessageID
   sessionID: SessionID
@@ -2742,6 +2791,14 @@ export type ScheduleInfo = {
   time: { created: number; updated: number }
 }
 
+export type EngineStopInfo = {
+  generation: EngineStopGeneration
+  activityRevision: EngineStopActivityRevision
+  state: "open" | "preparing" | "sealed"
+  activeClaims: number
+  operation: EngineStopOperation | null
+}
+
 export type AgentInfo = {
   id: AgentID
   name: string
@@ -3079,6 +3136,19 @@ export type SessionNotFoundError = {
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
 
+export type EngineStopRefusedError = {
+  readonly _tag: "EngineStop.RefusedError"
+  readonly generation: string
+  readonly operationID: string
+  readonly mode: "idle" | "force-restart"
+  readonly operationState: "preparing" | "sealed"
+  readonly retryable: true
+  readonly admission: { readonly status: "not-admitted" } | { readonly status: "existing"; readonly inputID: string }
+  readonly message: string
+}
+export const isEngineStopRefusedError = (value: unknown): value is EngineStopRefusedError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "EngineStop.RefusedError"
+
 export type MessageNotFoundError = {
   readonly _tag: "MessageNotFoundError"
   readonly sessionID: string
@@ -3340,6 +3410,21 @@ export const isArtifactNotFoundError = (value: unknown): value is ArtifactNotFou
 export type JobNotFoundError = { readonly _tag: "JobNotFoundError"; readonly jobID: string; readonly message: string }
 export const isJobNotFoundError = (value: unknown): value is JobNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "JobNotFoundError"
+
+export type EngineStopControlError = {
+  readonly _tag: "EngineStop.ControlError"
+  readonly reason:
+    | "generation-mismatch"
+    | "operation-conflict"
+    | "operation-active"
+    | "operation-not-found"
+    | "token-mismatch"
+  readonly generation: string
+  readonly operationID: string
+  readonly message: string
+}
+export const isEngineStopControlError = (value: unknown): value is EngineStopControlError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "EngineStop.ControlError"
 
 export type ShellNotFoundError = { readonly _tag: "ShellNotFoundError"; readonly id: string; readonly message: string }
 export const isShellNotFoundError = (value: unknown): value is ShellNotFoundError =>
@@ -4864,6 +4949,41 @@ export type ExperimentalJobListOutput = { data: Array<JobInfo> }["data"]
 export type ExperimentalJobCancelInput = { readonly parentID: string; readonly jobID: string }
 
 export type ExperimentalJobCancelOutput = CancellationResult
+
+export type ExperimentalServerStopGetInput = {
+  readonly operationID?: string | undefined
+  readonly waitMs?: number | undefined
+}
+
+export type ExperimentalServerStopGetOutput = EngineStopInfo
+
+export type ExperimentalServerStopPrepareInput = {
+  readonly payload:
+    | {
+        readonly expectedGeneration: string
+        readonly operationID: string
+        readonly waitMs?: number
+        readonly mode: "idle"
+        readonly expectedActivityRevision: number
+      }
+    | {
+        readonly expectedGeneration: string
+        readonly operationID: string
+        readonly waitMs?: number
+        readonly mode: "force-restart"
+        readonly expectedActivityRevision?: never
+      }
+}
+
+export type ExperimentalServerStopPrepareOutput = EngineStopOperation
+
+export type ExperimentalServerStopCancelInput = {
+  readonly expectedGeneration: string
+  readonly operationID: string
+  readonly token: string
+}
+
+export type ExperimentalServerStopCancelOutput = EngineStopOperation
 
 export type ShellListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
 

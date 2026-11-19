@@ -72,6 +72,7 @@ import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
 import { InstructionEntry } from "./session/instruction-entry.js"
 import { SessionChildCancellation } from "./session/child-cancellation.js"
+import { EngineStop } from "./engine-stop.js"
 
 // get project -> project.locations
 //
@@ -138,10 +139,13 @@ export interface Interface {
     },
     InvalidListCursorError
   >
-  readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info, NotFoundError | EngineStop.RefusedError>
   readonly fork: (
     input: ForkInput,
-  ) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | ForkEmptyError>
+  ) => Effect.Effect<
+    SessionSchema.Info,
+    NotFoundError | MessageNotFoundError | ForkEmptyError | EngineStop.RefusedError
+  >
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly recovery: (input: {
     readonly sessionID: SessionSchema.ID
@@ -149,9 +153,12 @@ export interface Interface {
   readonly environment: (input: {
     readonly sessionID: SessionSchema.ID
     readonly variables?: SessionEnvironment.Variables
-  }) => Effect.Effect<SessionEnvironment.Variables | undefined, NotFoundError>
-  readonly view: (input: { sessionID: SessionSchema.ID; idle: number }) => Effect.Effect<void, NotFoundError>
-  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<SessionEnvironment.Variables | undefined, NotFoundError | EngineStop.RefusedError>
+  readonly view: (input: {
+    sessionID: SessionSchema.ID
+    idle: number
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
   readonly messages: (
     input: SessionStore.MessagesInput,
   ) => Effect.Effect<SessionMessage.Info[], NotFoundError | MessageDecodeError>
@@ -189,9 +196,15 @@ export interface Interface {
   readonly inbox: (sessionID: SessionSchema.ID) => Effect.Effect<SessionInbox.Info[], NotFoundError>
   /** Experimental: {@link Interface.inbox} with files stored in `blob` left as `media:` refs when the session's location enables `experimental.media_blob`. */
   readonly inboxWithRefs: (sessionID: SessionSchema.ID) => Effect.Effect<SessionInbox.MediaInfo[], NotFoundError>
-  readonly cancelInbox: (input: InboxItemRef) => Effect.Effect<void, NotFoundError | InboxConflictError>
-  readonly steerInbox: (input: InboxItemRef) => Effect.Effect<void, NotFoundError | InboxConflictError>
-  readonly queueInbox: (input: InboxItemRef) => Effect.Effect<void, NotFoundError | InboxConflictError>
+  readonly cancelInbox: (
+    input: InboxItemRef,
+  ) => Effect.Effect<void, NotFoundError | InboxConflictError | EngineStop.RefusedError>
+  readonly steerInbox: (
+    input: InboxItemRef,
+  ) => Effect.Effect<void, NotFoundError | InboxConflictError | EngineStop.RefusedError>
+  readonly queueInbox: (
+    input: InboxItemRef,
+  ) => Effect.Effect<void, NotFoundError | InboxConflictError | EngineStop.RefusedError>
   /**
    * Durable, ordered session log read. Replays durable session bus after
    * the exclusive `after` cursor, emits a `Synced` marker at the captured
@@ -204,20 +217,29 @@ export interface Interface {
     after?: number
     follow?: boolean
   }) => Stream.Stream<SessionEvent.DurableEvent | EventLog.Synced, NotFoundError>
-  readonly switchAgent: (input: { sessionID: SessionSchema.ID; agent: Agent.ID }) => Effect.Effect<void, NotFoundError>
-  readonly switchModel: (input: { sessionID: SessionSchema.ID; model: Model.Ref }) => Effect.Effect<void, NotFoundError>
-  readonly rename: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
-  readonly archive: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
-  readonly unarchive: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
+  readonly switchAgent: (input: {
+    sessionID: SessionSchema.ID
+    agent: Agent.ID
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly switchModel: (input: {
+    sessionID: SessionSchema.ID
+    model: Model.Ref
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly rename: (input: {
+    sessionID: SessionSchema.ID
+    title: string
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly archive: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly unarchive: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
   readonly setMetadata: (input: {
     sessionID: SessionSchema.ID
     metadata: SessionSchema.Metadata
     mode?: "merge"
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
   readonly setPermissions: (input: {
     sessionID: SessionSchema.ID
     permissions: Permission.Ruleset
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
   readonly move: SessionMove.Interface["move"]
   readonly prompt: (
     input: Parameters<Session.Handle["prompt"]>[0] & { sessionID: SessionSchema.ID },
@@ -247,11 +269,13 @@ export interface Interface {
   ) => ReturnType<Session.Handle["skill"]>
   readonly compact: (
     input: CompactInput,
-  ) => Effect.Effect<SessionInbox.Compaction, NotFoundError | CompactionConflictError>
+  ) => Effect.Effect<SessionInbox.Compaction, NotFoundError | CompactionConflictError | EngineStop.RefusedError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
-  readonly background: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
+  readonly background: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | EngineStop.RefusedError>
+  readonly resume: (
+    sessionID: SessionSchema.ID,
+  ) => Effect.Effect<void, NotFoundError | SessionRunner.RunError | EngineStop.RefusedError>
   readonly interrupt: SessionExecution.Interface["interrupt"]
   readonly cancelChild: (
     input: SessionSchema.CancelChildInput,
@@ -259,10 +283,13 @@ export interface Interface {
   readonly synthetic: {
     (
       input: SessionSchema.SyntheticAdmission & { sessionID: SessionSchema.ID },
-    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
+    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError | EngineStop.RefusedError>
     (
       input: SessionSchema.SyntheticAppend & { sessionID: SessionSchema.ID },
-    ): Effect.Effect<SessionSchema.SyntheticAppendResult, NotFoundError | SyntheticConflictError | Schema.SchemaError>
+    ): Effect.Effect<
+      SessionSchema.SyntheticAppendResult,
+      NotFoundError | SyntheticConflictError | Schema.SchemaError | EngineStop.RefusedError
+    >
     (input: SessionSchema.SyntheticInput & { sessionID: SessionSchema.ID }): ReturnType<Session.Handle["synthetic"]>
   }
   readonly revert: {
@@ -272,12 +299,22 @@ export interface Interface {
       files?: boolean
     }) => Effect.Effect<
       SessionSchema.Revert,
-      NotFoundError | MessageNotFoundError | BusyError | Snapshot.Error | FileSystem.DirectoryNotFoundError
+      | NotFoundError
+      | MessageNotFoundError
+      | BusyError
+      | Snapshot.Error
+      | FileSystem.DirectoryNotFoundError
+      | EngineStop.RefusedError
     >
     readonly clear: (
       sessionID: SessionSchema.ID,
-    ) => Effect.Effect<void, NotFoundError | BusyError | Snapshot.Error | FileSystem.DirectoryNotFoundError>
-    readonly commit: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | BusyError>
+    ) => Effect.Effect<
+      void,
+      NotFoundError | BusyError | Snapshot.Error | FileSystem.DirectoryNotFoundError | EngineStop.RefusedError
+    >
+    readonly commit: (
+      sessionID: SessionSchema.ID,
+    ) => Effect.Effect<void, NotFoundError | BusyError | EngineStop.RefusedError>
   }
 }
 
@@ -300,6 +337,7 @@ const layer = Layer.effect(
     const jobs = yield* Job.Service
     const environments = yield* SessionEnvironment.Service
     const locations = yield* LocationServiceMap.Service
+    const claims = yield* EngineStop.Service
     const sessions = yield* Session.make()
     function interrupt(
       sessionID: SessionSchema.ID,
@@ -314,10 +352,13 @@ const layer = Layer.effect(
     }
     function synthetic(
       input: SessionSchema.SyntheticAdmission & { sessionID: SessionSchema.ID },
-    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError>
+    ): Effect.Effect<SessionInbox.Synthetic, NotFoundError | SyntheticConflictError | EngineStop.RefusedError>
     function synthetic(
       input: SessionSchema.SyntheticAppend & { sessionID: SessionSchema.ID },
-    ): Effect.Effect<SessionSchema.SyntheticAppendResult, NotFoundError | SyntheticConflictError | Schema.SchemaError>
+    ): Effect.Effect<
+      SessionSchema.SyntheticAppendResult,
+      NotFoundError | SyntheticConflictError | Schema.SchemaError | EngineStop.RefusedError
+    >
     function synthetic(
       input: SessionSchema.SyntheticInput & { sessionID: SessionSchema.ID },
     ): ReturnType<Session.Handle["synthetic"]>
@@ -380,7 +421,7 @@ const layer = Layer.effect(
         if (projected.type === "existing") return projected.session
         // TODO: Restore recorded sessions onto replacement synchronized workspaces in a future API slice.
         return yield* result.get(sessionID).pipe(Effect.orDie)
-      }),
+      }, claims.within),
       fork: Effect.fn("Session.fork")(function* (input) {
         const parent = yield* result.get(input.sessionID)
         const boundary = yield* db
@@ -447,12 +488,13 @@ const layer = Layer.effect(
           })
           .pipe(Effect.provideService(SessionBlob.ForkMedia, media))
         return yield* result.get(sessionID).pipe(Effect.orDie)
-      }),
+      }, claims.within),
       get: (sessionID) => sessions.forSession(sessionID).get(),
       recovery: (input) => sessions.forSession(input.sessionID).recovery(),
       environment: Effect.fn("Session.environment")(function* (input) {
         yield* result.get(input.sessionID)
-        if (input.variables !== undefined) yield* environments.set(input.sessionID, input.variables)
+        // Process-local state, but a write is still fresh work for a closed engine; a bodyless read is not.
+        if (input.variables !== undefined) yield* claims.within(environments.set(input.sessionID, input.variables))
         return yield* environments.get(input.sessionID)
       }),
       view: (input) => sessions.forSession(input.sessionID).view(input),
@@ -468,7 +510,7 @@ const layer = Layer.effect(
         yield* environments.clear(sessionID)
         yield* bus.publish(SessionEvent.Deleted, { sessionID })
         yield* bus.remove(sessionID)
-      }),
+      }, claims.within),
       list: Effect.fn("Session.list")(function* (input = {}) {
         const filter =
           input.cursor === undefined
@@ -619,6 +661,7 @@ export const node: LayerNode.Provider<Service, never, typeof Node.tags.values.gl
     Bus.node,
     Project.node,
     SessionExecution.node,
+    EngineStop.node,
     SessionModelTransport.node,
     llmClient,
     SessionStore.node,

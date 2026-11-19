@@ -195,7 +195,9 @@ const layer = Layer.effect(
                 // The Session would go idle; a plugin may admit input to keep this execution working.
                 yield* restore(
                   SessionBackground.outstanding({ ...jobs, groups: SubagentGroup.pending(db) }, store, sessionID).pipe(
-                    Effect.flatMap((background) => hooks.trigger("session", "experimental.idle", { sessionID, background })),
+                    Effect.flatMap((background) =>
+                      hooks.trigger("session", "experimental.idle", { sessionID, background }),
+                    ),
                   ),
                 )
                 if (!(yield* SessionInbox.has(db, sessionID, "input"))) return DrainResult.Complete()
@@ -213,9 +215,13 @@ const layer = Layer.effect(
                   // A control admitted during context preparation owns this boundary.
                   if (promoted === undefined) return undefined
                   if (promoted > 0 && !selected.session.parentID && SessionTitle.isUntitled(selected.session))
-                    yield* FiberMap.run(titles, sessionID, title.generate(sessionID), {
-                      onlyIfMissing: true,
-                    })
+                    yield* FiberMap.run(
+                      titles,
+                      sessionID,
+                      // A closed engine starts no new title request; the title stays until the next one.
+                      title.generate(sessionID).pipe(Effect.catchTag("EngineStop.RefusedError", () => Effect.void)),
+                      { onlyIfMissing: true },
+                    )
                   if (promoted > 0) step = 1
                   return { _tag: "Ready" as const, context: yield* context.load(selected) }
                 }),

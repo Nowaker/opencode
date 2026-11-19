@@ -4,6 +4,7 @@ import { Cause, Context, Effect, Exit, Layer } from "effect"
 import { isSqlError } from "effect/sql/SqlError"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
+import { EngineStop } from "../engine-stop.js"
 import { Job } from "../job.js"
 import { Instance } from "../instance/service.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
@@ -27,8 +28,10 @@ export interface Interface {
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   /** Checks process-local ownership, including interruption cleanup and terminal settlement. */
   readonly isActive: (sessionID: SessionSchema.ID) => Effect.Effect<boolean>
-  /** Starts execution while idle or joins the active execution. */
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, SessionRunner.RunError>
+  /** Starts execution while idle or joins the active execution. A closed engine refuses a fresh start. */
+  readonly resume: (
+    sessionID: SessionSchema.ID,
+  ) => Effect.Effect<void, SessionRunner.RunError | EngineStop.RefusedError>
   /** Registers newly recorded work. Repeated wakeups may coalesce. */
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /**
@@ -64,6 +67,7 @@ export const layer = Layer.effect(
     const instances = yield* Instance.Service
     const bus = yield* Bus.Service
     const jobs = yield* Job.Service
+    const claims = yield* EngineStop.Service
     const db = (yield* Database.Service).db
     const reportLifecycle = <A>(sessionID: SessionSchema.ID, effect: Effect.Effect<A>) =>
       effect.pipe(
@@ -113,6 +117,9 @@ export const layer = Layer.effect(
       })
     })
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError, InterruptReason>({
+      claims,
+      // A stopped engine keeps the execution claim so the next engine resumes the work.
+      shutdownReason: "shutdown",
       started: (sessionID, id) =>
         reportLifecycle(
           sessionID,
@@ -228,7 +235,7 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [SessionStore.node, Instance.node, Bus.node, Database.node, Job.node],
+  deps: [SessionStore.node, Instance.node, Bus.node, Database.node, Job.node, EngineStop.node],
 })
 
 /** Low-level compatibility layer for callers that only need durable Session recording. */

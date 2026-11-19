@@ -22,6 +22,7 @@ import { LocationServiceMap } from "../location-service-map.js"
 import { Model } from "../model.js"
 import { Mcp } from "../mcp/index.js"
 import { Session } from "../session.js"
+import { EngineStop } from "../engine-stop.js"
 import { InstructionEntry } from "../session/instruction-entry.js"
 import { SessionMessagePage } from "../session/message-page.js"
 import { SessionSelection } from "../session/selection.js"
@@ -85,6 +86,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const permission = yield* Permission.Service
   const hooks = yield* PluginHooks.Service
   const sessions = yield* Session.Service
+  const claims = yield* EngineStop.Service
   const selection = yield* SessionSelection.make
   const instructionEntries = yield* InstructionEntry.Service
   const forms = yield* Form.Service
@@ -662,6 +664,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
       generate: sessions.generate,
       command: (input) => sessions.command({ ...input, command: input.name }),
       compact: sessions.compact,
+      // One claim spans every field, so a refusal never follows a field this call already wrote.
       update: Effect.fn(function* (input) {
         yield* sessions.get(input.sessionID)
         if (input.title !== undefined) yield* sessions.rename({ sessionID: input.sessionID, title: input.title })
@@ -673,7 +676,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
           })
         if (input.permissions !== undefined)
           yield* sessions.setPermissions({ sessionID: input.sessionID, permissions: input.permissions })
-      }),
+      }, claims.within),
       move: sessions.move,
       synthetic: sessions.synthetic,
       interrupt: (input) =>
@@ -738,6 +741,7 @@ export const requirements = LayerNode.group([
   InstructionEntry.node,
   PersistentPty.node,
   LocationServiceMap.node,
+  EngineStop.node,
 ])
 
 export function storage(kv: KV.Interface, pluginID: string): Plugin.Context["storage"] {

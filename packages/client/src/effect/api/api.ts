@@ -40,6 +40,7 @@ import type { Pty } from "@opencode/schema/pty"
 import type { Schedule } from "@opencode/schema/schedule"
 import type { Artifact } from "@opencode/schema/artifact"
 import type { Job } from "@opencode/schema/job"
+import type { EngineStop } from "@opencode/schema/engine-stop"
 import type { Reference } from "@opencode/schema/reference"
 import type { Worktree } from "@opencode/schema/worktree"
 import type { Vcs } from "@opencode/schema/vcs"
@@ -56,6 +57,7 @@ export type ServerInfoOutput = {
   readonly capabilities?:
     | {
         readonly persistentPty?: boolean | undefined
+        readonly engineStop?: boolean | undefined
         readonly toolDeferral?: boolean | undefined
         readonly jobControl?: boolean | undefined
         readonly jobResults?: boolean | undefined
@@ -2591,6 +2593,31 @@ export type ExperimentalJobCancelOperation<E = never> = (
   input: ExperimentalJobCancelInput,
 ) => Effect.Effect<ExperimentalJobCancelOutput, E>
 
+export type ExperimentalServerStopGetInput = {
+  readonly operationID?: EngineStop.OperationID | undefined
+  readonly waitMs?: EngineStop.WaitMillis | undefined
+}
+export type ExperimentalServerStopGetOutput = EngineStop.Info
+export type ExperimentalServerStopGetOperation<E = never> = (
+  input?: ExperimentalServerStopGetInput,
+) => Effect.Effect<ExperimentalServerStopGetOutput, E>
+
+export type ExperimentalServerStopPrepareInput = { readonly payload: EngineStop.PrepareInput }
+export type ExperimentalServerStopPrepareOutput = EngineStop.Operation
+export type ExperimentalServerStopPrepareOperation<E = never> = (
+  input: ExperimentalServerStopPrepareInput,
+) => Effect.Effect<ExperimentalServerStopPrepareOutput, E>
+
+export type ExperimentalServerStopCancelInput = {
+  readonly expectedGeneration: EngineStop.Generation
+  readonly operationID: EngineStop.OperationID
+  readonly token: EngineStop.Token
+}
+export type ExperimentalServerStopCancelOutput = EngineStop.Operation
+export type ExperimentalServerStopCancelOperation<E = never> = (
+  input: ExperimentalServerStopCancelInput,
+) => Effect.Effect<ExperimentalServerStopCancelOutput, E>
+
 export interface ExperimentalApi<E = never> {
   readonly persistentPty: {
     readonly read: ExperimentalPersistentPtyReadOperation<E>
@@ -2622,6 +2649,13 @@ export interface ExperimentalApi<E = never> {
     readonly delete: ExperimentalArtifactsDeleteOperation<E>
   }
   readonly job: { readonly list: ExperimentalJobListOperation<E>; readonly cancel: ExperimentalJobCancelOperation<E> }
+  readonly server: {
+    readonly stop: {
+      readonly get: ExperimentalServerStopGetOperation<E>
+      readonly prepare: ExperimentalServerStopPrepareOperation<E>
+      readonly cancel: ExperimentalServerStopCancelOperation<E>
+    }
+  }
 }
 
 export type ShellListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }

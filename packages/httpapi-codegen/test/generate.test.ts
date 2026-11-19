@@ -1493,6 +1493,9 @@ describe("HttpApiCodegen.generate", () => {
     })
     expect(effect.files.find((file) => file.path === "session.ts")?.content).toContain('payload: input["payload"]')
     expect(imported.files.find((file) => file.path === "client.ts")?.content).toContain('payload: input["payload"]')
+    expect(imported.files.find((file) => file.path === "client.ts")?.content).toContain(
+      '& { readonly responseMode?: "decoded-only" }',
+    )
     expect(shape.files[0]?.content).toContain(
       'readonly "payload": { readonly "type": "local", readonly "command": ReadonlyArray<string> }',
     )

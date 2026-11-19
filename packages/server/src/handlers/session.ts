@@ -5,6 +5,7 @@ import { SessionTitle } from "@opencode/core/session/title"
 import { SessionTransfer } from "@opencode/core/session/transfer"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { Form } from "@opencode/core/form"
+import { EngineStop } from "@opencode/core/engine-stop"
 import { DateTime, Effect, Schema, Stream } from "effect"
 import { InterruptBody } from "@opencode/schema/session"
 import { HttpServerResponse } from "effect/http"
@@ -41,6 +42,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
     const transfer = yield* SessionTransfer.Service
     const instructions = yield* InstructionEntry.Service
     const instances = yield* Instance.Service
+    const claims = yield* EngineStop.Service
     const requireSession = (sessionID: Session.ID) =>
       session.get(sessionID).pipe(Effect.catchTag("Session.NotFoundError", missingSession))
     const requireOwnedForm = Effect.fnUntraced(function* (sessionID: Form.Info["sessionID"], formID: Form.ID) {
@@ -249,6 +251,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       )
       .handle(
         "session.update",
+        // One claim spans every field, so a refusal never follows a field this request already wrote.
         Effect.fn(function* (ctx) {
           const info = yield* requireSession(ctx.params.sessionID)
           if (ctx.payload.title !== undefined) {
@@ -280,7 +283,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               Effect.catchTag("Session.NotFoundError", missingSession),
             )
           return HttpApiSchema.NoContent.make()
-        }),
+        }, claims.within),
       )
       .handle(
         "session.move",

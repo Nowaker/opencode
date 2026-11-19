@@ -2,6 +2,7 @@ export * as SessionRunCoordinator from "./run-coordinator.js"
 
 import { Deferred, Effect, Exit, Fiber, FiberSet, Scope } from "effect"
 import { Event } from "@opencode/schema/event"
+import type { EngineStop } from "../engine-stop.js"
 import type { Promotable } from "./inbox.js"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
@@ -13,7 +14,7 @@ export interface Coordinator<Key, E, Reason = never> {
   /** Checks ownership for one key, including cleanup and terminal settlement. */
   readonly isActive: (key: Key) => Effect.Effect<boolean>
   /** Starts an execution while idle, or joins the active execution and returns its exit. */
-  readonly run: (key: Key) => Effect.Effect<void, E>
+  readonly run: (key: Key) => Effect.Effect<void, E | EngineStop.RefusedError>
   /** Rings the doorbell: an idle key starts an execution; an active one drains again before settling. */
   readonly wake: (key: Key, scope?: Promotable) => Effect.Effect<void>
   /**
@@ -38,11 +39,13 @@ export interface Coordinator<Key, E, Reason = never> {
 type Execution<E, Reason> = {
   readonly id: Event.ID
   readonly done: Deferred.Deferred<void, E>
-  owner?: Fiber.Fiber<void>
+  owner?: Fiber.Fiber<void, unknown>
   scope: Promotable
   pendingWake?: Promotable
   stopping: boolean
   interruptionReason?: Reason
+  /** Set once `started` has persisted and the shutdown checkpoint passed; only then may a stop interrupt it. */
+  bootstrapped: boolean
 }
 
 /**
@@ -65,10 +68,20 @@ export const make = <Key, E, Reason = never>(options: {
    * drain and before the execution settles (waiters resolve after it completes).
    */
   readonly settled?: (key: Key, exit: Exit.Exit<void, E>, reason?: Reason) => Effect.Effect<void>
+  /**
+   * Engine admission claims. Each execution holds one from before it is registered until it settles; a successor
+   * started at settlement inherits it, so the gate never sees a gap between them. A stop request interrupts a
+   * bootstrapped execution with `shutdownReason`, and the checkpoint after `started` stops one that was asked to
+   * shut down before it could be interrupted, so it never reaches `drain`.
+   */
+  readonly claims?: EngineStop.Interface
+  readonly shutdownReason?: Reason
 }): Effect.Effect<Coordinator<Key, E, Reason>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const executions = new Map<Key, Execution<E, Reason>>()
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
+    const forkScope = yield* Effect.scope
+    const claims = options.claims
 
     const loop = (key: Key, execution: Execution<E, Reason>, force: boolean): Effect.Effect<void, E> =>
       Effect.suspend(() => options.drain(key, force, execution.scope)).pipe(
@@ -83,70 +96,145 @@ export const make = <Key, E, Reason = never>(options: {
         ),
       )
 
-    const start = (key: Key, force: boolean, scope: Promotable) => {
-      const execution: Execution<E, Reason> = {
-        id: Event.ID.create(),
-        done: Deferred.makeUnsafe<void, E>(),
-        scope,
-        stopping: false,
-      }
-      executions.set(key, execution)
-      // The leading yield lets `owner` be assigned before the drain can settle, and keeps
-      // failing self-waking executions from growing the stack across successor starts.
-      // Drains start one tick after wake; callers observe progress through events or run.
-      execution.owner = fork(
-        Effect.yieldNow.pipe(
-          Effect.andThen(Effect.uninterruptible(options.started?.(key, execution.id) ?? Effect.void)),
-          Effect.andThen(loop(key, execution, force)),
-          Effect.onExit((exit) =>
-            Effect.sync(() => {
-              execution.owner = undefined
-            }).pipe(Effect.andThen(options.settled?.(key, exit, execution.interruptionReason) ?? Effect.void)),
-          ),
-          Effect.onExit((exit) => Effect.sync(() => settle(key, execution, exit))),
-          Effect.exit,
-          Effect.asVoid,
-        ),
+    const checkpoint = (key: Key, execution: Execution<E, Reason>) =>
+      claims
+        ? claims.shutdownRequested.pipe(
+            Effect.orDie,
+            Effect.flatMap((requested) => {
+              if (!requested) return Effect.sync(() => (execution.bootstrapped = true))
+              execution.stopping = true
+              execution.pendingWake = undefined
+              execution.interruptionReason = options.shutdownReason
+              return Effect.interrupt
+            }),
+          )
+        : Effect.sync(() => (execution.bootstrapped = true))
+
+    // Starts an execution unless one exists for the key, which `existing` then handles. The claim is taken before
+    // registration, and the map is checked again after it because taking it is effectful.
+    const start = <A>(
+      key: Key,
+      force: boolean,
+      scope: Promotable,
+      existing: (execution: Execution<E, Reason>) => A,
+      created: (execution: Execution<E, Reason>) => A,
+    ): Effect.Effect<A, EngineStop.RefusedError> =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          // Retaining never needs a current owner, so it cannot fail with an ownership error.
+          const reservation = claims
+            ? yield* claims.retain().pipe(Effect.catchTag("EngineStop.OwnershipError", Effect.die))
+            : undefined
+          const current = executions.get(key)
+          if (current !== undefined) return existing(current)
+          const execution: Execution<E, Reason> = {
+            id: Event.ID.create(),
+            done: Deferred.makeUnsafe<void, E>(),
+            scope,
+            stopping: false,
+            bootstrapped: false,
+          }
+          executions.set(key, execution)
+          // The leading yield lets `owner` be assigned before the drain can settle, and keeps
+          // failing self-waking executions from growing the stack across successor starts.
+          // Drains start one tick after wake; callers observe progress through events or run.
+          const body = Effect.yieldNow.pipe(
+            Effect.andThen(Effect.uninterruptible(options.started?.(key, execution.id) ?? Effect.void)),
+            Effect.andThen(checkpoint(key, execution)),
+            Effect.andThen(loop(key, execution, force)),
+            Effect.onExit((exit) =>
+              Effect.sync(() => {
+                execution.owner = undefined
+              }).pipe(Effect.andThen(options.settled?.(key, exit, execution.interruptionReason) ?? Effect.void)),
+            ),
+            Effect.onExit((exit) => settle(key, execution, exit)),
+            Effect.exit,
+            Effect.asVoid,
+          )
+          execution.owner = reservation
+            ? yield* reservation
+                .fork(
+                  body,
+                  forkScope,
+                  // Fire and forget: awaiting settlement here would wait on this execution's own fiber.
+                  Effect.sync(() => {
+                    if (execution.bootstrapped) stop(key, execution, options.shutdownReason)
+                  }),
+                )
+                .pipe(Effect.orDie)
+            : fork(body)
+          return created(execution)
+        }),
       )
-      return execution
-    }
 
     // A doorbell that survives the execution loop (rung after the loop decided to end, or
     // during failure or interruption cleanup) starts a fresh execution for the remaining work.
-    const settle = (key: Key, execution: Execution<E, Reason>, exit: Exit.Exit<void, E>) => {
-      if (execution.pendingWake) start(key, false, execution.pendingWake)
-      else executions.delete(key)
-      Deferred.doneUnsafe(execution.done, exit)
-    }
+    // It runs in the settling execution's fiber, so the successor inherits that execution's claim.
+    // The settling claim ends after any successor holds its own and before `done` resolves: waiters
+    // resume synchronously on `done`, and an idle Session must never still count as active work.
+    const settle = (key: Key, execution: Execution<E, Reason>, exit: Exit.Exit<void, E>) =>
+      Effect.suspend(() => {
+        if (executions.get(key) === execution) executions.delete(key)
+        const next = execution.pendingWake
+        if (next === undefined) return Effect.void
+        return start(
+          key,
+          false,
+          next,
+          (current) => ring(current, next),
+          () => undefined,
+        ).pipe(Effect.catchTag("EngineStop.RefusedError", () => Effect.void))
+      }).pipe(
+        Effect.ensuring(
+          Effect.andThen(
+            claims?.releaseCurrent ?? Effect.void,
+            Effect.sync(() => Deferred.doneUnsafe(execution.done, exit)),
+          ),
+        ),
+      )
 
     const isActive = (key: Key) => Effect.sync(() => executions.has(key))
 
-    const run = (key: Key): Effect.Effect<void, E> =>
+    const join = (key: Key, execution: Execution<E, Reason>): Effect.Effect<void, E | EngineStop.RefusedError> =>
+      // A stopping execution refuses joiners: wait out its cleanup, then run fresh.
+      execution.stopping
+        ? Deferred.await(execution.done).pipe(Effect.ignoreCause, Effect.andThen(run(key)))
+        : Deferred.await(execution.done)
+
+    const run = (key: Key): Effect.Effect<void, E | EngineStop.RefusedError> =>
       Effect.suspend(() => {
         const execution = executions.get(key)
-        if (execution !== undefined) {
-          // A stopping execution refuses joiners: wait out its cleanup, then run fresh.
-          if (execution.stopping)
-            return Deferred.await(execution.done).pipe(Effect.ignoreCause, Effect.andThen(run(key)))
-          return Deferred.await(execution.done)
-        }
-        return Deferred.await(start(key, true, "input").done)
+        if (execution !== undefined) return join(key, execution)
+        return start(
+          key,
+          true,
+          "input",
+          (current) => join(key, current),
+          (created) => Deferred.await(created.done),
+        ).pipe(Effect.flatten)
       })
 
+    const ring = (execution: Execution<E, Reason>, scope: Promotable) => {
+      // Coalesced wakes keep the widest scope: "input" subsumes "steer".
+      execution.pendingWake = execution.pendingWake === "input" ? "input" : scope
+    }
+
+    // A wake refused by a closed engine leaves its durable input owed for the next engine.
     const wake = (key: Key, scope: Promotable = "input") =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         const execution = executions.get(key)
-        if (execution !== undefined) {
-          // Coalesced wakes keep the widest scope: "input" subsumes "steer".
-          execution.pendingWake = execution.pendingWake === "input" ? "input" : scope
-          return
-        }
-        start(key, false, scope)
+        if (execution !== undefined) return Effect.sync(() => ring(execution, scope))
+        return start(
+          key,
+          false,
+          scope,
+          (current) => ring(current, scope),
+          () => undefined,
+        ).pipe(Effect.catchTag("EngineStop.RefusedError", () => Effect.void))
       })
 
-    const stop = (key: Key, reason?: Reason) => {
-      const execution = executions.get(key)
-      if (execution === undefined || execution.stopping) return false
+    const stop = (key: Key, execution: Execution<E, Reason> | undefined, reason?: Reason) => {
+      if (execution === undefined || execution.stopping || executions.get(key) !== execution) return false
       if (execution.owner === undefined) {
         // Settlement window: the owner exited but the settled hook has not finished. The
         // terminal outcome is already decided, so no reason attaches — but the interrupt
@@ -164,12 +252,13 @@ export const make = <Key, E, Reason = never>(options: {
       fork(Fiber.interrupt(execution.owner))
       return true
     }
-    const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> => Effect.sync(() => stop(key, reason))
+    const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> =>
+      Effect.sync(() => stop(key, executions.get(key), reason))
     const identity = (key: Key) => executions.get(key)?.id ?? null
     const compareAndInterrupt = (key: Key, expected: Event.ID, reason?: Reason) => {
       const execution = executions.get(key)
       if (execution?.id !== expected || execution.stopping || execution.owner === undefined) return false
-      return stop(key, reason)
+      return stop(key, execution, reason)
     }
 
     // One execution's `done` already spans coalesced continuations; re-check after it

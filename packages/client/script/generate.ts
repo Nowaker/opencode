@@ -13,6 +13,7 @@ import { Artifact } from "@opencode/schema/artifact"
 import { Command } from "@opencode/schema/command"
 import { Config } from "@opencode/schema/config"
 import { Credential } from "@opencode/schema/credential"
+import { EngineStop } from "@opencode/schema/engine-stop"
 import { Event } from "@opencode/schema/event"
 import { EventLog } from "@opencode/schema/event-log"
 import { FileDiff } from "@opencode/schema/file-diff"
@@ -72,6 +73,7 @@ const effectTypeReferences = [
   ...namespaceTypes("Command", "@opencode/schema/command", Command),
   ...namespaceTypes("Config", "@opencode/schema/config", Config),
   ...namespaceTypes("Credential", "@opencode/schema/credential", Credential),
+  ...namespaceTypes("EngineStop", "@opencode/schema/engine-stop", EngineStop),
   ...namespaceTypes("Event", "@opencode/schema/event", Event),
   ...namespaceTypes("EventLog", "@opencode/schema/event-log", EventLog),
   ...namespaceTypes("FileDiff", "@opencode/schema/file-diff", FileDiff),
