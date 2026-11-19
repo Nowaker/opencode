@@ -57,6 +57,7 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
+import "./textarea"
 
 registerOpencodeSpinner()
 
@@ -1366,7 +1367,7 @@ export function Prompt(props: PromptProps) {
             flexGrow={1}
             width="100%"
           >
-            <textarea
+            <prompt_textarea
               width="100%"
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
