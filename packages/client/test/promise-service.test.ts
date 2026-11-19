@@ -7,9 +7,10 @@ import {
   stopSignal,
   stoppedExitCode,
 } from "./fixture/service-fixture"
-import { accelerate } from "./fixture/service-timing"
+import { accelerate, awaitAnswer } from "./fixture/service-timing"
 
 const ensure = accelerate(Service.ensure)
+const ensureAnswered = awaitAnswer(Service.ensure)
 const stop = accelerate(Service.stop)
 
 test("discovers a registered service", async () => {
@@ -113,7 +114,7 @@ test("reports a failed registered service", async () => {
   fixture.spawn("failed-owner")
   await fixture.waitForFile()
 
-  await expect(ensure({ file: registration, version: "test", command: [] })).rejects.toThrow(
+  await expect(ensureAnswered({ file: registration, version: "test", command: [] })).rejects.toThrow(
     "Background service failed to start",
   )
 })

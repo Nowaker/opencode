@@ -10,9 +10,10 @@ import {
   stopSignal,
   stoppedExitCode,
 } from "./fixture/service-fixture"
-import { accelerate } from "./fixture/service-timing"
+import { accelerate, awaitAnswer } from "./fixture/service-timing"
 
 const ensure = accelerate(Service.ensure)
+const ensureAnswered = awaitAnswer(Service.ensure)
 const stop = accelerate(Service.stop)
 
 test("a concurrent same-version start cannot invalidate a resolved endpoint", async () => {
@@ -169,7 +170,7 @@ test("reports a failed registered service without spawning", async () => {
   const process = fixture.spawn("failed-owner")
   await fixture.waitForFile()
 
-  await expect(run(ensure({ file: registration, version: "test", command: [] }))).rejects.toThrow(
+  await expect(run(ensureAnswered({ file: registration, version: "test", command: [] }))).rejects.toThrow(
     "Background service failed to start",
   )
   expect(process.exitCode).toBe(null)
