@@ -5036,12 +5036,6 @@ export type SessionExportInput = ExperimentalSessionExportInput
 /** @deprecated Use `ExperimentalSessionExportOutput`. Removed in the next minor. */
 export type SessionExportOutput = ExperimentalSessionExportOutput
 
-/** @deprecated Use `ExperimentalSessionRecoveryInput`. Removed in the next minor. */
-export type SessionRecoveryInput = ExperimentalSessionRecoveryInput
-
-/** @deprecated Use `ExperimentalSessionRecoveryOutput`. Removed in the next minor. */
-export type SessionRecoveryOutput = ExperimentalSessionRecoveryOutput
-
 /** @deprecated Use `ExperimentalSessionSkillInput`. Removed in the next minor. */
 export type SessionSkillInput = ExperimentalSessionSkillInput
 
@@ -5077,12 +5071,6 @@ export type SessionLogInput = ExperimentalSessionLogInput
 
 /** @deprecated Use `ExperimentalSessionLogOutput`. Removed in the next minor. */
 export type SessionLogOutput = ExperimentalSessionLogOutput
-
-/** @deprecated Use `ExperimentalSessionCancelChildInput`. Removed in the next minor. */
-export type SessionCancelChildInput = ExperimentalSessionCancelChildInput
-
-/** @deprecated Use `ExperimentalSessionCancelChildOutput`. Removed in the next minor. */
-export type SessionCancelChildOutput = ExperimentalSessionCancelChildOutput
 
 /** @deprecated Use `ExperimentalGenerateTextInput`. Removed in the next minor. */
 export type GenerateTextInput = ExperimentalGenerateTextInput

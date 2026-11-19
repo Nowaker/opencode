@@ -2764,8 +2764,6 @@ export function make(options: ClientOptions) {
       import: client.experimental.session.import,
       /** @deprecated Use `client.experimental.session.export`. Removed in the next minor. */
       export: client.experimental.session.export,
-      /** @deprecated Use `client.experimental.session.recovery`. Removed in the next minor. */
-      recovery: client.experimental.session.recovery,
       /** @deprecated Use `client.experimental.session.skill`. Removed in the next minor. */
       skill: client.experimental.session.skill,
       /** @deprecated Use `client.experimental.session.wait`. Removed in the next minor. */
@@ -2784,8 +2782,6 @@ export function make(options: ClientOptions) {
       },
       /** @deprecated Use `client.experimental.session.log`. Removed in the next minor. */
       log: client.experimental.session.log,
-      /** @deprecated Use `client.experimental.session.cancelChild`. Removed in the next minor. */
-      cancelChild: client.experimental.session.cancelChild,
     },
     /** @deprecated Use `client.experimental.generate`. Removed in the next minor. */
     generate: {

@@ -517,6 +517,11 @@ describe("HttpApiCodegen.generate", () => {
       ["session.stats", "experimental.session.stats"],
       ["generate.text", "experimental.generate.text"],
     ])
+    expect(
+      compileContract(source, { ...options, aliases: (endpoint) => endpoint.identifier !== "stats" }).aliases?.map(
+        (alias) => alias.from.join("."),
+      ),
+    ).toEqual(["generate.text"])
 
     const paths: Array<string> = []
     const promise = emitPromise(contract)

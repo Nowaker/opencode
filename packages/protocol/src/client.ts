@@ -74,6 +74,12 @@ export const groupNames = {
 export const clientNamespace = (endpoint: { readonly path: string }) =>
   endpoint.path === "/api/experimental" || endpoint.path.startsWith("/api/experimental/") ? "experimental" : undefined
 
+// Moving an endpoint under /api/experimental keeps its old client path as a deprecated alias. These endpoints were
+// added there directly, so no caller ever had an older path to keep.
+const experimentalSinceAdded = new Set(["session.recovery", "session.cancelChild"])
+export const clientAlias = (endpoint: { readonly identifier: string }) =>
+  !experimentalSinceAdded.has(endpoint.identifier)
+
 export const promiseOmitEndpoints = new Set([
   "pty.connect",
   "persistentPty.connect",

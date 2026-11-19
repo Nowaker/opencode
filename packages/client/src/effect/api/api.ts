@@ -489,9 +489,6 @@ export interface SessionApi<E = never> {
   /** @deprecated Use `client.experimental.session.export`. Removed in the next minor. */
   readonly export: ExperimentalSessionExportOperation<E>
 
-  /** @deprecated Use `client.experimental.session.recovery`. Removed in the next minor. */
-  readonly recovery: ExperimentalSessionRecoveryOperation<E>
-
   /** @deprecated Use `client.experimental.session.skill`. Removed in the next minor. */
   readonly skill: ExperimentalSessionSkillOperation<E>
 
@@ -515,9 +512,6 @@ export interface SessionApi<E = never> {
 
   /** @deprecated Use `client.experimental.session.log`. Removed in the next minor. */
   readonly log: ExperimentalSessionLogOperation<E>
-
-  /** @deprecated Use `client.experimental.session.cancelChild`. Removed in the next minor. */
-  readonly cancelChild: ExperimentalSessionCancelChildOperation<E>
 }
 
 export type ExperimentalSessionStatsInput = {
@@ -2916,15 +2910,6 @@ export type SessionExportOutput = ExperimentalSessionExportOutput
 /** @deprecated Use `ExperimentalSessionExportOperation`. Removed in the next minor. */
 export type SessionExportOperation<E = never> = ExperimentalSessionExportOperation<E>
 
-/** @deprecated Use `ExperimentalSessionRecoveryInput`. Removed in the next minor. */
-export type SessionRecoveryInput = ExperimentalSessionRecoveryInput
-
-/** @deprecated Use `ExperimentalSessionRecoveryOutput`. Removed in the next minor. */
-export type SessionRecoveryOutput = ExperimentalSessionRecoveryOutput
-
-/** @deprecated Use `ExperimentalSessionRecoveryOperation`. Removed in the next minor. */
-export type SessionRecoveryOperation<E = never> = ExperimentalSessionRecoveryOperation<E>
-
 /** @deprecated Use `ExperimentalSessionSkillInput`. Removed in the next minor. */
 export type SessionSkillInput = ExperimentalSessionSkillInput
 
@@ -2978,15 +2963,6 @@ export type SessionLogOutput = ExperimentalSessionLogOutput
 
 /** @deprecated Use `ExperimentalSessionLogOperation`. Removed in the next minor. */
 export type SessionLogOperation<E = never> = ExperimentalSessionLogOperation<E>
-
-/** @deprecated Use `ExperimentalSessionCancelChildInput`. Removed in the next minor. */
-export type SessionCancelChildInput = ExperimentalSessionCancelChildInput
-
-/** @deprecated Use `ExperimentalSessionCancelChildOutput`. Removed in the next minor. */
-export type SessionCancelChildOutput = ExperimentalSessionCancelChildOutput
-
-/** @deprecated Use `ExperimentalSessionCancelChildOperation`. Removed in the next minor. */
-export type SessionCancelChildOperation<E = never> = ExperimentalSessionCancelChildOperation<E>
 
 /** @deprecated Use `ExperimentalGenerateTextInput`. Removed in the next minor. */
 export type GenerateTextInput = ExperimentalGenerateTextInput
