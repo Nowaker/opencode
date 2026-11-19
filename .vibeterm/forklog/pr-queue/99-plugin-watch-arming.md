@@ -1,6 +1,6 @@
 # Holding - v2 local plugin loads without waiting for source watches
 
-Status: FORK IMPLEMENTATION DELIVERED; HOLDING - not admitted to the ordered filing queue. Queue position: behind cold-submit, W23 (tool-input deltas), W24 (engine stop) and shift+left, none of which has an entry yet; filed only when one of the three author slots on `anomalyco/opencode` frees and the coordinator clears it. No upstream branch has been cut or pushed, and no PR or issue was opened.
+Status: FORK IMPLEMENTATION DELIVERED; HOLDING - not admitted to the ordered filing queue. Queue position: behind cold-submit ([entry 13](13-cold-submit.md)), shift+left ([entry 14](14-prompt-keyboard-selection.md)), W23 (tool-input deltas) and W24 (engine stop), the last two without an entry yet; filed only when one of the three author slots on `anomalyco/opencode` frees and the coordinator clears it. No upstream branch has been cut or pushed, and no PR or issue was opened.
 
 - Upstream target: `dev`. On `github/dev` `d412042beb` (2026-11-18), `packages/plugin/src/source.ts`, `packages/tui/src/plugin/context.tsx`, `packages/tui/test/plugin-source.test.ts` and `packages/core/test/plugin/module.test.ts` are byte-identical to the fork base `73bc224e3b`. `packages/core/src/plugin/module.ts` differs only by the fork's ManagedPolicy line, outside this change's hunk.
 - Introduced upstream by `8da7526616` "fix(core): reload local plugin helpers without restarting".
