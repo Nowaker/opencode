@@ -1,4 +1,5 @@
 import { expect } from "bun:test"
+import { Bus } from "@opencode/core/bus"
 import { Database } from "@opencode/core/database/database"
 import { Job } from "@opencode/core/job"
 import { Session } from "@opencode/core/session"
@@ -6,8 +7,9 @@ import { SessionChildCancellation } from "@opencode/core/session/child-cancellat
 import { SessionExecution } from "@opencode/core/session/execution"
 import { SessionRestart } from "@opencode/core/session/execution/restart"
 import { SessionTable } from "@opencode/core/session/sql"
+import { SessionEvent } from "@opencode/schema/session-event"
 import { eq } from "drizzle-orm"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { Drains, childCancellationLayer, childFixture } from "./fixture/child-cancellation"
 import { testEffect } from "./lib/effect"
@@ -194,6 +196,14 @@ it.effect("cancels a recovered local child and releases the claim left by its fo
     yield* Scope.close(scope, Exit.void)
     const recovered = yield* Deferred.make<void>()
     drains.set(f.child.id, Deferred.succeed(recovered, undefined).pipe(Effect.andThen(Effect.never)))
+    // Recovery delivers the recovered Job's outcome to the parent, then completes the background record, which
+    // removes the settled Job; subscribe before recovery starts so the notice is the outcome's signal.
+    const bus = yield* Bus.Service
+    const notice = yield* bus.subscribe(SessionEvent.InboxEnqueued).pipe(
+      Stream.filter((event) => event.data.sessionID === f.input.parentID),
+      Stream.runHead,
+      Effect.forkScoped({ startImmediately: true }),
+    )
     const restart = yield* SessionRestart.Service
     yield* restart.resumeSuspendedSessions
     const execution = yield* SessionExecution.Service
@@ -209,6 +219,12 @@ it.effect("cancels a recovered local child and releases the claim left by its fo
       .get()
       .pipe(Effect.orDie)
     expect(row?.claim).toBeNull()
-    expect((yield* f.jobs.get(f.child.id))?.status).toBe("cancelled")
+    expect((yield* f.jobs.get(f.child.id))?.status, "the recovered Job no longer runs").not.toBe("running")
+    expect(yield* Fiber.join(notice), "the parent is told the recovered child was cancelled").toMatchObject({
+      _tag: "Some",
+      value: {
+        data: { item: { type: "synthetic", payload: { metadata: { childID: f.child.id, state: "cancelled" } } } },
+      },
+    })
   }),
 )
