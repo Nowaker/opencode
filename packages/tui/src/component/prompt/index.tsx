@@ -328,7 +328,11 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return undefined
     const messages = sync.data.message[props.sessionID]
     if (!messages) return undefined
-    return messages.findLast((m): m is UserMessage => m.role === "user")
+    return messages.findLast((m): m is UserMessage => {
+      if (m.role !== "user") return false
+      // The message event arrives before its parts; don't adopt a reader-only notice in that gap.
+      return sync.data.part[m.id]?.some((part) => part.type !== "text" || !part.ignored) ?? false
+    })
   })
 
   const usage = createMemo(() => {
@@ -462,13 +466,17 @@ export function Prompt(props: PromptProps) {
     const sessionID = props.sessionID
     if (!sessionID) return
     const body = { sessionID, source: { kind: "tui" as const } }
+    const agent = action === "unpause" ? local.agent.current() : undefined
+    const model = action === "unpause" ? local.model.current() : undefined
+    const selection =
+      agent && model ? { agent: agent.name, model: { ...model, variant: local.model.variant.current() } } : undefined
     const request =
       action === "pause"
         ? sdk.client.session.pause(body, { throwOnError: true }).then((result) => {
             if (!result.data.changed) toast.show({ message: "Session is already paused", variant: "info", duration: 2000 })
           })
         : action === "unpause"
-          ? sdk.client.session.unpause(body, { throwOnError: true }).then((result) => {
+          ? sdk.client.session.unpause({ ...body, selection }, { throwOnError: true }).then((result) => {
               if (!result.data.changed) toast.show({ message: "Session is not paused", variant: "info", duration: 2000 })
             })
           : sdk.client.session.discard(body, { throwOnError: true }).then((result) => {

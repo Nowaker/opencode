@@ -9,7 +9,7 @@ const promptPath = `/session/${sessionID}/message`
 const created = 1_700_000_000_000
 
 /** A user message another client wrote, as this TUI's server publishes it. */
-function arrive(rig: Rig, id: string, at: number, agent: string, modelID: string, variant?: string) {
+function arrive(rig: Rig, id: string, at: number, agent: string, modelID: string, variant?: string, withPart = true) {
   rig.emit({
     id: `evt_${id}_${agent}_${modelID}`,
     type: "message.updated",
@@ -23,6 +23,19 @@ function arrive(rig: Rig, id: string, at: number, agent: string, modelID: string
         model: { providerID: "test", modelID, ...(variant ? { variant } : {}) },
         time: { created: created + at },
       },
+    },
+  })
+  if (withPart) arrivePart(rig, id)
+}
+
+function arrivePart(rig: Rig, messageID: string, ignored = false) {
+  rig.emit({
+    id: `evt_part_${messageID}`,
+    type: "message.part.updated",
+    properties: {
+      sessionID,
+      part: { id: `prt_${messageID}`, sessionID, messageID, type: "text", text: "Incoming text", ignored },
+      time: created,
     },
   })
 }
@@ -73,6 +86,23 @@ test("a message rewritten under the same id moves the pick to what it was rewrit
   })
 })
 
+test("an ignored notice leaves the unsent composer selection alone, even before its part arrives", async () => {
+  await withApp({ width: 100, turns: true, choices: true }, async (rig) => {
+    await rig.ready("second answer")
+    rig.api.keymap.dispatchCommand("agent.cycle")
+    const selected = { ...initial, agent: "plan" }
+    expect(await picked(rig, 1)).toEqual(selected)
+
+    const id = "msg_0010"
+    arrive(rig, id, 10, "build", "other", "high", false)
+    await rig.until("the notice's metadata to sync", () => rig.messageIDs().includes(id))
+    expect(await picked(rig, 2)).toEqual(selected)
+    arrivePart(rig, id, true)
+    await rig.until("the notice to render", () => rig.frame().includes("Incoming text"))
+    expect(await picked(rig, 3)).toEqual(selected)
+  })
+})
+
 test("an open dialog holds the pick, which moves once the dialog closes", async () => {
   await withApp({ width: 100, turns: true, choices: true }, async (rig) => {
     await rig.ready("second answer")
@@ -84,7 +114,7 @@ test("an open dialog holds the pick, which moves once the dialog closes", async 
     expect(await picked(rig, 1)).toEqual(initial)
 
     rig.api.ui.dialog.clear()
-    await rig.until("the dialog to close", () => !rig.frame().includes("Select agent"))
+    await rig.until("the pick to change after closing the dialog", () => rig.frame().includes("Other"))
     expect(await picked(rig, 2)).toEqual({ agent: "plan", model: { providerID: "test", modelID: "other" }, variant: "high" })
   })
 })
