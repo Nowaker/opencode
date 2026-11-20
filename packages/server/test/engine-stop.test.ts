@@ -5,6 +5,7 @@ import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
 import { tmpdirScoped } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
+import { ServerInfo } from "@opencode/protocol/groups/server"
 import { ServerFetch } from "../src/fetch"
 
 const route = "/api/experimental/server/stop"
@@ -39,6 +40,16 @@ const setup = Effect.gen(function* () {
     )
   return { request, get, handler, directory: tmp.path }
 })
+
+it.live("server info advertises the engine stop capability", () =>
+  Effect.gen(function* () {
+    const fixture = yield* setup
+    const response = yield* fixture.request("GET", "/api/info")
+    expect(response.status).toBe(200)
+    const info = Schema.decodeUnknownSync(ServerInfo)(yield* Effect.promise(() => response.json()))
+    expect(info.capabilities?.engineStop).toBe(true)
+  }),
+)
 
 it.live("engine lifecycle routes require the normal server authorization", () =>
   Effect.gen(function* () {
