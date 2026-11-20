@@ -25,6 +25,7 @@ const layer = Layer.effect(
     return CoreBackgroundJob.Service.of({
       list: () => InstanceState.useEffect(state, (jobs) => jobs.list()),
       get: (id) => InstanceState.useEffect(state, (jobs) => jobs.get(id)),
+      foreground: (id) => InstanceState.useEffect(state, (jobs) => jobs.foreground(id)),
       start: (input) => OwnerQuiescence.activity(InstanceState.useEffect(state, (jobs) => jobs.start(input))),
       extend: (input) => OwnerQuiescence.activity(InstanceState.useEffect(state, (jobs) => jobs.extend(input))),
       wait: (input) => InstanceState.useEffect(state, (jobs) => jobs.wait(input)),

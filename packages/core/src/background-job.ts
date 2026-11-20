@@ -29,6 +29,7 @@ type Active = {
   tail: Deferred.Deferred<void>
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
+  foreground?: ForegroundControl
 }
 
 type State = {
@@ -67,7 +68,15 @@ export type StartInput = {
   title?: string
   metadata?: Record<string, unknown>
   onPromote?: Effect.Effect<void>
+  foreground?: ForegroundControl
   run: Effect.Effect<string, unknown>
+}
+
+/** A running caller's handoff, never part of the job snapshot or durable history. */
+export type ForegroundControl = {
+  readonly available: () => boolean
+  readonly move: () => Effect.Effect<string | undefined>
+  readonly close: () => void
 }
 
 export type ExtendInput = {
@@ -88,6 +97,7 @@ export type WaitResult = {
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
+  readonly foreground: (id: string) => Effect.Effect<ForegroundControl | undefined>
   readonly start: (input: StartInput) => Effect.Effect<Info>
   readonly extend: (input: ExtendInput) => Effect.Effect<boolean>
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
@@ -145,6 +155,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
       if (Exit.isSuccess(exit) && pending > 0) {
         return [{}, new Map(jobs).set(id, { ...job, pending, output })]
       }
+      job.foreground?.close()
       const status: Exclude<Status, "running"> = Exit.isSuccess(exit)
         ? "completed"
         : Cause.hasInterruptsOnly(exit.cause)
@@ -153,6 +164,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
       const next = {
         ...job,
         onPromote: undefined,
+        foreground: undefined,
         pending: 0,
         output,
         info: {
@@ -201,6 +213,9 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
     return snapshot(job)
   })
 
+  const foreground: Interface["foreground"] = (id) =>
+    SynchronizedRef.get(state.jobs).pipe(Effect.map((jobs) => jobs.get(id)?.foreground))
+
   const start: Interface["start"] = Effect.fn("BackgroundJob.start")(function* (input) {
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
@@ -235,6 +250,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
               tail,
               promoted,
               onPromote: input.onPromote,
+              foreground: input.foreground,
             }
             return [{ info: snapshot(job), scope, token }, new Map(jobs).set(id, job)] as readonly [
               StartResult,
@@ -342,9 +358,11 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
       const job = jobs.get(id)
       if (!job) return [{}, jobs]
       if (job.info.status !== "running") return [{ info: snapshot(job) }, jobs]
+      job.foreground?.close()
       const next = {
         ...job,
         onPromote: undefined,
+        foreground: undefined,
         pending: 0,
         info: {
           ...job.info,
@@ -359,7 +377,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
     return result.info
   })
 
-  return Service.of({ list, get, start, extend, wait, waitForPromotion, promote, cancel })
+  return Service.of({ list, get, foreground, start, extend, wait, waitForPromotion, promote, cancel })
 })
 
 export const make = makeWithFork((work, scope) => work.pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid))

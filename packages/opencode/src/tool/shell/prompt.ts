@@ -12,6 +12,14 @@ export type Limits = {
   maxBytes: number
 }
 
+const linePattern = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+const readinessTimeout = Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(120_000)))
+const readiness = Schema.Struct({
+  log: Schema.optional(linePattern),
+  port: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(65_535))),
+  timeout: readinessTimeout,
+})
+
 export function parameterSchema() {
   return Schema.Struct({
     command: Schema.String.annotate({ description: "The command to execute" }),
@@ -22,6 +30,14 @@ export function parameterSchema() {
     run_in_background: Schema.optional(Schema.Boolean).annotate({
       description:
         "Run the command in the background and return at once with its ID and output file. You are notified when it exits.",
+    }),
+    ready: Schema.optional(readiness).annotate({
+      description:
+        "Background only. Wait for one RE2 log line regex (log) or a TCP port on 127.0.0.1 (port). Optional timeout in ms (default 10000, maximum 120000); a miss leaves the job running.",
+    }),
+    notify: Schema.optional(Schema.Array(linePattern).check(Schema.isMinLength(1), Schema.isMaxLength(8))).annotate({
+      description:
+        "Background only. Up to eight RE2 line regexes. Matching output sends rate-limited notices; see the output file for all lines.",
     }),
   })
 }
@@ -283,7 +299,7 @@ function backgroundSection(onTimeout: OnTimeout) {
       ? " A command still running at its timeout keeps running in the background the same way instead of being stopped, unless it is a bare sleep."
       : ""
   return `# Background commands
-Set \`run_in_background\` to true for a command you don't need to wait on, such as a dev server, a watcher or a long build. The call returns at once with the command's ID and the file its output is written to, and you are notified when it exits, with its exit code and the end of its output. Do not poll it or sleep waiting for it; read the output file when you need it.${moved}`
+Set \`run_in_background\` to true for a command you don't need to wait on, such as a dev server, a watcher or a long build. The call returns the command's ID and output file immediately unless you request a bounded \`ready\` wait. Use \`notify\` to receive notices for matching output while it runs. You are notified when it exits, with its exit code and the end of its output. Do not poll it or sleep waiting for it; read the output file when you need it.${moved}`
 }
 
 export function render(

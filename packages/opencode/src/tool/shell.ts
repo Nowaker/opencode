@@ -26,6 +26,8 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceRef } from "@/effect/instance-ref"
 import { Identifier } from "@opencode-ai/core/id/id"
 import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
+import { ShellHandoff } from "./shell/handoff"
+import { ShellBackgroundOutput } from "./shell/background-output"
 
 export { Parameters } from "./shell/prompt"
 
@@ -449,6 +451,7 @@ export const ShellTool = Tool.define(
         runInBackground: boolean
         onTimeout: ShellPrompt.OnTimeout
         backgroundTimeoutMs: number | false
+        observation: Effect.Success<ReturnType<typeof ShellBackgroundOutput.prepare>>
       },
       ctx: Tool.Context,
     ) {
@@ -457,6 +460,10 @@ export const ShellTool = Tool.define(
       const instance = yield* InstanceRef
       const id = Identifier.create("bash", "ascending")
       const startedAt = Date.now()
+      const readinessStartedAt = performance.now()
+      const handoff = !input.runInBackground && ctx.callID ? ShellHandoff.make(id, ctx.abort) : undefined
+      const observed = input.observation && ShellBackgroundOutput.observe(input.observation)
+      const spawned = Deferred.makeUnsafe<void>()
       // `full`, `file` and `sink` change together while the reader appends; one lock keeps a chunk from landing in
       // `full` after it was written out to the file.
       const outputLock = Semaphore.makeUnsafe(1)
@@ -466,6 +473,7 @@ export const ShellTool = Tool.define(
       let used = 0
       let file = ""
       let sink: ReturnType<typeof createWriteStream> | undefined
+      let sinkClosed = false
       let cut = false
       let expired = false
       let aborted = false
@@ -480,34 +488,49 @@ export const ShellTool = Tool.define(
       // its start is still being announced (moving the output to a file can take a while), and a listener that saw
       // Exited first would then record a job that never ends, so Exited waits for it.
       const announced = Deferred.makeUnsafe<void>()
-      yield* Effect.addFinalizer(() => Deferred.succeed(announced, undefined))
-
-      const preview_ = (output: string) => (detached ? Effect.void : ctx.metadata({ metadata: { output } }))
-
-      const closeSink = Effect.fnUntraced(function* () {
-        const stream = sink
-        if (!stream) return
-        sink = undefined
-        if (stream.destroyed || stream.closed) return
-        yield* Effect.promise(
-          () =>
-            new Promise<void>((resolve) => {
-              let settled = false
-              const done = () => {
-                if (settled) return
-                settled = true
-                stream.off("close", done)
-                stream.off("error", done)
-                stream.off("finish", done)
-                resolve()
-              }
-              stream.once("close", done)
-              stream.once("error", done)
-              stream.once("finish", done)
-              stream.end(done)
-            }),
-        ).pipe(Effect.catch(() => Effect.void))
+      yield* Effect.addFinalizer(() => {
+        handoff?.close()
+        return Deferred.succeed(announced, undefined).pipe(
+          Effect.andThen(handoff?.finish ?? Effect.void),
+          Effect.andThen(() => (detached ? Effect.void : background.cancel(id))),
+        )
       })
+
+      const preview_ = (output: string) =>
+        detached
+          ? Effect.void
+          : ctx.metadata({
+              metadata: { output, ...(handoff?.available() ? { foregroundJobID: id } : {}) },
+            })
+
+      const closeSink = () =>
+        outputLock.withPermits(1)(
+          Effect.gen(function* () {
+            sinkClosed = true
+            const stream = sink
+            if (!stream) return
+            sink = undefined
+            if (stream.destroyed || stream.closed) return
+            yield* Effect.promise(
+              () =>
+                new Promise<void>((resolve) => {
+                  let settled = false
+                  const done = () => {
+                    if (settled) return
+                    settled = true
+                    stream.off("close", done)
+                    stream.off("error", done)
+                    stream.off("finish", done)
+                    resolve()
+                  }
+                  stream.once("close", done)
+                  stream.once("error", done)
+                  stream.once("finish", done)
+                  stream.end(done)
+                }),
+            ).pipe(Effect.catch(() => Effect.void))
+          }),
+        )
 
       /** Moves the output to a file that keeps growing, so a background command's whole output can be read later. */
       const outputFile = () =>
@@ -516,40 +539,43 @@ export const ShellTool = Tool.define(
             if (file) return file
             const next = yield* trunc.write(full)
             file = next
-            sink = createWriteStream(next, { flags: "a" })
+            if (!sinkClosed) sink = createWriteStream(next, { flags: "a" })
             full = ""
             return next
           }),
         )
 
       const onChunk = (chunk: string) =>
-        outputLock.withPermits(1)(
-          Effect.gen(function* () {
-            const size = Buffer.byteLength(chunk, "utf-8")
-            list.push({ text: chunk, size })
-            used += size
-            while (used > keep && list.length > 1) {
-              const item = list.shift()
-              if (!item) break
-              used -= item.size
+        outputLock
+          .withPermits(1)(
+            Effect.gen(function* () {
+              const size = Buffer.byteLength(chunk, "utf-8")
+              list.push({ text: chunk, size })
+              used += size
+              while (used > keep && list.length > 1) {
+                const item = list.shift()
+                if (!item) break
+                used -= item.size
+                cut = true
+              }
+
+              last = preview(last + chunk)
+              observed?.append(chunk)
+
+              if (file) {
+                sink?.write(chunk)
+                return
+              }
+              full += chunk
+              if (Buffer.byteLength(full, "utf-8") <= limits.maxBytes) return
+              const next = yield* trunc.write(full)
+              file = next
               cut = true
-            }
-
-            last = preview(last + chunk)
-
-            if (file) {
-              sink?.write(chunk)
-              return
-            }
-            full += chunk
-            if (Buffer.byteLength(full, "utf-8") <= limits.maxBytes) return
-            const next = yield* trunc.write(full)
-            file = next
-            cut = true
-            sink = createWriteStream(next, { flags: "a" })
-            full = ""
-          }),
-        ).pipe(Effect.andThen(() => preview_(last)))
+              sink = createWriteStream(next, { flags: "a" })
+              full = ""
+            }),
+          )
+          .pipe(Effect.andThen(() => preview_(last)))
 
       const backgroundCap = Effect.gen(function* () {
         yield* background.waitForPromotion(id)
@@ -560,17 +586,20 @@ export const ShellTool = Tool.define(
 
       const publishExited = (exit: Exit.Exit<string, unknown>) =>
         Effect.gen(function* () {
+          if (handoff?.accepted()) yield* handoff.decision
           const job = yield* background.get(id)
           if (job?.metadata?.background !== true) return
           yield* Deferred.await(announced)
-          const status = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-            ? "cancelled"
-            : capped
-              ? "timeout"
-              : exited.code === 0
-                ? "completed"
-                : "failed"
+          const status =
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+              ? "cancelled"
+              : capped
+                ? "timeout"
+                : exited.code === 0
+                  ? "completed"
+                  : "failed"
           const raw = list.map((item) => item.text).join("")
+          const finalLines = observed?.finish()
           yield* events.publish(ShellBackgroundEvent.Exited, {
             sessionID: ctx.sessionID,
             id,
@@ -580,6 +609,7 @@ export const ShellTool = Tool.define(
             durationMs: Math.max(0, (exited.at ?? Date.now()) - (exited.spawnedAt ?? startedAt)),
             outputPath: file,
             output: tail(raw, EXIT_NOTICE_LINES, EXIT_NOTICE_BYTES).text,
+            ...(finalLines ? { finalLines } : {}),
           })
         }).pipe(
           Effect.provideService(InstanceRef, instance),
@@ -593,9 +623,39 @@ export const ShellTool = Tool.define(
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
           exited.spawnedAt = Date.now()
+          yield* Deferred.succeed(spawned, undefined)
           const reader = yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.all), onChunk))
+          if (observed && input.observation?.notify.length) {
+            yield* Deferred.await(announced).pipe(
+              Effect.andThen(
+                observed.drain((batch) =>
+                  events
+                    .publish(ShellBackgroundEvent.Lines, {
+                      sessionID: ctx.sessionID,
+                      id,
+                      outputPath: file,
+                      ...batch,
+                    })
+                    .pipe(
+                      Effect.asVoid,
+                      Effect.catchCause((cause) =>
+                        Effect.logError("shell background lines event failed", { id, cause }),
+                      ),
+                    ),
+                ),
+              ),
+              Effect.forkScoped,
+            )
+          }
+          handoff?.open(handle.isRunning.pipe(Effect.orDie))
+          if (handoff?.available()) yield* preview_(last)
           const ended = yield* Effect.raceFirst(
-            handle.exitCode.pipe(Effect.map((exitCode) => ({ kind: "exit" as const, code: exitCode }))),
+            handle.exitCode.pipe(
+              Effect.map((exitCode) => {
+                handoff?.close()
+                return { kind: "exit" as const, code: exitCode }
+              }),
+            ),
             backgroundCap.pipe(Effect.map(() => ({ kind: "capped" as const, code: null }))),
           ).pipe(Effect.onInterrupt(() => handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.ignore)))
           if (ended.kind === "capped") {
@@ -607,7 +667,12 @@ export const ShellTool = Tool.define(
           yield* Fiber.join(reader).pipe(Effect.timeoutOption("1 second"), Effect.ignore)
           return ""
         }),
-      ).pipe(Effect.onExit(publishExited))
+      ).pipe(
+        Effect.onExit((exit) => {
+          handoff?.close()
+          return publishExited(exit)
+        }),
+      )
 
       yield* ctx.metadata({
         metadata: {
@@ -615,7 +680,7 @@ export const ShellTool = Tool.define(
         },
       })
 
-      const announce = Effect.fnUntraced(function* (reason: "requested" | "timeout") {
+      const announce = Effect.fnUntraced(function* (reason: "requested" | "timeout" | "user") {
         const outputPath = yield* outputFile()
         detached = true
         yield* events.publish(ShellBackgroundEvent.Started, {
@@ -630,7 +695,7 @@ export const ShellTool = Tool.define(
         })
         return outputPath
       })
-      const started = (reason: "requested" | "timeout") =>
+      const started = (reason: "requested" | "timeout" | "user") =>
         announce(reason).pipe(Effect.ensuring(Deferred.succeed(announced, undefined)))
 
       const notice = (outputPath: string) =>
@@ -647,24 +712,9 @@ export const ShellTool = Tool.define(
           command: input.command,
           ...(input.runInBackground ? { background: true } : {}),
         },
+        foreground: handoff,
         run: runProcess,
       })
-
-      if (input.runInBackground) {
-        const outputPath = yield* started("requested")
-        return {
-          title: input.command,
-          metadata: {
-            output: "",
-            exit: null,
-            truncated: false,
-            background: true,
-            jobId: id,
-            outputPath,
-          },
-          output: `Command running in background with ID: ${id}. ${notice(outputPath)}`,
-        }
-      }
 
       const abort = Effect.callback<void>((resume) => {
         if (ctx.abort.aborted) return resume(Effect.void)
@@ -673,18 +723,85 @@ export const ShellTool = Tool.define(
         return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
       })
 
-      const outcome = yield* Effect.raceAll([
-        background.wait({ id }).pipe(Effect.map(() => "exit" as const)),
-        abort.pipe(Effect.map(() => "abort" as const)),
-        Effect.sleep(`${input.timeout + 100} millis`).pipe(Effect.map(() => "timeout" as const)),
-      ]).pipe(Effect.onInterrupt(() => (detached ? Effect.void : background.cancel(id).pipe(Effect.asVoid))))
+      if (input.runInBackground) {
+        const outputPath = yield* started("requested")
+        const timeout = input.observation?.timeout
+        const ready =
+          observed && timeout !== undefined
+            ? yield* Effect.raceAll([
+                Deferred.await(spawned).pipe(Effect.andThen(observed.wait), Effect.as("ready" as const)),
+                background.wait({ id }).pipe(Effect.as("exited" as const)),
+                Effect.sleep(Math.max(0, timeout - (performance.now() - readinessStartedAt))).pipe(
+                  Effect.as("timeout" as const),
+                ),
+                abort.pipe(Effect.as("aborted" as const)),
+              ]).pipe(Effect.ensuring(Effect.sync(observed.stopWaiting)))
+            : undefined
+        const exitCode = ready === "exited" ? exited.code : null
+        const outcome =
+          ready === "exited"
+            ? `Command exited before readiness${exitCode !== null ? ` (exit code ${exitCode})` : ""}; background ID: ${id}. Full output: ${outputPath}.`
+            : `Command running in background with ID: ${id}.${ready === "ready" ? " Readiness matched." : ready === "timeout" ? ` Readiness was not reached within ${timeout} ms; the readiness timeout does not stop the job.` : ready === "aborted" ? " Stopped waiting for readiness; the job continues." : ""} ${notice(outputPath)}`
+        return {
+          title: input.command,
+          metadata: {
+            output: "",
+            exit: exitCode,
+            truncated: false,
+            background: true,
+            jobId: id,
+            outputPath,
+            ...(ready ? { readiness: ready } : {}),
+          },
+          output: outcome,
+        }
+      }
 
+      const deadline = performance.now() + input.timeout + 100
+      const wait = (control?: typeof handoff) =>
+        Effect.raceAll([
+          background.wait({ id }).pipe(Effect.as("exit" as const)),
+          abort.pipe(Effect.as("abort" as const)),
+          Effect.sleep(Math.max(0, deadline - performance.now())).pipe(
+            Effect.map(() => {
+              handoff?.close()
+              return "timeout" as const
+            }),
+          ),
+          ...(control ? [control.wait.pipe(Effect.as("user" as const))] : []),
+        ])
+
+      let reason = yield* wait(handoff)
+      handoff?.close()
       let movedTo: string | undefined
-      if (outcome === "abort") {
+      if (handoff?.accepted()) {
+        movedTo = yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const prepared = yield* outputFile().pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("shell handoff could not open the output file", { id, cause }).pipe(
+                  Effect.as(undefined),
+                ),
+              ),
+            )
+            if (!prepared) return
+            if (!(yield* background.promote(id))) return
+            const outputPath = yield* started("user")
+            yield* handoff.confirm
+            return outputPath
+          }),
+        )
+        if (movedTo) reason = "user"
+        else {
+          yield* handoff.refuse
+          reason = yield* wait()
+        }
+      }
+      if (reason === "abort") {
         aborted = true
         yield* background.cancel(id)
       }
-      if (outcome === "timeout") {
+      if (reason === "timeout") {
         if (input.onTimeout === "background" && !BARE_SLEEP.test(input.command.trim())) {
           if (yield* background.promote(id)) movedTo = yield* started("timeout")
         } else {
@@ -702,7 +819,9 @@ export const ShellTool = Tool.define(
       if (aborted) meta.push("User aborted the command")
       if (movedTo) {
         meta.push(
-          `The command was still running after the timeout of ${input.timeout} ms, so it moved to the background as ${id} instead of being stopped. ${notice(movedTo)}`,
+          reason === "user"
+            ? `The user moved the command to the background as ${id}. ${notice(movedTo)}`
+            : `The command was still running after the timeout of ${input.timeout} ms, so it moved to the background as ${id} instead of being stopped. ${notice(movedTo)}`,
         )
       }
       const snapshot = yield* outputLock.withPermits(1)(Effect.sync(() => list.map((item) => item.text).join("")))
@@ -758,6 +877,7 @@ export const ShellTool = Tool.define(
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
               const timeout = params.timeout ?? defaultTimeoutMs
+              const observation = yield* ShellBackgroundOutput.prepare(params).pipe(Effect.orDie)
               const ps = Shell.ps(shell)
               yield* Effect.scoped(
                 Effect.gen(function* () {
@@ -781,9 +901,10 @@ export const ShellTool = Tool.define(
                     runInBackground: params.run_in_background === true,
                     onTimeout,
                     backgroundTimeoutMs: cfg.bash_background?.timeout ?? BACKGROUND_TIMEOUT_MS,
+                    observation,
                   },
                   ctx,
-                )
+                ),
               )
             }),
         }
