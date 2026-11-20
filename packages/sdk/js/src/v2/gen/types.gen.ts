@@ -96,6 +96,7 @@ export type Event =
   | EventServerConnected
   | EventGlobalDisposed
   | EventShellBackgroundStarted
+  | EventShellBackgroundLines
   | EventShellBackgroundExited
   | EventServerInstanceDisposed
 
@@ -1709,8 +1710,20 @@ export type GlobalEvent = {
           id: string
           command: string
           outputPath: string
-          reason: "requested" | "timeout"
+          reason: "requested" | "timeout" | "user"
           timeoutMs: number
+        }
+      }
+    | {
+        id: string
+        type: "shell.background.lines"
+        properties: {
+          sessionID: string
+          id: string
+          outputPath: string
+          sequence: number
+          lines: Array<string>
+          suppressed: number
         }
       }
     | {
@@ -1725,6 +1738,11 @@ export type GlobalEvent = {
           durationMs: number
           outputPath: string
           output: string
+          finalLines?: {
+            sequence: number
+            lines: Array<string>
+            suppressed: number
+          }
         }
       }
     | EventServerInstanceDisposed
@@ -3328,6 +3346,7 @@ export type V2Event =
   | ServerConnected
   | GlobalDisposed
   | ShellBackgroundStarted
+  | ShellBackgroundLines
   | ShellBackgroundExited
 
 export type V2EventStream = string
@@ -6562,8 +6581,30 @@ export type ShellBackgroundStarted = {
     id: string
     command: string
     outputPath: string
-    reason: "requested" | "timeout"
+    reason: "requested" | "timeout" | "user"
     timeoutMs: number
+  }
+}
+
+export type ShellBackgroundLines = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.lines"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    id: string
+    outputPath: string
+    sequence: number
+    lines: Array<string>
+    suppressed: number
   }
 }
 
@@ -6588,6 +6629,11 @@ export type ShellBackgroundExited = {
     durationMs: number
     outputPath: string
     output: string
+    finalLines?: {
+      sequence: number
+      lines: Array<string>
+      suppressed: number
+    }
   }
 }
 
@@ -7569,8 +7615,21 @@ export type EventShellBackgroundStarted = {
     id: string
     command: string
     outputPath: string
-    reason: "requested" | "timeout"
+    reason: "requested" | "timeout" | "user"
     timeoutMs: number
+  }
+}
+
+export type EventShellBackgroundLines = {
+  id: string
+  type: "shell.background.lines"
+  properties: {
+    sessionID: string
+    id: string
+    outputPath: string
+    sequence: number
+    lines: Array<string>
+    suppressed: number
   }
 }
 
@@ -7586,6 +7645,11 @@ export type EventShellBackgroundExited = {
     durationMs: number
     outputPath: string
     output: string
+    finalLines?: {
+      sequence: number
+      lines: Array<string>
+      suppressed: number
+    }
   }
 }
 

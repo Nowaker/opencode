@@ -5,7 +5,7 @@ import { define, inventory } from "./event"
 import { NonNegativeInt, optional } from "./schema"
 import { SessionID } from "./session-id"
 
-/** A bash command now running in the background: asked for with `run_in_background`, or still running at its timeout. */
+/** A bash command now running in the background. */
 export const Started = define({
   type: "shell.background.started",
   schema: {
@@ -15,9 +15,25 @@ export const Started = define({
     id: Schema.String,
     command: Schema.String,
     outputPath: Schema.String,
-    reason: Schema.Literals(["requested", "timeout"]),
+    reason: Schema.Literals(["requested", "timeout", "user"]),
     /** The longest it may run, counted from its start, or null for no limit. */
     timeoutMs: Schema.NullOr(NonNegativeInt),
+  },
+})
+
+const lineBatch = {
+  sequence: Schema.Int,
+  lines: Schema.Array(Schema.String),
+  suppressed: NonNegativeInt,
+}
+
+export const Lines = define({
+  type: "shell.background.lines",
+  schema: {
+    sessionID: SessionID,
+    id: Schema.String,
+    outputPath: Schema.String,
+    ...lineBatch,
   },
 })
 
@@ -33,7 +49,8 @@ export const Exited = define({
     durationMs: NonNegativeInt,
     outputPath: Schema.String,
     output: Schema.String,
+    finalLines: optional(Schema.Struct(lineBatch)),
   },
 })
 
-export const Definitions = inventory(Started, Exited)
+export const Definitions = inventory(Started, Lines, Exited)
