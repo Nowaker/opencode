@@ -262,6 +262,7 @@ const it = testEffect(
 )
 
 const ref = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
+const other = { ...ref, modelID: ModelV2.ID.make("other-model") }
 const allowAll = [{ permission: "*", pattern: "*", action: "allow" as const }]
 
 const setup = Effect.fn("test.setup")(function* (config?: Partial<ConfigV1.Info>) {
@@ -582,6 +583,130 @@ it.instance(
     }),
   { git: true },
   60_000,
+)
+
+it.instance(
+  "unpause with a composer selection updates the held prompt, not the completed turn or ignored notices",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      const sessionID = ctx.chat.id
+      yield* ctx.llm.text("finished")
+      const previous = text(sessionID, "previous question", { variant: "high" })
+      yield* ctx.prompt.prompt(previous)
+      yield* ctx.prompt.pause({ sessionID })
+      const held = text(sessionID, "held question", { variant: "high" })
+      yield* ctx.prompt.prompt(held)
+      const notice = yield* ctx.prompt.prompt({
+        ...text(sessionID, "ignored"),
+        noReply: true,
+        parts: [{ type: "text", text: "ignored", ignored: true }],
+      })
+      yield* ctx.llm.text("resumed")
+
+      const model = other
+      const input = { sessionID, selection: { agent: "plan", model } }
+      yield* ctx.prompt.unpause(input)
+      yield* ctx.llm.wait(2)
+      yield* idle(sessionID)
+
+      const messages = yield* ctx.sessions.messages({ sessionID })
+      expect(messages.findLast((msg) => msg.info.role === "assistant")?.info).toMatchObject({
+        parentID: held.messageID,
+        agent: "plan",
+        modelID: model.modelID,
+      })
+      const users = messages.flatMap((msg) => (msg.info.role === "user" ? [msg.info] : []))
+      expect(users.find((msg) => msg.id === held.messageID)?.model).toEqual(model)
+      expect(users.find((msg) => msg.id === previous.messageID)?.model.variant).toBe("high")
+      expect(users.find((msg) => msg.id === notice.info.id)?.model).toEqual(ref)
+      expect(messages
+        .filter((msg) => msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && !part.ignored))
+        .map((msg) => msg.info.id)).toEqual([previous.messageID, held.messageID])
+      expect((yield* ctx.sessions.get(sessionID)).model).toEqual({
+        providerID: model.providerID,
+        id: model.modelID,
+        variant: "default",
+      })
+    }),
+  { git: true },
+)
+
+it.instance(
+  "unpause during a pending step applies its selection to the continuation, not the later turn-end prompt",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup({ queued_prompts: "turn_end" })
+      const sessionID = ctx.chat.id
+      const gate = yield* Deferred.make<void>()
+      yield* ctx.llm.push(
+        reply().wait(Effect.runPromise(Deferred.await(gate))).tool("bash", {
+          command: "printf resume-tool-output",
+          description: "resume tool",
+        }),
+      )
+      const active = text(sessionID, "active question")
+      const turn = yield* ctx.prompt.prompt(active).pipe(Effect.forkChild)
+      yield* ctx.llm.wait(1)
+      expect((yield* ctx.prompt.pause({ sessionID })).pause.state).toBe("pending")
+      const queued = text(sessionID, "later question")
+      yield* ctx.prompt.prompt(queued)
+      yield* ctx.llm.text("continued")
+      yield* ctx.llm.text("answered the later prompt")
+
+      const model = { ...other, variant: "high" }
+      const input = { sessionID, selection: { agent: "plan", model } }
+      yield* ctx.prompt.unpause(input)
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(turn)
+      yield* ctx.llm.wait(3)
+      yield* idle(sessionID)
+
+      const history = yield* ctx.sessions.messages({ sessionID })
+      expect(history.flatMap(({ info }) =>
+        info.role === "assistant" ? [[info.parentID, info.agent, info.modelID, info.variant]] : [],
+      )).toEqual([
+        [active.messageID, "build", ref.modelID, undefined],
+        [active.messageID, "plan", model.modelID, "high"],
+        [queued.messageID, "build", ref.modelID, undefined],
+      ])
+      const requests = yield* ctx.llm.inputs
+      expect(requests.map((request) => request.model)).toEqual([ref.modelID, model.modelID, ref.modelID])
+      expect(JSON.stringify(requests[1].messages)).toContain("resume-tool-output")
+      expect(JSON.stringify(requests[1].messages)).not.toContain("later question")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "unpause with a composer selection does not rewrite a pending step that finishes the turn",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup()
+      const sessionID = ctx.chat.id
+      const gate = yield* Deferred.make<void>()
+      yield* ctx.llm.push(reply().wait(Effect.runPromise(Deferred.await(gate))).text("finished").stop())
+      const user = text(sessionID, "finish in one step", { variant: "low" })
+      const turn = yield* ctx.prompt.prompt(user).pipe(Effect.forkChild)
+      yield* ctx.llm.wait(1)
+      expect((yield* ctx.prompt.pause({ sessionID })).pause.state).toBe("pending")
+
+      yield* ctx.prompt.unpause({
+        sessionID,
+        selection: { agent: "plan", model: other },
+      })
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(turn)
+      yield* idle(sessionID)
+
+      const messages = yield* ctx.sessions.messages({ sessionID })
+      expect(messages.find((msg) => msg.info.id === user.messageID)?.info).toMatchObject({
+        agent: "build",
+        model: { ...ref, variant: "low" },
+      })
+      expect(yield* ctx.llm.calls).toBe(1)
+    }),
+  { git: true },
 )
 
 it.instance(
@@ -924,6 +1049,33 @@ const stepInputs = (inputs: Record<string, unknown>[]) =>
 
 const assistants = (messages: SessionV1.WithParts[]) => messages.filter((msg) => msg.info.role === "assistant")
 
+it.instance(
+  "unpause with a composer selection retries a refused prompt on the chosen route without a new user message",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup({ queued_prompts: "turn_end" })
+      const sessionID = ctx.chat.id
+      const refused = text(sessionID, "wait for an account", { variant: "high" })
+      yield* ctx.llm.push(httpError(429, refusalBody))
+      yield* ctx.prompt.prompt(refused)
+      expect((yield* ctx.pauses.get(sessionID))?.error?.model).toEqual(ref)
+      yield* ctx.llm.text("answered on the chosen route")
+
+      const model = other
+      yield* ctx.prompt.unpause({ sessionID, selection: { agent: "plan", model } })
+      yield* ctx.llm.wait(2)
+      yield* idle(sessionID)
+
+      expect(stepInputs(yield* ctx.llm.inputs).map((input) => input.model)).toEqual([ref.modelID, model.modelID])
+      const messages = yield* ctx.sessions.messages({ sessionID })
+      expect(assistants(messages).map((msg) => msg.info)).toMatchObject([
+        { parentID: refused.messageID, agent: "plan", modelID: model.modelID },
+      ])
+      expect(messages.find((msg) => msg.info.id === refused.messageID)?.info).toMatchObject({ agent: "plan", model })
+    }),
+  { git: true },
+)
+
 /*
  * Runs a turn whose first model request Meridian refuses with `first`, and checks the session parked: one request,
  * no retry, the refused step and its partial output gone, the session paused with the refusal. Unpause must then
@@ -1001,8 +1153,6 @@ it.instance(
   60_000,
 )
 
-const other = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("other-model") }
-
 const answerTexts = (messages: SessionV1.WithParts[]) =>
   assistants(messages).flatMap((msg) => msg.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])))
 
@@ -1052,6 +1202,41 @@ it.instance(
     }),
   { git: true },
   60_000,
+)
+
+it.instance(
+  "a refusal arriving after manual unpause does not park a pending turn on the old route",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* setup({ queued_prompts: "turn_end" })
+      const sessionID = ctx.chat.id
+      const gate = yield* Deferred.make<void>()
+      yield* ctx.llm.push(
+        raw({
+          head: [streamChunk({ role: "assistant" })],
+          wait: Effect.runPromise(Deferred.await(gate)),
+          tail: [{ error: { type: "rate_limit_error", message: refusalMessage } }],
+        }),
+      )
+      yield* ctx.llm.text("answered after switching routes")
+      const input = text(sessionID, "keep my original prompt")
+      const turn = yield* ctx.prompt.prompt(input).pipe(Effect.forkChild)
+      yield* ctx.llm.wait(1)
+      expect((yield* ctx.prompt.pause({ sessionID })).pause.state).toBe("pending")
+
+      yield* ctx.prompt.unpause({ sessionID, selection: { agent: "plan", model: other } })
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(turn)
+      yield* idle(sessionID)
+
+      expect(yield* ctx.pauses.get(sessionID)).toBeUndefined()
+      expect(stepInputs(yield* ctx.llm.inputs).map((request) => request.model)).toEqual([ref.modelID, other.modelID])
+      const messages = yield* ctx.sessions.messages({ sessionID })
+      expect(assistants(messages).map((msg) => msg.info)).toMatchObject([
+        { parentID: input.messageID, agent: "plan", modelID: other.modelID },
+      ])
+    }),
+  { git: true },
 )
 
 it.instance(

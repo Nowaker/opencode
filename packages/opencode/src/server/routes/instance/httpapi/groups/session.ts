@@ -101,6 +101,7 @@ export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.f
 export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput.fields, ["sessionID"]))
 export const PausePayload = Schema.Struct(Struct.omit(SessionPrompt.PauseInput.fields, ["sessionID"]))
 export const UnpausePayload = Schema.Struct(Struct.omit(SessionPrompt.UnpauseInput.fields, ["sessionID"]))
+export const DiscardPayload = Schema.Struct(Struct.omit(SessionPrompt.DiscardInput.fields, ["sessionID"]))
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
@@ -528,7 +529,7 @@ export const SessionApi = HttpApi.make("session")
         HttpApiEndpoint.post("discard", SessionPaths.discard, {
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
-          payload: [HttpApiSchema.NoContent, UnpausePayload],
+          payload: [HttpApiSchema.NoContent, DiscardPayload],
           success: described(SessionPrompt.DiscardResult, "Discarded deferred tool calls"),
           error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, PauseChangedError],
         }).annotateMerge(

@@ -14,6 +14,7 @@ import { ConflictError } from "../errors"
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  sessionUnpauseSelection: Schema.Literal(true),
 })
 
 const SyncEventSchemas = EventManifest.Latest.values()

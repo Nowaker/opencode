@@ -192,6 +192,22 @@ function answerAfterTurn(msgs: SessionV1.WithParts[]) {
   return [...kept.slice(0, after), ...moved, ...kept.slice(after)]
 }
 
+function turnAt(msgs: SessionV1.WithParts[]) {
+  const latest = MessageV2.latest(msgs)
+  const assistantMessage = msgs.findLast((msg) => msg.info.id === latest.assistant?.id)
+  // A stop with tool calls still needs to send their results back to the model.
+  const hasToolCalls =
+    assistantMessage?.parts.some(
+      (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
+    ) ?? false
+  const finished =
+    !!latest.assistant?.finish &&
+    !["tool-calls", "unknown"].includes(latest.assistant.finish) &&
+    !hasToolCalls &&
+    latest.assistant.parentID === latest.user?.id
+  return { latest, assistantMessage, hasToolCalls, finished }
+}
+
 /*
  * Which prompts a paused session holds until unpause. Decided 2026-11-14: everything that does not ask to unpause,
  * which is all automated input (other sessions' prompts, schedules, OMO and bash notices); a person's send from the
@@ -248,7 +264,7 @@ export interface Interface {
   readonly sendNow: (sessionID: SessionID) => Effect.Effect<MessageID[], SendNowRefusedError>
   readonly pause: (input: PauseInput) => Effect.Effect<PauseResult>
   readonly unpause: (input: UnpauseInput) => Effect.Effect<UnpauseResult, SessionPause.ChangedError>
-  readonly discard: (input: UnpauseInput) => Effect.Effect<DiscardResult, Session.BusyError | SessionPause.ChangedError>
+  readonly discard: (input: DiscardInput) => Effect.Effect<DiscardResult, Session.BusyError | SessionPause.ChangedError>
 }
 
 /**
@@ -1200,11 +1216,17 @@ const layer = Layer.effect(
           db,
           Effect.gen(function* () {
             const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+            const message = { info, parts }
+            const pauseNotice =
+              input.noReply === true &&
+              MessageV2.isNotice(message) &&
+              parts.some((part) => part.type === "text" && part.metadata?.pause)
             if (
-              current.agent !== info.agent ||
-              current.model?.providerID !== info.model.providerID ||
-              current.model?.id !== info.model.modelID ||
-              (current.model?.variant === "default" ? undefined : current.model?.variant) !== info.model.variant
+              !pauseNotice &&
+              (current.agent !== info.agent ||
+                current.model?.providerID !== info.model.providerID ||
+                current.model?.id !== info.model.modelID ||
+                (current.model?.variant === "default" ? undefined : current.model?.variant) !== info.model.variant)
             ) {
               yield* sessions.setAgentModel({
                 sessionID: input.sessionID,
@@ -1219,7 +1241,6 @@ const layer = Layer.effect(
             }
             yield* sessions.createMessage(info)
             for (const part of parts) yield* sessions.updatePart(part)
-            const message = { info, parts }
             const held = input.noReply !== true && heldWhilePaused(input) && (yield* hold(input.sessionID, message))
             return { message, held }
           }),
@@ -1240,11 +1261,24 @@ const layer = Layer.effect(
     // The running loop of each session, with the prompts it has read and the ones unqueued before it read them.
     // `pickUp` and `unqueue` each check and update these without yielding in between, so a prompt is either read
     // by the loop or withdrawn from it, never both.
-    const runs = new Map<SessionID, { started: number; seen: Set<MessageID>; withdrawn: Set<MessageID> }>()
+    type ResumeSelection = NonNullable<UnpauseInput["selection"]>
+    type PendingResume = {
+      readonly selection: ResumeSelection
+      readonly eligible: ReadonlySet<MessageID>
+      readonly committed: Deferred.Deferred<boolean>
+    }
+    type Run = {
+      readonly started: number
+      readonly seen: Set<MessageID>
+      readonly withdrawn: Set<MessageID>
+      resume?: PendingResume
+      drained?: boolean
+    }
+    const runs = new Map<SessionID, Run>()
 
     const tracked = (sessionID: SessionID, work: Effect.Effect<SessionV1.WithParts>) =>
       Effect.suspend(() => {
-        const run = { started: Date.now(), seen: new Set<MessageID>(), withdrawn: new Set<MessageID>() }
+        const run: Run = { started: Date.now(), seen: new Set(), withdrawn: new Set() }
         runs.set(sessionID, run)
         return work.pipe(
           Effect.ensuring(
@@ -1314,11 +1348,11 @@ const layer = Layer.effect(
       text: string,
       pause: { action: SessionPause.Action; source: SessionPause.Source; at: number },
     ) {
-      // The composer takes its agent and model from the newest user message, so the notice copies the last prompt's.
+      // Keep the notice visually associated with the last prompt without changing the session's selection.
       const latest = yield* sessions
         .findMessage(
           sessionID,
-          (msg) => msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && !part.ignored),
+          (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg),
         )
         .pipe(Effect.orDie)
       const info = Option.isSome(latest) && latest.value.info.role === "user" ? latest.value.info : undefined
@@ -1395,11 +1429,58 @@ const layer = Layer.effect(
       return { sessionID: input.sessionID, pause: next, changed: true }
     })
 
+    const applyResumeSelection = Effect.fnUntraced(
+      function* (user: SessionV1.User, selection: ResumeSelection, updateSession: boolean) {
+        if (
+          user.agent !== selection.agent ||
+          !sameRoute(user.model, selection.model) ||
+          user.model.variant !== selection.model.variant
+        ) yield* sessions.updateMessage({ ...user, ...selection })
+        if (!updateSession) return
+        const session = yield* sessions.get(user.sessionID).pipe(Effect.orDie)
+        const model = {
+          id: selection.model.modelID,
+          providerID: selection.model.providerID,
+          variant: selection.model.variant ?? "default",
+        }
+        if (
+          session.agent === selection.agent && session.model?.id === model.id &&
+          session.model.providerID === model.providerID && session.model.variant === model.variant
+        ) return
+        yield* sessions.setAgentModel({ sessionID: user.sessionID, agent: selection.agent, model, time: Date.now() })
+      },
+    )
+
     // Clears the pause of a session and of every descendant paused through it, and wakes the subagents waiting.
     const release = Effect.fnUntraced(function* (input: UnpauseInput) {
-      const cleared = yield* pauses.mutate(input, (current) =>
+      const selection = input.selection
+      const committed = selection ? yield* Deferred.make<boolean>() : undefined
+      const holding = selection && (yield* config.get()).queued_prompts === "turn_end"
+      const change = pauses.mutate(input, (current) =>
         Effect.gen(function* () {
           if (!current) return []
+          if (selection && committed) {
+            const run = runs.get(input.sessionID)
+            const history = (yield* MessageV2.filterCompactedEffect(input.sessionID).pipe(
+              Effect.provideService(Database.Service, database),
+            )).filter((msg) => !run?.withdrawn.has(msg.info.id))
+            if (run && !run.drained && current.state === "pending") {
+              // The streaming step may finish or require another step. Let its next history read decide, but
+              // never retarget an input admitted after this transaction clears the pause.
+              run.resume = {
+                selection,
+                committed,
+                eligible: new Set(history.flatMap((msg) => msg.info.role === "user" ? [msg.info.id] : [])),
+              }
+            } else if (
+              current.stoppedAt !== undefined ||
+              current.held?.length ||
+              history.some((msg) => msg.parts.some(isDeferredToolPart))
+            ) {
+              const turn = turnAt(holding ? answerAfterTurn(holdForTurnEnd(history)) : history)
+              if (!turn.finished && turn.latest.user) yield* applyResumeSelection(turn.latest.user, selection, true)
+            }
+          }
           const inherited = (yield* Effect.forEach(yield* descendants(input.sessionID), (child) =>
             pauses.get(child.id).pipe(Effect.map((pause) => ({ sessionID: child.id, pause }))),
           )).filter(
@@ -1410,6 +1491,15 @@ const layer = Layer.effect(
           return cleared
         }),
       )
+      const cleared = yield* committed
+        ? live.guard(
+            input.sessionID,
+            DatabaseTransaction.batch(db, change).pipe(
+              Effect.catchTag("SqlError", Effect.die),
+              Effect.onExit((exit) => Deferred.succeed(committed, Exit.isSuccess(exit))),
+            ),
+          )
+        : change
       // Wake readers only after the transaction committed, outside its inherited connection context.
       for (const { sessionID, pause } of cleared) {
         if (pause.held?.length) releasing.set(sessionID, [...(releasing.get(sessionID) ?? []), ...pause.held])
@@ -1437,12 +1527,13 @@ const layer = Layer.effect(
       // stopped at the boundary is still finishing its step (its snapshots took 13s on m4max, 2026-11-16) and has
       // read history for the last time, so it is joined and told to go again as it ends rather than left to end.
       const work = deferred > 0 || (current.held?.length ?? 0) > 0 || current.stoppedAt !== undefined
-      if (work && (current.stoppedAt !== undefined || !runs.has(input.sessionID)))
+      const run = runs.get(input.sessionID)
+      if (work && (current.stoppedAt !== undefined || !run || (input.selection && run.drained)))
         yield* drive(input.sessionID, undefined, () => true).pipe(Effect.ignore, (run) => OwnerQuiescence.fork(run, scope))
       return { sessionID: input.sessionID, changed: true, deferred }
     })
 
-    const discard = Effect.fn("SessionPrompt.discard")(function* (input: UnpauseInput) {
+    const discard = Effect.fn("SessionPrompt.discard")(function* (input: DiscardInput) {
       const { count, at } = yield* pauses.mutate(input, () =>
         Effect.gen(function* () {
           if (runs.has(input.sessionID)) return yield* new Session.BusyError({ sessionID: input.sessionID })
@@ -1553,7 +1644,7 @@ const layer = Layer.effect(
     }) {
       yield* processor.settle(input.sessionID)
       yield* sessions.removeMessage({ sessionID: input.sessionID, messageID: input.messageID })
-      yield* Effect.logWarning("refused step dropped: a newer prompt names another route", {
+      yield* Effect.logWarning("refused step dropped: a different route is available", {
         "session.id": input.sessionID,
         messageID: input.messageID,
         incident: input.refusal.incident_id,
@@ -1833,46 +1924,34 @@ const layer = Layer.effect(
         let step = 0
         let answerNewest = false
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        const run = runs.get(sessionID)
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
+          const resume = run?.resume
           const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
             Effect.provideService(Database.Service, database),
           )
           const holding = !answerNewest && (yield* config.get()).queued_prompts === "turn_end"
-          answerNewest = false
+          if (resume !== run?.resume) continue
           let msgs = pickUp(sessionID, holding ? answerAfterTurn(holdForTurnEnd(history)) : history)
 
-          const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+          const turn = turnAt(msgs)
+          const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = turn.latest
+          const { assistantMessage: lastAssistantMsg, hasToolCalls } = turn
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
-          const lastAssistantMsg = msgs.findLast(
-            (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
-          )
-          // Some providers return "stop" even when the assistant message contains
-          // tool calls. Keep the loop running so tool results can be sent back to
-          // the model, but ignore cleanup-marked interrupted orphans.
-          const hasToolCalls =
-            lastAssistantMsg?.parts.some(
-              (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
-            ) ?? false
-
-          if (
-            lastAssistant?.finish &&
-            !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
-            !hasToolCalls &&
-            lastAssistant.parentID === lastUser.id
-          ) {
+          if (turn.finished) {
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is SessionV1.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
             )
             if (orphan) {
               yield* Effect.logWarning("loop exit with orphaned interrupted tool", {
                 "session.id": sessionID,
-                messageID: lastAssistant.id,
+                messageID: orphan.messageID,
                 tool: orphan.tool,
                 callID: orphan.callID,
               })
@@ -1882,7 +1961,9 @@ const layer = Layer.effect(
           }
 
           const paused = yield* pauses.get(sessionID)
+          if (resume !== run?.resume) continue
           if (paused) {
+            answerNewest = false
             if (!paused.root || !session.parentID) {
               if (!(yield* stopForPause(sessionID, paused))) continue
               yield* Effect.logInfo("loop paused at step boundary", { "session.id": sessionID })
@@ -1891,6 +1972,37 @@ const layer = Layer.effect(
             yield* waitForUnpause(sessionID, paused)
             continue
           }
+
+          if (run && resume) {
+            const committed = yield* Deferred.await(resume.committed)
+            if (run.resume !== resume) continue
+            run.resume = undefined
+            if (committed && resume.eligible.has(lastUser.id)) {
+              yield* live.guard(
+                sessionID,
+                DatabaseTransaction.batch(
+                  db,
+                  Effect.gen(function* () {
+                    const target = yield* MessageV2.get({ sessionID, messageID: lastUser.id }).pipe(
+                      Effect.provideService(Database.Service, database),
+                      Effect.option,
+                    )
+                    if (Option.isNone(target) || target.value.info.role !== "user") return
+                    const newest = yield* sessions
+                      .findMessage(sessionID, (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg))
+                      .pipe(Effect.orDie)
+                    yield* applyResumeSelection(
+                      target.value.info,
+                      resume.selection,
+                      Option.isSome(newest) && resume.eligible.has(newest.value.info.id),
+                    )
+                  }),
+                ),
+              ).pipe(Effect.orDie)
+              continue
+            }
+          }
+          answerNewest = false
 
           const deferred = lastAssistantMsg?.parts.filter(isDeferredToolPart) ?? []
           if (lastAssistantMsg && deferred.length > 0) {
@@ -2236,11 +2348,27 @@ const layer = Layer.effect(
               answerNewest = true
               continue
             }
+            const resume = run?.resume
+            if (
+              resume?.eligible.has(lastUser.id) &&
+              !sameRoute(resume.selection.model, lastUser.model) &&
+              (yield* Deferred.await(resume.committed)) &&
+              run?.resume === resume
+            ) {
+              yield* dropRefused({
+                sessionID,
+                messageID: handle.message.id,
+                refusal: handle.refusal,
+                prompt: { ...lastUser, ...resume.selection },
+              })
+              continue
+            }
             yield* park({ session, messageID: handle.message.id, refusal: handle.refusal, route: lastUser.model })
           }
           continue
         }
 
+        if (run) run.drained = true
         // A turn that ended on its own while a pause was pending leaves the session paused, with nothing cut.
         const pending = yield* pauses.get(sessionID)
         if (pending?.state === "pending") yield* markPaused(sessionID, pending)
@@ -2605,12 +2733,22 @@ export const PauseInput = Schema.Struct({
 })
 export type PauseInput = Schema.Schema.Type<typeof PauseInput>
 
-export const UnpauseInput = Schema.Struct({
+export const DiscardInput = Schema.Struct({
   sessionID: SessionID,
   ...SessionPause.Expected.fields,
   source: Schema.optional(SessionPause.Source),
   notice: Schema.optional(
     Schema.String.annotate({ description: "Text of the user-only notice, used as given. opencode writes one when omitted." }),
+  ),
+})
+export type DiscardInput = Schema.Schema.Type<typeof DiscardInput>
+
+export const UnpauseInput = Schema.Struct({
+  ...DiscardInput.fields,
+  selection: Schema.optional(
+    Schema.Struct({ agent: SessionV1.User.fields.agent, model: SessionV1.User.fields.model }).annotate({
+      description: "Apply this selection to the existing resuming prompt. An omitted variant selects the default.",
+    }),
   ),
 })
 export type UnpauseInput = Schema.Schema.Type<typeof UnpauseInput>

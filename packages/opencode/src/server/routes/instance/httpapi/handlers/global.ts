@@ -66,7 +66,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const scope = yield* Scope.Scope
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion }
+      return { healthy: true as const, version: InstallationVersion, sessionUnpauseSelection: true as const }
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {

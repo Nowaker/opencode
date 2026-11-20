@@ -889,7 +889,7 @@ export function unread(msgs: WithParts[]) {
 
 // A user message whose every part is an ignored text is a notice for the reader (a background fork's
 // receipt, Vibeterm's user_message): the model never sees it, so it must not count as the prompt a turn answers.
-function isNotice(msg: WithParts) {
+export function isNotice(msg: WithParts) {
   return msg.parts.length > 0 && msg.parts.every((part) => part.type === "text" && part.ignored)
 }
 

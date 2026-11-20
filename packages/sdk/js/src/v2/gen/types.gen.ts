@@ -7729,6 +7729,7 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    sessionUnpauseSelection: true
   }
 }
 
@@ -11223,6 +11224,17 @@ export type SessionUnpauseData = {
      * Text of the user-only notice, used as given. opencode writes one when omitted.
      */
     notice?: string
+    /**
+     * Apply this selection to the existing resuming prompt. An omitted variant selects the default.
+     */
+    selection?: {
+      agent: string
+      model: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
+    }
   }
   path: {
     sessionID: string

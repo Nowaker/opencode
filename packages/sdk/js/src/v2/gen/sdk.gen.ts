@@ -4670,6 +4670,14 @@ export class Session2 extends HeyApiClient {
       expectedPauseSource?: SessionPauseSource
       source?: SessionPauseSource
       notice?: string
+      selection?: {
+        agent: string
+        model: {
+          providerID: string
+          modelID: string
+          variant?: string
+        }
+      }
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4685,6 +4693,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "expectedPauseSource" },
             { in: "body", key: "source" },
             { in: "body", key: "notice" },
+            { in: "body", key: "selection" },
           ],
         },
       ],
