@@ -716,8 +716,9 @@ const layer: Layer.Layer<
 
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
-        MessageV2.forgetInfo(msg.id)
-        yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
+        yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg }, {
+          commit: () => DatabaseTransaction.afterCommit(Effect.sync(() => MessageV2.forgetInfo(msg.id))),
+        })
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 

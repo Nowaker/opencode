@@ -1,9 +1,13 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
+import { Effect, Layer, Context, Option, Schema } from "effect"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
+import { LiveEvents } from "./live-events"
+import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
 import { Config } from "@/config/config"
 import { isDeepStrictEqual } from "node:util"
@@ -79,6 +83,8 @@ const layer = Layer.effect(
     const snapshot = yield* Snapshot.Service
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
+    const database = yield* Database.Service
+    const live = yield* LiveEvents.Service
 
     const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: { messages: SessionV1.WithParts[] }) {
       let from: string | undefined
@@ -124,7 +130,23 @@ const layer = Layer.effect(
       if (!target || target.info.role !== "user") return
       const msgDiffs = yield* computeDiff({ messages })
       if (isDeepStrictEqual(target.info.summary?.diffs, msgDiffs)) return
-      yield* sessions.updateMessage({ ...target.info, summary: { ...target.info.summary, diffs: msgDiffs } })
+      yield* live.guard(
+        input.sessionID,
+        DatabaseTransaction.batch(
+          database.db,
+          Effect.gen(function* () {
+            // Computing a diff can outlast an unpause that changes the same user row.
+            const current = yield* MessageV2.get(input).pipe(
+              Effect.provideService(Database.Service, database),
+              Effect.option,
+            )
+            if (Option.isNone(current) || current.value.info.role !== "user") return
+            const info = current.value.info
+            if (isDeepStrictEqual(info.summary?.diffs, msgDiffs)) return
+            yield* sessions.updateMessage({ ...info, summary: { ...info.summary, diffs: msgDiffs } })
+          }),
+        ),
+      ).pipe(Effect.orDie)
     })
 
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
@@ -155,7 +177,7 @@ export type DiffInput = Schema.Schema.Type<typeof DiffInput>
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Session.node, Snapshot.node, EventV2Bridge.node, Config.node],
+  deps: [Session.node, Snapshot.node, EventV2Bridge.node, Config.node, Database.node, LiveEvents.node],
 })
 
 export * as SessionSummary from "./summary"
