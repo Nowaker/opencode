@@ -84,21 +84,23 @@ export function createComposerTyping(input: {
     event({ ...context(timeMs), kind: "edit", ...counts })
   }
 
+  function replace(id?: string, disposition?: "cleared" | string) {
+    const wasFocused = focused
+    focus(false)
+    if (identity && disposition === "cleared") event({ ...context(), kind: "cleared" })
+    else if (identity && disposition) event({ ...context(), kind: "abandoned", reason: disposition })
+    draftID = id ?? randomUUID()
+    identity = id === undefined ? undefined : { ...context(), kind: "restored" }
+    if (identity) event(identity)
+    focus(wasFocused)
+  }
+
   return {
     get draftID() { return draftID },
     focus,
     edit,
     start,
-    replace(id?: string, disposition?: "cleared" | string) {
-      const wasFocused = focused
-      focus(false)
-      if (identity && disposition === "cleared") event({ ...context(), kind: "cleared" })
-      else if (identity && disposition) event({ ...context(), kind: "abandoned", reason: disposition })
-      draftID = id ?? randomUUID()
-      identity = id === undefined ? undefined : { ...context(), kind: "restored" }
-      if (identity) event(identity)
-      focus(wasFocused)
-    },
+    replace,
     capture<T>(work: () => T, options?: { pasteChars?: number; replaceSelection?: boolean }): T {
       if (capturing || !input.observers.observed) return work()
       const timeMs = Date.now()
@@ -141,6 +143,7 @@ export function createComposerTyping(input: {
             pasteChars: options?.pasteChars ?? 0,
           }, timeMs)
         }
+        if (before.text.length > 0 && after.text.length === 0) replace(undefined, "cleared")
       }
     },
     dispose() {

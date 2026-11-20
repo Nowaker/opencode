@@ -56,6 +56,29 @@ test("empty mounts and clears do not create drafts until a real edit", async () 
   })
 })
 
+test("deleting the full selection records the deletion then clears that draft before the next edit", async () => {
+  await withPrompt(async (rig) => {
+    const seen = observe(rig.api)
+    for (const letter of "draft") await rig.press(letter)
+    const draftID = rig.api.prompt.read().draftID
+    expect(rig.api.prompt.replace({
+      ...rig.api.prompt.snapshot(), correlationId: "select-draft", text: "draft", draftID,
+      caret: { offset: 5, selection: { start: 0, end: 5 } },
+    }).status).toBe("accepted")
+    const beforeDelete = seen.events.length
+
+    await rig.press("\x7f")
+    expect(rig.text()).toBe("")
+    expect(seen.events.slice(beforeDelete).filter((event) => event.kind === "edit" || event.kind === "cleared"))
+      .toMatchObject([{ kind: "edit", draftID, insertedChars: 0, deletedChars: 5 }, { kind: "cleared", draftID }])
+    await rig.press("z")
+    const nextID = rig.api.prompt.read().draftID
+    expect(nextID).not.toBe(draftID)
+    expect(seen.edits().at(-1)).toMatchObject({ draftID: nextID, insertedChars: 1, deletedChars: 0 })
+    seen.unsubscribe()
+  })
+})
+
 test("folded paste counts its accepted payload and deletion expands the placeholder", async () => {
   await withPrompt(async (rig) => {
     const seen = observe(rig.api)
