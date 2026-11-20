@@ -65,6 +65,7 @@ Session [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.
 
 ## Timeline
 
+- 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - rewrite only the resuming prompt, with no extra turn or prompt. An omitted selection preserves automated behavior. The owning v1 engine advertises support via `sessionUnpauseSelection: true` on `/global/health`.
 - 2026-11-18 [Atomic prompt admission and pause handoff](../sessions/2026-11-18-atomic-prompt-admission.md) - commit the hold with the prompt before acknowledging it. The regression runs unpause at acknowledgement while the admitting fiber is still blocked on its activity update.
 - 2026-11-14 [`ses_e26c25ca4ffeYUicqdusaViOJa`](../sessions/2026-11-14-session-pause.md) - initial build of P1 and P2; installed on m4max as vt-486 together with the title fix.
 - 2026-11-16 [`ses_e1c57d050ffe4t64XczrGAzjqs`](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e1c57d050ffe4t64XczrGAzjqs) - [pause identity guard](../sessions/2026-11-14-session-pause.md#follow-up-pause-identity-guard): 14 deterministic red reproductions, 73 green engine/HTTP tests, engine/SDK typechecks; source only, build/install handed to the parent.

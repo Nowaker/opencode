@@ -68,6 +68,7 @@ Session [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routab
 
 ## Timeline
 
+- 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - explicitly retry the waiting prompt on another route, including when the old route's refusal arrives as a pending step drains.
 - 2026-11-19 [`ses_e0d56ddd9ffessGDbwhaZsBHiv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0d56ddd9ffessGDbwhaZsBHiv) - route-aware park `02caa6450b`: red first (both route tests failed on `76888120c7`), then `pause.test.ts` + `pause-refusal.test.ts` 46/46, `prompt-admission.test.ts` + `prompt.test.ts` 111/111, typecheck clean, SDK regenerated. Installed `1.19.5-vt-559-006d837c50` on desktop and m4max. Live on desktop: [`ses_e0cedca36ffeqHVJ3glFUVHpmT`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0cedca36ffeqHVJ3glFUVHpmT) parked on `anthropic-cybersec/claude-opus-5-5` with `error.model` recorded; a prompt on `anthropic-meridian/n-dh-c2/claude-mythos-5-2` lifted it within a second (`/unpause`, `client: prompt`) and reached Meridian on `profile=n-dh-c2`.
 
 - 2026-11-16 [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routable-account.md) - initial build; installed on desktop as `1.19.5-vt-518-006d837c50`; m4max runs it in `1.19.5-vt-521-006d837c50`, built by `ses_e1d8f706fffe` from `f171dd4d50`.

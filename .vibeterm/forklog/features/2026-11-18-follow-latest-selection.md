@@ -58,6 +58,7 @@
 
 ## Timeline
 
+- 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - reader-only notices do not move the TUI pick, even when their message event arrives before their parts.
 - 2026-11-18 [`ses_e125a808bffe4hXOhbX6YgWjvL`](../sessions/2026-11-18-follow-latest-selection.md) - initial build.
 - 2026-11-18 [`ses_e121d0821ffePgkVtkTFCzTEv6`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e121d0821ffePgkVtkTFCzTEv6) - preserve activity time when setting the next-turn model; restore two confirmed historical timestamp changes from adjacent events.
 

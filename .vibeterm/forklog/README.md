@@ -173,6 +173,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-19 resume a paused v1 turn with the composer selection](./sessions/2026-11-19-unpause-composer.md) - manual TUI slash and footer actions resume the actual waiting prompt with the current pick, without changing automation behavior; 24/24 isolated real-TUI checks and a scratch build.
 - [2026-11-18 W1 v2 engine stop](./sessions/2026-11-18-v2-engine-stop.md) - W24 seals engine admission for idle stop and force restart (`2f2c119414` on `v2-nowaker`); vt-50 on desktop after opencode-tools `07452e75e0` replaced the probe's racy `fs.watchFile` gate; W24b (remaining owners) gated, not landed.
 - [2026-11-18 W1 prompt keyboard selection](./sessions/2026-11-18-prompt-keyboard-selection.md) - shift+arrow in the v1 prompt selected one cell too many (OpenTUI 0.4.5 reuses cell-inclusive mouse selection); the prompt renders a boundary-selection `TextareaRenderable` subclass and the instant startup editor stops copying the old rule; `b08907771b`; vt-556 on desktop; upstream `v1` branch `selection-boundary-v1` (`7c9c67ee2a`), pr-queue 14.
 - [2026-11-18 atomic prompt admission and pause handoff](./sessions/2026-11-18-atomic-prompt-admission.md) - save the prompt, its parts and any pause hold before acknowledgement; queue the atomic-write fix for upstream `v1`.

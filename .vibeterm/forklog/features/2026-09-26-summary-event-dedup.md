@@ -47,6 +47,7 @@ publication. Missing diffs and an empty array remain different states.
 
 ## Timeline
 
+- 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - the summary writer merges a computed diff into the current row; it cannot restore an older selection while writing a late snapshot diff.
 - 2026-10-06 [`ses_eeda1d251ffel81U5Y42j4kb33`](../sessions/fork-audit.md) -
   prove duplicate-event suppression and repair cached-summary mutation on failed
   persistence. Failure/retry proof and concurrency limits are in the inventory.
