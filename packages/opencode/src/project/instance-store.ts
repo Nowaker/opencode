@@ -22,6 +22,7 @@ export interface LoadInput {
 
 export interface Interface {
   readonly load: (input: LoadInput) => Effect.Effect<InstanceContext>
+  readonly existing: (directory: string) => Effect.Effect<InstanceContext | undefined>
   readonly acquire: (input: LoadInput, idleTimeout: number) => Effect.Effect<InstanceContext, never, Scope.Scope>
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly dispose: (ctx: InstanceContext, reason?: DisposeReason) => Effect.Effect<void>
@@ -289,6 +290,12 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     yield* Effect.addFinalizer(() => disposeAll().pipe(Effect.ignore))
 
     return Service.of({
+      existing: (directory) =>
+        Effect.suspend(() => {
+          const entry = cache.get(FSUtil.resolve(directory))
+          if (!entry || entry.disposing) return Effect.succeed(undefined)
+          return Deferred.await(entry.deferred).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        }),
       load: (input) => load(input),
       acquire,
       reload,

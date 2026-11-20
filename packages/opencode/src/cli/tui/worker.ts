@@ -16,6 +16,9 @@ import { Global } from "@opencode-ai/core/global"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { ErrorRecord } from "@opencode-ai/core/observability/error-record"
 import path from "path"
+import { InstanceRef } from "@/effect/instance-ref"
+import { ShellHandoff } from "@/tool/shell/handoff"
+import { InstanceStore } from "@/project/instance-store"
 
 Heap.start()
 
@@ -41,9 +44,32 @@ GlobalBus.on("event", (event) => {
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
+type BashTarget = Parameters<typeof ShellHandoff.find>[0] & { readonly directory: string }
+
+function withBashOwner<A>(
+  input: BashTarget,
+  act: (control: NonNullable<Effect.Success<ReturnType<typeof ShellHandoff.find>>>) => Effect.Effect<A>,
+) {
+  return AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const store = yield* InstanceStore.Service
+      const instance = yield* store.existing(input.directory)
+      if (!instance) return
+      const control = yield* ShellHandoff.find(input).pipe(Effect.provideService(InstanceRef, instance))
+      if (control) return yield* act(control)
+    }),
+  )
+}
+
 export const rpc = {
   bindAutoSwitchOwner(input: { sessionID: string }) {
     return AutoSwitch.bindOwner(Schema.decodeUnknownSync(SessionID)(input.sessionID))
+  },
+  async bashBackgroundAvailable(input: BashTarget) {
+    return (await withBashOwner(input, (control) => Effect.sync(control.available))) === true
+  },
+  bashBackgroundMove(input: BashTarget) {
+    return withBashOwner(input, (control) => control.move())
   },
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
     const headers = { ...input.headers }

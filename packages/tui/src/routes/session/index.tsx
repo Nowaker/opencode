@@ -22,6 +22,7 @@ import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync, type HiddenEdge } from "../../context/sync"
 import { HiddenMessagesDivider, loadAllNote } from "./hidden-divider"
+import { BashBackgroundAction } from "./bash-background-action"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -3089,6 +3090,7 @@ function BlockTool(props: {
   onClick?: () => void
   part?: ToolPart
   spinner?: boolean
+  action?: JSX.Element
 }) {
   const { theme } = useTheme()
   const ctx = use()
@@ -3150,6 +3152,7 @@ function BlockTool(props: {
           {timestamp()}
         </text>
       </Show>
+      {props.action}
     </box>
   )
 }
@@ -3207,6 +3210,7 @@ function Shell(props: ToolProps) {
         <BlockTool
           title={title()}
           part={props.part}
+          action={<BashBackgroundAction part={props.part} sessionID={ctx.sessionID} />}
           hint={expandHint(overflow(), expanded())}
           onClick={overflow() ? () => setExpanded((prev) => !prev) : undefined}
         >

@@ -3,6 +3,7 @@ import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
+import type { BashBackgroundOwner } from "../routes/session/bash-background-action"
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -100,6 +101,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     fetch?: typeof fetch
     headers?: RequestInit["headers"]
     events?: EventSource
+    bashBackground?: BashBackgroundOwner
   }) => {
     const abort = new AbortController()
     let sse: AbortController | undefined
@@ -203,6 +205,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     })
 
     return {
+      bashBackground: props.bashBackground,
       get client() {
         return sdk
       },

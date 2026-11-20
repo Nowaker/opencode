@@ -324,6 +324,10 @@ export const TuiThreadCommand = cmd({
           fetch: transport.fetch,
           headers: transport.headers,
           events: transport.events,
+          bashBackground: {
+            available: async (target) => await client.call("bashBackgroundAvailable", target),
+            move: async (target) => await client.call("bashBackgroundMove", target),
+          },
           updater,
           args: {
             continue: args.continue,

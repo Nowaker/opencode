@@ -34,6 +34,7 @@ import { ProjectProvider, useProject } from "./context/project"
 import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { SDKProvider, useSDK } from "./context/sdk"
+import type { BashBackgroundOwner } from "./routes/session/bash-background-action"
 import { StartupLoading } from "./component/startup-loading"
 import { mountInstantScreen } from "./component/instant-screen"
 import { InstantPrompt } from "./instant"
@@ -157,6 +158,7 @@ export type TuiInput = {
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
   events?: EventSource
+  bashBackground?: BashBackgroundOwner
   pluginHost: TuiPluginHost
   updater?: UpdateSource
 }
@@ -320,6 +322,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                       <TuiConfigProvider config={input.config}>
                                         <PluginRuntimeProvider value={pluginRuntime}>
                                           <SDKProvider
+                                            bashBackground={input.bashBackground}
                                             url={input.url}
                                             directory={input.directory}
                                             fetch={input.fetch}
