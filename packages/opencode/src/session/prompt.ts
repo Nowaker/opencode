@@ -1983,7 +1983,6 @@ const layer = Layer.effect(
         const run = runs.get(sessionID)
         const previousIdle = AutoSwitch.begin(sessionID)
         let declinedReturn = false
-        let freshSubmission: MessageID | undefined
 
         turnLoop: while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -2108,13 +2107,12 @@ const layer = Layer.effect(
           const admitted = previousIdle !== undefined ? msgs.find((msg) => msg.info.id === lastUser.id) : undefined
           const acceptedAt = admitted ? AutoSwitchAdmission.acceptedAt(admitted) : undefined
           const newSubmission = previousIdle !== undefined && acceptedAt !== undefined && acceptedAt > previousIdle
-          if (step === 1 && newSubmission) freshSubmission = lastUser.id
           const returnRoute = sticky && !sticky.returnCooldown && switchState && !declinedReturn && step === 1 && newSubmission &&
             lastAssistant?.parentID !== lastUser.id && tasks.length === 0 &&
             AutoSwitch.returnEnabled(switchState) ? sticky : undefined
           const returnModel = returnRoute ? yield* provider.getModel(lastUser.model.providerID, lastUser.model.modelID).pipe(Effect.option) : undefined
-          const returnFreshUntil = returnModel?._tag === "Some" && returnModel.value.api.id === "claude-opus-5-5" &&
-            preferredRoute.variant === "high" ? yield* MeridianRouting.probe({ provider: "claude", model: returnModel.value, variant: preferredRoute.variant }) : undefined
+          const returnFreshUntil = returnModel?._tag === "Some" && preferredRoute.providerID === "anthropic" && returnModel.value.id === returnModel.value.api.id
+            ? yield* MeridianRouting.probe({ provider: "claude", model: returnModel.value, variant: preferredRoute.variant }) : undefined
           const returning = returnFreshUntil !== undefined && returnRoute && switchState ?
             { episode: returnRoute, revision: switchState.revision, policyRevision: switchState.policy?.policyRevision,
               validUntil: returnFreshUntil } : undefined
@@ -2662,7 +2660,9 @@ const layer = Layer.effect(
               !sticky &&
               !sourceRequestChanged &&
               handle.routeRefusal &&
-              handle.routeRefusal.wireModel === "claude-opus-5-5" &&
+              handle.routeRefusal.wireModel === model.api.id && model.id === model.api.id &&
+              handle.routeRefusal.wireEffort === MeridianRouting.wireEffort({ provider: "claude", model, variant: preferredRoute.variant }) &&
+              MeridianRouting.supports({ provider: "claude", model, variant: preferredRoute.variant }) &&
               switchState?.policy?.enabled &&
               AutoSwitch.same(switchState.source, preferredRoute) &&
               (!episode || episode.turnID < lastUser.id) &&
@@ -2685,10 +2685,9 @@ const layer = Layer.effect(
                 targetAgent &&
                 target &&
                 target._tag === "Some" &&
-                target.value.api.id === "gpt-6.2-sol" &&
-                route.variant &&
+                target.value.api.id === target.value.id &&
+                MeridianRouting.supports({ provider: "chatgpt", model: target.value, variant: route.variant }) &&
                 (route.agent === preferredRoute.agent || !lastUser.system) &&
-                Object.hasOwn(target.value.variants ?? {}, route.variant) &&
                 (yield* AutoSwitch.authorizeAgent({
                   sessionID,
                   source: preferredRoute,
@@ -2712,6 +2711,7 @@ const layer = Layer.effect(
                     at: Date.now(),
                     returnCooldown: episode?.autoReturnedTurnID === lastUser.id,
                   }
+                  let claimed = false
                   const attempt = yield* runAttempt({
                     agent: targetAgent,
                     model: target.value,
@@ -2747,11 +2747,14 @@ const layer = Layer.effect(
                           valid: () =>
                             latestInputIsCurrent().pipe(Effect.map((valid) => valid && Date.now() <= freshUntil)),
                         })
-                        if (saved) AutoSwitch.markServing(claim)
+                        if (saved) {
+                          claimed = true
+                          AutoSwitch.markServing(claim)
+                        }
                         return saved
                       }),
                   }).pipe(Effect.ensuring(Effect.sync(() => AutoSwitch.stopServing(sessionID))))
-                  if (attempt.outcome === "blocked") {
+                  if (!claimed || attempt.outcome === "blocked") {
                     blockedReason = Date.now() > freshUntil ? "stale-evidence" : "route-ineligible"
                     yield* sessions.removeMessage({ sessionID, messageID: attempt.handle.message.id })
                     break
@@ -2793,7 +2796,9 @@ const layer = Layer.effect(
               yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
               continue
             }
-            if (plannedAlternate && switchState) AutoSwitch.noteBlocked(sessionID, switchState.revision, blockedReason)
+            if (switchState?.policy?.enabled && (plannedAlternate || handle.routeRefusal)) {
+              AutoSwitch.noteBlocked(sessionID, switchState.revision, blockedReason)
+            }
             yield* park({
               session,
               messageID: handle.message.id,
@@ -2811,11 +2816,12 @@ const layer = Layer.effect(
         if (pending?.state === "pending") yield* markPaused(sessionID, pending)
         yield* processor.settle(sessionID)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
-        const result = yield* lastAssistant(sessionID)
+    const result = yield* lastAssistant(sessionID)
         if (!pending && result.info.role === "assistant" && result.info.finish === "stop" && !result.info.error) {
           const finished = yield* AutoSwitch.inspect(sessions, sessionID)
           if (finished?.episode?.state === "active") {
-            if (finished.episode.returnCooldown && freshSubmission === result.info.parentID && finished.episode.turnID !== result.info.parentID) {
+            if (finished.episode.returnCooldown && finished.episode.turnID !== result.info.parentID &&
+              finished.episode.target.providerID === result.info.providerID && finished.episode.target.modelID === result.info.modelID) {
               yield* AutoSwitch.save(sessions, finished, { episode: { ...finished.episode, returnCooldown: false } })
             }
             AutoSwitch.noteCleanEnd(sessionID)
@@ -2845,7 +2851,9 @@ const layer = Layer.effect(
       return yield* state.ensureRunning(
         sessionID,
         lastAssistant(sessionID),
-        tracked(sessionID, runLoop(sessionID).pipe(Effect.ensuring(processor.settle(sessionID)))),
+        tracked(sessionID, runLoop(sessionID).pipe(
+          Effect.provideService(AutoSwitch.Providers, provider), Effect.ensuring(processor.settle(sessionID)),
+        )),
         again ?? (messageID ? unread(sessionID, messageID) : undefined),
       )
     })

@@ -9,6 +9,7 @@ import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
 import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
+import { Provider } from "@/provider/provider"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -595,10 +596,15 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("list", list)
       .handle("status", status)
       .handle("get", get)
-      .handle("autoSwitchStatus", (ctx) => AutoSwitch.read(session, ctx.params.sessionID))
+      .handle("autoSwitchStatus", (ctx) => Provider.Service.use((provider) =>
+        AutoSwitch.read(session, ctx.params.sessionID).pipe(Effect.provideService(AutoSwitch.Providers, provider)),
+      ))
       .handle("autoSwitchUpdate", (ctx) =>
         Effect.gen(function* () {
-          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload)
+          const provider = yield* Provider.Service
+          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload).pipe(
+            Effect.provideService(AutoSwitch.Providers, provider),
+          )
           if (result.statusCode === 409) return yield* new AutoSwitchConflict(result.status)
           if (result.statusCode === 503) return yield* new AutoSwitchUnavailable(result.status)
           return result.status

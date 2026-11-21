@@ -3,6 +3,7 @@ import { APICallError, tool } from "ai"
 import { Clock, Effect, Layer, Stream } from "effect"
 import { z } from "zod"
 import path from "node:path"
+import type { Agent } from "@/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -26,6 +27,7 @@ const claude = { providerID: ProviderV2.ID.make("anthropic-meridian"), modelID: 
 const chatgpt = { providerID: ProviderV2.ID.make("openai-meridian"), modelID: ModelV2.ID.make("gpt-alias") }
 const wireClaude = "claude-wire"
 const wireChatgpt = "gpt-5.5-wire"
+const agent: Agent.Info = { name: "build", mode: "primary", options: {}, permission: [] }
 
 function refusal(requestID: string | null, proof: Record<string, unknown> = {}) {
   return {
@@ -118,7 +120,7 @@ const attempt = Effect.fnUntraced(function* (dir: string, ref: typeof claude, ex
     user,
     sessionID,
     model,
-    agent: { name: "build", mode: "primary", options: {}, permission: [] },
+    agent,
     system: [],
     messages: [{ role: "user", content: "sensitive prompt" }],
     tools: {},
@@ -145,7 +147,7 @@ it.live("binds trusted Claude refusals to fresh per-fetch IDs and the wire model
         const requestID = ids[index]
         if (!requestID) throw new Error("Expected a request ID on the trusted inference POST")
         expect(result).toBe("stop")
-        expect(handle.routeRefusal).toEqual({ requestID, wireModel: wireClaude, reason: "quota_exhausted" })
+        expect(handle.routeRefusal).toEqual({ requestID, wireModel: wireClaude, wireEffort: "high", reason: "quota_exhausted" })
         expect(handle.hasEffects).toBe(false)
         expect(handle.refusal?.code).toBe("no_routable_account")
         expect(errors).toEqual([])
@@ -192,7 +194,7 @@ for (const fault of ["wrong id", "wrong model", "sent", "wrong path", "redirect"
   )
 }
 
-for (const outcome of ["allowed", "sticky failure", "revoked", "budget rejected", "wire variant mismatch", "untrusted destination"] as const) {
+for (const outcome of ["allowed", "mapped effort", "sticky failure", "revoked", "budget rejected", "wire variant mismatch", "untrusted destination"] as const) {
   it.live(`fences the real alternate HTTP request when ${outcome}`, () =>
     Effect.gen(function* () {
       const requests: unknown[] = []
@@ -204,6 +206,8 @@ for (const outcome of ["allowed", "sticky failure", "revoked", "budget rejected"
       })
       const { handle, result, errors } = yield* provideTmpdirInstance((dir) => attempt(dir, chatgpt, {
         retries: outcome === "sticky failure" ? undefined : 0,
+        small: outcome === "wire variant mismatch",
+        agent: outcome === "wire variant mismatch" ? { ...agent, options: { reasoningEffort: "low" } } : agent,
         validateRequest: (prepared) => Effect.sync(() => {
           gates.push("validated")
           expect(prepared.messages).toContainEqual({ role: "user", content: "sensitive prompt" })
@@ -211,16 +215,17 @@ for (const outcome of ["allowed", "sticky failure", "revoked", "budget rejected"
         }),
         beforeDispatch: () => Effect.sync(() => {
           gates.push("decision")
-          return outcome === "allowed" || outcome === "sticky failure" || outcome === "untrusted destination"
+          return outcome === "allowed" || outcome === "mapped effort" || outcome === "sticky failure" || outcome === "untrusted destination"
         }),
-      }), fixture(server.url, chatgpt, outcome === "wire variant mismatch" ? "medium" : "high")).pipe(
+      }), fixture(server.url, chatgpt, outcome === "mapped effort" ? "medium" : "high")).pipe(
         Effect.provideService(MeridianRouting.Trust, {
           chatgptAvailabilityURL: outcome === "untrusted destination" ? undefined : new URL("/profiles/route-availability", server.url).href,
         }),
       )
       expect(result).toBe("stop")
-      if (outcome === "allowed" || outcome === "sticky failure") {
-        expect(requests).toEqual([expect.objectContaining({ model: wireChatgpt, reasoning: expect.objectContaining({ effort: "high" }) })])
+      if (outcome === "allowed" || outcome === "mapped effort" || outcome === "sticky failure") {
+        const expected = outcome === "mapped effort" ? "medium" : "high"
+        expect(requests).toEqual([expect.objectContaining({ model: wireChatgpt, reasoning: expect.objectContaining({ effort: expected }) })])
         expect(gates).toEqual(["validated", "decision"])
         expect(handle.dispatchBlocked).toBe(false)
         expect(handle.message.error?.name).toBe("APIError")
@@ -235,7 +240,7 @@ for (const outcome of ["allowed", "sticky failure", "revoked", "budget rejected"
   )
 }
 
-for (const outcome of ["refused after dispatch", "ordinary failure", "revoked", "budget rejected", "effort mismatch", "untrusted", "missing fence"] as const) {
+for (const outcome of ["refused after dispatch", "mapped effort", "ordinary failure", "revoked", "budget rejected", "effort mismatch", "untrusted", "missing fence"] as const) {
   it.live(`fences the Claude preferred return when ${outcome}`, () =>
     Effect.gen(function* () {
       const requests: { id: string | null; body: unknown }[] = []
@@ -254,6 +259,8 @@ for (const outcome of ["refused after dispatch", "ordinary failure", "revoked", 
         (dir) => attempt(dir, claude, {
           preferredReturn: true,
           retries: 0,
+          small: outcome === "effort mismatch",
+          agent: outcome === "effort mismatch" ? { ...agent, options: { effort: "low" } } : agent,
           validateRequest: (prepared) => Effect.sync(() => {
             gates.push("validated")
             expect(prepared.messages).toContainEqual({ role: "user", content: "sensitive prompt" })
@@ -264,21 +271,22 @@ for (const outcome of ["refused after dispatch", "ordinary failure", "revoked", 
             return outcome !== "revoked"
           }),
         }),
-        fixture(server.url, claude, outcome === "effort mismatch" ? "medium" : "high"),
+        fixture(server.url, claude, outcome === "mapped effort" ? "medium" : "high"),
       ).pipe(Effect.provideService(MeridianRouting.Trust, {
         claudeInferenceURL: outcome === "untrusted" ? new URL("/wrong/v1/messages", server.url).href : new URL("/v1/messages", server.url).href,
         availabilityAPIKey: "probe-test-key",
       }))
       expect(result).toBe("stop")
-      if (outcome === "refused after dispatch" || outcome === "ordinary failure") {
+      if (outcome === "refused after dispatch" || outcome === "mapped effort" || outcome === "ordinary failure") {
+        const expected = outcome === "mapped effort" ? "medium" : "high"
         expect(gates).toEqual(["validated", "decision"])
         expect(requests).toEqual([{
           id: expect.stringMatching(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/),
-          body: expect.objectContaining({ model: wireClaude, output_config: { effort: "high" } }),
+          body: expect.objectContaining({ model: wireClaude, output_config: { effort: expected } }),
         }])
         expect(handle.dispatchBlocked).toBe(false)
         if (outcome === "refused after dispatch") {
-          expect(handle.routeRefusal).toMatchObject({ requestID: requests[0].id, wireModel: wireClaude, reason: "quota_exhausted" })
+          expect(handle.routeRefusal).toMatchObject({ requestID: requests[0].id, wireModel: wireClaude, wireEffort: expected, reason: "quota_exhausted" })
           expect(errors).toEqual([])
           return
         }
@@ -381,8 +389,12 @@ for (const fault of ["none", "wrong variant", "wrong model", "depleted", "stale"
         })
       })
       const available = yield* MeridianRouting.probe({
-        model: { providerID: chatgpt.providerID, api: { id: wireChatgpt, npm: "@ai-sdk/openai", url: "" } },
-        variant: "high",
+        model: {
+          providerID: chatgpt.providerID,
+          api: { id: wireChatgpt, npm: "@ai-sdk/openai", url: "" },
+          variants: { portable: { reasoningEffort: "high" } },
+        },
+        variant: "portable",
       })
         .pipe(Effect.provideService(MeridianRouting.Trust, {
           chatgptAvailabilityURL: new URL("/profiles/route-availability", server.url).href,
@@ -393,15 +405,15 @@ for (const fault of ["none", "wrong variant", "wrong model", "depleted", "stale"
   )
 }
 
-for (const fault of ["none", "wrong provider", "redirect"] as const) {
+for (const fault of ["none", "wrong provider", "redirect", "unregistered", "default"] as const) {
   effectTest.live(`Claude availability uses a private exact-route GET when ${fault}`, () =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
-      let redirected = 0
+      const paths: string[] = []
       const server = yield* serve((request) => {
         const url = new URL(request.url)
+        paths.push(url.pathname)
         if (url.pathname === "/redirected") {
-          redirected++
           return new Response(null, { status: 404 })
         }
         expect(url.pathname).toBe("/proxy/profiles/route-availability")
@@ -417,14 +429,19 @@ for (const fault of ["none", "wrong provider", "redirect"] as const) {
       })
       const available = yield* MeridianRouting.probe({
         provider: "claude",
-        model: { providerID: claude.providerID, api: { id: wireClaude, npm: "@ai-sdk/anthropic", url: "" } },
-        variant: "high",
+        model: {
+          providerID: claude.providerID,
+          api: { id: wireClaude, npm: "@ai-sdk/anthropic", url: "" },
+          variants: { portable: { effort: "high" } },
+        },
+        variant: fault === "default" ? null : fault === "unregistered" ? "high" : "portable",
       }).pipe(Effect.provideService(MeridianRouting.Trust, {
+        claudeInferenceURL: new URL("/proxy/v1/messages", server.url).href,
         chatgptAvailabilityURL: new URL("/proxy/profiles/route-availability", server.url).href,
         availabilityAPIKey: "probe-test-key",
       }))
       expect(available).toBe(fault === "none" ? now + 30_000 : undefined)
-      expect(redirected).toBe(0)
+      expect(paths).toEqual(fault === "unregistered" || fault === "default" ? [] : ["/proxy/profiles/route-availability"])
     }),
   )
 }
@@ -448,8 +465,14 @@ it.live("uses the managed startup URLs and private probe key for the preferred s
         cmd: [process.execPath, "--eval", `
           import { Effect } from "effect"
           import { MeridianRouting } from "./src/provider/meridian-routing"
-          const result = await Effect.runPromise(MeridianRouting.probePreferred({
-            providerID: "anthropic-meridian", modelID: "claude-opus-5-5", variant: "high",
+          const result = await Effect.runPromise(MeridianRouting.probe({
+            provider: "claude",
+            model: {
+              providerID: "anthropic-meridian",
+              api: { id: "claude-opus-5-5", npm: "@ai-sdk/anthropic", url: "" },
+              variants: { high: { effort: "high" } },
+            },
+            variant: "high",
           }))
           if (result === undefined) process.exitCode = 1
         `],

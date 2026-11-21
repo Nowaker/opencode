@@ -2,7 +2,6 @@ import { APICallError } from "ai"
 import { Clock, Context, Effect, Option, Schema } from "effect"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { ProviderV2 } from "@opencode-ai/core/provider"
 import type { Provider } from "./provider"
 
 export type TrustConfig = {
@@ -71,6 +70,7 @@ const refusalBody = Schema.fromJsonString(Schema.Struct({
 export type Refusal = {
   readonly requestID: string
   readonly wireModel: string
+  readonly wireEffort?: string
   readonly reason: typeof refusalBody.Type.error.route_refusal.reason
 }
 
@@ -99,9 +99,21 @@ export class DispatchBlocked extends Error {
   }
 }
 
-type Model = Pick<Provider.Model, "api" | "providerID">
-type Target = { readonly model: Model; readonly variant: string }
+type Model = Pick<Provider.Model, "api" | "providerID" | "variants">
 type RouteProvider = "claude" | "chatgpt"
+type Target = { readonly provider: RouteProvider; readonly model: Model; readonly variant: string | null }
+
+export function wireEffort(input: Target): string | undefined {
+  if (!matchesProvider(input.provider, input.model) || !input.variant) return undefined
+  const variants = input.model.variants
+  if (!variants || !Object.hasOwn(variants, input.variant)) return undefined
+  const effort: unknown = variants[input.variant][input.provider === "claude" ? "effort" : "reasoningEffort"]
+  return typeof effort === "string" && effort.length > 0 ? effort : undefined
+}
+
+export function supports(input: Target) {
+  return wireEffort(input) !== undefined
+}
 
 const availabilityBody = Schema.fromJsonString(Schema.Struct({
   version: Schema.Literal(1),
@@ -113,13 +125,15 @@ const availabilityBody = Schema.fromJsonString(Schema.Struct({
   observed_at: Schema.Int,
 }))
 
-export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Target & { readonly provider?: RouteProvider }) {
-  const trust = yield* resolvedTrust()
+export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Omit<Target, "provider"> & { readonly provider?: RouteProvider }) {
   const provider = input.provider ?? "chatgpt"
+  const variant = wireEffort({ ...input, provider })
+  if (variant === undefined) return undefined
+  const trust = yield* resolvedTrust()
   const url = availabilityURL(trust)
-  if (!url || !matchesProvider(provider, input.model) || !input.variant) return undefined
+  if (!url || (provider === "claude" && !trustedURL(trust.claudeInferenceURL)?.pathname.endsWith(CLAUDE_INFERENCE_PATH))) return undefined
   const model = input.model.api.id
-  url.search = new URLSearchParams({ provider, model, variant: input.variant }).toString()
+  url.search = new URLSearchParams({ provider, model, variant }).toString()
 
   const result = yield* Effect.tryPromise({
     try: async (signal) => {
@@ -140,33 +154,15 @@ export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Target
     catch: (error) => error,
   }).pipe(Effect.orElseSucceed(() => undefined))
   const now = yield* Clock.currentTimeMillis
-  if (!result || result.provider !== provider || result.model !== model || result.variant !== input.variant) return undefined
+  if (!result || result.provider !== provider || result.model !== model || result.variant !== variant) return undefined
   const validUntil = result.observed_at + AVAILABILITY_MAX_AGE_MS
   if (result.routable_allotment <= 0 || result.observed_at > now || validUntil < now) return undefined
   return validUntil
 })
 
-export const probePreferred = Effect.fnUntraced(function* (input: {
-  readonly providerID: string
-  readonly modelID: string
-  readonly variant: string | null
-}) {
-  if (input.modelID !== "claude-opus-5-5" || input.variant !== "high" || !isClaudeProvider(input.providerID)) return
-  const trust = yield* resolvedTrust()
-  if (!trustedURL(trust.claudeInferenceURL)?.pathname.endsWith(CLAUDE_INFERENCE_PATH)) return
-  return yield* probe({
-    provider: "claude",
-    model: {
-      providerID: ProviderV2.ID.make(input.providerID),
-      api: { id: "claude-opus-5-5", npm: "@ai-sdk/anthropic", url: "" },
-    },
-    variant: input.variant,
-  }).pipe(Effect.provideService(Trust, trust))
-})
-
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 type Fence = {
-  readonly variant: string
+  readonly effort: string
   readonly singleDispatch: boolean
   readonly dispatch: (send: () => Promise<Response>) => Promise<Response>
 }
@@ -179,13 +175,13 @@ export type Transport = { readonly endpoint: URL; readonly wireModel: string } &
 export function claudeTransport(trust: TrustConfig, model: Model, fence?: Fence): Transport | undefined {
   if (!matchesProvider("claude", model)) return undefined
   const endpoint = trustedURL(trust.claudeInferenceURL)
-  if (!endpoint || (fence && (!fence.variant || !endpoint.pathname.endsWith(CLAUDE_INFERENCE_PATH)))) return undefined
+  if (!endpoint || (fence && !endpoint.pathname.endsWith(CLAUDE_INFERENCE_PATH))) return undefined
   return { type: "claude", endpoint, wireModel: model.api.id, fence }
 }
 
 export function chatgptTransport(trust: TrustConfig, model: Model, fence: Fence): Transport | undefined {
   const endpoint = availabilityURL(trust)
-  if (!endpoint || !matchesProvider("chatgpt", model) || !fence.variant) return undefined
+  if (!endpoint || !matchesProvider("chatgpt", model)) return undefined
   endpoint.pathname = endpoint.pathname.slice(0, -AVAILABILITY_PATH.length) + CHATGPT_INFERENCE_PATH
   return { type: "chatgpt", endpoint, wireModel: model.api.id, fence }
 }
@@ -206,7 +202,7 @@ export function wrapFetch(fetch: Fetch, transport: Transport): Fetch {
       : undefined
     const fence = transport.fence
     const effort = transport.type === "claude" ? body?.output_config?.effort : body?.reasoning?.effort
-    if (fence && (!matches || body?.model !== transport.wireModel || effort !== fence.variant)) throw new DispatchBlocked()
+    if (fence && (!matches || body?.model !== transport.wireModel || effort !== fence.effort)) throw new DispatchBlocked()
 
     const send = async () => {
       if (fence?.singleDispatch && requests > 0) throw new DispatchBlocked()
@@ -243,7 +239,7 @@ export function wrapFetch(fetch: Fetch, transport: Transport): Fetch {
       }
       await response.body?.cancel()
       const message = typeof decoded.error.message === "string" ? decoded.error.message : "No routable Claude account"
-      throw new RefusalError({ requestID, wireModel: proof.model, reason: proof.reason }, response, { body: text, message })
+      throw new RefusalError({ requestID, wireModel: proof.model, wireEffort: effort, reason: proof.reason }, response, { body: text, message })
     }
     return fence ? fence.dispatch(send) : send()
   }

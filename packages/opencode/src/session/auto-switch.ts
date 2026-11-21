@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Schema, Semaphore } from "effect"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { OwnerQuiescence } from "@/owner/quiescence"
@@ -8,6 +8,9 @@ import { AutoSwitchSchema } from "./auto-switch-schema"
 import type { Plugin } from "@/plugin"
 import type { Agent } from "@/agent/agent"
 import { MeridianRouting } from "@/provider/meridian-routing"
+import type { Provider } from "@/provider/provider"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
 
 const PolicyDecision = Schema.Struct({
   enabled: Schema.Boolean,
@@ -26,6 +29,7 @@ type PolicyInput = {
   readonly source: AutoSwitchSchema.Route | null
   readonly preference: typeof AutoSwitchSchema.Preference.Type
   readonly returnPreference: typeof AutoSwitchSchema.Preference.Type
+  readonly catalog?: readonly { readonly providerID: string; readonly modelID: string; readonly variants: readonly (string | null)[] }[]
   readonly pins: { readonly provider: boolean; readonly account: boolean; readonly security: boolean }
 }
 
@@ -39,9 +43,12 @@ const startupPolicy = async (input: PolicyInput) => {
 }
 
 export const Policy = Context.Reference<PolicyReader>("AutoSwitch.Policy", { defaultValue: () => startupPolicy })
+export const Providers = Context.Reference<Provider.Interface | undefined>("AutoSwitch.Providers", { defaultValue: () => undefined })
 
 let root: SessionID | undefined
 const serving = new Map<SessionID, AutoSwitchSchema.Episode>()
+const ownerDispatch = Semaphore.makeUnsafe(1)
+export const withOwnerDispatch = ownerDispatch.withPermit
 const cleanEnds = new Set<SessionID>()
 const idleSince = new Map<SessionID, number>()
 
@@ -131,14 +138,7 @@ export function same(left: AutoSwitchSchema.Route | null, right: AutoSwitchSchem
 }
 
 export function pilotPair(source: AutoSwitchSchema.Route, target: AutoSwitchSchema.Route) {
-  return (
-    ["anthropic", "anthropic-meridian"].includes(source.providerID) &&
-    source.modelID === "claude-opus-5-5" &&
-    source.variant === "high" &&
-    ["openai", "openai-meridian"].includes(target.providerID) &&
-    target.modelID === "gpt-6.2-sol" &&
-    target.variant === "xhigh"
-  )
+  return source.providerID === "anthropic" && target.providerID === "openai"
 }
 
 function identity(name: string) {
@@ -225,6 +225,14 @@ export const inspect = Effect.fnUntraced(function* (sessions: Session.Interface,
   const source = preferred(session)
   const state = stored(session)
   const policy = yield* Policy
+  const providers = yield* Providers
+  const catalog = source?.providerID === "anthropic" && providers ? Object.values(yield* providers.list())
+    .filter((entry) => entry.id === "openai")
+    .flatMap((entry) => Object.values(entry.models).flatMap((model) => {
+      if (model.id !== model.api.id || model.api.npm !== "@ai-sdk/openai") return []
+      const variants = Object.keys(model.variants ?? {}).filter((variant) => MeridianRouting.supports({ provider: "chatgpt", model, variant }))
+      return [{ providerID: model.providerID, modelID: model.id, variants }]
+    })) : undefined
   const decision = yield* Effect.tryPromise(() =>
     Promise.resolve(
       policy({
@@ -236,6 +244,7 @@ export const inspect = Effect.fnUntraced(function* (sessions: Session.Interface,
         source,
         preference: state.preference,
         returnPreference: state.returnPreference,
+        catalog,
         pins: {
           provider: !!source && /(?:^|[-_])(?:pinned|cybersec)(?:[-_]|$)/i.test(source.providerID),
           account: !!source && /(?:^|[-_])(?:pinned|account)(?:[-_]|$)/i.test(source.providerID),
@@ -300,7 +309,10 @@ export const read = Effect.fnUntraced(function* (sessions: Session.Interface, se
     !same(current.episode.source, current.source)) {
     return status(sessionID, current)
   }
-  const validUntil = yield* MeridianRouting.probePreferred(current.source)
+  const providers = yield* Providers
+  const model = providers ? yield* providers.getModel(ProviderV2.ID.make(current.source.providerID), ModelV2.ID.make(current.source.modelID)).pipe(Effect.option) : undefined
+  const validUntil = model?._tag === "Some" && current.source.providerID === "anthropic" && model.value.id === model.value.api.id
+    ? yield* MeridianRouting.probe({ provider: "claude", model: model.value, variant: current.source.variant }) : undefined
   const latest = yield* inspect(sessions, sessionID)
   return status(sessionID, latest, validUntil !== undefined && validUntil >= Date.now() && idle === idleSince.get(sessionID) &&
     latest?.revision === current.revision && latest?.policy?.policyRevision === current.policy.policyRevision &&
@@ -382,14 +394,14 @@ export const mutate = Effect.fnUntraced(function* (
   const returns = input.action === "return-to-preferred" || (input.action === "set-preference" && input.preference === "off")
   const episode = current.episode
   const inFlight = !!episode && serving.get(sessionID)?.at === episode.at
-  const saved = yield* save(sessions, current, {
+  const saved = yield* withOwnerDispatch(save(sessions, current, {
     preference: input.action === "set-preference" ? input.preference : undefined,
     returnPreference: input.action === "set-return-preference" ? input.preference : undefined,
     episode:
       returns && episode && (episode.state === "active" || episode.state === "failed" || inFlight)
         ? { ...episode, state: inFlight ? episode.state : "returned", returnPending: inFlight }
         : episode,
-  })
+  }))
   return { statusCode: saved ? (200 as const) : (409 as const), status: yield* read(sessions, sessionID) }
 })
 

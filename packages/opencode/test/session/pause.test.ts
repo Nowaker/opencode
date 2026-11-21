@@ -429,8 +429,10 @@ it.instance("a trusted refusal switches once and only a new submission after idl
       },
       variant: source.variant,
     })
+    const providers = yield* ProviderSvc.Service
     const owner = <A, E, R>(work: Effect.Effect<A, E, R>) => work.pipe(
       Effect.provideService(AutoSwitch.Owner, () => ctx.chat.id),
+      Effect.provideService(AutoSwitch.Providers, providers),
       Effect.provideService(AutoSwitch.Policy, () => ({ enabled: true, reason: "default-on", alternates: [target], policyRevision: "test-1" })),
       Effect.provideService(MeridianRouting.Trust, {
         claudeInferenceURL: new URL("/v1/messages", server.url).href,
