@@ -307,6 +307,7 @@ const layer = Layer.effect(
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
+    const inspectSwitch = (sessionID: SessionID) => AutoSwitch.inspect(sessions, sessionID, provider.list)
     const processor = yield* SessionProcessor.Service
     const compaction = yield* SessionCompaction.Service
     const plugin = yield* Plugin.Service
@@ -1407,7 +1408,7 @@ const layer = Layer.effect(
       return history.flatMap((msg) => msg.parts.filter(isDeferredToolPart))
     })
 
-    const pause = Effect.fn("SessionPrompt.pause")(function* (input: PauseInput, error?: SessionPause.Refusal) {
+    const pause = Effect.fn("SessionPrompt.pause")(function* (input: PauseInput, error?: SessionPause.Refusal, preserved?: boolean) {
       const existing = yield* pauses.get(input.sessionID)
       if (existing) return { sessionID: input.sessionID, pause: existing, changed: false }
       const at = Date.now()
@@ -1433,7 +1434,7 @@ const layer = Layer.effect(
       yield* notice(
         input.sessionID,
         input.notice ??
-          SessionPause.noticeText({ action: "pause", source, at, reason: input.reason, parked: error !== undefined }),
+          SessionPause.noticeText({ action: "pause", source, at, reason: input.reason, parked: error !== undefined, preserved }),
         { action: "pause", source, at },
       )
       return { sessionID: input.sessionID, pause: next, changed: true }
@@ -1630,6 +1631,7 @@ const layer = Layer.effect(
       refusal: SessionPause.Refusal
       route: Route
       preserveAttempt?: boolean
+      blockedReason?: AutoSwitchTranscript.BlockReason
     }) {
       const sessionID = input.session.id
       yield* processor.settle(sessionID)
@@ -1640,8 +1642,13 @@ const layer = Layer.effect(
         incident: input.refusal.incident_id,
       })
       const result = yield* pause(
-        { sessionID, source: { kind: "api", client: SessionPause.REFUSAL_CODE }, reason: input.refusal.message },
+        {
+          sessionID,
+          source: { kind: "api", client: SessionPause.REFUSAL_CODE },
+          reason: input.blockedReason ? `Automatic switch parked: ${input.blockedReason}` : input.refusal.message,
+        },
         { ...input.refusal, model: { providerID: input.route.providerID, modelID: input.route.modelID } },
+        input.preserveAttempt,
       )
       if (input.session.parentID) yield* waitForUnpause(sessionID, result.pause)
     })
@@ -2082,10 +2089,10 @@ const layer = Layer.effect(
             }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
 
           const preferredRoute = { ...lastUser.model, agent: lastUser.agent, variant: lastUser.model.variant ?? null }
-          let switchState = yield* AutoSwitch.inspect(sessions, sessionID)
+          let switchState = yield* inspectSwitch(sessionID)
           let episode = switchState?.episode
           const plannedAlternate = !!switchState?.policy?.enabled && AutoSwitch.same(switchState.source, preferredRoute) &&
-            switchState.policy.alternates.some((route) => AutoSwitch.pilotPair(preferredRoute, route))
+            switchState.policy.alternates.some((route) => AutoSwitch.eligiblePair(preferredRoute, route))
           const settledAlternate = episode?.state === "active" || episode?.state === "failed" ? episode : undefined
           let sticky =
             switchState?.policy?.enabled &&
@@ -2113,8 +2120,11 @@ const layer = Layer.effect(
             lastAssistant?.parentID !== lastUser.id && tasks.length === 0 &&
             AutoSwitch.returnEnabled(switchState) ? sticky : undefined
           const returnModel = returnRoute ? yield* provider.getModel(lastUser.model.providerID, lastUser.model.modelID).pipe(Effect.option) : undefined
-          const returnFreshUntil = returnModel?._tag === "Some" && returnModel.value.api.id === "claude-opus-5-5" &&
-            preferredRoute.variant === "high" ? yield* MeridianRouting.probe({ provider: "claude", model: returnModel.value, variant: preferredRoute.variant }) : undefined
+          const preferredProvider = MeridianRouting.routeProvider(preferredRoute.providerID)
+          const returnFreshUntil = returnModel?._tag === "Some" && returnModel.value.api.id === preferredRoute.modelID &&
+            preferredProvider && preferredRoute.variant && Object.hasOwn(returnModel.value.variants ?? {}, preferredRoute.variant)
+            ? yield* MeridianRouting.probe({ provider: preferredProvider, model: returnModel.value, variant: preferredRoute.variant })
+            : undefined
           const returning = returnFreshUntil !== undefined && returnRoute && switchState ?
             { episode: returnRoute, revision: switchState.revision, policyRevision: switchState.policy?.policyRevision,
               validUntil: returnFreshUntil } : undefined
@@ -2352,6 +2362,7 @@ const layer = Layer.effect(
               .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
             let sourceRequestChanged = false
+            let projectionReason: AutoSwitchTranscript.BlockReason | undefined
             const outcome = yield* Effect.gen(function* () {
               const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
               const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
@@ -2429,6 +2440,7 @@ const layer = Layer.effect(
                 ? AutoSwitchTranscript.project({ messages: attemptMessages, model })
                 : undefined
               if (projected?.kind === "blocked") {
+                projectionReason = projected.reason
                 yield* Effect.logInfo("auto-switch history blocked", { sessionID, reason: projected.reason })
                 return "blocked" as const
               }
@@ -2476,6 +2488,7 @@ const layer = Layer.effect(
                       Effect.gen(function* () {
                         const assessed = yield* Effect.promise(() => AutoSwitchTranscript.checkBudget(request))
                         if (assessed.kind === "fits") return true
+                        projectionReason = assessed.reason
                         yield* Effect.logInfo("auto-switch request blocked", { sessionID, reason: assessed.reason })
                         return false
                       })
@@ -2543,7 +2556,7 @@ const layer = Layer.effect(
               Effect.ensuring(instruction.clear(handle.message.id)),
               Effect.onInterrupt(() => finalizeInterruptedAssistant),
             )
-            return { outcome, handle, sourceRequestChanged }
+            return { outcome, handle, sourceRequestChanged, projectionReason }
           })
 
           const latestInputIsCurrent = Effect.fnUntraced(function* () {
@@ -2556,7 +2569,7 @@ const layer = Layer.effect(
           })
           if (switchState) AutoSwitch.clearBlocked(sessionID)
           const stickyAtDispatch = sticky
-          const { outcome, handle, sourceRequestChanged } = yield* runAttempt({
+          const { outcome, handle, sourceRequestChanged, projectionReason } = yield* runAttempt({
             agent: selectedAgent,
             model,
             route: effectiveRoute,
@@ -2564,7 +2577,7 @@ const layer = Layer.effect(
             preferredReturn: !!returning,
             beforeDispatch: returning ? () => Effect.gen(function* () {
               if (!(yield* latestInputIsCurrent())) return false
-              const fresh = yield* AutoSwitch.inspect(sessions, sessionID)
+              const fresh = yield* inspectSwitch(sessionID)
               if (!fresh?.policy?.enabled || !AutoSwitch.returnEnabled(fresh) ||
                 fresh.revision !== returning.revision || fresh.policy.policyRevision !== returning.policyRevision ||
                 !AutoSwitch.same(fresh.source, preferredRoute)) return false
@@ -2588,7 +2601,7 @@ const layer = Layer.effect(
                       }))
                     )
                       return false
-                    const fresh = yield* AutoSwitch.inspect(sessions, sessionID)
+                    const fresh = yield* inspectSwitch(sessionID)
                     if (
                       fresh?.revision !== switchState?.revision ||
                       fresh?.policy?.policyRevision !== switchState?.policy?.policyRevision
@@ -2606,7 +2619,7 @@ const layer = Layer.effect(
             continue
           }
           if (returning) {
-            switchState = yield* AutoSwitch.inspect(sessions, sessionID)
+            switchState = yield* inspectSwitch(sessionID)
             episode = switchState?.episode
             sticky = undefined
           }
@@ -2615,7 +2628,7 @@ const layer = Layer.effect(
             if (switchState) AutoSwitch.noteBlocked(sessionID, switchState.revision, "route-ineligible")
             yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
             if (sticky && (yield* latestInputIsCurrent())) {
-              const current = yield* AutoSwitch.inspect(sessions, sessionID)
+              const current = yield* inspectSwitch(sessionID)
               if (
                 current?.revision !== switchState?.revision ||
                 current?.policy?.policyRevision !== switchState?.policy?.policyRevision
@@ -2626,7 +2639,9 @@ const layer = Layer.effect(
               yield* pause({
                 sessionID,
                 source: { kind: "api", client: "auto-switch" },
-                reason: "The selected route could not safely preserve the current step.",
+                reason: projectionReason
+                  ? `Automatic switch parked: ${projectionReason}`
+                  : "The selected route could not safely preserve the current step.",
               })
             }
             break
@@ -2658,18 +2673,22 @@ const layer = Layer.effect(
             let blockedReason: AutoSwitch.BlockedReason = handle.hasEffects || sourceRequestChanged
               ? "unsafe-step"
               : !handle.routeRefusal ? "stale-evidence" : episode?.turnID === lastUser.id || sticky ? "attempted" : "route-ineligible"
+            let alternateProjectionReason: AutoSwitchTranscript.BlockReason | undefined
             if (
               !sticky &&
               !sourceRequestChanged &&
               handle.routeRefusal &&
-              handle.routeRefusal.wireModel === "claude-opus-5-5" &&
+              handle.routeRefusal.type === preferredProvider &&
+              handle.routeRefusal.wireModel === preferredRoute.modelID &&
+              handle.routeRefusal.variant === preferredRoute.variant &&
               switchState?.policy?.enabled &&
               AutoSwitch.same(switchState.source, preferredRoute) &&
               (!episode || episode.turnID < lastUser.id) &&
               (yield* latestInputIsCurrent())
             ) {
               for (const candidate of switchState.policy.alternates) {
-              if (!AutoSwitch.pilotPair(preferredRoute, candidate)) continue
+              if (!AutoSwitch.eligiblePair(preferredRoute, candidate)) continue
+              const targetProvider = MeridianRouting.routeProvider(candidate.providerID)
               const target =
                 candidate &&
                 (yield* provider
@@ -2685,7 +2704,8 @@ const layer = Layer.effect(
                 targetAgent &&
                 target &&
                 target._tag === "Some" &&
-                target.value.api.id === "gpt-6.2-sol" &&
+                targetProvider &&
+                target.value.api.id === route.modelID &&
                 route.variant &&
                 (route.agent === preferredRoute.agent || !lastUser.system) &&
                 Object.hasOwn(target.value.variants ?? {}, route.variant) &&
@@ -2698,7 +2718,11 @@ const layer = Layer.effect(
                   plugin,
                 }))
               ) {
-                const freshUntil = yield* MeridianRouting.probe({ model: target.value, variant: route.variant })
+                const freshUntil = yield* MeridianRouting.probe({
+                  provider: targetProvider,
+                  model: target.value,
+                  variant: route.variant,
+                })
                 if (freshUntil === undefined) blockedReason = "stale-evidence"
                 if (freshUntil !== undefined) {
                   const claim: AutoSwitchSchema.Episode = {
@@ -2732,7 +2756,7 @@ const layer = Layer.effect(
                           }))
                         )
                           return false
-                        const current = yield* AutoSwitch.inspect(sessions, sessionID)
+                        const current = yield* inspectSwitch(sessionID)
                         if (
                           !current ||
                           current.revision !== switchState.revision ||
@@ -2752,6 +2776,7 @@ const layer = Layer.effect(
                       }),
                   }).pipe(Effect.ensuring(Effect.sync(() => AutoSwitch.stopServing(sessionID))))
                   if (attempt.outcome === "blocked") {
+                    alternateProjectionReason = attempt.projectionReason
                     blockedReason = Date.now() > freshUntil ? "stale-evidence" : "route-ineligible"
                     yield* sessions.removeMessage({ sessionID, messageID: attempt.handle.message.id })
                     break
@@ -2800,6 +2825,7 @@ const layer = Layer.effect(
               refusal: handle.refusal,
               route: { providerID: model.providerID, modelID: model.id },
               preserveAttempt: !!switchState?.policy?.enabled && handle.hasEffects,
+              blockedReason: alternateProjectionReason,
             })
           }
           continue
@@ -2813,7 +2839,7 @@ const layer = Layer.effect(
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
         const result = yield* lastAssistant(sessionID)
         if (!pending && result.info.role === "assistant" && result.info.finish === "stop" && !result.info.error) {
-          const finished = yield* AutoSwitch.inspect(sessions, sessionID)
+          const finished = yield* inspectSwitch(sessionID)
           if (finished?.episode?.state === "active") {
             if (finished.episode.returnCooldown && freshSubmission === result.info.parentID && finished.episode.turnID !== result.info.parentID) {
               yield* AutoSwitch.save(sessions, finished, { episode: { ...finished.episode, returnCooldown: false } })

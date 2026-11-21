@@ -8,6 +8,7 @@ import { AutoSwitchSchema } from "./auto-switch-schema"
 import type { Plugin } from "@/plugin"
 import type { Agent } from "@/agent/agent"
 import { MeridianRouting } from "@/provider/meridian-routing"
+import type { Provider } from "@/provider/provider"
 
 const PolicyDecision = Schema.Struct({
   enabled: Schema.Boolean,
@@ -27,6 +28,8 @@ type PolicyInput = {
   readonly preference: typeof AutoSwitchSchema.Preference.Type
   readonly returnPreference: typeof AutoSwitchSchema.Preference.Type
   readonly pins: { readonly provider: boolean; readonly account: boolean; readonly security: boolean }
+  readonly phase2Capability: "reverse-routing-v1"
+  readonly catalog?: readonly { readonly providerID: string; readonly modelID: string; readonly variants: readonly string[] }[]
 }
 
 type PolicyReader = (input: PolicyInput) => unknown
@@ -130,15 +133,10 @@ export function same(left: AutoSwitchSchema.Route | null, right: AutoSwitchSchem
   )
 }
 
-export function pilotPair(source: AutoSwitchSchema.Route, target: AutoSwitchSchema.Route) {
-  return (
-    ["anthropic", "anthropic-meridian"].includes(source.providerID) &&
-    source.modelID === "claude-opus-5-5" &&
-    source.variant === "high" &&
-    ["openai", "openai-meridian"].includes(target.providerID) &&
-    target.modelID === "gpt-6.2-sol" &&
-    target.variant === "xhigh"
-  )
+export function eligiblePair(source: AutoSwitchSchema.Route, target: AutoSwitchSchema.Route) {
+  const from = MeridianRouting.routeProvider(source.providerID)
+  const to = MeridianRouting.routeProvider(target.providerID)
+  return !!from && !!to && from !== to && !!source.variant && !!target.variant
 }
 
 function identity(name: string) {
@@ -148,7 +146,7 @@ function identity(name: string) {
 export function sameCandidate(candidate: AutoSwitchSchema.Route, resolved: AutoSwitchSchema.Route) {
   return (
     same(candidate, resolved) ||
-    (candidate.agent === "hephaestus" &&
+    (["hephaestus", "sisyphus"].includes(candidate.agent) &&
       identity(resolved.agent) === candidate.agent &&
       same({ ...candidate, agent: resolved.agent }, resolved))
   )
@@ -162,7 +160,7 @@ export const authorizeAgent = Effect.fnUntraced(function* (input: {
   readonly targetAgent: Agent.Info
   readonly plugin: Plugin.Interface
 }) {
-  if (!pilotPair(input.source, input.target)) return false
+  if (!eligiblePair(input.source, input.target)) return false
   if (input.source.agent === input.target.agent) {
     if (["sisyphus", "hephaestus"].includes(identity(input.source.agent))) return false
     return !input.sourceAgent.model || (
@@ -170,7 +168,11 @@ export const authorizeAgent = Effect.fnUntraced(function* (input: {
       (!input.sourceAgent.variant || input.sourceAgent.variant === input.source.variant)
     )
   }
-  if (identity(input.source.agent) !== "sisyphus" || identity(input.target.agent) !== "hephaestus") return false
+  const toClaude = MeridianRouting.routeProvider(input.target.providerID) === "claude"
+  if (
+    identity(input.source.agent) !== (toClaude ? "hephaestus" : "sisyphus") ||
+    identity(input.target.agent) !== (toClaude ? "sisyphus" : "hephaestus")
+  ) return false
   if (
     input.targetAgent.mode !== "primary" ||
     input.targetAgent.hidden ||
@@ -218,13 +220,22 @@ export function stored(session: Session.Info) {
   }
 }
 
-export const inspect = Effect.fnUntraced(function* (sessions: Session.Interface, sessionID: SessionID) {
+type CatalogReader = Provider.Interface["list"]
+
+export const inspect = Effect.fnUntraced(function* (sessions: Session.Interface, sessionID: SessionID, catalogReader?: CatalogReader) {
   const value = yield* sessions.get(sessionID).pipe(Effect.option)
   if (value._tag === "None" || !(yield* inScope(sessions, value.value))) return undefined
   const session = value.value
   const source = preferred(session)
   const state = stored(session)
   const policy = yield* Policy
+  const catalog = source && MeridianRouting.routeProvider(source.providerID) && catalogReader
+    ? Object.values(yield* catalogReader()).flatMap((provider) => Object.values(provider.models).flatMap((model) =>
+        model.api.id === model.id && MeridianRouting.routeProvider(model.providerID)
+          ? [{ providerID: model.providerID, modelID: model.id, variants: Object.keys(model.variants ?? {}) }]
+          : [],
+      ))
+    : undefined
   const decision = yield* Effect.tryPromise(() =>
     Promise.resolve(
       policy({
@@ -234,6 +245,8 @@ export const inspect = Effect.fnUntraced(function* (sessions: Session.Interface,
         parentID: session.parentID ?? null,
         agent: source?.agent ?? session.agent ?? "",
         source,
+        phase2Capability: "reverse-routing-v1",
+        catalog,
         preference: state.preference,
         returnPreference: state.returnPreference,
         pins: {
@@ -292,8 +305,8 @@ function status(sessionID: SessionID, current: Inspection | undefined, returnRea
   }
 }
 
-export const read = Effect.fnUntraced(function* (sessions: Session.Interface, sessionID: SessionID) {
-  const current = yield* inspect(sessions, sessionID)
+export const read = Effect.fnUntraced(function* (sessions: Session.Interface, sessionID: SessionID, catalogReader?: CatalogReader) {
+  const current = yield* inspect(sessions, sessionID, catalogReader)
   const idle = idleSince.get(sessionID)
   if (idle === undefined || !current?.policy?.enabled || !returnEnabled(current) || !current.source ||
     current.episode?.state !== "active" || current.episode.returnPending || current.episode.returnCooldown ||
@@ -301,7 +314,7 @@ export const read = Effect.fnUntraced(function* (sessions: Session.Interface, se
     return status(sessionID, current)
   }
   const validUntil = yield* MeridianRouting.probePreferred(current.source)
-  const latest = yield* inspect(sessions, sessionID)
+  const latest = yield* inspect(sessions, sessionID, catalogReader)
   return status(sessionID, latest, validUntil !== undefined && validUntil >= Date.now() && idle === idleSince.get(sessionID) &&
     latest?.revision === current.revision && latest?.policy?.policyRevision === current.policy.policyRevision &&
     same(latest?.source ?? null, current.source))
@@ -370,14 +383,15 @@ export const mutate = Effect.fnUntraced(function* (
   sessions: Session.Interface,
   sessionID: SessionID,
   input: AutoSwitchSchema.Mutation,
+  catalogReader?: CatalogReader,
 ) {
-  const current = yield* inspect(sessions, sessionID)
+  const current = yield* inspect(sessions, sessionID, catalogReader)
   const view = status(sessionID, current)
   if (!current || view.availability === "unavailable") {
     return { statusCode: view.reason === "pinned" ? (409 as const) : (503 as const), status: view }
   }
   if (input.ownerEpoch !== view.ownerEpoch || input.revision !== view.revision) {
-    return { statusCode: 409 as const, status: yield* read(sessions, sessionID) }
+    return { statusCode: 409 as const, status: yield* read(sessions, sessionID, catalogReader) }
   }
   const returns = input.action === "return-to-preferred" || (input.action === "set-preference" && input.preference === "off")
   const episode = current.episode
@@ -390,7 +404,7 @@ export const mutate = Effect.fnUntraced(function* (
         ? { ...episode, state: inFlight ? episode.state : "returned", returnPending: inFlight }
         : episode,
   })
-  return { statusCode: saved ? (200 as const) : (409 as const), status: yield* read(sessions, sessionID) }
+  return { statusCode: saved ? (200 as const) : (409 as const), status: yield* read(sessions, sessionID, catalogReader) }
 })
 
 export * as AutoSwitch from "./auto-switch"

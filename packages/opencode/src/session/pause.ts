@@ -141,6 +141,7 @@ export function noticeText(input: {
   reason?: string
   count?: number
   parked?: boolean
+  preserved?: boolean
 }) {
   const call = { pause: "/pause", unpause: "/unpause", discard: "/discard" }[input.action]
   const lines = [
@@ -159,7 +160,9 @@ export function noticeText(input: {
   const who = describe(input.source)
   const text = {
     pause: input.parked
-      ? "Paused: no Claude account can take the request. The refused step was dropped; /unpause runs it again."
+      ? input.preserved
+        ? "Paused: no routable account. The attempt was preserved."
+        : "Paused: no routable account. The refused step was dropped; /unpause runs it again."
       : `Paused by ${who}. The running step finishes; nothing else runs until /unpause.`,
     unpause: `Unpaused by ${who}.`,
     discard: `${input.count ?? 0} deferred tool call${input.count === 1 ? "" : "s"} discarded by ${who}.`,

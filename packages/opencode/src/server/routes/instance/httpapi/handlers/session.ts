@@ -5,6 +5,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Command } from "@/command"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { Permission } from "@/permission"
+import { Provider } from "@/provider/provider"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
@@ -63,6 +64,7 @@ const tryParseJson = (text: string) =>
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
+    const provider = yield* Provider.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
@@ -592,10 +594,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("list", list)
       .handle("status", status)
       .handle("get", get)
-      .handle("autoSwitchStatus", (ctx) => AutoSwitch.read(session, ctx.params.sessionID))
+      .handle("autoSwitchStatus", (ctx) => AutoSwitch.read(session, ctx.params.sessionID, provider.list))
       .handle("autoSwitchUpdate", (ctx) =>
         Effect.gen(function* () {
-          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload)
+          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload, provider.list)
           if (result.statusCode === 409) return yield* new AutoSwitchConflict(result.status)
           if (result.statusCode === 503) return yield* new AutoSwitchUnavailable(result.status)
           return result.status

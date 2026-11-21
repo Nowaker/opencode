@@ -1,9 +1,11 @@
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
-import { asSchema, type ModelMessage, type TextPart, type Tool, type ToolCallPart, type ToolResultPart } from "ai"
+import { asSchema, type ImagePart, type ModelMessage, type TextPart, type Tool, type ToolCallPart, type ToolResultPart } from "ai"
 import type { Provider } from "@/provider/provider"
 import { isRecord } from "@/util/record"
+import { inlineImage, inlineImageTokenReserve } from "./auto-switch-image"
+import { MeridianRouting } from "@/provider/meridian-routing"
 
-type BlockReason =
+export type BlockReason =
   | "context-budget"
   | "hosted-tool"
   | "incomplete-tool"
@@ -18,7 +20,7 @@ type ProjectionInput = {
   readonly model: Pick<Provider.Model, "providerID"> & {
     readonly api: Pick<Provider.Model["api"], "npm">
     readonly capabilities: {
-      readonly input: Pick<Provider.Model["capabilities"]["input"], "text">
+      readonly input: Pick<Provider.Model["capabilities"]["input"], "text"> & { readonly image?: boolean }
       readonly output: Pick<Provider.Model["capabilities"]["output"], "text">
       readonly toolcall: boolean
     }
@@ -53,9 +55,12 @@ export function project(
   let callCount = 0
   let nativeReasoning = false
   let freshUser = false
+  let lastToolWasForeign = false
+  const destination = MeridianRouting.routeProvider(input.model.providerID)
   for (const message of input.messages) {
     const info = message.info
     const assistant = info.role === "assistant" ? info : undefined
+    const origin = assistant && MeridianRouting.routeProvider(assistant.providerID)
     const settled = assistant && !assistant.error && assistant.time.completed !== undefined
     if (info.role === "user" && info.format?.type === "json_schema") return blocked("unsupported-output")
     if (assistant?.structured !== undefined) return blocked("unsupported-output")
@@ -63,6 +68,7 @@ export function project(
 
     const seen = new Set<string>()
     const content: (TextPart | ToolCallPart)[] = []
+    const userContent: (TextPart | ImagePart)[] = []
     const results: ToolResultPart[] = []
     const flush = () => {
       if (content.length) messages.push({ role: "assistant", content: content.splice(0) })
@@ -76,11 +82,13 @@ export function project(
           if (hasEvidence(part.metadata?.openai?.annotations) || hasEvidence(part.metadata?.anthropic?.citations)) {
             return blocked("unsafe-history")
           }
-          content.push({ type: "text", text: part.text })
+          const text = { type: "text", text: part.text } as const
+          if (assistant) content.push(text)
+          if (!assistant) userContent.push(text)
           continue
         case "reasoning":
           if (!settled || part.time.end === undefined) return blocked("unsafe-history")
-          if (assistant?.providerID === input.model.providerID) nativeReasoning = true
+          if (origin && origin === destination) nativeReasoning = true
           continue
         case "tool": {
           if (!assistant) return blocked("unsafe-history")
@@ -114,6 +122,7 @@ export function project(
             return blocked("incomplete-tool")
           }
           seen.add(part.callID)
+          lastToolWasForeign = !!origin && origin !== destination
           const toolCallId = `call_portable_${++callCount}`
           content.push({ type: "tool-call", toolName: part.tool, toolCallId, input: structuredClone(part.state.input) })
           results.push({
@@ -134,8 +143,12 @@ export function project(
         case "retry":
           if (!settled) return blocked("unsafe-history")
           continue
-        case "file":
-          return blocked("unsupported-media")
+        case "file": {
+          const image = !assistant && capabilities.input.image && inlineImage(part)
+          if (!image) return blocked("unsupported-media")
+          userContent.push(image)
+          continue
+        }
         case "agent":
         case "compaction":
         case "subtask":
@@ -149,9 +162,8 @@ export function project(
       flush()
       continue
     }
-    const text = content.filter((part) => part.type === "text")
-    if (!text.length) continue
-    messages.push({ role: "user", content: text })
+    if (!userContent.length) continue
+    messages.push({ role: "user", content: userContent })
     freshUser = message.parts.some(
       (part) => part.type === "text" && !part.ignored && !part.synthetic && !!part.text.trim(),
     )
@@ -162,7 +174,7 @@ export function project(
   if (first !== "user" || (last !== "user" && last !== "tool")) return blocked("unsafe-history")
   // An open native tool continuation may require the exact signed reasoning
   // or encrypted item. Claude return is only qualified after fresh user input.
-  if (anthropic ? last !== "user" || !freshUser : nativeReasoning) return blocked("unsafe-history")
+  if (nativeReasoning || (anthropic && !(last === "user" ? freshUser : lastToolWasForeign))) return blocked("unsafe-history")
   return { kind: "projected", messages }
 }
 
@@ -208,6 +220,7 @@ export async function checkBudget(input: BudgetInput): Promise<Blocked | { reado
       if (typeof message.content !== "string") {
         for (const part of message.content) {
           remaining -= 32
+          if (part.type === "image") remaining -= inlineImageTokenReserve
           if (part.type === "tool-call") remaining -= Buffer.byteLength(JSON.stringify(JSON.stringify(part.input)))
         }
       }
