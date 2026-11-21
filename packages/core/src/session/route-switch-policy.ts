@@ -1,8 +1,9 @@
 import path from "node:path"
 import { Effect, Option, Schema } from "effect"
 import { RouteSwitch } from "@opencode/schema/route-switch"
-import type { Agent } from "@opencode/schema/agent"
-import type { Model } from "@opencode/schema/model"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
 import type { SessionRouteSwitchState } from "./route-switch-state.js"
 import type { SessionSchema } from "./schema.js"
 
@@ -37,6 +38,28 @@ export const exactRoute = (agent: Agent.ID, ref: Model.Ref): RouteSwitch.Route =
   modelID: ref.id,
   variant: ref.variant ?? null,
 })
+
+export const matchesAgentPin = (pin: Model.Ref | undefined, route: RouteSwitch.Route) =>
+  pin !== undefined &&
+  pin.providerID === route.providerID &&
+  pin.id === route.modelID &&
+  (pin.variant === undefined || pin.variant === route.variant)
+
+export const selectionOf = (route: RouteSwitch.Route) => ({
+  agent: Agent.ID.make(route.agent),
+  model: Model.Ref.make({
+    providerID: Provider.ID.make(route.providerID),
+    id: Model.ID.make(route.modelID),
+    variant: route.variant === null ? undefined : Model.VariantID.make(route.variant),
+  }),
+})
+
+export const hasRoutingPin = (headers: Readonly<Record<string, string>> | undefined) =>
+  Object.keys(headers ?? {}).some((name) =>
+    ["x-meridian-profile", "x-meridian-require", "x-meridian-internal-hop", "chatgpt-account-id", "host"].includes(
+      name.toLowerCase(),
+    ),
+  )
 
 type PolicyInput = {
   readonly sessionID: string

@@ -2,6 +2,7 @@ import { and, eq, or } from "drizzle-orm"
 import { Clock, Effect } from "effect"
 import type { RouteSwitch } from "@opencode/schema/route-switch"
 import { Database } from "../../database/database.js"
+import { Agent } from "../../agent.js"
 import { Model } from "../../model.js"
 import { LocationLifecycle } from "../../location-lifecycle.js"
 import type { MeridianRouting } from "../../plugin/provider/meridian-routing.js"
@@ -11,7 +12,7 @@ import { SessionRecovery } from "../recovery.js"
 import type { SessionMessage } from "../message.js"
 import { SessionRouteSwitch } from "../route-switch.js"
 import { SessionRouteSwitchState } from "../route-switch-state.js"
-import { exactRoute, sameRoute } from "../route-switch-policy.js"
+import { exactRoute, matchesAgentPin, sameRoute } from "../route-switch-policy.js"
 import type { SessionRunCoordinator } from "../run-coordinator.js"
 import type { SessionSchema } from "../schema.js"
 import { SessionInboxTable } from "../sql.js"
@@ -27,6 +28,7 @@ export const make = Effect.gen(function* () {
   const { db } = yield* Database.Service
   const routes = yield* SessionRouteSwitch.Service
   const store = yield* SessionStore.Service
+  const agents = yield* Agent.Service
   const registry = yield* Model.Service
   const lifecycle = yield* LocationLifecycle.Service
   const transaction = <A>(effect: Effect.Effect<A>) => SessionRouteSwitchState.transaction(db, effect)
@@ -155,6 +157,25 @@ export const make = Effect.gen(function* () {
   })
 
   type Fence = Effect.Success<ReturnType<typeof observe>>
+  const targetCurrent = (fence: Fence, target: RouteSwitch.Route) =>
+    Effect.gen(function* () {
+      const models = yield* catalog()
+      if (
+        !models.some(
+          (item) =>
+            item.providerID === target.providerID &&
+            item.modelID === target.modelID &&
+            target.variant !== null &&
+            item.variants.some((variant) => variant === target.variant),
+        )
+      )
+        return
+      if (target.agent !== fence.preferred.agent) {
+        const agent = yield* agents.get(Agent.ID.make(target.agent))
+        if (!matchesAgentPin(agent?.model, target)) return
+      }
+      return models
+    })
   const authorized = (fence: Fence, target: RouteSwitch.Route, kind: Attempt["kind"] | "sticky") =>
     Effect.gen(function* () {
       const current = yield* store.get(fence.session.id)
@@ -180,7 +201,9 @@ export const make = Effect.gen(function* () {
         .get()
         .pipe(Effect.orDie)
       if (pending) return
-      const policy = routes.evaluate(current, state, fence.preferred, yield* catalog())
+      const models = yield* targetCurrent(fence, target)
+      if (!models) return
+      const policy = routes.evaluate(current, state, fence.preferred, models)
       if (!policy.enabled || policy.policyRevision !== fence.policy.policyRevision) return
       if (kind === "return") {
         if (!policy.returnEnabled || !state.sticky || !sameRoute(state.sticky.preferred, target)) return
@@ -330,7 +353,9 @@ export const make = Effect.gen(function* () {
           !sameRoute(stop.route, target)
         )
           return false
-        const policy = routes.evaluate(current, state, fence.preferred, yield* catalog())
+        const models = yield* targetCurrent(fence, target)
+        if (!models) return false
+        const policy = routes.evaluate(current, state, fence.preferred, models)
         if (
           policy.policyRevision !== fence.policy.policyRevision ||
           (!sameRoute(target, fence.preferred) &&

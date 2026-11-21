@@ -1,8 +1,6 @@
 export * as Session from "./session.js"
 
 import { DateTime, Effect, Fiber, Schema, Scope } from "effect"
-import type { Agent } from "@opencode/schema/agent"
-import type { Model } from "@opencode/schema/model"
 import type { Permission } from "@opencode/schema/permission"
 import { Event } from "@opencode/schema/event"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -32,6 +30,10 @@ import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { SessionRecovery } from "./recovery.js"
 import { mergeMetadata } from "./metadata.js"
+import { check as checkSelection } from "./prompt-selection.js"
+import { Agent } from "../agent.js"
+import { Model } from "../model.js"
+import { SessionRunnerModel } from "./runner/model.js"
 
 type PromptRequest = SessionPrompt.Input & {
   id?: SessionMessage.ID
@@ -207,6 +209,7 @@ export const make = Effect.fn("Session.make")(function* () {
           const session = yield* get(sessionID)
           const messageID = input.id ?? SessionMessage.ID.create()
           const expected = input.experimental?.expected
+          const selection = input.experimental?.selection
           const admitted = yield* Effect.gen(function* () {
             const existing = yield* admission.reconcile({
               id: messageID,
@@ -219,21 +222,32 @@ export const make = Effect.fn("Session.make")(function* () {
             // services, so projections see its config whoever called prompt.
             return yield* Effect.gen(function* () {
               const item = yield* restore(SessionPrompt.prepare({ session, messageID, input }))
+              const services = selection
+                ? yield* Effect.context<Agent.Service | Model.Service | SessionRunnerModel.Service>()
+                : undefined
               // Commit a staged revert only after preparation succeeds, before admitting new work.
-              if (session.revert && !input.experimental?.expected) yield* SessionRevert.commit(bus, session)
+              if (session.revert && !expected && !selection) yield* SessionRevert.commit(bus, session)
               return yield* admission.admit({
                 id: messageID,
                 sessionID: session.id,
-                item,
-                check: expected
-                  ? () =>
-                      SessionRecovery.checkPrompt({
-                        db: database.db,
-                        sessionID,
-                        expected,
-                        identity: () => execution.identity(sessionID),
-                      })
-                  : undefined,
+                item: selection?.route ? { ...item, payload: { ...item.payload, selection: selection.route } } : item,
+                check:
+                  expected || selection
+                    ? () =>
+                        Effect.gen(function* () {
+                          if (expected)
+                            yield* SessionRecovery.checkPrompt({
+                              db: database.db,
+                              sessionID,
+                              expected,
+                              identity: () => execution.identity(sessionID),
+                            })
+                          if (selection && services)
+                            yield* checkSelection({ session, db: database.db, store, selection }).pipe(
+                              Effect.provideContext(services),
+                            )
+                        })
+                    : undefined,
               })
             }).pipe(
               instances.provide(session),

@@ -58,6 +58,7 @@ type FixtureOptions = {
   readonly source?: typeof claude | typeof sol
   readonly held?: boolean
   readonly attachment?: "unsupported" | "drop" | "change"
+  readonly pinned?: boolean
 }
 const fixture = (
   steps: Answer[],
@@ -148,6 +149,7 @@ const fixture = (
         anthropic: {
           package: "@opencode/ai/providers/anthropic",
           settings: { apiKey: "fixture", baseURL: `${server.url.origin}/v1` },
+          ...(options.pinned ? { headers: { "X-Meridian-Profile": "isolated-fixture" } } : {}),
           models: {
             [claude.modelID]: {
               variants: [{ id: "high", settings: { effort: "high" } }],
@@ -442,6 +444,75 @@ it.live("manual resume of a proved quota stop keeps existing tool results and do
 
 const png =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+it.live("admission keeps an explicit picker tuple with its first receipt until delivery", () =>
+  fixture(["text"], (rig) =>
+    Effect.gen(function* () {
+      const observed = yield* rig.route.status(rig.sessionID)
+      if (observed.availability !== "available") throw new Error("Missing native owner")
+      const selection = { ownerEpoch: observed.ownerEpoch, revision: observed.revision, route: sol }
+      const request = { sessionID: rig.sessionID, text: "select Sol", resume: false, experimental: { selection } }
+      const accepted = yield* rig.sessions.prompt(request)
+      expect(accepted.payload.selection).toEqual(sol)
+      expect((yield* rig.sessions.get(rig.sessionID)).model).toEqual(ref(claude))
+      const duplicate = yield* rig.sessions.prompt({
+        ...request,
+        id: accepted.id,
+        experimental: { selection: { ...selection, route: claude } },
+      })
+      expect(duplicate.payload.selection).toEqual(sol)
+      expect(yield* rig.sessions.prompt(request).pipe(Effect.flip)).toMatchObject({ reason: "selection-stale" })
+      yield* rig.execution.resume(rig.sessionID)
+      const projected = yield* rig.sessions.prompt({ ...request, id: accepted.id })
+      expect(projected.payload.selection).toEqual(sol)
+      expect(rig.sends.map((sent) => [sent.model, sent.reasoning?.effort])).toEqual([[sol.modelID, "max"]])
+      expect(yield* rig.sessions.messages({ sessionID: rig.sessionID, type: "user" })).toHaveLength(1)
+    }),
+  ),
+)
+
+it.live("rejects unavailable picker selections and stale unchanged-picker owner fences before admission", () =>
+  fixture([], (rig) =>
+    Effect.gen(function* () {
+      const observed = yield* rig.route.status(rig.sessionID)
+      if (observed.availability !== "available") throw new Error("Missing native owner")
+      const request = { sessionID: rig.sessionID, text: "never admitted", resume: false }
+      const guard = { ownerEpoch: observed.ownerEpoch, revision: observed.revision }
+      expect(
+        yield* rig.sessions
+          .prompt({ ...request, experimental: { selection: { ...guard, route: { ...sol, variant: "unsupported" } } } })
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "selection-unavailable" })
+      expect(
+        yield* rig.sessions
+          .prompt({ ...request, experimental: { selection: { ...guard, ownerEpoch: "retired-owner" } } })
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "selection-stale" })
+      expect(yield* rig.sessions.inbox(rig.sessionID)).toEqual([])
+      expect(rig.sends).toEqual([])
+    }),
+  ),
+)
+
+it.live("a source provider's configured routing pin rejects an explicit picker escape before admission", () =>
+  fixture(
+    [],
+    (rig) =>
+      Effect.gen(function* () {
+        const state = yield* rig.route.status(rig.sessionID)
+        if (state.availability !== "available") throw new Error("Missing native owner")
+        const selection = { ownerEpoch: state.ownerEpoch, revision: state.revision, route: sol }
+        expect(
+          yield* rig.sessions
+            .prompt({ sessionID: rig.sessionID, text: "not admitted", experimental: { selection } })
+            .pipe(Effect.flip),
+        ).toMatchObject({ reason: "selection-pinned" })
+        expect(yield* rig.sessions.inbox(rig.sessionID)).toEqual([])
+        expect(rig.sends).toEqual([])
+      }),
+    { pinned: true },
+  ),
+)
 for (const attachment of ["unsupported", "drop", "change"] as const) {
   it.live(`does not disclose replay when an attached image is ${attachment}`, () =>
     fixture(

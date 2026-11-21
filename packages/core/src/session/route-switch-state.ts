@@ -120,6 +120,27 @@ export const snapshotChild = (db: DB, parentID: SessionSchema.ID, childID: Sessi
 export const stampOwner = (db: DB, sessionID: SessionSchema.ID, owner: Event.ID, child: boolean) =>
   read(db, sessionID, child).pipe(Effect.flatMap((state) => write(db, sessionID, { ...state, owner })))
 
+export const operatorSelected = (db: DB, sessionID: SessionSchema.ID) =>
+  Effect.gen(function* () {
+    const row = yield* db
+      .select()
+      .from(KVTable)
+      .where(eq(KVTable.key, key(sessionID)))
+      .get()
+      .pipe(Effect.orDie)
+    if (!row) return
+    const state = decode(row.value)
+    yield* write(db, sessionID, {
+      ...state,
+      revision: state.revision + 1,
+      preferred: undefined,
+      sticky: undefined,
+      manualReturn: false,
+      quotaStop: undefined,
+      reason: undefined,
+    })
+  })
+
 export const remove = (db: DB, sessionID: SessionSchema.ID) =>
   db
     .delete(KVTable)
