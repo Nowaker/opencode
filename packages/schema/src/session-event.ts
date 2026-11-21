@@ -179,6 +179,11 @@ export const UsageUpdated = Event.ephemeral({
 })
 export type UsageUpdated = typeof UsageUpdated.Type
 
+export const RouteSwitchUpdated = Event.ephemeral({
+  type: "session.route-switch.updated",
+  schema: Base,
+})
+
 export const Deleted = Event.durable({
   type: "session.deleted",
   durable: {
@@ -671,6 +676,7 @@ export const Definitions = Event.inventory(
   Archived,
   Unarchived,
   UsageUpdated,
+  RouteSwitchUpdated,
   Deleted,
   Forked,
   InboxDelivered,
