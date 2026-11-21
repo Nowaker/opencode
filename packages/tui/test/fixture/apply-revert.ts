@@ -51,6 +51,9 @@ const transcript = [
 export const revertPath = `/session/${sessionID}/revert`
 export const applyPath = `/session/${sessionID}/revert/apply`
 export const unrevertPath = `/session/${sessionID}/unrevert`
+export const autoSwitchPath = `/session/${sessionID}/auto-switch`
+// The requests the scenario answers through `rig.gate`, and whose bodies it reads.
+const written = (method: string) => method === "POST" || method === "PUT"
 // Every route that starts a turn on the server, and with it an LLM call.
 const promptPaths = ["message", "prompt_async", "command", "shell"].map((route) => `/session/${sessionID}/${route}`)
 export const ENTER = "\r"
@@ -72,6 +75,8 @@ export async function withApp(
     turns?: boolean
     /** A second primary agent, `plan`, and a second model, `other`, with variants, to choose between. */
     choices?: boolean
+    /** Answers `GET /session/{id}/auto-switch`; without it the engine is an older one that does not advertise it. */
+    autoSwitch?: () => Response
   },
   body: (rig: Rig) => Promise<void>,
 ) {
@@ -94,6 +99,9 @@ export async function withApp(
     if (url.pathname === `/session/${sessionID}`) return json(server.session)
     if (url.pathname === `/session/${sessionID}/message`) return json(server.messages)
     if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
+    if (url.pathname === "/global/health")
+      return json({ healthy: true, version: "0.0.0-test", sessionUnpauseSelection: true, ...(options.autoSwitch ? { autoSwitch: 1 } : {}) })
+    if (url.pathname === autoSwitchPath && options.autoSwitch) return options.autoSwitch()
     if (url.pathname === "/agent")
       return json(
         ["build", ...(options.choices ? ["plan"] : [])].map((name) => ({
@@ -137,13 +145,13 @@ export async function withApp(
       const call = {
         method: request.method,
         path: new URL(request.url).pathname,
-        ...(request.method === "POST" ? { body: await request.clone().text() } : {}),
+        ...(written(request.method) ? { body: await request.clone().text() } : {}),
       }
       requests.push(call)
       check()
-      if (call.method !== "POST") return calls.fetch(input, init)
+      if (!written(call.method)) return calls.fetch(input, init)
       const gate = gates.get(call.path)?.shift()
-      const response = await (gate?.promise ?? json({ message: `unexpected POST ${call.path}` }, { status: 500 }))
+      const response = await (gate?.promise ?? json({ message: `unexpected ${call.method} ${call.path}` }, { status: 500 }))
       queueMicrotask(check)
       return response
     },
@@ -279,10 +287,11 @@ function createRig(input: {
     press,
     emit,
     updated,
-    posts: (path: string) => input.requests.filter((call) => call.method === "POST" && call.path === path).length,
-    bodies: (path: string) =>
-      input.requests.flatMap((call) => (call.method === "POST" && call.path === path ? [JSON.parse(call.body ?? "null")] : [])),
-    /** Holds the next POST to `path` until the scenario answers it. */
+    posts: (path: string, method = "POST") =>
+      input.requests.filter((call) => call.method === method && call.path === path).length,
+    bodies: (path: string, method = "POST") =>
+      input.requests.flatMap((call) => (call.method === method && call.path === path ? [JSON.parse(call.body ?? "null")] : [])),
+    /** Holds the next POST or PUT to `path` until the scenario answers it. */
     gate(path: string) {
       const gate = Promise.withResolvers<Response>()
       input.gates.set(path, [...(input.gates.get(path) ?? []), gate])
