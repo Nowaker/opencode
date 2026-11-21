@@ -87,6 +87,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
+import { PromptAutoSwitch } from "./auto-switch"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1958,6 +1959,9 @@ export function Prompt(props: PromptProps) {
                 variantAlpha={variantMetaAlpha()}
               />
             </box>
+            <Show when={props.sessionID} keyed>
+              {(sessionID) => <PromptAutoSwitch sessionID={sessionID} disabled={disabled() || props.visible === false} />}
+            </Show>
           </box>
         </box>
         <box
