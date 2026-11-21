@@ -116,7 +116,7 @@ const live: Layer.Layer<
         model: { providerID: input.model.providerID, api: { ...input.model.api } },
         variant: input.user.model.variant ?? "",
       }
-      const source = beforeDispatch ? undefined : MeridianRouting.claudeTransport(trust, input.model)
+      const source = beforeDispatch ? undefined : MeridianRouting.transportFor(trust, input.model)
       const [standardLanguage, cfg, item, info] = yield* Effect.all(
         [
           beforeDispatch ? Effect.void : provider.getLanguage(input.model, source),
@@ -162,9 +162,7 @@ const live: Layer.Layer<
             return yield* Effect.tryPromise({ try: send, catch: (error) => error })
           })),
         }
-        return input.preferredReturn
-          ? MeridianRouting.claudeTransport(trust, target.model, fence)
-          : MeridianRouting.chatgptTransport(trust, target.model, fence)
+        return MeridianRouting.transportFor(trust, target.model, fence)
       })()
       const language = fenced ? yield* provider.getLanguage(input.model, fenced) : standardLanguage
       if (!language || (beforeDispatch && !fenced) || (!fenced && validateRequest && !(yield* validate()))) {

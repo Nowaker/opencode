@@ -145,7 +145,7 @@ it.live("binds trusted Claude refusals to fresh per-fetch IDs and the wire model
         const requestID = ids[index]
         if (!requestID) throw new Error("Expected a request ID on the trusted inference POST")
         expect(result).toBe("stop")
-        expect(handle.routeRefusal).toEqual({ requestID, wireModel: wireClaude, reason: "quota_exhausted" })
+        expect(handle.routeRefusal).toMatchObject({ type: "claude", requestID, wireModel: wireClaude, reason: "quota_exhausted" })
         expect(handle.hasEffects).toBe(false)
         expect(handle.refusal?.code).toBe("no_routable_account")
         expect(errors).toEqual([])
@@ -156,6 +156,50 @@ it.live("binds trusted Claude refusals to fresh per-fetch IDs and the wire model
     }), fixture(server.url, claude)).pipe(Effect.provideService(MeridianRouting.Trust, { claudeInferenceURL: url }))
   }),
 )
+
+for (const fault of ["none", "missing marker", "wrong variant", "wrong request", "wrong model"] as const) {
+  it.live(`only accepts a GPT wire refusal bound to the exact request: ${fault}`, () =>
+    Effect.gen(function* () {
+      const requests: (string | null)[] = []
+      const server = yield* serve(async (request) => {
+        if (request.method === "GET") return Response.json({ data: [{ id: wireChatgpt }] })
+        const id = request.headers.get("x-request-id")
+        requests.push(id)
+        expect(request.headers.get("x-meridian-route-refusal")).toBe("1")
+        expect(await request.json()).toMatchObject({ model: wireChatgpt, reasoning: { effort: "high" } })
+        return Response.json({
+          error: {
+            type: "rate_limit_error",
+            code: "no_routable_account",
+            request_id: fault === "wrong request" ? "stale-id" : id,
+            route_refusal: {
+              version: 1,
+              phase: "before_inference",
+              sent: false,
+              provider: "chatgpt",
+              model: fault === "wrong model" ? "other" : wireChatgpt,
+              variant: fault === "wrong variant" ? "medium" : "high",
+              reason: "quota_exhausted",
+            },
+          },
+        }, { status: 429, headers: fault === "missing marker" ? undefined : { "x-meridian-route-refusal": "1" } })
+      })
+      const { handle } = yield* provideTmpdirInstance((dir) => attempt(dir, chatgpt), fixture(server.url, chatgpt)).pipe(
+        Effect.provideService(MeridianRouting.Trust, {
+          chatgptAvailabilityURL: new URL("/profiles/route-availability", server.url).href,
+        }),
+      )
+      expect(requests).toHaveLength(1)
+      expect(requests[0]).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/)
+      expect(handle.refusal?.code).toBe("no_routable_account")
+      if (fault !== "none") {
+        expect(handle.routeRefusal).toBeUndefined()
+        return
+      }
+      expect(handle.routeRefusal).toMatchObject({ type: "chatgpt", requestID: requests[0], wireModel: wireChatgpt, variant: "high" })
+    }),
+  )
+}
 
 for (const fault of ["wrong id", "wrong model", "sent", "wrong path", "redirect"] as const) {
   it.live(`does not authorize a switch on Claude refusal with ${fault}`, () =>

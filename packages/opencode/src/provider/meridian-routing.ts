@@ -4,6 +4,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import type { Provider } from "./provider"
+import { MeridianRefusal } from "./meridian-refusal"
 
 export type TrustConfig = {
   readonly claudeInferenceURL?: string
@@ -50,47 +51,8 @@ export const resolvedTrust = Effect.fnUntraced(function* () {
   return trust === startup ? yield* managedTrust : trust
 })
 
-const refusalBody = Schema.fromJsonString(Schema.Struct({
-  type: Schema.Literal("error"),
-  error: Schema.Struct({
-    type: Schema.Literal("rate_limit_error"),
-    code: Schema.Literal("no_routable_account"),
-    request_id: Schema.String,
-    message: Schema.optionalKey(Schema.Unknown),
-    route_refusal: Schema.Struct({
-      version: Schema.Literal(1),
-      phase: Schema.Literal("before_inference"),
-      sent: Schema.Literal(false),
-      provider: Schema.Literal("claude"),
-      model: Schema.String,
-      reason: Schema.Literals(["quota_exhausted", "reserve_held"]),
-    }),
-  }),
-}))
-
-export type Refusal = {
-  readonly requestID: string
-  readonly wireModel: string
-  readonly reason: typeof refusalBody.Type.error.route_refusal.reason
-}
-
-class RefusalError extends APICallError {
-  constructor(readonly evidence: Refusal, response: Response, details: { readonly body: string; readonly message: string }) {
-    super({
-      message: details.message,
-      url: response.url,
-      statusCode: response.status,
-      responseHeaders: Object.fromEntries(response.headers),
-      responseBody: details.body,
-      requestBodyValues: undefined,
-      isRetryable: false,
-    })
-  }
-}
-
-export function refusalOf(error: unknown): Refusal | undefined {
-  return error instanceof RefusalError ? error.evidence : undefined
-}
+export type Refusal = MeridianRefusal.Proof
+export const refusalOf = MeridianRefusal.proofOf
 
 export class DispatchBlocked extends Error {
   override readonly name = "MeridianDispatchBlocked"
@@ -151,17 +113,15 @@ export const probePreferred = Effect.fnUntraced(function* (input: {
   readonly modelID: string
   readonly variant: string | null
 }) {
-  if (input.modelID !== "claude-opus-5-5" || input.variant !== "high" || !isClaudeProvider(input.providerID)) return
+  const provider = routeProvider(input.providerID)
+  if (!provider || !input.variant) return
   const trust = yield* resolvedTrust()
-  if (!trustedURL(trust.claudeInferenceURL)?.pathname.endsWith(CLAUDE_INFERENCE_PATH)) return
-  return yield* probe({
-    provider: "claude",
-    model: {
-      providerID: ProviderV2.ID.make(input.providerID),
-      api: { id: "claude-opus-5-5", npm: "@ai-sdk/anthropic", url: "" },
-    },
-    variant: input.variant,
-  }).pipe(Effect.provideService(Trust, trust))
+  const model = {
+    providerID: ProviderV2.ID.make(input.providerID),
+    api: { id: input.modelID, npm: provider === "claude" ? "@ai-sdk/anthropic" : "@ai-sdk/openai", url: "" },
+  }
+  if (!transportFor(trust, model)) return
+  return yield* probe({ provider, model, variant: input.variant }).pipe(Effect.provideService(Trust, trust))
 })
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -173,8 +133,12 @@ type Fence = {
 
 export type Transport = { readonly endpoint: URL; readonly wireModel: string } & (
   | { readonly type: "claude"; readonly fence?: Fence }
-  | { readonly type: "chatgpt"; readonly fence: Fence }
+  | { readonly type: "chatgpt"; readonly fence?: Fence }
 )
+
+export function transportFor(trust: TrustConfig, model: Model, fence?: Fence) {
+  return routeProvider(model.providerID) === "claude" ? claudeTransport(trust, model, fence) : chatgptTransport(trust, model, fence)
+}
 
 export function claudeTransport(trust: TrustConfig, model: Model, fence?: Fence): Transport | undefined {
   if (!matchesProvider("claude", model)) return undefined
@@ -183,9 +147,9 @@ export function claudeTransport(trust: TrustConfig, model: Model, fence?: Fence)
   return { type: "claude", endpoint, wireModel: model.api.id, fence }
 }
 
-export function chatgptTransport(trust: TrustConfig, model: Model, fence: Fence): Transport | undefined {
+export function chatgptTransport(trust: TrustConfig, model: Model, fence?: Fence): Transport | undefined {
   const endpoint = availabilityURL(trust)
-  if (!endpoint || !matchesProvider("chatgpt", model) || !fence.variant) return undefined
+  if (!endpoint || !matchesProvider("chatgpt", model) || (fence && !fence.variant)) return undefined
   endpoint.pathname = endpoint.pathname.slice(0, -AVAILABILITY_PATH.length) + CHATGPT_INFERENCE_PATH
   return { type: "chatgpt", endpoint, wireModel: model.api.id, fence }
 }
@@ -206,18 +170,22 @@ export function wrapFetch(fetch: Fetch, transport: Transport): Fetch {
       : undefined
     const fence = transport.fence
     const effort = transport.type === "claude" ? body?.output_config?.effort : body?.reasoning?.effort
-    if (fence && (!matches || body?.model !== transport.wireModel || effort !== fence.variant)) throw new DispatchBlocked()
+    const headers = new Headers(init?.headers)
+    const pinned = headers.has("x-meridian-profile")
+    if (fence && (pinned || !matches || body?.model !== transport.wireModel || effort !== fence.variant))
+      throw new DispatchBlocked()
 
     const send = async () => {
       if (fence?.singleDispatch && requests > 0) throw new DispatchBlocked()
       init?.signal?.throwIfAborted()
       requests++
       if (!matches) return fetch(input, init)
-      const requestID = transport.type === "claude" ? crypto.randomUUID() : undefined
-      const headers = new Headers(init?.headers)
+      const requestID = !pinned && (transport.type === "claude" || (effort && body?.model === transport.wireModel))
+        ? crypto.randomUUID()
+        : undefined
       if (requestID) {
         headers.set("x-request-id", requestID)
-        headers.set("x-meridian-route-refusal", "1")
+        headers.set(MeridianRefusal.header, "1")
       }
       const response = await fetch(input, { ...init, headers, redirect: "manual" })
       if (response.status >= 300 && response.status < 400) {
@@ -234,29 +202,25 @@ export function wrapFetch(fetch: Fetch, transport: Transport): Fetch {
         return response
       }
 
-      // Read a clone so unproven responses retain the SDK's ordinary error handling and legacy park parser.
-      const text = await response.clone().text().catch(() => undefined)
-      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(refusalBody)(text))
-      const proof = decoded?.error.route_refusal
-      if (text === undefined || decoded?.error.request_id !== requestID || proof?.model !== transport.wireModel) {
-        return response
-      }
+      const request = { requestID, wireModel: transport.wireModel }
+      const error = transport.type === "claude"
+        ? await MeridianRefusal.attest(response, { ...request, type: "claude", variant: effort })
+        : effort && await MeridianRefusal.attest(response, { ...request, type: "chatgpt", variant: effort })
+      if (!error) return response
       await response.body?.cancel()
-      const message = typeof decoded.error.message === "string" ? decoded.error.message : "No routable Claude account"
-      throw new RefusalError({ requestID, wireModel: proof.model, reason: proof.reason }, response, { body: text, message })
+      throw error
     }
     return fence ? fence.dispatch(send) : send()
   }
 }
 
-function isClaudeProvider(providerID: string) {
-  return providerID === "anthropic" || providerID === "anthropic-meridian"
+export function routeProvider(providerID: string): RouteProvider | undefined {
+  if (providerID === "anthropic" || providerID === "anthropic-meridian") return "claude"
+  if (providerID === "openai" || providerID === "openai-meridian") return "chatgpt"
 }
 
 function matchesProvider(provider: RouteProvider, model: Model) {
-  return provider === "claude"
-    ? model.api.npm === "@ai-sdk/anthropic" && isClaudeProvider(model.providerID)
-    : model.api.npm === "@ai-sdk/openai" && (model.providerID === "openai" || model.providerID === "openai-meridian")
+  return routeProvider(model.providerID) === provider && model.api.npm === (provider === "claude" ? "@ai-sdk/anthropic" : "@ai-sdk/openai")
 }
 
 function trustedURL(value: string | null | undefined) {
