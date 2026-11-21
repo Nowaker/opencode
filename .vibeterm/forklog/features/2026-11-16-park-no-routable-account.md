@@ -40,6 +40,24 @@ Relayed by the Meridian coordinator [`ses_fe8a27c6effe6KEx3TRNvOLgUo`](https://p
 - A prompt admitted into a refusal park that names another provider or model is not held and lifts the park (`expectedPauseAt`); a prompt on the refused route is still held; an inherited park (`root`) is left to its ancestor.
 - A refused step whose session already has a newer prompt on another route parks nothing: the step is dropped and the loop answers that prompt, with turn-end holding skipped for that step.
 
+## Native v1 cross-provider switching (Phase 1)
+
+- Source `1398232d02` adds one owner-fenced automatic Claude-to-GPT attempt at an exact, attested refusal, with a durable claim and a narrow portable-history projection. The preferred route is not overwritten. Native TUI controls expose the preferred, serving, and next routes; return requires a clean idle boundary, new admission, and fresh exact allowance. GPT-origin switching and native v2 are not part of this phase.
+- The first `0422` isolated OMO Junior inherit run parked before any availability or GPT request: `route-ineligible`, saved Claude Opus `high`, and no alternate disclosure. The capture did not record the actual outbound effort, newest visible input, pending permissions, or turn-start candidate snapshot. Later passes do not establish the historical root cause.
+- Three separately controlled real-owner Junior scenarios reproduced that same safe external result: `source-wire` when saved effort was `high` but the Claude POST carried `low`; `source-admission` when a newer genuine same-route `noReply` message arrived while refusal was held (the same ignored notice did not block); `target-catalog-or-agent` when no candidate was eligible at turn start, even if the current owner status saw restored routes before the refusal. A preference CAS during refusal instead reached the probe and failed the dispatch fence; it is not a match.
+- The [rollout coordinator](https://portal.vibeterm.m4max.ts.nowaker.net/session/ses_e043139c8ffefHb1ufDvWhIfc8) explicitly accepted the unexplained historical park for Phase 1. No safety gate was disabled or weakened.
+
+### Diagnose another park
+
+From the owner host, substitute the affected session ID. The owner writes at Info level by default and flushes asynchronously; read after the record is flushed. Only share the matching sanitized message, not surrounding provider logs.
+
+```sh
+session_id=ses_REPLACE_ME
+rg --no-heading -F 'auto-switch stopped before alternate' "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/log/opencode.log" | rg -F -- "$session_id"
+```
+
+The record carries `sessionID`, `step`, `gate`, and public `reason`, not request contents, credentials, or account IDs. `source-admission` also covers a pending request for permission or stale run/pause/input state; it is not proof a newer message arrived. `target-catalog-or-agent` includes an empty original candidate snapshot, missing model/variant, or unqualified agent. For an isolated reproduction, retain separately the actual outbound effort/model, initial candidate count, latest visible message ID, pending-permission boolean, and owner epoch/revision. Avoid capturing prompt text, credentials, and full wire bodies.
+
 ## Rationale and constraints
 
 - Inside a 200 stream, `@ai-sdk/anthropic` parses the SSE error frame with a zod schema `{type, error:{type, message}}` that strips unknown keys, so only the message reaches opencode. Hence the prefix fallback, and the incident is read from the message's trailing `(incident inc_<ms>_<seq>)` token, which Meridian added to the contract for this reason. A pre-stream HTTP 429 keeps the full body.
@@ -68,6 +86,7 @@ Session [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routab
 
 ## Timeline
 
+- 2026-11-20 [Phase 1 switch and guarded rollout](../sessions/2026-11-20-cross-provider-switch.md) - exact Claude-origin phase only; three independent safe-gate reproductions, historical Junior attribution unproven, coordinator-approved rollout.
 - 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - explicitly retry the waiting prompt on another route, including when the old route's refusal arrives as a pending step drains.
 - 2026-11-19 [`ses_e0d56ddd9ffessGDbwhaZsBHiv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0d56ddd9ffessGDbwhaZsBHiv) - route-aware park `02caa6450b`: red first (both route tests failed on `76888120c7`), then `pause.test.ts` + `pause-refusal.test.ts` 46/46, `prompt-admission.test.ts` + `prompt.test.ts` 111/111, typecheck clean, SDK regenerated. Installed `1.19.5-vt-559-006d837c50` on desktop and m4max. Live on desktop: [`ses_e0cedca36ffeqHVJ3glFUVHpmT`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0cedca36ffeqHVJ3glFUVHpmT) parked on `anthropic-cybersec/claude-opus-5-5` with `error.model` recorded; a prompt on `anthropic-meridian/n-dh-c2/claude-mythos-5-2` lifted it within a second (`/unpause`, `client: prompt`) and reached Meridian on `profile=n-dh-c2`.
 

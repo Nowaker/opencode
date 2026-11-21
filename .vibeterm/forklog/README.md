@@ -173,6 +173,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-20 native v1 Phase 1 cross-provider switching](./sessions/2026-11-20-cross-provider-switch.md) - exact Claude-origin switching and verified return; preserve the refusal park when evidence, owner, or candidate checks fail.
 - [2026-11-19 resume a paused v1 turn with the composer selection](./sessions/2026-11-19-unpause-composer.md) - manual TUI slash and footer actions resume the actual waiting prompt with the current pick, without changing automation behavior; 24/24 isolated real-TUI checks and a scratch build.
 - [2026-11-19 W28 engine stop capability](./sessions/2026-11-19-v2-engine-stop-capability.md) - advertise `/api/info` support for the seal; desktop vt-52 passed all 13 pre-swap probes and a separate check from the installed executable.
 - [2026-11-18 W1 v2 engine stop](./sessions/2026-11-18-v2-engine-stop.md) - W24 seals engine admission for idle stop and force restart (`2f2c119414`); W24b fences the remaining owners (`fbf2fbe0fd`, desktop vt-51). The separate W28 fix supplies the missing capability advertisement.
