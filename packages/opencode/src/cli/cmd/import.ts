@@ -67,7 +67,7 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
     directory: ctx.directory,
     path: path.relative(path.resolve(ctx.worktree), ctx.directory).replaceAll("\\", "/"),
   }) as Session.Info
-  const row = Session.toRow(info)
+  const row = Session.toRow({ ...info, metadata: Session.withoutAutoSwitch(info.metadata) })
   yield* db
     .insert(SessionTable)
     .values(row)

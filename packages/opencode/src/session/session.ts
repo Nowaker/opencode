@@ -33,8 +33,11 @@ import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { MessageV2 } from "./message-v2"
 import { MachineProvenance } from "./machine-provenance"
 import { mergeMetadata } from "@opencode-ai/schema/machine-provenance"
+import { AutoSwitchSchema } from "./auto-switch-schema"
+import { LiveEvents } from "./live-events"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
+import { isRecord } from "@/util/record"
 import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
@@ -191,6 +194,13 @@ function settlePart(part: SessionV1.Part, end: number): SessionV1.Part {
   return part
 }
 
+export function withoutAutoSwitch(metadata: Info["metadata"]) {
+  if (!metadata?.vibeterm || typeof metadata.vibeterm !== "object" ||
+    !("autoSwitch" in metadata.vibeterm || "autoSwitchEpisode" in metadata.vibeterm)) return metadata
+  const { autoSwitch, autoSwitchEpisode, ...vibeterm } = metadata.vibeterm
+  return { ...metadata, vibeterm }
+}
+
 function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFrom: SessionID) {
   const result = structuredClone(metadata) ?? {}
   const lineage: unknown = result.vibeterm?.lineage
@@ -206,6 +216,8 @@ function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFr
     },
   }
   delete result.vibeterm.lastExecution
+  delete result.vibeterm.autoSwitch
+  delete result.vibeterm.autoSwitchEpisode
   // A pause belongs to the session that was paused, never to its copy.
   delete result.pause
   return result
@@ -510,6 +522,14 @@ export interface Interface {
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
+  readonly updateAutoSwitch: (input: {
+    readonly sessionID: SessionID
+    readonly revision: number
+    readonly current: (session: Info) => Effect.Effect<boolean>
+    readonly preference: typeof AutoSwitchSchema.Preference.Type
+    readonly returnPreference?: typeof AutoSwitchSchema.Preference.Type
+    readonly episode: AutoSwitchSchema.Episode | undefined
+  }) => Effect.Effect<boolean>
   readonly setModel: (input: { sessionID: SessionID; model: NonNullable<Info["model"]> }) => Effect.Effect<void>
   readonly setAgentModel: (input: {
     sessionID: SessionID
@@ -571,7 +591,7 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | LiveEvents.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -579,6 +599,7 @@ const layer: Layer.Layer<
     const database = yield* Database.Service
     const background = yield* BackgroundJob.Service
     const events = yield* EventV2Bridge.Service
+    const live = yield* LiveEvents.Service
     const flags = yield* RuntimeFlags.Service
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
@@ -608,7 +629,7 @@ const layer: Layer.Layer<
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
         model: input.model,
-        metadata: input.forkedFrom ? forkMetadata(input.metadata, id, input.forkedFrom) : input.metadata,
+        metadata: input.forkedFrom ? forkMetadata(input.metadata, id, input.forkedFrom) : withoutAutoSwitch(input.metadata),
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
         tokens: EmptyTokens,
@@ -617,11 +638,51 @@ const layer: Layer.Layer<
           updated: Date.now(),
         },
       }
-      yield* Effect.logInfo("created", result)
+      const persist = Effect.fnUntraced(function* (info: Info) {
+        yield* Effect.logInfo("created", info)
+        yield* events.publish(SessionV1.Event.Created, { sessionID: info.id, info })
+        return info
+      })
+      const parentID = input.parentID
+      if (!parentID) return yield* persist(result)
 
-      yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
+      return yield* live.guard(
+        id,
+        DatabaseTransaction.batch(
+          db,
+          Effect.gen(function* () {
+            const parent = yield* db
+              .select({ metadata: SessionTable.metadata })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, parentID))
+              .get()
+            const vibeterm = parent?.metadata?.vibeterm
+            const stored = Schema.decodeUnknownOption(AutoSwitchSchema.StoredPreference)(
+              isRecord(vibeterm) ? vibeterm.autoSwitch : undefined,
+            )
+            if (Option.isNone(stored) || stored.value.sessionId !== parentID) return yield* persist(result)
+            const preference = stored.value.preference
+            const returnPreference = stored.value.returnPreference ?? "inherit"
+            if (preference === "inherit" && returnPreference === "inherit") return yield* persist(result)
 
-      return result
+            return yield* persist({
+              ...result,
+              metadata: {
+                ...result.metadata,
+                vibeterm: {
+                  ...result.metadata?.vibeterm,
+                  autoSwitch: {
+                    sessionId: id,
+                    revision: 1,
+                    preference,
+                    ...(returnPreference !== "inherit" && { returnPreference }),
+                  },
+                },
+              },
+            })
+          }),
+        ),
+      ).pipe(Effect.orDie)
     })
 
     const get = Effect.fn("Session.get")(function* (id: SessionID) {
@@ -890,10 +951,51 @@ const layer: Layer.Layer<
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
-      // The projector preserves row-owned Vibeterm keys against stale events. An explicit setter replaces them first.
-      yield* db.update(SessionTable).set({ metadata: input.metadata }).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
-      yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
+      yield* DatabaseTransaction.immediate(db, () =>
+        Effect.gen(function* () {
+          // Generic metadata writers cannot replace the owner journal or roll back its revision.
+          const current = yield* get(input.sessionID)
+          const { autoSwitch, autoSwitchEpisode } = current.metadata?.vibeterm ?? {}
+          const {
+            autoSwitch: ignoredPreference,
+            autoSwitchEpisode: ignoredEpisode,
+            ...vibeterm
+          } = input.metadata?.vibeterm ?? {}
+          const metadata =
+            autoSwitch || autoSwitchEpisode || input.metadata?.vibeterm
+              ? { ...input.metadata, vibeterm: { ...vibeterm, autoSwitch, autoSwitchEpisode } }
+              : input.metadata
+          yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
+          yield* patch(input.sessionID, { metadata, time: { updated: Date.now() } })
+        }),
+      ).pipe(Effect.orDie)
     })
+
+    const updateAutoSwitch: Interface["updateAutoSwitch"] = (input) =>
+      DatabaseTransaction.immediate(db, () =>
+        Effect.gen(function* () {
+          const current = yield* get(input.sessionID)
+          const decoded = Schema.decodeUnknownOption(AutoSwitchSchema.StoredPreference)(
+            current.metadata?.vibeterm?.autoSwitch,
+          )
+          const revision =
+            decoded._tag === "Some" && decoded.value.sessionId === current.id ? decoded.value.revision : 0
+          if (revision !== input.revision || !(yield* input.current(current))) return false
+          const metadata = {
+            ...current.metadata,
+            vibeterm: {
+              ...current.metadata?.vibeterm,
+              autoSwitch: { sessionId: current.id, revision: revision + 1, preference: input.preference,
+                ...(input.returnPreference && { returnPreference: input.returnPreference }),
+              },
+              autoSwitchEpisode: input.episode,
+            },
+          }
+          yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
+          yield* patch(input.sessionID, { metadata })
+          return true
+        }),
+      ).pipe(Effect.orDie)
 
     const recordExecution = Effect.fn("Session.recordExecution")(function* (sessionID: SessionID) {
       const stamp = MachineProvenance.execution(sessionID)
@@ -1056,6 +1158,7 @@ const layer: Layer.Layer<
       setTitle,
       setArchived,
       setMetadata,
+      updateAutoSwitch,
       setModel,
       setAgentModel,
       setPermission,
@@ -1156,7 +1259,7 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, LiveEvents.node],
 })
 
 export * as Session from "./session"

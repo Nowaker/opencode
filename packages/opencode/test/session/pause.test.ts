@@ -54,6 +54,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { AutoSwitch } from "@/session/auto-switch"
+import { MeridianRouting } from "@/provider/meridian-routing"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -114,7 +116,9 @@ const lsp = Layer.succeed(
  * snapshots, which took 13s on m4max on 2026-11-16. `hold` keeps that settle open for a paused session that has
  * stopped, so a test can unpause it inside that window.
  */
-const settleHold: { current?: { readonly reached: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> } } = {}
+const settleHold: {
+  current?: { readonly reached: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }
+} = {}
 const realProcessor = SessionProcessor.node.implementation as Layer.Layer<SessionProcessor.Service>
 const heldSettle = LayerNode.make({
   service: SessionProcessor.Service,
@@ -205,7 +209,7 @@ const heldTouch = LayerNode.make({
       })
     }),
   ).pipe(Layer.provide(Session.node.implementation as Layer.Layer<Session.Service>)),
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, LiveEvents.node],
 })
 
 const root = LayerNode.group([
@@ -325,6 +329,165 @@ const text = (sessionID: SessionID, value: string, extra?: Partial<SessionPrompt
   ...extra,
 })
 
+it.instance("a trusted refusal switches once and only a new submission after idle can return to Claude", () =>
+  Effect.gen(function* () {
+    const llm = yield* TestLLMServer
+    const source = { agent: "build", providerID: "anthropic", modelID: "claude-opus-5-5", variant: "high" }
+    const target = { agent: "build", providerID: "openai", modelID: "gpt-6.2-sol", variant: "xhigh" }
+    const wire: string[] = []
+    let claudeRecovered = false
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          async fetch(request) {
+            const url = new URL(request.url)
+            if (url.pathname === "/profiles/route-availability") {
+              const queried = url.searchParams.get("provider") === "claude" ? source : target
+              wire.push(queried === source ? "preflight-claude" : "preflight-chatgpt")
+              return Response.json({
+                version: 1,
+                provider: queried === source ? "claude" : "chatgpt",
+                model: queried.modelID,
+                variant: queried.variant,
+                available: queried === target || claudeRecovered,
+                observed_at: Date.now(),
+                routable_allotment: 1,
+              })
+            }
+            if (url.pathname === "/v1/messages") {
+              wire.push("claude")
+              if (claudeRecovered) {
+                const encode = (event: { type: string }) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+                const events = [
+                  { type: "message_start", message: { id: "msg_source", type: "message", role: "assistant",
+                    model: source.modelID, content: [], usage: { input_tokens: 10, output_tokens: 0 }, stop_reason: null } },
+                  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+                  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "preferred recovered" } },
+                  { type: "content_block_stop", index: 0 },
+                  { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } },
+                  { type: "message_stop" },
+                ]
+                return new Response(events.map(encode).join(""), { headers: { "content-type": "text/event-stream" } })
+              }
+              return Response.json(
+                {
+                  type: "error",
+                  error: {
+                    type: "rate_limit_error",
+                    code: "no_routable_account",
+                    message: "No routable Claude account: pilot fixture",
+                    request_id: request.headers.get("x-request-id"),
+                    route_refusal: {
+                      version: 1,
+                      phase: "before_inference",
+                      sent: false,
+                      provider: "claude",
+                      model: source.modelID,
+                      reason: "quota_exhausted",
+                    },
+                  },
+                },
+                { status: 429 },
+              )
+            }
+            if (url.pathname === "/v1/responses") {
+              wire.push("chatgpt")
+              return fetch(new Request(new URL(url.pathname, llm.url), request))
+            }
+            return new Response(null, { status: 404 })
+          },
+        }),
+      ),
+      (server) => Effect.promise(() => server.stop(true)),
+    )
+    const options = { apiKey: "fixture-key", baseURL: new URL("/v1", server.url).href }
+    const model = { reasoning: true, tool_call: true, limit: { context: 256_000, output: 10_000 } }
+    const ctx = yield* setup({
+      enabled_providers: [source.providerID, target.providerID],
+      provider: {
+        [source.providerID]: {
+          npm: "@ai-sdk/anthropic",
+          options,
+          models: { [source.modelID]: { ...model, name: source.modelID, variants: { high: { effort: "high" } } } },
+        },
+        [target.providerID]: {
+          npm: "@ai-sdk/openai",
+          options,
+          models: {
+            [target.modelID]: { ...model, name: target.modelID, variants: { xhigh: { reasoningEffort: "xhigh" } } },
+          },
+        },
+      },
+    })
+    yield* llm.text("served by the alternate")
+    const prompt = text(ctx.chat.id, "exact pilot user input", {
+      model: {
+        providerID: ProviderV2.ID.make(source.providerID),
+        modelID: ModelV2.ID.make(source.modelID),
+      },
+      variant: source.variant,
+    })
+    const owner = <A, E, R>(work: Effect.Effect<A, E, R>) => work.pipe(
+      Effect.provideService(AutoSwitch.Owner, () => ctx.chat.id),
+      Effect.provideService(AutoSwitch.Policy, () => ({ enabled: true, reason: "default-on", alternates: [target], policyRevision: "test-1" })),
+      Effect.provideService(MeridianRouting.Trust, {
+        claudeInferenceURL: new URL("/v1/messages", server.url).href,
+        chatgptAvailabilityURL: new URL("/profiles/route-availability", server.url).href,
+      }),
+    )
+    const result = yield* owner(ctx.prompt.prompt(prompt))
+    expect(wire).toEqual(["claude", "preflight-chatgpt", "chatgpt"])
+    expect(result.info).toMatchObject({
+      role: "assistant",
+      parentID: prompt.messageID,
+      agent: target.agent,
+      providerID: target.providerID,
+      modelID: target.modelID,
+      variant: target.variant,
+    })
+    const messages = yield* ctx.sessions.messages({ sessionID: ctx.chat.id })
+    expect(messages.filter((entry) => entry.info.role === "user").map((entry) => entry.info.id)).toEqual([
+      prompt.messageID,
+    ])
+    const current = yield* ctx.sessions.get(ctx.chat.id)
+    expect(AutoSwitch.preferred(current)).toEqual(source)
+    expect(AutoSwitch.stored(current).episode).toMatchObject({ step: 1, turnID: prompt.messageID, state: "active" })
+    claudeRecovered = true
+    const returning = yield* owner(AutoSwitch.read(ctx.sessions, ctx.chat.id))
+    expect(returning).toMatchObject({ effective: target, next: source, returnState: "returning" })
+    yield* pollWithTimeout(Effect.sync(() => Date.now() > result.info.time.created || undefined), "new admission timestamp")
+    const next = text(ctx.chat.id, "new prompt after idle", { model: prompt.model, variant: source.variant })
+    const returned = yield* owner(ctx.prompt.prompt(next))
+    expect(returned.info).toMatchObject({ parentID: next.messageID, agent: source.agent, providerID: source.providerID, modelID: source.modelID })
+    expect(wire).toEqual(["claude", "preflight-chatgpt", "chatgpt", "preflight-claude", "preflight-claude", "claude"])
+  }),
+)
+
+it.instance("an owner preference revision cannot be rolled back by a stale metadata write or copied into a fork", () =>
+  Effect.gen(function* () {
+    const ctx = yield* setup()
+    const revision = { sessionId: ctx.chat.id, revision: 1, preference: "off" }
+    expect(
+      yield* ctx.sessions.updateAutoSwitch({
+        sessionID: ctx.chat.id,
+        revision: 0,
+        preference: "off",
+        episode: undefined,
+        current: () => Effect.succeed(true),
+      }),
+    ).toBe(true)
+    yield* ctx.sessions.setMetadata({ sessionID: ctx.chat.id, metadata: { unrelated: "preserved" } })
+    expect((yield* ctx.sessions.get(ctx.chat.id)).metadata).toMatchObject({
+      unrelated: "preserved",
+      vibeterm: { autoSwitch: revision },
+    })
+    const fork = yield* ctx.sessions.fork({ sessionID: ctx.chat.id })
+    expect(fork.metadata?.vibeterm?.autoSwitch).toBeUndefined()
+  }),
+)
+
 const toolParts = (messages: SessionV1.WithParts[]) =>
   messages.flatMap((msg) => msg.parts.filter((part): part is SessionV1.ToolPart => part.type === "tool"))
 
@@ -434,6 +597,56 @@ it.instance(
       expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
       const ran = toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
       expect(ran.map((part) => part.state.status)).toEqual(["completed", "completed", "completed"])
+    }),
+  { git: true },
+  60_000,
+)
+
+it.instance(
+  "unpause discards a switched assistant's deferred batch without starting its tools",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* pausedWithThreeCalls()
+      const fs = yield* FSUtil.Service
+      const started = path.join(ctx.directory, "deferred-tool-started.txt")
+      const parts = toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id }))
+      const first = parts[0]
+      if (first?.state.status !== "pending") throw new Error("expected a paused tool call")
+      const deferred = SessionPause.deferredOf(first.state.metadata ?? {})
+      if (!deferred) throw new Error("missing pause deferral")
+      yield* ctx.sessions.updatePart({
+        ...first,
+        state: {
+          ...first.state,
+          input: { command: `printf started > ${JSON.stringify(started)}`, description: "fixture side effect" },
+          metadata: {
+            ...first.state.metadata,
+            deferred: SessionPause.deferredResult(deferred.at, true).metadata.deferred,
+          },
+        },
+      })
+      yield* ctx.llm.text("unexpected replay follow-up")
+
+      yield* ctx.prompt.unpause({ sessionID: ctx.chat.id })
+
+      const settled = yield* pollWithTimeout(
+        ctx.sessions.messages({ sessionID: ctx.chat.id }).pipe(
+          Effect.map((messages) => {
+            const tools = toolParts(messages)
+            return tools.every((part) => part.state.status === "completed" || part.state.status === "error")
+              ? tools
+              : undefined
+          }),
+        ),
+        "the deferred batch did not settle",
+        "10 seconds",
+      )
+      yield* idle(ctx.chat.id)
+      expect(settled.map((part) => part.state.status === "error" && part.state.metadata?.discardReason)).toEqual(
+        Array(3).fill("unsafe-deferred-route"),
+      )
+      expect(yield* fs.existsSafe(started)).toBe(false)
+      expect(yield* ctx.llm.calls).toBe(1)
     }),
   { git: true },
   60_000,
@@ -551,7 +764,10 @@ it.instance(
       const ctx = yield* setup()
       yield* ctx.llm.text("first answer")
       yield* ctx.prompt.prompt(text(ctx.chat.id, "first question"))
-      const pause = yield* ctx.prompt.pause({ sessionID: ctx.chat.id, source: { kind: "tool", sessionID: "ses_other" } })
+      const pause = yield* ctx.prompt.pause({
+        sessionID: ctx.chat.id,
+        source: { kind: "tool", sessionID: "ses_other" },
+      })
       expect(pause.pause.state).toBe("paused")
       expect(pause.pause.stoppedAt).toBeUndefined()
 
@@ -620,9 +836,11 @@ it.instance(
       expect(users.find((msg) => msg.id === held.messageID)?.model).toEqual(model)
       expect(users.find((msg) => msg.id === previous.messageID)?.model.variant).toBe("high")
       expect(users.find((msg) => msg.id === notice.info.id)?.model).toEqual(ref)
-      expect(messages
-        .filter((msg) => msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && !part.ignored))
-        .map((msg) => msg.info.id)).toEqual([previous.messageID, held.messageID])
+      expect(
+        messages
+          .filter((msg) => msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && !part.ignored))
+          .map((msg) => msg.info.id),
+      ).toEqual([previous.messageID, held.messageID])
       expect((yield* ctx.sessions.get(sessionID)).model).toEqual({
         providerID: model.providerID,
         id: model.modelID,
@@ -640,10 +858,12 @@ it.instance(
       const sessionID = ctx.chat.id
       const gate = yield* Deferred.make<void>()
       yield* ctx.llm.push(
-        reply().wait(Effect.runPromise(Deferred.await(gate))).tool("bash", {
-          command: "printf resume-tool-output",
-          description: "resume tool",
-        }),
+        reply()
+          .wait(Effect.runPromise(Deferred.await(gate)))
+          .tool("bash", {
+            command: "printf resume-tool-output",
+            description: "resume tool",
+          }),
       )
       const active = text(sessionID, "active question")
       const turn = yield* ctx.prompt.prompt(active).pipe(Effect.forkChild)
@@ -663,9 +883,11 @@ it.instance(
       yield* idle(sessionID)
 
       const history = yield* ctx.sessions.messages({ sessionID })
-      expect(history.flatMap(({ info }) =>
-        info.role === "assistant" ? [[info.parentID, info.agent, info.modelID, info.variant]] : [],
-      )).toEqual([
+      expect(
+        history.flatMap(({ info }) =>
+          info.role === "assistant" ? [[info.parentID, info.agent, info.modelID, info.variant]] : [],
+        ),
+      ).toEqual([
         [active.messageID, "build", ref.modelID, undefined],
         [active.messageID, "plan", model.modelID, "high"],
         [queued.messageID, "build", ref.modelID, undefined],
@@ -685,7 +907,12 @@ it.instance(
       const ctx = yield* setup()
       const sessionID = ctx.chat.id
       const gate = yield* Deferred.make<void>()
-      yield* ctx.llm.push(reply().wait(Effect.runPromise(Deferred.await(gate))).text("finished").stop())
+      yield* ctx.llm.push(
+        reply()
+          .wait(Effect.runPromise(Deferred.await(gate)))
+          .text("finished")
+          .stop(),
+      )
       const user = text(sessionID, "finish in one step", { variant: "low" })
       const turn = yield* ctx.prompt.prompt(user).pipe(Effect.forkChild)
       yield* ctx.llm.wait(1)
@@ -720,13 +947,15 @@ it.instance(
       const admission = yield* Deferred.make<void, SessionPrompt.AdmissionError>()
       const touching = yield* Deferred.make<void>()
       const resume = yield* Deferred.make<void>()
-      const turn = yield* ctx.prompt.prompt(input, admission).pipe(
-        Effect.provideService(
-          BeforeTouch,
-          Deferred.succeed(touching, undefined).pipe(Effect.andThen(Deferred.await(resume))),
-        ),
-        Effect.forkChild,
-      )
+      const turn = yield* ctx.prompt
+        .prompt(input, admission)
+        .pipe(
+          Effect.provideService(
+            BeforeTouch,
+            Deferred.succeed(touching, undefined).pipe(Effect.andThen(Deferred.await(resume))),
+          ),
+          Effect.forkChild,
+        )
       yield* awaitWithTimeout(
         Effect.raceFirst(
           Deferred.await(touching),
@@ -757,11 +986,9 @@ it.instance(
       yield* ctx.llm.text("answer to the new message")
       yield* ctx.prompt.prompt(text(ctx.chat.id, "new words", { unpause: true }))
       expect(yield* ctx.llm.calls).toBe(2)
-      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status)).toEqual([
-        "completed",
-        "completed",
-        "completed",
-      ])
+      expect(
+        toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status),
+      ).toEqual(["completed", "completed", "completed"])
       const body = JSON.stringify((yield* ctx.llm.inputs)[1])
       expect(body.indexOf("three-output")).toBeGreaterThan(-1)
       expect(body.indexOf("new words")).toBeGreaterThan(body.indexOf("three-output"))
@@ -802,7 +1029,9 @@ it.instance(
     Effect.gen(function* () {
       const ctx = yield* pausedWithThreeCalls()
       yield* ctx.prompt.cancel(ctx.chat.id)
-      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).every(SessionPause.isDeferred)).toBe(true)
+      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).every(SessionPause.isDeferred)).toBe(
+        true,
+      )
       expect((yield* ctx.pauses.get(ctx.chat.id))?.state).toBe("paused")
     }),
   { git: true },
@@ -818,17 +1047,17 @@ it.instance(
       yield* store.reload({ directory: ctx.directory })
       expect((yield* ctx.pauses.get(ctx.chat.id))?.state).toBe("paused")
       expect([...(yield* ctx.pauses.list()).keys()]).toEqual([ctx.chat.id])
-      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).every(SessionPause.isDeferred)).toBe(true)
+      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).every(SessionPause.isDeferred)).toBe(
+        true,
+      )
 
       yield* ctx.llm.text("ran after the reload")
       expect((yield* ctx.prompt.unpause({ sessionID: ctx.chat.id })).deferred).toBe(3)
       yield* ctx.llm.wait(2)
       yield* idle(ctx.chat.id)
-      expect(toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status)).toEqual([
-        "completed",
-        "completed",
-        "completed",
-      ])
+      expect(
+        toolParts(yield* ctx.sessions.messages({ sessionID: ctx.chat.id })).map((part) => part.state.status),
+      ).toEqual(["completed", "completed", "completed"])
     }),
   { git: true },
   60_000,
@@ -1297,7 +1526,12 @@ it.instance(
         raw({
           head: [
             streamChunk({ role: "assistant" }),
-            { error: { type: "rate_limit_error", message: "Claude Max rate limit reached. Wait a moment and try again." } },
+            {
+              error: {
+                type: "rate_limit_error",
+                message: "Claude Max rate limit reached. Wait a moment and try again.",
+              },
+            },
           ],
         }),
       )

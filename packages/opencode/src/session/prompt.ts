@@ -11,6 +11,11 @@ import { SessionRevert } from "./revert"
 import { Session } from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
+import { MeridianRouting } from "@/provider/meridian-routing"
+import { AutoSwitch } from "./auto-switch"
+import { AutoSwitchAdmission } from "./auto-switch-admission"
+import { AutoSwitchSchema } from "./auto-switch-schema"
+import { AutoSwitchTranscript } from "./auto-switch-transcript"
 
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
@@ -335,7 +340,10 @@ const layer = Layer.effect(
       } satisfies TaskPromptOps
     })
 
-    const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID, options?: SessionAbort.CancelOptions) {
+    const cancel = Effect.fn("SessionPrompt.cancel")(function* (
+      sessionID: SessionID,
+      options?: SessionAbort.CancelOptions,
+    ) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
       yield* state.cancel(sessionID, options)
     })
@@ -1162,6 +1170,11 @@ const layer = Layer.effect(
       const resolvedParts = yield* Effect.forEach(input.parts, resolvePart, { concurrency: "unbounded" }).pipe(
         Effect.map((x) => x.flat().map(assign)),
       )
+      for (const part of resolvedParts) {
+        if (part.type === "text" && "metadata" in part && part.metadata) {
+          part.metadata = AutoSwitchAdmission.stripWireStamp(part.metadata)
+        }
+      }
 
       yield* plugin.trigger(
         "chat.message",
@@ -1350,10 +1363,7 @@ const layer = Layer.effect(
     ) {
       // Keep the notice visually associated with the last prompt without changing the session's selection.
       const latest = yield* sessions
-        .findMessage(
-          sessionID,
-          (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg),
-        )
+        .findMessage(sessionID, (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg))
         .pipe(Effect.orDie)
       const info = Option.isSome(latest) && latest.value.info.role === "user" ? latest.value.info : undefined
       yield* prompt({
@@ -1429,27 +1439,33 @@ const layer = Layer.effect(
       return { sessionID: input.sessionID, pause: next, changed: true }
     })
 
-    const applyResumeSelection = Effect.fnUntraced(
-      function* (user: SessionV1.User, selection: ResumeSelection, updateSession: boolean) {
-        if (
-          user.agent !== selection.agent ||
-          !sameRoute(user.model, selection.model) ||
-          user.model.variant !== selection.model.variant
-        ) yield* sessions.updateMessage({ ...user, ...selection })
-        if (!updateSession) return
-        const session = yield* sessions.get(user.sessionID).pipe(Effect.orDie)
-        const model = {
-          id: selection.model.modelID,
-          providerID: selection.model.providerID,
-          variant: selection.model.variant ?? "default",
-        }
-        if (
-          session.agent === selection.agent && session.model?.id === model.id &&
-          session.model.providerID === model.providerID && session.model.variant === model.variant
-        ) return
-        yield* sessions.setAgentModel({ sessionID: user.sessionID, agent: selection.agent, model, time: Date.now() })
-      },
-    )
+    const applyResumeSelection = Effect.fnUntraced(function* (
+      user: SessionV1.User,
+      selection: ResumeSelection,
+      updateSession: boolean,
+    ) {
+      if (
+        user.agent !== selection.agent ||
+        !sameRoute(user.model, selection.model) ||
+        user.model.variant !== selection.model.variant
+      )
+        yield* sessions.updateMessage({ ...user, ...selection })
+      if (!updateSession) return
+      const session = yield* sessions.get(user.sessionID).pipe(Effect.orDie)
+      const model = {
+        id: selection.model.modelID,
+        providerID: selection.model.providerID,
+        variant: selection.model.variant ?? "default",
+      }
+      if (
+        session.agent === selection.agent &&
+        session.model?.id === model.id &&
+        session.model.providerID === model.providerID &&
+        session.model.variant === model.variant
+      )
+        return
+      yield* sessions.setAgentModel({ sessionID: user.sessionID, agent: selection.agent, model, time: Date.now() })
+    })
 
     // Clears the pause of a session and of every descendant paused through it, and wakes the subagents waiting.
     const release = Effect.fnUntraced(function* (input: UnpauseInput) {
@@ -1470,7 +1486,7 @@ const layer = Layer.effect(
               run.resume = {
                 selection,
                 committed,
-                eligible: new Set(history.flatMap((msg) => msg.info.role === "user" ? [msg.info.id] : [])),
+                eligible: new Set(history.flatMap((msg) => (msg.info.role === "user" ? [msg.info.id] : []))),
               }
             } else if (
               current.stoppedAt !== undefined ||
@@ -1529,7 +1545,9 @@ const layer = Layer.effect(
       const work = deferred > 0 || (current.held?.length ?? 0) > 0 || current.stoppedAt !== undefined
       const run = runs.get(input.sessionID)
       if (work && (current.stoppedAt !== undefined || !run || (input.selection && run.drained)))
-        yield* drive(input.sessionID, undefined, () => true).pipe(Effect.ignore, (run) => OwnerQuiescence.fork(run, scope))
+        yield* drive(input.sessionID, undefined, () => true).pipe(Effect.ignore, (run) =>
+          OwnerQuiescence.fork(run, scope),
+        )
       return { sessionID: input.sessionID, changed: true, deferred }
     })
 
@@ -1584,7 +1602,11 @@ const layer = Layer.effect(
      * between the loop's read and this write must not bring the pause back, which left a session paused with nobody
      * to unpause it. Answers whether it still held.
      */
-    const markPaused = Effect.fnUntraced(function* (sessionID: SessionID, pause: SessionPause.Info, stoppedAt?: number) {
+    const markPaused = Effect.fnUntraced(function* (
+      sessionID: SessionID,
+      pause: SessionPause.Info,
+      stoppedAt?: number,
+    ) {
       return yield* pauses
         .mutate({ sessionID, expectedPauseAt: pause.at }, (current) =>
           current
@@ -1607,10 +1629,11 @@ const layer = Layer.effect(
       messageID: MessageID
       refusal: SessionPause.Refusal
       route: Route
+      preserveAttempt?: boolean
     }) {
       const sessionID = input.session.id
       yield* processor.settle(sessionID)
-      yield* sessions.removeMessage({ sessionID, messageID: input.messageID })
+      if (!input.preserveAttempt) yield* sessions.removeMessage({ sessionID, messageID: input.messageID })
       yield* Effect.logWarning("step parked: no routable account", {
         "session.id": sessionID,
         messageID: input.messageID,
@@ -1695,9 +1718,6 @@ const layer = Layer.effect(
     }) {
       const assistant = input.message.info
       if (assistant.role !== "assistant") return "continue" as const
-      const agent = yield* agents.get(assistant.agent)
-      if (!agent) throw new NamedError.Unknown({ message: `Agent not found: "${assistant.agent}"` })
-      const model = yield* getModel(assistant.providerID, assistant.modelID, input.sessionID)
       // A tool streams metadata while it runs; reading and writing its part one at a time keeps a late update from
       // writing a stale running state over the result.
       const serial = (yield* Semaphore.make(1)).withPermit
@@ -1722,7 +1742,8 @@ const layer = Layer.effect(
           },
         })
       })
-      const fail = (callID: string, error: string, extra?: Record<string, unknown>) => serial(failNow(callID, error, extra))
+      const fail = (callID: string, error: string, extra?: Record<string, unknown>) =>
+        serial(failNow(callID, error, extra))
       const failNow = Effect.fnUntraced(function* (callID: string, error: string, extra?: Record<string, unknown>) {
         const part = yield* findPart(callID)
         if (!part || (part.state.status !== "running" && part.state.status !== "pending")) return
@@ -1738,6 +1759,34 @@ const layer = Layer.effect(
           },
         })
       })
+      const episode = AutoSwitch.stored(input.session).episode
+      const legacySwitched =
+        episode &&
+        assistant.time.created >= episode.at &&
+        (episode.state !== "returned" || episode.turnID === assistant.parentID) &&
+        AutoSwitch.same(episode.target, {
+          agent: assistant.agent,
+          providerID: assistant.providerID,
+          modelID: assistant.modelID,
+          variant: assistant.variant === "default" ? null : (assistant.variant ?? null),
+        })
+      if (
+        legacySwitched ||
+        input.parts.some((part) => {
+          const deferred = SessionPause.deferredOf(part.state.metadata ?? {})
+          return !deferred || deferred.switched === true
+        })
+      ) {
+        for (const part of input.parts)
+          yield* fail(part.callID, "not run: deferred tool permissions could not be re-established", {
+            discarded: true,
+            discardReason: "unsafe-deferred-route",
+          } as const)
+        return "stop" as const
+      }
+      const agent = yield* agents.get(assistant.agent)
+      if (!agent) throw new NamedError.Unknown({ message: `Agent not found: "${assistant.agent}"` })
+      const model = yield* getModel(assistant.providerID, assistant.modelID, input.sessionID)
       const tools = yield* SessionTools.resolve({
         agent,
         session: input.session,
@@ -1772,12 +1821,19 @@ const layer = Layer.effect(
         const execute = tools[part.tool]?.execute
         yield* sessions.updatePart({
           ...part,
-          state: { status: "running", input: part.state.input, metadata: part.state.metadata, time: { start: Date.now() } },
+          state: {
+            status: "running",
+            input: part.state.input,
+            metadata: part.state.metadata,
+            time: { start: Date.now() },
+          },
         } satisfies SessionV1.ToolPart)
         const exit = execute
           ? yield* Effect.tryPromise({
               try: (signal) =>
-                Promise.resolve(execute(part.state.input, { toolCallId: part.callID, messages: [], abortSignal: signal })),
+                Promise.resolve(
+                  execute(part.state.input, { toolCallId: part.callID, messages: [], abortSignal: signal }),
+                ),
               catch: (error) => error,
             }).pipe(
               Effect.onInterrupt(() => fail(part.callID, "Tool execution aborted", { interrupted: true })),
@@ -1925,8 +1981,11 @@ const layer = Layer.effect(
         let answerNewest = false
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const run = runs.get(sessionID)
+        const previousIdle = AutoSwitch.begin(sessionID)
+        let declinedReturn = false
+        let freshSubmission: MessageID | undefined
 
-        while (true) {
+        turnLoop: while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
@@ -1978,27 +2037,29 @@ const layer = Layer.effect(
             if (run.resume !== resume) continue
             run.resume = undefined
             if (committed && resume.eligible.has(lastUser.id)) {
-              yield* live.guard(
-                sessionID,
-                DatabaseTransaction.batch(
-                  db,
-                  Effect.gen(function* () {
-                    const target = yield* MessageV2.get({ sessionID, messageID: lastUser.id }).pipe(
-                      Effect.provideService(Database.Service, database),
-                      Effect.option,
-                    )
-                    if (Option.isNone(target) || target.value.info.role !== "user") return
-                    const newest = yield* sessions
-                      .findMessage(sessionID, (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg))
-                      .pipe(Effect.orDie)
-                    yield* applyResumeSelection(
-                      target.value.info,
-                      resume.selection,
-                      Option.isSome(newest) && resume.eligible.has(newest.value.info.id),
-                    )
-                  }),
-                ),
-              ).pipe(Effect.orDie)
+              yield* live
+                .guard(
+                  sessionID,
+                  DatabaseTransaction.batch(
+                    db,
+                    Effect.gen(function* () {
+                      const target = yield* MessageV2.get({ sessionID, messageID: lastUser.id }).pipe(
+                        Effect.provideService(Database.Service, database),
+                        Effect.option,
+                      )
+                      if (Option.isNone(target) || target.value.info.role !== "user") return
+                      const newest = yield* sessions
+                        .findMessage(sessionID, (msg) => msg.info.role === "user" && !MessageV2.isNotice(msg))
+                        .pipe(Effect.orDie)
+                      yield* applyResumeSelection(
+                        target.value.info,
+                        resume.selection,
+                        Option.isSome(newest) && resume.eligible.has(newest.value.info.id),
+                      )
+                    }),
+                  ),
+                )
+                .pipe(Effect.orDie)
               continue
             }
           }
@@ -2020,7 +2081,62 @@ const layer = Layer.effect(
               history: msgs,
             }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
 
-          const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+          const preferredRoute = { ...lastUser.model, agent: lastUser.agent, variant: lastUser.model.variant ?? null }
+          let switchState = yield* AutoSwitch.inspect(sessions, sessionID)
+          let episode = switchState?.episode
+          const plannedAlternate = !!switchState?.policy?.enabled && AutoSwitch.same(switchState.source, preferredRoute) &&
+            switchState.policy.alternates.some((route) => AutoSwitch.pilotPair(preferredRoute, route))
+          const settledAlternate = episode?.state === "active" || episode?.state === "failed" ? episode : undefined
+          let sticky =
+            switchState?.policy?.enabled &&
+            settledAlternate &&
+            !settledAlternate.returnPending &&
+            AutoSwitch.same(settledAlternate.source, preferredRoute) &&
+            AutoSwitch.same(switchState.source, preferredRoute) &&
+            switchState.policy.alternates.some((route) => AutoSwitch.sameCandidate(route, settledAlternate.target))
+              ? settledAlternate
+              : undefined
+          if (
+            switchState &&
+            settledAlternate &&
+            !sticky &&
+            !(yield* AutoSwitch.save(sessions, switchState, {
+              episode: { ...settledAlternate, state: "returned", returnPending: false },
+            }))
+          )
+            continue
+          const admitted = previousIdle !== undefined ? msgs.find((msg) => msg.info.id === lastUser.id) : undefined
+          const acceptedAt = admitted ? AutoSwitchAdmission.acceptedAt(admitted) : undefined
+          const newSubmission = previousIdle !== undefined && acceptedAt !== undefined && acceptedAt > previousIdle
+          if (step === 1 && newSubmission) freshSubmission = lastUser.id
+          const returnRoute = sticky && !sticky.returnCooldown && switchState && !declinedReturn && step === 1 && newSubmission &&
+            lastAssistant?.parentID !== lastUser.id && tasks.length === 0 &&
+            AutoSwitch.returnEnabled(switchState) ? sticky : undefined
+          const returnModel = returnRoute ? yield* provider.getModel(lastUser.model.providerID, lastUser.model.modelID).pipe(Effect.option) : undefined
+          const returnFreshUntil = returnModel?._tag === "Some" && returnModel.value.api.id === "claude-opus-5-5" &&
+            preferredRoute.variant === "high" ? yield* MeridianRouting.probe({ provider: "claude", model: returnModel.value, variant: preferredRoute.variant }) : undefined
+          const returning = returnFreshUntil !== undefined && returnRoute && switchState ?
+            { episode: returnRoute, revision: switchState.revision, policyRevision: switchState.policy?.policyRevision,
+              validUntil: returnFreshUntil } : undefined
+          const effectiveRoute = (returning ? preferredRoute : sticky?.target) ?? preferredRoute
+          if (sticky && !returning && effectiveRoute.agent !== preferredRoute.agent && lastUser.system) {
+            if (switchState) AutoSwitch.noteBlocked(sessionID, switchState.revision, "unsafe-step")
+            yield* pause({ sessionID, source: { kind: "api", client: "auto-switch" }, reason: "The alternate cannot preserve the original system instructions." })
+            break
+          }
+          if (episode?.state === "claimed" && episode.turnID === lastUser.id) {
+            yield* pause({
+              sessionID,
+              source: { kind: "api", client: "auto-switch" },
+              reason: "An interrupted auto-switch attempt may have run; submit a new prompt to continue.",
+            })
+            break
+          }
+          const model = yield* getModel(
+            ProviderV2.ID.make(effectiveRoute.providerID),
+            ModelV2.ID.make(effectiveRoute.modelID),
+            sessionID,
+          )
           const task = tasks.pop()
 
           if (task?.type === "subtask") {
@@ -2029,6 +2145,14 @@ const layer = Layer.effect(
           }
 
           if (task?.type === "compaction") {
+            if (episode && AutoSwitch.same(episode.source, preferredRoute)) {
+              yield* pause({
+                sessionID,
+                source: { kind: "api", client: "auto-switch" },
+                reason: "Compaction of switched history is not qualified.",
+              })
+              break
+            }
             // Past the first step this loop was already running a turn, which the compaction cut into between
             // two of its steps; that turn resumes afterwards unless its last step had ended it.
             const inflight = step > 1
@@ -2129,216 +2253,384 @@ const layer = Layer.effect(
                 providerID: lastUser.model.providerID,
               },
             })
+            if (episode && AutoSwitch.same(episode.source, preferredRoute)) {
+              yield* pause({
+                sessionID,
+                source: { kind: "api", client: "auto-switch" },
+                reason: "Switched history will not fit without unqualified compaction.",
+              })
+              break
+            }
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
           }
 
-          const agent = yield* agents.get(lastUser.agent)
-          if (!agent) {
+          const selectedAgent = yield* agents.get(effectiveRoute.agent)
+          if (!selectedAgent) {
             const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
             const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
             const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
             yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
-          const maxSteps = agent.steps ?? Infinity
-          const isLastStep = step >= maxSteps
-          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
-            Effect.provideService(RuntimeFlags.Service, flags),
-            Effect.provideService(FSUtil.Service, fsys),
-            Effect.provideService(Session.Service, sessions),
-          )
+          const switchingAgent = effectiveRoute.agent !== preferredRoute.agent
+          const originalAgent = switchingAgent ? yield* agents.get(preferredRoute.agent) : selectedAgent
+          const stepMessages = msgs
 
-          const msg: SessionV1.Assistant = {
-            id: MessageID.ascending(),
-            parentID: lastUser.id,
-            role: "assistant",
-            mode: agent.name,
-            agent: agent.name,
-            variant: lastUser.model.variant,
-            path: { cwd: ctx.directory, root: ctx.worktree },
-            cost: 0,
-            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-            modelID: model.id,
-            providerID: model.providerID,
-            time: { created: Date.now() },
-            sessionID,
-          }
-          yield* sessions.createMessage(msg)
-
-          const finalizeInterruptedAssistant = Effect.gen(function* () {
-            if (msg.time.completed) return
-            msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
-              providerID: msg.providerID,
-              aborted: true,
-              abort: yield* SessionAbort.metadata,
-            })
-            msg.time.completed = Date.now()
-            yield* sessions.updateMessage(msg)
-          })
-
-          const handle = yield* processor
-            .create({
-              assistantMessage: msg,
-              sessionID,
-              model,
-            })
-            .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
-
-          const outcome: "break" | "continue" | "park" = yield* Effect.gen(function* () {
-            const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
-            const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
-            const promptOps = yield* ops()
-
-            const tools = yield* SessionTools.resolve({
+          const runAttempt = Effect.fnUntraced(function* (input: {
+            readonly model: Provider.Model
+            readonly agent: typeof selectedAgent
+            readonly route: AutoSwitchSchema.Route
+            readonly projectHistory: boolean
+            readonly beforeDispatch?: () => Effect.Effect<boolean>
+            readonly replacement?: boolean
+            readonly preferredReturn?: boolean
+          }) {
+            const model = input.model
+            const sourceAgent = originalAgent ?? selectedAgent
+            const agent = input.agent
+            const isLastStep = step >= Math.min(agent.steps ?? Infinity, sourceAgent.steps ?? Infinity)
+            const msgs = yield* SessionReminders.apply({
+              messages:
+                input.projectHistory || plannedAlternate ? structuredClone(stepMessages) : stepMessages,
               agent,
               session,
-              model,
-              processor: handle,
-              bypassAgentCheck,
-              messages: msgs,
-              promptOps,
             }).pipe(
-              Effect.provideService(Plugin.Service, plugin),
-              Effect.provideService(Permission.Service, permission),
-              Effect.provideService(ToolRegistry.Service, registry),
-              Effect.provideService(MCP.Service, mcp),
-              Effect.provideService(Truncate.Service, truncate),
               Effect.provideService(RuntimeFlags.Service, flags),
-              Effect.provideService(Config.Service, config),
+              Effect.provideService(FSUtil.Service, fsys),
+              Effect.provideService(Session.Service, sessions),
             )
-
-            // A call the model asks for once the session is paused is recorded with its input and not started.
-            const bridge = yield* EffectBridge.make()
-            for (const item of Object.values(tools)) {
-              const execute = item.execute
-              if (!execute) continue
-              item.execute = (args, options) =>
-                bridge
-                  .promise(pauses.get(sessionID))
-                  .then((paused) => (paused ? SessionPause.deferredResult(Date.now()) : execute(args, options)))
-            }
-
-            if (lastUser.format?.type === "json_schema") {
-              tools["StructuredOutput"] = createStructuredOutputTool({
-                schema: lastUser.format.schema,
-                onSuccess(output) {
-                  structured = output
-                },
-              })
-            }
-
-            if (step === 1)
-              yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
-
-            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
-
-            // An interrupted/aborted assistant turn (no finish reason, or an
-            // error) can survive as the trailing history message and get
-            // re-dispatched with no new user turn. That makes the request end
-            // on an assistant message, which claude-opus-4.x and gpt-5.x-codex
-            // reject as an unsupported prefill (HTTP 400). Drop that tail so
-            // the request ends on the preceding user/tool content.
-            const lastMsg = msgs[msgs.length - 1]
-            const promptMsgs =
-              lastMsg && lastMsg.info.role === "assistant" && (!lastMsg.info.finish || lastMsg.info.error)
-                ? msgs.slice(0, -1)
-                : msgs
-
-            const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
-              sys.environment(model),
-              instruction.system().pipe(Effect.orDie),
-              sys.mcp(agent, session.permission),
-              MessageV2.toModelMessagesEffect(promptMsgs, model),
-            ])
-            const system = [
-              ...env,
-              ...instructions,
-              ...(mcpInstructions ? [mcpInstructions] : []),
-              ...(skills ? [skills] : []),
-            ]
-            const format = lastUser.format ?? { type: "text" as const }
-            if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-            const released = releasing.get(sessionID)
-            if (released) {
-              releasing.delete(sessionID)
-              yield* events.publish(SessionPause.Event.Released, { sessionID, held: released })
-            }
-            const result = yield* handle.process({
-              user: lastUser,
-              agent,
-              permission: session.permission,
+            const user = input.projectHistory
+              ? {
+                  ...structuredClone(lastUser),
+                  agent: agent.name,
+                  model: {
+                    providerID: model.providerID,
+                    modelID: model.id,
+                    variant: input.route.variant ?? undefined,
+                  },
+                }
+              : lastUser
+            const switched = !AutoSwitch.same(input.route, preferredRoute)
+            const routeContext = switched
+              ? { version: 1 as const, preferred: preferredRoute, effective: input.route }
+              : undefined
+            const msg: SessionV1.Assistant = {
+              id: MessageID.ascending(),
+              parentID: lastUser.id,
+              role: "assistant",
+              mode: agent.name,
+              agent: agent.name,
+              variant: user.model.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: model.id,
+              providerID: model.providerID,
+              time: { created: Date.now() },
               sessionID,
-              parentSessionID: session.parentID,
-              system,
-              messages: [
-                ...modelMsgs,
-                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
-              ],
-              tools,
-              model,
-              toolChoice: format.type === "json_schema" ? "required" : undefined,
+            }
+            yield* sessions.createMessage(msg)
+
+            const finalizeInterruptedAssistant = Effect.gen(function* () {
+              if (msg.time.completed) return
+              msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+                providerID: msg.providerID,
+                aborted: true,
+                abort: yield* SessionAbort.metadata,
+              })
+              msg.time.completed = Date.now()
+              yield* sessions.updateMessage(msg)
             })
-            if (handle.refusal) return "park" as const
 
-            if (structured !== undefined) {
-              handle.message.structured = structured
-              handle.message.finish = handle.message.finish ?? "stop"
-              yield* sessions.updateMessage(handle.message)
-              return "break" as const
-            }
+            const handle = yield* processor
+              .create({
+                assistantMessage: msg,
+                sessionID,
+                model,
+              })
+              .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
-            const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
-            if (finished && !handle.message.error) {
-              // Surface any content-filter finish (e.g. Anthropic stop_reason:
-              // refusal) as an error. These turns may have produced no visible
-              // output at all — previously the session went idle silently — or
-              // partial text that was cut off by the provider's filter.
-              if (handle.message.finish === "content-filter") {
-                handle.message.error = new SessionV1.ContentFilterError({
-                  message: "The response was blocked by the provider's content filter",
-                }).toObject()
+            let sourceRequestChanged = false
+            const outcome = yield* Effect.gen(function* () {
+              const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+              const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+              const promptOps = yield* ops()
+
+              const tools = yield* SessionTools.resolve({
+                agent,
+                session,
+                model,
+                processor: handle,
+                bypassAgentCheck,
+                messages: msgs,
+                promptOps,
+                autoSwitch: routeContext,
+                sourcePermission: agent.name !== sourceAgent.name ? sourceAgent.permission : undefined,
+              }).pipe(
+                Effect.provideService(Plugin.Service, plugin),
+                Effect.provideService(Permission.Service, permission),
+                Effect.provideService(ToolRegistry.Service, registry),
+                Effect.provideService(MCP.Service, mcp),
+                Effect.provideService(Truncate.Service, truncate),
+                Effect.provideService(RuntimeFlags.Service, flags),
+                Effect.provideService(Config.Service, config),
+              )
+
+              // A call the model asks for once the session is paused is recorded with its input and not started.
+              const bridge = yield* EffectBridge.make()
+              for (const item of Object.values(tools)) {
+                const execute = item.execute
+                if (!execute) continue
+                item.execute = (args, options) =>
+                  bridge
+                    .promise(pauses.get(sessionID))
+                    .then((paused) => (paused ? SessionPause.deferredResult(Date.now(), !!routeContext) : execute(args, options)))
+              }
+
+              if (lastUser.format?.type === "json_schema") {
+                tools["StructuredOutput"] = createStructuredOutputTool({
+                  schema: lastUser.format.schema,
+                  onSuccess(output) {
+                    structured = output
+                  },
+                })
+              }
+
+              if (step === 1 && !input.replacement)
+                yield* summary
+                  .summarize({ sessionID, messageID: lastUser.id })
+                  .pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
+
+              const attemptMessages = input.projectHistory ? structuredClone(msgs) : msgs
+              const beforeTransform =
+                !switched && plannedAlternate ? JSON.stringify(attemptMessages) : undefined
+              yield* plugin.trigger(
+                "experimental.chat.messages.transform",
+                routeContext ? { autoSwitch: routeContext } : {},
+                { messages: attemptMessages },
+              )
+              sourceRequestChanged =
+                beforeTransform !== undefined && beforeTransform !== JSON.stringify(attemptMessages)
+
+              // An interrupted/aborted assistant turn (no finish reason, or an
+              // error) can survive as the trailing history message and get
+              // re-dispatched with no new user turn. That makes the request end
+              // on an assistant message, which claude-opus-4.x and gpt-5.x-codex
+              // reject as an unsupported prefill (HTTP 400). Drop that tail so
+              // the request ends on the preceding user/tool content.
+              const lastMsg = attemptMessages[attemptMessages.length - 1]
+              const promptMsgs =
+                lastMsg && lastMsg.info.role === "assistant" && (!lastMsg.info.finish || lastMsg.info.error)
+                  ? attemptMessages.slice(0, -1)
+                  : attemptMessages
+
+              const projected = input.projectHistory
+                ? AutoSwitchTranscript.project({ messages: attemptMessages, model })
+                : undefined
+              if (projected?.kind === "blocked") {
+                yield* Effect.logInfo("auto-switch history blocked", { sessionID, reason: projected.reason })
+                return "blocked" as const
+              }
+
+              const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
+                sys.skills(agent),
+                sys.environment(model),
+                instruction.system().pipe(Effect.orDie),
+                sys.mcp(agent, session.permission),
+                projected ? Effect.succeed(projected.messages) : MessageV2.toModelMessagesEffect(promptMsgs, model),
+              ])
+              const system = [
+                ...env,
+                ...instructions,
+                ...(mcpInstructions ? [mcpInstructions] : []),
+                ...(skills ? [skills] : []),
+              ]
+              const format = lastUser.format ?? { type: "text" as const }
+              if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+              const released = releasing.get(sessionID)
+              if (released) {
+                releasing.delete(sessionID)
+                yield* events.publish(SessionPause.Event.Released, { sessionID, held: released })
+              }
+              const result = yield* handle.process({
+                user,
+                agent,
+                permission: session.permission,
+                sessionID,
+                parentSessionID: session.parentID,
+                system,
+                messages: [
+                  ...modelMsgs,
+                  ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+                ],
+                tools,
+                model,
+                toolChoice: format.type === "json_schema" ? "required" : undefined,
+                beforeDispatch: input.beforeDispatch,
+                autoSwitch: routeContext,
+                preferredReturn: input.preferredReturn ? true : undefined,
+                retries: input.replacement || input.preferredReturn ? 0 : undefined,
+                validateRequest: input.projectHistory
+                  ? (request) =>
+                      Effect.gen(function* () {
+                        const assessed = yield* Effect.promise(() => AutoSwitchTranscript.checkBudget(request))
+                        if (assessed.kind === "fits") return true
+                        yield* Effect.logInfo("auto-switch request blocked", { sessionID, reason: assessed.reason })
+                        return false
+                      })
+                  : undefined,
+              })
+              if (handle.dispatchBlocked) return "blocked" as const
+              if (handle.refusal) return "park" as const
+
+              if (structured !== undefined) {
+                handle.message.structured = structured
+                handle.message.finish = handle.message.finish ?? "stop"
                 yield* sessions.updateMessage(handle.message)
-                yield* events.publish(Session.Event.Error, { sessionID, error: handle.message.error })
                 return "break" as const
               }
-              if (format.type === "json_schema") {
-                handle.message.error = new SessionV1.StructuredOutputError({
-                  message: "Model did not produce structured output",
-                  retries: 0,
-                }).toObject()
-                yield* sessions.updateMessage(handle.message)
-                return "break" as const
-              }
-            }
 
-            if (result === "stop") return "break" as const
-            if (result === "compact") {
-              yield* compactionDebug({
-                event: "assistant_result_compact",
-                sessionID,
-                step,
-                payload: {
-                  messageID: handle.message.id,
-                  finish: handle.message.finish ?? null,
-                  hasError: !!handle.message.error,
-                  inferredOverflow: !handle.message.finish,
-                },
+              const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
+              if (finished && !handle.message.error) {
+                // Surface any content-filter finish (e.g. Anthropic stop_reason:
+                // refusal) as an error. These turns may have produced no visible
+                // output at all — previously the session went idle silently — or
+                // partial text that was cut off by the provider's filter.
+                if (handle.message.finish === "content-filter") {
+                  handle.message.error = new SessionV1.ContentFilterError({
+                    message: "The response was blocked by the provider's content filter",
+                  }).toObject()
+                  yield* sessions.updateMessage(handle.message)
+                  if (!input.replacement)
+                    yield* events.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+                  return "break" as const
+                }
+                if (format.type === "json_schema") {
+                  handle.message.error = new SessionV1.StructuredOutputError({
+                    message: "Model did not produce structured output",
+                    retries: 0,
+                  }).toObject()
+                  yield* sessions.updateMessage(handle.message)
+                  return "break" as const
+                }
+              }
+
+              if (result === "stop") return "break" as const
+              if (result === "compact") {
+                if (input.projectHistory) return "break" as const
+                yield* compactionDebug({
+                  event: "assistant_result_compact",
+                  sessionID,
+                  step,
+                  payload: {
+                    messageID: handle.message.id,
+                    finish: handle.message.finish ?? null,
+                    hasError: !!handle.message.error,
+                    inferredOverflow: !handle.message.finish,
+                  },
+                })
+                yield* compaction.create({
+                  sessionID,
+                  agent: lastUser.agent,
+                  model: user.model,
+                  auto: true,
+                  overflow: !handle.message.finish,
+                })
+              }
+              return "continue" as const
+            }).pipe(
+              Effect.ensuring(instruction.clear(handle.message.id)),
+              Effect.onInterrupt(() => finalizeInterruptedAssistant),
+            )
+            return { outcome, handle, sourceRequestChanged }
+          })
+
+          const latestInputIsCurrent = Effect.fnUntraced(function* () {
+            if (runs.get(sessionID) !== run || run?.resume || (yield* pauses.get(sessionID))) return false
+            if ((yield* permission.list()).some((request) => request.sessionID === sessionID)) return false
+            const newest = yield* sessions
+              .findMessage(sessionID, (message) => message.info.role === "user" && !MessageV2.isNotice(message))
+              .pipe(Effect.orDie)
+            return newest._tag === "Some" && newest.value.info.id === lastUser.id && !run?.resume
+          })
+          if (switchState) AutoSwitch.clearBlocked(sessionID)
+          const stickyAtDispatch = sticky
+          const { outcome, handle, sourceRequestChanged } = yield* runAttempt({
+            agent: selectedAgent,
+            model,
+            route: effectiveRoute,
+            projectHistory: !!episode && AutoSwitch.same(episode.source, preferredRoute),
+            preferredReturn: !!returning,
+            beforeDispatch: returning ? () => Effect.gen(function* () {
+              if (!(yield* latestInputIsCurrent())) return false
+              const fresh = yield* AutoSwitch.inspect(sessions, sessionID)
+              if (!fresh?.policy?.enabled || !AutoSwitch.returnEnabled(fresh) ||
+                fresh.revision !== returning.revision || fresh.policy.policyRevision !== returning.policyRevision ||
+                !AutoSwitch.same(fresh.source, preferredRoute)) return false
+              return yield* AutoSwitch.save(sessions, fresh, {
+                episode: { ...returning.episode, state: "returned", returnPending: false, autoReturnedTurnID: lastUser.id },
+                valid: () => latestInputIsCurrent().pipe(Effect.map((valid) => valid && Date.now() <= returning.validUntil)),
               })
-              yield* compaction.create({
+            }) : stickyAtDispatch
+              ? () =>
+                  Effect.gen(function* () {
+                    if (!(yield* latestInputIsCurrent())) return false
+                    if (
+                      !originalAgent ||
+                      !(yield* AutoSwitch.authorizeAgent({
+                        sessionID,
+                        source: preferredRoute,
+                          target: stickyAtDispatch.target,
+                        sourceAgent: originalAgent,
+                        targetAgent: selectedAgent,
+                        plugin,
+                      }))
+                    )
+                      return false
+                    const fresh = yield* AutoSwitch.inspect(sessions, sessionID)
+                    if (
+                      fresh?.revision !== switchState?.revision ||
+                      fresh?.policy?.policyRevision !== switchState?.policy?.policyRevision
+                    )
+                      return false
+                    AutoSwitch.markServing(stickyAtDispatch)
+                    return true
+                  })
+              : undefined,
+          }).pipe(Effect.ensuring(Effect.sync(() => AutoSwitch.stopServing(sessionID))))
+          if (returning && outcome === "blocked") {
+            yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
+            declinedReturn = true
+            step--
+            continue
+          }
+          if (returning) {
+            switchState = yield* AutoSwitch.inspect(sessions, sessionID)
+            episode = switchState?.episode
+            sticky = undefined
+          }
+          if (sticky) yield* AutoSwitch.finishBoundary(sessions, sticky)
+          if (outcome === "blocked") {
+            if (switchState) AutoSwitch.noteBlocked(sessionID, switchState.revision, "route-ineligible")
+            yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
+            if (sticky && (yield* latestInputIsCurrent())) {
+              const current = yield* AutoSwitch.inspect(sessions, sessionID)
+              if (
+                current?.revision !== switchState?.revision ||
+                current?.policy?.policyRevision !== switchState?.policy?.policyRevision
+              )
+                continue
+            }
+            if (!(yield* pauses.get(sessionID)) && !run?.resume) {
+              yield* pause({
                 sessionID,
-                agent: lastUser.agent,
-                model: lastUser.model,
-                auto: true,
-                overflow: !handle.message.finish,
+                source: { kind: "api", client: "auto-switch" },
+                reason: "The selected route could not safely preserve the current step.",
               })
             }
-            return "continue" as const
-          }).pipe(
-            Effect.ensuring(instruction.clear(handle.message.id)),
-            Effect.onInterrupt(() => finalizeInterruptedAssistant),
-          )
+            break
+          }
           if (outcome === "break") break
           if (outcome === "park" && handle.refusal) {
             const newer = yield* promptOnAnotherRoute(sessionID, lastUser)
@@ -2363,7 +2655,152 @@ const layer = Layer.effect(
               })
               continue
             }
-            yield* park({ session, messageID: handle.message.id, refusal: handle.refusal, route: lastUser.model })
+            let blockedReason: AutoSwitch.BlockedReason = handle.hasEffects || sourceRequestChanged
+              ? "unsafe-step"
+              : !handle.routeRefusal ? "stale-evidence" : episode?.turnID === lastUser.id || sticky ? "attempted" : "route-ineligible"
+            if (
+              !sticky &&
+              !sourceRequestChanged &&
+              handle.routeRefusal &&
+              handle.routeRefusal.wireModel === "claude-opus-5-5" &&
+              switchState?.policy?.enabled &&
+              AutoSwitch.same(switchState.source, preferredRoute) &&
+              (!episode || episode.turnID < lastUser.id) &&
+              (yield* latestInputIsCurrent())
+            ) {
+              for (const candidate of switchState.policy.alternates) {
+              if (!AutoSwitch.pilotPair(preferredRoute, candidate)) continue
+              const target =
+                candidate &&
+                (yield* provider
+                  .getModel(ProviderV2.ID.make(candidate.providerID), ModelV2.ID.make(candidate.modelID))
+                  .pipe(Effect.option))
+              const candidates = candidate.agent === selectedAgent.name ? [selectedAgent] :
+                (yield* agents.list()).filter((item) => !item.hidden && item.mode === "primary" &&
+                  AutoSwitch.sameCandidate(candidate, { ...candidate, agent: item.name }))
+              const targetAgent = candidates.length === 1 ? candidates[0] : undefined
+              const route = candidate && targetAgent ? { ...candidate, agent: targetAgent.name } : undefined
+              if (
+                route &&
+                targetAgent &&
+                target &&
+                target._tag === "Some" &&
+                target.value.api.id === "gpt-6.2-sol" &&
+                route.variant &&
+                (route.agent === preferredRoute.agent || !lastUser.system) &&
+                Object.hasOwn(target.value.variants ?? {}, route.variant) &&
+                (yield* AutoSwitch.authorizeAgent({
+                  sessionID,
+                  source: preferredRoute,
+                  target: route,
+                  sourceAgent: selectedAgent,
+                  targetAgent,
+                  plugin,
+                }))
+              ) {
+                const freshUntil = yield* MeridianRouting.probe({ model: target.value, variant: route.variant })
+                if (freshUntil === undefined) blockedReason = "stale-evidence"
+                if (freshUntil !== undefined) {
+                  const claim: AutoSwitchSchema.Episode = {
+                    sessionId: sessionID,
+                    source: preferredRoute,
+                    target: route,
+                    turnID: lastUser.id,
+                    step,
+                    state: "claimed",
+                    returnPending: false,
+                    at: Date.now(),
+                    returnCooldown: episode?.autoReturnedTurnID === lastUser.id,
+                  }
+                  const attempt = yield* runAttempt({
+                    agent: targetAgent,
+                    model: target.value,
+                    route,
+                    projectHistory: true,
+                    replacement: true,
+                    beforeDispatch: () =>
+                      Effect.gen(function* () {
+                        if (!(yield* latestInputIsCurrent())) return false
+                        if (
+                          !(yield* AutoSwitch.authorizeAgent({
+                            sessionID,
+                            source: preferredRoute,
+                            target: route,
+                            sourceAgent: selectedAgent,
+                            targetAgent,
+                            plugin,
+                          }))
+                        )
+                          return false
+                        const current = yield* AutoSwitch.inspect(sessions, sessionID)
+                        if (
+                          !current ||
+                          current.revision !== switchState.revision ||
+                          current.policy?.policyRevision !== switchState.policy?.policyRevision ||
+                          !current.policy?.enabled ||
+                          !current.policy.alternates.some((item) => AutoSwitch.sameCandidate(item, route)) ||
+                          !(yield* latestInputIsCurrent())
+                        )
+                          return false
+                        const saved = yield* AutoSwitch.save(sessions, current, {
+                          episode: claim,
+                          valid: () =>
+                            latestInputIsCurrent().pipe(Effect.map((valid) => valid && Date.now() <= freshUntil)),
+                        })
+                        if (saved) AutoSwitch.markServing(claim)
+                        return saved
+                      }),
+                  }).pipe(Effect.ensuring(Effect.sync(() => AutoSwitch.stopServing(sessionID))))
+                  if (attempt.outcome === "blocked") {
+                    blockedReason = Date.now() > freshUntil ? "stale-evidence" : "route-ineligible"
+                    yield* sessions.removeMessage({ sessionID, messageID: attempt.handle.message.id })
+                    break
+                  } else {
+                    yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
+                    yield* AutoSwitch.settle(
+                      sessions,
+                      claim,
+                      !!attempt.handle.refusal || !!attempt.handle.message.error,
+                    )
+                    if (attempt.handle.refusal) {
+                      yield* park({
+                        session,
+                        messageID: attempt.handle.message.id,
+                        refusal: attempt.handle.refusal,
+                        route: { providerID: target.value.providerID, modelID: target.value.id },
+                        preserveAttempt: attempt.handle.hasEffects,
+                      })
+                    }
+                    if (attempt.outcome === "break") break turnLoop
+                    continue turnLoop
+                  }
+                }
+              }
+              }
+            }
+            const newerBeforePark = switchState?.policy?.enabled ? yield* promptOnAnotherRoute(sessionID, lastUser) : undefined
+            if (newerBeforePark && !handle.hasEffects) {
+              yield* dropRefused({
+                sessionID,
+                messageID: handle.message.id,
+                refusal: handle.refusal,
+                prompt: newerBeforePark,
+              })
+              answerNewest = true
+              continue
+            }
+            if (switchState?.policy?.enabled && (yield* pauses.get(sessionID)) && !handle.hasEffects) {
+              yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
+              continue
+            }
+            if (plannedAlternate && switchState) AutoSwitch.noteBlocked(sessionID, switchState.revision, blockedReason)
+            yield* park({
+              session,
+              messageID: handle.message.id,
+              refusal: handle.refusal,
+              route: { providerID: model.providerID, modelID: model.id },
+              preserveAttempt: !!switchState?.policy?.enabled && handle.hasEffects,
+            })
           }
           continue
         }
@@ -2374,7 +2811,17 @@ const layer = Layer.effect(
         if (pending?.state === "pending") yield* markPaused(sessionID, pending)
         yield* processor.settle(sessionID)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, (work) => OwnerQuiescence.fork(work, scope))
-        return yield* lastAssistant(sessionID)
+        const result = yield* lastAssistant(sessionID)
+        if (!pending && result.info.role === "assistant" && result.info.finish === "stop" && !result.info.error) {
+          const finished = yield* AutoSwitch.inspect(sessions, sessionID)
+          if (finished?.episode?.state === "active") {
+            if (finished.episode.returnCooldown && freshSubmission === result.info.parentID && finished.episode.turnID !== result.info.parentID) {
+              yield* AutoSwitch.save(sessions, finished, { episode: { ...finished.episode, returnCooldown: false } })
+            }
+            AutoSwitch.noteCleanEnd(sessionID)
+          }
+        }
+        return result
       },
     )
 
@@ -2410,9 +2857,7 @@ const layer = Layer.effect(
       return () => !joined || (!joined.seen.has(messageID) && !joined.withdrawn.has(messageID))
     }
 
-    const shell: Interface["shell"] = Effect.fn(
-      "SessionPrompt.shell",
-    )(function* (input: ShellInput) {
+    const shell: Interface["shell"] = Effect.fn("SessionPrompt.shell")(function* (input: ShellInput) {
       yield* SessionArchive.admit(sessions, input)
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
@@ -2523,9 +2968,7 @@ const layer = Layer.effect(
         let params: Command.ToolParam[] = []
         try {
           params = Command.toolParamsFromJsonSchema(
-            def
-              ? ToolJsonSchema.fromTool(def)
-              : (mcpEntry?.def as { inputSchema?: unknown } | undefined)?.inputSchema,
+            def ? ToolJsonSchema.fromTool(def) : (mcpEntry?.def as { inputSchema?: unknown } | undefined)?.inputSchema,
           )
         } catch {
           /* A schema that will not convert costs the friendly forms, not the
@@ -2537,21 +2980,19 @@ const layer = Layer.effect(
         const output = yield* Effect.gen(function* () {
           if (!parsed.ok) return `error: ${parsed.error}\n\n${Command.toolCommandUsage(input.command, params)}`
           if (def)
-            return (
-              yield* def.execute(args, {
-                sessionID: input.sessionID,
-                messageID,
-                callID: PartID.ascending(),
-                agent: agent.name,
-                abort: new AbortController().signal,
-                messages: [],
-                metadata: () => Effect.void,
-                /* The person typed this. Permission gates what the MODEL may
+            return (yield* def.execute(args, {
+              sessionID: input.sessionID,
+              messageID,
+              callID: PartID.ascending(),
+              agent: agent.name,
+              abort: new AbortController().signal,
+              messages: [],
+              metadata: () => Effect.void,
+              /* The person typed this. Permission gates what the MODEL may
                    reach for, and there is no model on this path - nor any
                    tool-call part for a dialog to attach to. */
-                ask: () => Effect.void,
-              })
-            ).output
+              ask: () => Effect.void,
+            })).output
           if (!mcpEntry) return `error: no tool named "${toolID}" is available in this session`
           /* `mcp.tools()` hands back `{ def, client, timeout }`, not something
              callable - the same conversion the merge point does is what makes
@@ -2728,7 +3169,9 @@ export const PauseInput = Schema.Struct({
   source: Schema.optional(SessionPause.Source),
   reason: Schema.optional(Schema.String),
   notice: Schema.optional(
-    Schema.String.annotate({ description: "Text of the user-only notice, used as given. opencode writes one when omitted." }),
+    Schema.String.annotate({
+      description: "Text of the user-only notice, used as given. opencode writes one when omitted.",
+    }),
   ),
 })
 export type PauseInput = Schema.Schema.Type<typeof PauseInput>
@@ -2738,7 +3181,9 @@ export const DiscardInput = Schema.Struct({
   ...SessionPause.Expected.fields,
   source: Schema.optional(SessionPause.Source),
   notice: Schema.optional(
-    Schema.String.annotate({ description: "Text of the user-only notice, used as given. opencode writes one when omitted." }),
+    Schema.String.annotate({
+      description: "Text of the user-only notice, used as given. opencode writes one when omitted.",
+    }),
   ),
 })
 export type DiscardInput = Schema.Schema.Type<typeof DiscardInput>

@@ -1,4 +1,5 @@
 import { Agent } from "@/agent/agent"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -42,6 +43,8 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
 ])
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
+  readonly autoSwitch?: import("@opencode-ai/plugin").AutoSwitchContext
+  readonly sourcePermission?: PermissionV1.Ruleset
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
@@ -51,6 +54,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   promptOps: TaskPromptOps
 }) {
   const tools: Record<string, AITool> = {}
+  const switchedAgent = input.autoSwitch && input.autoSwitch.preferred.agent !== input.autoSwitch.effective.agent
+  if (switchedAgent && !input.sourcePermission) return tools
+  const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+  const ceiling = input.sourcePermission && [input.sourcePermission, input.agent.permission, ruleset]
+  const blanket = ceiling?.map((rules): PermissionV1.Rule[] => [
+    { permission: "*", pattern: "*", action: "deny" },
+    ...rules
+      .filter((rule) => rule.pattern === "*")
+      .map((rule): PermissionV1.Rule => ({ ...rule, action: rule.action === "allow" ? "allow" : "deny" })),
+  ])
+  const exposed = (id: string) => {
+    if (!blanket) return true
+    // These tools can dispatch under a different agent or build their own catalog outside this ceiling.
+    if (id === "task" || id === "execute" || id === "plan_exit") return false
+    return blanket.every((rules) => !Permission.disabled([id], rules).has(id))
+  }
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
   const permission = yield* Permission.Service
@@ -60,6 +79,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const config = yield* Config.Service
   const limits = (yield* config.get()).tool_timeout
+  const routeContext = input.autoSwitch ? { autoSwitch: input.autoSwitch } : {}
 
   // Every tool call runs under a hard time limit; see ToolTimeout.resolve for
   // how a call's limit is chosen.
@@ -81,8 +101,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     abort: call.signal,
     messageID: input.processor.message.id,
     callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+    extra: { model: input.model, bypassAgentCheck: !ceiling && input.bypassAgentCheck, promptOps: input.promptOps },
     agent: input.agent.name,
+    ...(input.autoSwitch && { autoSwitch: input.autoSwitch }),
     messages: input.messages,
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
@@ -98,17 +119,30 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           },
         }
       }),
-    ask: (req) =>
-      call.hold(
+    ask: (req) => {
+      if (ceiling) {
+        // Permission.ask appends remembered approvals. Only decisions allowed by every policy may run here.
+        const allowed =
+          req.patterns.length > 0 &&
+          req.patterns.every((pattern) =>
+            ceiling.every((rules) => Permission.evaluate(req.permission, pattern, rules).action === "allow"),
+          )
+        if (allowed) return Effect.void
+        return Effect.die(
+          new PermissionV1.DeniedError({ ruleset: [{ permission: req.permission, pattern: "*", action: "deny" }] }),
+        )
+      }
+      return call.hold(
         permission
           .ask({
             ...req,
             sessionID: input.session.id,
             tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-            ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+            ruleset,
           })
           .pipe(Effect.orDie),
-      ),
+      )
+    },
   })
 
   // Every tool that may modify the worktree waits here until the session's file snapshots are recorded, so
@@ -126,6 +160,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     agent: input.agent,
     permission: input.session.permission,
   })) {
+    if (!exposed(item.id)) continue
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
       description: item.description,
@@ -142,7 +177,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const ctx = context(args, options, call)
             yield* plugin.trigger(
               "tool.execute.before",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
+              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, ...routeContext },
               { args },
             )
             const result = yield* item.execute(args, ctx)
@@ -157,7 +192,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.after",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args, ...routeContext },
               output,
             )
             if (options.abortSignal?.aborted) {
@@ -212,7 +247,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               : resourceServers.map((server) => `mcp:${server}:*`)
             yield* plugin.trigger(
               "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId },
+              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId, ...routeContext },
               { args },
             )
             yield* ctx.ask({
@@ -245,7 +280,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+              {
+                tool: MCP_RESOURCE_TOOLS.list,
+                sessionID: ctx.sessionID,
+                callID: opts.toolCallId,
+                args,
+                ...routeContext,
+              },
               output,
             )
             if (opts.abortSignal?.aborted) {
@@ -296,7 +337,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               : resourceServers.map((server) => `mcp:${server}:*`)
             yield* plugin.trigger(
               "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId },
+              {
+                tool: MCP_RESOURCE_TOOLS.listTemplates,
+                sessionID: ctx.sessionID,
+                callID: opts.toolCallId,
+                ...routeContext,
+              },
               { args },
             )
             yield* ctx.ask({
@@ -329,7 +375,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+              {
+                tool: MCP_RESOURCE_TOOLS.listTemplates,
+                sessionID: ctx.sessionID,
+                callID: opts.toolCallId,
+                args,
+                ...routeContext,
+              },
               output,
             )
             if (opts.abortSignal?.aborted) {
@@ -377,7 +429,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId },
+              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId, ...routeContext },
               { args },
             )
             yield* ctx.ask({
@@ -412,7 +464,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+              {
+                tool: MCP_RESOURCE_TOOLS.read,
+                sessionID: ctx.sessionID,
+                callID: opts.toolCallId,
+                args,
+                ...routeContext,
+              },
               output,
             )
             if (opts.abortSignal?.aborted) {
@@ -425,9 +483,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
+  for (const id of Object.values(MCP_RESOURCE_TOOLS)) {
+    if (!exposed(id)) delete tools[id]
+  }
   if (flags.experimentalCodeMode) return tools
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+    if (!exposed(key)) continue
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
     if (!execute) continue
@@ -449,7 +511,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           const ctx = context(args, opts, call)
           yield* plugin.trigger(
             "tool.execute.before",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
+            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, ...routeContext },
             { args },
           )
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
@@ -467,7 +529,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           )
           yield* plugin.trigger(
             "tool.execute.after",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args, ...routeContext },
             result,
           )
 

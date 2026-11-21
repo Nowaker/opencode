@@ -11,6 +11,7 @@ import { SessionStatus } from "./status"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { observeDisposal } from "@/effect/instance-registry"
 import { SessionAbort } from "./abort"
+import { AutoSwitch } from "./auto-switch"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
@@ -77,8 +78,9 @@ const layer = Layer.effect(
         },
         onIdle: Effect.gen(function* () {
           const current = data.runners.get(sessionID)
-          if (current && current.runner !== next) return
+          if (current && (current.runner !== next || current.runner.busy)) return
           data.runners.delete(sessionID)
+          AutoSwitch.noteIdle(sessionID)
           yield* status.set(sessionID, { type: "idle" })
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
@@ -138,7 +140,9 @@ const layer = Layer.effect(
     ) {
       const entry = yield* runner(sessionID, onInterrupt)
       return yield* entry.runner
-        .startShell(Effect.andThen(sessions.recordExecution(sessionID), work), ready)
+        .startShell(sessions.recordExecution(sessionID).pipe(
+          Effect.tap(() => Effect.sync(() => AutoSwitch.begin(sessionID))), Effect.andThen(work),
+        ), ready)
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 

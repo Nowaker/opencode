@@ -2,6 +2,7 @@ import { expect } from "bun:test"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
@@ -338,15 +339,23 @@ const deferring = Plugin.Service.of({
     }),
 } satisfies Plugin.Interface)
 
-const resolveFor = Effect.fn("test.resolveFor")(function* (npm: string) {
+const resolveFor = Effect.fn("test.resolveFor")(function* (
+  npm: string,
+  override?: {
+    effective?: Agent.Info
+    sessionPermission?: PermissionV1.Ruleset
+    sourcePermission?: PermissionV1.Ruleset
+  },
+) {
   return yield* SessionTools.resolve({
-    agent,
+    agent: override?.effective ?? agent,
     model: { ...model, api: { id: "test-model", npm } } as Provider.Model,
-    session: { id: sessionID, permission: [] } as unknown as Session.Info,
+    session: { id: sessionID, permission: override?.sessionPermission ?? [] } as unknown as Session.Info,
     processor: limitProcessor,
     bypassAgentCheck: false,
     messages: [],
     promptOps: {} as never,
+    sourcePermission: override?.sourcePermission,
   })
 })
 
@@ -378,3 +387,82 @@ testEffect(limitLayer({ tools: [asking] })).live("without the hook nothing is de
     expect(tools.asking?.providerOptions).toBeUndefined()
   }),
 )
+
+const restrictedRead: Tool.Def = {
+  ...asking,
+  id: "read",
+  execute: (_args, ctx) =>
+    Effect.gen(function* () {
+      yield* ctx.ask({ permission: "read", patterns: ["private.txt"], always: ["*"], metadata: {} })
+      return { title: "Private", output: "private contents", metadata: {} }
+    }),
+}
+
+testEffect(
+  limitLayer({
+    tools: [
+      restrictedRead,
+      { ...asking, id: "apply_patch" },
+      { ...asking, id: "bash" },
+      { ...asking, id: "task" },
+      { ...asking, id: "execute" },
+    ],
+  }),
+).live("swapped catalog excludes either agent's blanket denies and unqualified delegation despite session allows", () =>
+  Effect.gen(function* () {
+    const sourcePermission = [
+      ...agent.permission,
+      { permission: "edit", pattern: "*", action: "deny" },
+    ] satisfies PermissionV1.Ruleset
+    const effective = {
+      ...agent,
+      permission: [...agent.permission, { permission: "bash", pattern: "*", action: "deny" }],
+    } satisfies Agent.Info
+    const catalog = yield* resolveFor("@ai-sdk/openai", {
+      effective,
+      sourcePermission,
+      sessionPermission: agent.permission,
+    })
+    expect(Object.keys(catalog)).toEqual(["read"])
+  }),
+)
+
+for (const policy of ["source-deny", "effective-ask", "both-allow", "ordinary"] as const) {
+  testEffect(limitLayer({ tools: [restrictedRead] })).live(`honors ${policy} on a pattern-specific tool call`, () =>
+    Effect.gen(function* () {
+      const rule = { permission: "read", pattern: "private.txt" } as const
+      const sourcePermission: PermissionV1.Ruleset | undefined =
+        policy === "ordinary"
+          ? undefined
+          : [...agent.permission, { ...rule, action: policy === "source-deny" ? "deny" : "allow" }]
+      const effective: Agent.Info = {
+        ...agent,
+        permission: [
+          ...agent.permission,
+          { ...rule, action: policy === "effective-ask" || policy === "ordinary" ? "ask" : "allow" },
+        ],
+      }
+      const catalog = yield* resolveFor("@ai-sdk/openai", {
+        effective,
+        sourcePermission,
+        sessionPermission: agent.permission,
+      })
+      const execute = catalog.read?.execute
+      if (!execute) throw new Error("scoped read should still be available for allowed paths")
+      const result = yield* Effect.promise(() =>
+        Promise.resolve(execute({}, { toolCallId: callID, messages: [] })).then(
+          (output) => output,
+          (error: unknown) => {
+            if (error instanceof PermissionV1.DeniedError) return "denied"
+            throw error
+          },
+        ),
+      )
+      if (policy === "source-deny" || policy === "effective-ask") {
+        expect(result).toBe("denied")
+        return
+      }
+      expect(result).toMatchObject({ output: "private contents" })
+    }),
+  )
+}
