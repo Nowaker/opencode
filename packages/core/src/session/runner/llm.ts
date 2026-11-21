@@ -1,8 +1,8 @@
 export * as SessionRunnerLLM from "./llm.js"
 
-import { Message } from "@opencode/ai/effect"
 import { and, desc, eq, inArray, sql } from "drizzle-orm"
-import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
+import { Cause, Clock, Effect, Exit, FiberMap, Layer } from "effect"
+import type { RouteSwitch } from "@opencode/schema/route-switch"
 import { Database } from "../../database/database.js"
 import { Bus } from "../../bus.js"
 import { LocationLifecycle } from "../../location-lifecycle.js"
@@ -15,7 +15,6 @@ import { SessionBackground } from "../background.js"
 import { SubagentGroup } from "../subagent-group.js"
 import { Job } from "../../job.js"
 import { SessionHistory } from "../history.js"
-import { SessionModelRequest } from "../model-request.js"
 import { SessionModelTransport } from "../model-transport.js"
 import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
@@ -33,7 +32,12 @@ import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { PluginHooks } from "../../plugin/hooks.js"
-import { MAX_STEPS_PROMPT } from "./max-steps.js"
+import { Model } from "../../model.js"
+import { MeridianRouting } from "../../plugin/provider/meridian-routing.js"
+import { SessionRouteSwitch } from "../route-switch.js"
+import { exactRoute, sameRoute } from "../route-switch-policy.js"
+import { make as makeRouteSwitch, returnDue } from "./route-switch.js"
+import { prepare } from "./route-transcript.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -58,6 +62,7 @@ const layer = Layer.effect(
     const jobs = yield* Job.Service
     const title = yield* SessionTitle.Service
     const steps = yield* SessionStep.make
+    const routeSwitch = yield* makeRouteSwitch
     // Title generation starts once input is visible and must not delay model execution.
     const titles = yield* FiberMap.make<SessionSchema.ID, void, never>()
 
@@ -77,6 +82,11 @@ const layer = Layer.effect(
         if (promotable === "steer" && pending.delivery === "queue" && !control) return DrainResult.Complete()
       }
       yield* plugins.awaitActivation
+      if (input.owner && process.env.VIBETERM_AUTO_SWITCH_POLICY_MODULE) {
+        const session = yield* store.get(sessionID)
+        if (session && !(yield* routeSwitch.recover(session, input.owner)))
+          return yield* new StepFailedError({ error: unsafeRecovery })
+      }
       yield* settleStaleCompactions(sessionID)
       yield* settleStaleToolCalls(sessionID)
 
@@ -206,7 +216,7 @@ const layer = Layer.effect(
               const ready = yield* restore(
                 Effect.gen(function* () {
                   const selected = yield* prepareContext(sessionID)
-                  const promoted = yield* SessionInbox.promote(
+                  const promoted = yield* SessionInbox.promoteAdmissions(
                     db,
                     bus,
                     sessionID,
@@ -214,7 +224,13 @@ const layer = Layer.effect(
                   )
                   // A control admitted during context preparation owns this boundary.
                   if (promoted === undefined) return undefined
-                  if (promoted > 0 && !selected.session.parentID && SessionTitle.isUntitled(selected.session))
+                  if (
+                    input.owner &&
+                    process.env.VIBETERM_AUTO_SWITCH_POLICY_MODULE &&
+                    !(yield* routeSwitch.begin(selected.session, input.owner, promoted))
+                  )
+                    return yield* new StepFailedError({ error: unsafeRecovery })
+                  if (promoted.length > 0 && !selected.session.parentID && SessionTitle.isUntitled(selected.session))
                     yield* FiberMap.run(
                       titles,
                       sessionID,
@@ -222,7 +238,7 @@ const layer = Layer.effect(
                       title.generate(sessionID).pipe(Effect.catchTag("EngineStop.RefusedError", () => Effect.void)),
                       { onlyIfMissing: true },
                     )
-                  if (promoted > 0) step = 1
+                  if (promoted.length > 0) step = 1
                   return { _tag: "Ready" as const, context: yield* context.load(selected) }
                 }),
               )
@@ -235,9 +251,21 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step)
+        const owner = process.env.VIBETERM_AUTO_SWITCH_POLICY_MODULE ? input.owner : undefined
+        const settled = yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const result = yield* restore(runStep(next.context, step, { owner, force })).pipe(Effect.exit)
+            if (owner && (Exit.isFailure(result) || !result.value.continuing))
+              yield* routeSwitch.settle(next.context.session, owner, Exit.isSuccess(result))
+            if (owner && Exit.isSuccess(result) && result.value.continuing)
+              yield* routeSwitch.closeReturnWindow(next.context.session, owner)
+            if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
+            return result.value
+          }),
+        )
+        continuing = settled.continuing
         stepped = true
-        step++
+        step = settled.step + 1
         force = false
         entering = false
       }
@@ -253,95 +281,280 @@ const layer = Layer.effect(
     })
 
     /** Owns logical Step policy; each attempt owns its streaming, tools, and durable settlement. */
-    const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
+    const runStep = Effect.fn("SessionRunner.runStep")(function* (
+      first: SessionContext.Loaded,
+      initialStep: number,
+      execution: { owner: DrainInput["owner"]; force: boolean },
+    ) {
       const sessionID = first.session.id
+      const owner = execution.owner
+      let step = initialStep
       let assistantMessageID = SessionMessage.ID.create()
       const retry = yield* SessionRunnerRetry.make(bus, sessionID)
       let initial: SessionContext.Loaded | undefined = first
       let recoverOverflow = true
       let recoverContinuation = true
       let retryAttempt: number | undefined
+      let dispatched = false
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
-        const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
+        const preferred = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
         initial = undefined
-        const estimate = SessionCompaction.estimatePrompt(loaded)
-        const compacted = yield* compaction.compact({ reason: "auto", context: loaded, estimate })
-        if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
-        if (compacted.status === "completed") {
-          assistantMessageID = SessionMessage.ID.create()
-          continue
+        let fence = owner ? yield* routeSwitch.observe(preferred, owner) : undefined
+        const manual = fence?.state.manualRetry
+        const manualStop =
+          execution.force && owner?.retry && manual?.id === owner.retry && manual.state === "requested"
+            ? fence?.state.quotaStop
+            : undefined
+        if (execution.force && owner?.retry && !manualStop) return yield* new StepFailedError({ error: unsafeRecovery })
+        if (manualStop) step = manualStop.step
+        const sticky = fence?.state.sticky
+        let target = sticky?.effective
+        let kind: "return" | "sticky" | undefined = target ? "sticky" : undefined
+        if (fence && sticky) {
+          const manual = fence.state.manualReturn && fence.turn?.afterSettlement && step === 1
+          if (!fence.policy.enabled || manual) {
+            if (!(yield* routeSwitch.resetSticky(fence))) return yield* new StepFailedError({ error: unsafeRecovery })
+            yield* routeSwitch.updated(sessionID)
+            target = undefined
+            kind = undefined
+            fence = yield* routeSwitch.observe(preferred, fence.owner)
+          } else if (
+            !dispatched &&
+            step === 1 &&
+            fence.policy.returnEnabled &&
+            returnDue(fence.state, yield* Clock.currentTimeMillis)
+          ) {
+            target = sticky.preferred
+            kind = "return"
+          }
         }
-        yield* compaction.precompute(Effect.succeed(loaded), estimate)
-        const stepLimitReached = loaded.agent.info.steps !== undefined && step >= loaded.agent.info.steps
-        const transcript = SessionModelRequest.baseTranscript({
-          agent: loaded.agent.info,
-          model: loaded.model,
-          tools: loaded.tools,
-          initial: loaded.initial,
-          messages: loaded.messages,
-        })
-        const prepared = yield* context.request
-          .primary({
-            session: loaded.session,
+        const attemptOn = (
+          loaded: SessionContext.Loaded,
+          prepared: NonNullable<Effect.Success<ReturnType<typeof prepare>>>,
+          routing?: MeridianRouting.Binding,
+          singleSend = false,
+        ) =>
+          steps.attempt({
+            isLocationClosed: lifecycle.isClosed,
+            sessionID,
+            assistantMessageID,
             agent: loaded.agent.id,
+            toolAgent: preferred.agent.id,
             model: loaded.model,
-            tools: loaded.tools,
-            system: transcript.system,
-            messages: stepLimitReached
-              ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
-              : transcript.messages,
-            // Keep tool definitions on the final Step to preserve the provider's cached prefix.
-            toolChoice: stepLimitReached ? "none" : undefined,
-            webSocket: "session",
-            inputTokens: estimate,
+            prepared: {
+              ...prepared,
+              // A tool call can arrive during a reload; its permission check reads the session's agent.
+              executeTool: (call) => plugins.awaitActivation.pipe(Effect.andThen(prepared.executeTool(call))),
+            },
+            retryAttempt,
+            routing,
+            singleSend,
+            retry: (cause, error, proposed) =>
+              retry.decide({
+                cause,
+                error,
+                agent: loaded.agent.id,
+                model: loaded.model.ref,
+                hook: prepared.retry,
+                retry: proposed,
+              }),
+            recoverContinuation,
+            recoverOverflow: Effect.suspend(() =>
+              recoverOverflow
+                ? compaction
+                    .compact({
+                      reason: "overflow",
+                      context: loaded,
+                      estimate: SessionCompaction.estimatePrompt(loaded),
+                    })
+                    .pipe(Effect.map((result) => result.status === "completed"))
+                : Effect.succeed(false),
+            ),
           })
-          .pipe(
-            // The hook event holds every message from before images are bounded, screenshots included, and is a separate
-            // copy once a plugin hook has rewritten it. The step and its tool callbacks live as long as the slowest tool,
-            // so they keep only what they use.
-            Effect.map((prepared) => ({
-              request: prepared.request,
-              options: prepared.options,
-              retry: prepared.retry,
-              executeTool: prepared.executeTool,
-            })),
-          )
-        const outcome = yield* steps.attempt({
-          isLocationClosed: lifecycle.isClosed,
-          sessionID,
-          assistantMessageID,
-          agent: loaded.agent.id,
-          model: loaded.model,
-          prepared: {
-            ...prepared,
-            // A tool call can arrive during a reload; its permission check reads the session's agent.
-            executeTool: (call) => plugins.awaitActivation.pipe(Effect.andThen(prepared.executeTool(call))),
+        const candidate = Effect.fnUntraced(
+          function* (target: RouteSwitch.Route) {
+            const selection = yield* context.select(sessionID)
+            const loaded = yield* context.loadRoute(selection, target)
+            if (!loaded) return
+            const prepared = yield* prepare({ context, loaded, step, portable: true, http: true })
+            if (!prepared) return
+            return { loaded, prepared }
           },
-          retryAttempt,
-          retry: (cause, error, proposed) =>
-            retry.decide({
-              cause,
-              error,
-              agent: loaded.agent.id,
-              model: loaded.model.ref,
-              hook: prepared.retry,
-              retry: proposed,
-            }),
-          recoverContinuation,
-          recoverOverflow: Effect.suspend(() =>
-            recoverOverflow
-              ? compaction
-                  .compact({ reason: "overflow", context: loaded, estimate })
-                  .pipe(Effect.map((result) => result.status === "completed"))
-              : Effect.succeed(false),
-          ),
+          Effect.orElseSucceed(() => undefined),
+        )
+        let routed = target ? yield* candidate(target) : undefined
+        const proof =
+          routed && target && kind === "return"
+            ? yield* MeridianRouting.probe({ ...routed.prepared, selection: target })
+            : undefined
+        if (!proof && kind === "return" && sticky) {
+          target = sticky.effective
+          kind = "sticky"
+          routed = yield* candidate(target)
+        }
+        let loaded = routed?.loaded ?? preferred
+        let effective = exactRoute(loaded.agent.id, loaded.model.ref)
+        let outcome: SessionStep.Outcome
+        const runClaimed = Effect.fnUntraced(function* (input: {
+          readonly fence: NonNullable<typeof fence>
+          readonly via: NonNullable<typeof routed>
+          readonly proof: MeridianRouting.Availability
+          readonly kind: "alternate" | "return"
+          readonly source: RouteSwitch.Route
+          readonly sourceAttemptID?: SessionMessage.ID
+        }) {
+          const id = assistantMessageID
+          const binding = input.proof.bindDispatch({
+            allow: routeSwitch
+              .claim(input.fence, {
+                kind: input.kind,
+                step,
+                source: input.source,
+                target: exactRoute(input.via.loaded.agent.id, input.via.loaded.model.ref),
+                sourceAttemptID: input.sourceAttemptID,
+                targetAttemptID: id,
+              })
+              .pipe(
+                Effect.tap((accepted) => (accepted ? Effect.forkChild(routeSwitch.updated(sessionID)) : Effect.void)),
+              ),
+          })
+          return yield* attemptOn(input.via.loaded, input.via.prepared, binding, true).pipe(
+            Effect.onExit((exit) =>
+              routeSwitch.finish(
+                input.fence,
+                id,
+                Exit.isSuccess(exit) ? (exit.value._tag === "Refused" ? "failed" : "succeeded") : "unknown",
+              ),
+            ),
+          )
         })
+        if (manualStop && fence) {
+          const observed = fence
+          const target = yield* candidate(manualStop.route)
+          if (!target) {
+            yield* routeSwitch.finishManual(observed, false)
+            return yield* new StepFailedError({ error: unsafeRecovery })
+          }
+          const binding = yield* MeridianRouting.guard(
+            { ...target.prepared, selection: manualStop.route },
+            {
+              allow: routeSwitch.claimManual(observed, manualStop.route),
+            },
+          )
+          if (!binding) {
+            yield* routeSwitch.finishManual(observed, false)
+            return yield* new StepFailedError({ error: unsafeRecovery })
+          }
+          loaded = target.loaded
+          effective = manualStop.route
+          outcome = yield* attemptOn(loaded, target.prepared, binding, true).pipe(
+            Effect.onExit((exit) => routeSwitch.finishManual(observed, Exit.isSuccess(exit))),
+          )
+        } else if (routed && fence && kind === "return" && sticky && proof) {
+          outcome = yield* runClaimed({ fence, via: routed, kind, proof, source: sticky.effective })
+          if (outcome._tag === "Refused") {
+            const refreshed = yield* routeSwitch.observe(preferred, fence.owner)
+            if (
+              refreshed.state.revision !== fence.state.revision + 2 ||
+              refreshed.policy.policyRevision !== fence.policy.policyRevision
+            )
+              fence = undefined
+            else fence = { ...refreshed, revision: fence.revision }
+          }
+        } else if (routed && fence && kind === "sticky") {
+          const binding = yield* MeridianRouting.guard(
+            { ...routed.prepared, selection: effective },
+            {
+              allow: routeSwitch.validateSticky(fence, effective),
+            },
+          )
+          if (!binding) return yield* new StepFailedError({ error: unsafeRecovery })
+          outcome = yield* attemptOn(loaded, routed.prepared, binding, true)
+        } else {
+          if (kind)
+            return yield* new StepFailedError({
+              error: { type: "route.ineligible", message: "The alternate route cannot serve this step safely" },
+            })
+          const portable = fence?.state.lastAlternate?.outcome === "succeeded"
+          if (!portable) {
+            const estimate = SessionCompaction.estimatePrompt(loaded)
+            const compacted = yield* compaction.compact({ reason: "auto", context: loaded, estimate })
+            if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
+            if (compacted.status === "completed") {
+              assistantMessageID = SessionMessage.ID.create()
+              continue
+            }
+            yield* compaction.precompute(Effect.succeed(loaded), estimate)
+          }
+          if (portable) recoverOverflow = false
+          const prepared = yield* prepare({
+            context,
+            loaded,
+            step,
+            portable,
+            http: !!fence?.policy.enabled || portable,
+          })
+          if (!prepared) return yield* new StepFailedError({ error: unsafeRecovery })
+          const binding =
+            fence && !dispatched ? yield* MeridianRouting.bind({ ...prepared, selection: effective }) : undefined
+          dispatched = true
+          outcome = yield* attemptOn(loaded, prepared, binding)
+        }
+        if (outcome._tag === "Refused") {
+          const reason = fence?.turn?.alternate
+            ? "attempted"
+            : !fence?.policy.enabled
+              ? (fence?.policy.reason ?? "unsafe-step")
+              : fence.policy.alternates.length === 0
+                ? "no-approved-alternate"
+                : "route-ineligible"
+          if (
+            !manualStop &&
+            fence?.policy.enabled &&
+            fence.turn &&
+            !fence.turn.alternate &&
+            sameRoute(fence.preferred, effective)
+          ) {
+            const attempted = assistantMessageID
+            for (const alternative of fence.policy.alternates) {
+              if (alternative.providerID === effective.providerID) continue
+              const target = yield* candidate(alternative)
+              if (!target) continue
+              const proof = yield* MeridianRouting.probe({ ...target.prepared, selection: alternative })
+              if (!proof) continue
+              assistantMessageID = SessionMessage.ID.create()
+              const source = effective
+              loaded = target.loaded
+              effective = alternative
+              outcome = yield* runClaimed({
+                fence,
+                via: target,
+                kind: "alternate",
+                proof,
+                source,
+                sourceAttemptID: attempted,
+              })
+              break
+            }
+          }
+          if (outcome._tag === "Refused") {
+            if (fence)
+              yield* routeSwitch.recordStop(
+                fence,
+                { route: effective, assistantID: assistantMessageID, step },
+                outcome.refusal,
+                reason,
+              )
+            return yield* new StepFailedError({ error: outcome.error })
+          }
+        }
         retryAttempt = undefined
         const completed = yield* SessionStep.Outcome.$match(outcome, {
           Completed: Effect.fnUntraced(function* (outcome) {
+            if (fence?.state.quotaStop) yield* routeSwitch.clearStop(fence, effective)
             // The Session is about to go idle, which leaves the background summary time to finish.
-            if (!outcome.needsContinuation)
+            if (!outcome.needsContinuation && !routed && sameRoute(effective, fence?.preferred ?? effective))
               yield* compaction.precompute(
                 store.context(sessionID).pipe(Effect.map((messages) => ({ ...loaded, messages }))),
               )
@@ -403,8 +616,9 @@ const layer = Layer.effect(
           RecoverFull: Effect.fnUntraced(function* () {
             recoverContinuation = false
           }),
+          Refused: (outcome) => Effect.fail(new StepFailedError({ error: outcome.error })),
         })
-        if (completed !== undefined) return completed
+        if (completed !== undefined) return { continuing: completed, step }
       }
     })
 
@@ -487,5 +701,12 @@ export const node = makeLocationNode({
     Snapshot.node,
     ToolOutput.node,
     Database.node,
+    Model.node,
+    SessionRouteSwitch.node,
   ],
 })
+
+const unsafeRecovery = {
+  type: "route.unsafe-step",
+  message: "Route attempt cannot be safely continued; submit new work to resume",
+}
