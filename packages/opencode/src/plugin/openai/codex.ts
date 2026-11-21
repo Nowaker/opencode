@@ -572,7 +572,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
       if (websocketFetchInstalled && input.agent === "title") output.headers[OpenAIWebSocketPool.TITLE_HEADER] = "true"
     },
     "chat.params": async (input, output) => {
-      if (input.model.providerID !== "openai") return
+      if (input.model.providerID !== "openai" || input.autoSwitch) return
       // Match codex cli
       output.maxOutputTokens = undefined
     },

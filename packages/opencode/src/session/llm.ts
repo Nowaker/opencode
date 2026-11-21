@@ -2,12 +2,14 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Provider } from "@/provider/provider"
+import { MeridianRouting } from "@/provider/meridian-routing"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
+import type { AutoSwitchContext } from "@opencode-ai/plugin"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -31,6 +33,15 @@ import { LLMRequestPrep } from "./llm/request"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+export type PreparedRequest = {
+  readonly model: Provider.Model
+  readonly messages: readonly ModelMessage[]
+  readonly system: readonly string[]
+  readonly tools: Readonly<Record<string, Tool>>
+  readonly maxOutputTokens: number | undefined
+  readonly options: Readonly<Record<string, unknown>>
+}
+
 export type StreamInput = {
   user: SessionV1.User
   sessionID: string
@@ -44,6 +55,10 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  readonly validateRequest?: (request: PreparedRequest) => Effect.Effect<boolean>
+  readonly beforeDispatch?: () => Effect.Effect<boolean>
+  readonly preferredReturn?: true
+  readonly autoSwitch?: AutoSwitchContext
 }
 
 export type StreamRequest = StreamInput & {
@@ -91,9 +106,20 @@ const live: Layer.Layer<
         mode: input.agent.mode,
       })
 
-      const [language, cfg, item, info] = yield* Effect.all(
+      const beforeDispatch = input.beforeDispatch
+      const validateRequest = input.validateRequest
+      if (input.preferredReturn && (!beforeDispatch || !validateRequest)) {
+        return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
+      }
+      const trust = yield* MeridianRouting.resolvedTrust()
+      const target = beforeDispatch && {
+        model: { providerID: input.model.providerID, api: { ...input.model.api } },
+        variant: input.user.model.variant ?? "",
+      }
+      const source = beforeDispatch ? undefined : MeridianRouting.claudeTransport(trust, input.model)
+      const [standardLanguage, cfg, item, info] = yield* Effect.all(
         [
-          provider.getLanguage(input.model),
+          beforeDispatch ? Effect.void : provider.getLanguage(input.model, source),
           config.get(),
           provider.getProvider(input.model.providerID),
           auth.get(input.model.providerID),
@@ -101,7 +127,7 @@ const live: Layer.Layer<
         { concurrency: "unbounded" },
       )
 
-      const isWorkflow = language instanceof GitLabWorkflowLanguageModel
+      const isWorkflow = standardLanguage instanceof GitLabWorkflowLanguageModel
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
         provider: item,
@@ -109,12 +135,41 @@ const live: Layer.Layer<
         plugin,
         flags,
         isWorkflow,
+        autoSwitch: input.autoSwitch,
       })
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
       // and results sent back over the WebSocket.
       const bridge = yield* EffectBridge.make()
+      const validate = () => validateRequest?.({
+        model: input.model,
+        messages: prepared.messages,
+        system: prepared.system,
+        tools: prepared.tools,
+        maxOutputTokens: prepared.params.maxOutputTokens,
+        options: prepared.params.options,
+      }) ?? Effect.succeed(true)
+      const fenced = (() => {
+        if (!beforeDispatch || !target) return undefined
+        const fence = {
+          variant: target.variant,
+          singleDispatch: input.retries === 0,
+          dispatch: (send: () => Promise<Response>) => bridge.promise(Effect.gen(function* () {
+            if (!(yield* validate()) || !(yield* beforeDispatch())) {
+              return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
+            }
+            return yield* Effect.tryPromise({ try: send, catch: (error) => error })
+          })),
+        }
+        return input.preferredReturn
+          ? MeridianRouting.claudeTransport(trust, target.model, fence)
+          : MeridianRouting.chatgptTransport(trust, target.model, fence)
+      })()
+      const language = fenced ? yield* provider.getLanguage(input.model, fenced) : standardLanguage
+      if (!language || (beforeDispatch && !fenced) || (!fenced && validateRequest && !(yield* validate()))) {
+        return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
+      }
       if (language instanceof GitLabWorkflowLanguageModel) {
         const workflowModel = language as GitLabWorkflowLanguageModel & {
           sessionID?: string
@@ -222,7 +277,7 @@ const live: Layer.Layer<
 
       // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
-      if (flags.experimentalNativeLlm) {
+      if (flags.experimentalNativeLlm && !source && !fenced) {
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -278,6 +333,7 @@ const live: Layer.Layer<
         type: "ai-sdk" as const,
         result: streamText({
           onError(error) {
+            if (error.error instanceof MeridianRouting.DispatchBlocked || MeridianRouting.refusalOf(error.error)) return
             bridge.fork(
               Effect.logError("stream error", {
                 providerID: input.model.providerID,

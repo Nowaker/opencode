@@ -21,6 +21,7 @@ import { SessionPause } from "./pause"
 import { SessionAbort } from "./abort"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
+import { MeridianRouting } from "@/provider/meridian-routing"
 import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
@@ -41,6 +42,9 @@ export interface Handle {
    * not failed: the caller drops it and pauses the session, so unpause runs it again.
    */
   readonly refusal: SessionPause.Refusal | undefined
+  readonly routeRefusal: MeridianRouting.Refusal | undefined
+  readonly hasEffects: boolean
+  readonly dispatchBlocked: boolean
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
@@ -97,6 +101,7 @@ interface ProcessorContext extends Input {
 }
 
 type StreamEvent = LLMEvent
+type ToolDeferral = NonNullable<ReturnType<typeof SessionPause.deferredOf>>
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionProcessor") {}
 
@@ -156,6 +161,15 @@ const layer = Layer.effect(
       let stopped: number | undefined
       let acceptedNarrative = false
       let completingText = false
+      let hasEffects = false
+      let dispatchBlocked = false
+      let routeRefusal: MeridianRouting.Refusal | undefined
+      let attempts = 0
+      const observeTool = <Args extends unknown[], A>(callback: (...args: Args) => A) =>
+        function (this: unknown, ...args: Args): A {
+          hasEffects = true
+          return callback.apply(this, args)
+        }
       // Start the snapshot before the LLM stream starts. The AI SDK may execute tools internally before
       // emitting start-step events, so starting it inside the event handler can be too late. Tools that may
       // write wait for it through waitForSnapshots; the model request and read-only tools do not.
@@ -301,14 +315,13 @@ const layer = Layer.effect(
        * The AI SDK merges tool results from their own stream, so an instant deferral can arrive before its call's
        * `tool-call` event; that event then finishes the deferral with the full input.
        */
-      const early = new Map<string, { reason: "paused"; at: number }>()
+      const early = new Map<string, ToolDeferral>()
       const deferToolCall = Effect.fn("SessionProcessor.deferToolCall")(function* (
         toolCallID: string,
-        deferred: { reason: "paused"; at: number },
+        deferred: ToolDeferral,
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match) return
-        if (match.part.state.status !== "running") {
+        if (match?.part.state.status !== "running") {
           early.set(toolCallID, deferred)
           return
         }
@@ -504,6 +517,7 @@ const layer = Layer.effect(
       }
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
+        if (value.type !== "step-start" && value.type !== "provider-error") hasEffects = true
         switch (value.type) {
           case "reasoning-start":
             yield* mutate(
@@ -876,8 +890,12 @@ const layer = Layer.effect(
         yield* session.updateMessage(ctx.assistantMessage)
       })
 
-      const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
+      const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown, replacement: boolean) {
         yield* mutate(Effect.sync(clearRaw))
+        if (e instanceof MeridianRouting.DispatchBlocked) {
+          dispatchBlocked = true
+          return
+        }
         const sqlite = TransactionDiagnostic.get(e)
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
@@ -887,7 +905,7 @@ const layer = Layer.effect(
           ...(sqlite ? { sqlite } : {}),
         })
         const error = parse(e)
-        if (SessionV1.ContextOverflowError.isInstance(error)) {
+        if (!replacement && SessionV1.ContextOverflowError.isInstance(error)) {
           if ((yield* config.get()).compaction?.auto === false && !ctx.assistantMessage.summary) {
             ctx.assistantMessage.error = error
             ctx.assistantMessage.finish = "error"
@@ -903,13 +921,13 @@ const layer = Layer.effect(
         const refusal = ctx.assistantMessage.summary ? undefined : SessionPause.refusal(error)
         if (refusal) {
           ctx.refusal = refusal
+          if (attempts === 1) routeRefusal = MeridianRouting.refusalOf(e)
           return
         }
         ctx.assistantMessage.error = error
-        yield* events.publish(Session.Event.Error, {
-          sessionID: ctx.assistantMessage.sessionID,
-          error: ctx.assistantMessage.error,
-        })
+        if (!replacement) {
+          yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
+        }
         yield* status.set(ctx.sessionID, { type: "idle" })
       })
 
@@ -920,10 +938,25 @@ const layer = Layer.effect(
         })
         ctx.needsCompaction = false
         ctx.refusal = undefined
+        routeRefusal = undefined
+        hasEffects = false
+        dispatchBlocked = false
+        attempts = 0
+        const singleDispatch = !!streamInput.beforeDispatch && streamInput.retries === 0
+        const replacement = singleDispatch && !streamInput.preferredReturn
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        const tools = Object.fromEntries(Object.entries(streamInput.tools).map(([name, tool]) => {
+          const observed = { ...tool }
+          if (tool.execute) observed.execute = observeTool(tool.execute)
+          if (tool.onInputStart) observed.onInputStart = observeTool(tool.onInputStart)
+          if (tool.onInputDelta) observed.onInputDelta = observeTool(tool.onInputDelta)
+          if (tool.onInputAvailable) observed.onInputAvailable = observeTool(tool.onInputAvailable)
+          return [name, observed]
+        }))
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
+            attempts++
             yield* mutate(
               Effect.sync(() => {
                 if (ctx.currentText && ctx.currentText.time?.end === undefined) {
@@ -939,7 +972,7 @@ const layer = Layer.effect(
             stopped = undefined
             acceptedNarrative = false
             yield* status.set(ctx.sessionID, { type: "busy" })
-            const stream = llm.stream(streamInput)
+            const stream = llm.stream({ ...streamInput, tools })
 
             if (!stopSequences) {
               yield* stream.pipe(
@@ -976,7 +1009,10 @@ const layer = Layer.effect(
                 },
               }),
               // Meridian has already tried every account; retrying cannot help, and the step is parked instead.
-              while: (error) => !SessionPause.refusal(parse(error)),
+              while: (error) =>
+                !singleDispatch &&
+                !(error instanceof MeridianRouting.DispatchBlocked) &&
+                !SessionPause.refusal(parse(error)),
             }),
             Effect.andThen(() =>
               Effect.gen(function* () {
@@ -992,7 +1028,7 @@ const layer = Layer.effect(
                 aborted = true
                 abort = yield* SessionAbort.metadata
                 if (!ctx.assistantMessage.error) {
-                  yield* halt(new DOMException("Aborted", "AbortError"))
+                  yield* halt(new DOMException("Aborted", "AbortError"), replacement)
                 }
               }),
             ),
@@ -1000,11 +1036,11 @@ const layer = Layer.effect(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => Effect.fail(Cause.squash(cause)),
             ),
-            Effect.catch(halt),
+            Effect.catch((error) => halt(error, replacement)),
             Effect.ensuring(cleanup()),
           )
 
-          if (ctx.refusal) return "stop"
+          if (ctx.refusal || dispatchBlocked) return "stop"
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
@@ -1020,6 +1056,15 @@ const layer = Layer.effect(
         },
         get refusal() {
           return ctx.refusal
+        },
+        get routeRefusal() {
+          return hasEffects ? undefined : routeRefusal
+        },
+        get hasEffects() {
+          return hasEffects
+        },
+        get dispatchBlocked() {
+          return dispatchBlocked
         },
         updateToolCall,
         completeToolCall,

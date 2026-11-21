@@ -60,15 +60,18 @@ export function isDeferred(part: { type: string; state?: { status: string; metad
  * pending part with `metadata.deferred`; the model never sees it, because every step rebuilds its request from the
  * stored history and a deferred part is settled (unpause or discard) before the next model call.
  */
-export function deferredResult(at: number) {
-  return { title: "", output: "", metadata: { deferred: { reason: "paused" as const, at } } }
+export function deferredResult(at: number, switched = false) {
+  return {
+    title: "",
+    output: "",
+    metadata: { deferred: { reason: "paused" as const, at, ...(switched && { switched: true as const }) } },
+  }
 }
 
 export function deferredOf(metadata: Record<string, unknown>) {
   const value = metadata.deferred
-  if (typeof value !== "object" || value === null) return undefined
-  if (!("reason" in value) || value.reason !== "paused" || !("at" in value) || typeof value.at !== "number") return
-  return { reason: "paused" as const, at: value.at }
+  if (!isRecord(value) || value.reason !== "paused" || typeof value.at !== "number") return
+  return { reason: "paused" as const, at: value.at, ...(value.switched === true && { switched: true as const }) }
 }
 
 export const Refusal = SessionPauseEvent.Refusal
