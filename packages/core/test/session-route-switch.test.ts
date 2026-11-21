@@ -513,6 +513,31 @@ it.live("a source provider's configured routing pin rejects an explicit picker e
     { pinned: true },
   ),
 )
+it.live("standalone agent and model edits invalidate a picker's revision before the first prompt", () =>
+  fixture([], (rig) =>
+    Effect.gen(function* () {
+      const status = yield* rig.route.status(rig.sessionID)
+      if (status.availability !== "available") throw new Error("Missing native owner")
+      const stale = (revision: number) =>
+        rig.sessions
+          .prompt({
+            sessionID: rig.sessionID,
+            text: "stale picker",
+            resume: false,
+            experimental: { selection: { ownerEpoch: status.ownerEpoch, revision, route: claude } },
+          })
+          .pipe(Effect.flip)
+      yield* rig.sessions.switchAgent({ sessionID: rig.sessionID, agent: Agent.ID.make("plan") })
+      expect(yield* stale(status.revision)).toMatchObject({ reason: "selection-stale" })
+      const afterAgent = yield* rig.route.status(rig.sessionID)
+      if (afterAgent.availability !== "available") throw new Error("Missing native owner")
+      yield* rig.sessions.switchModel({ sessionID: rig.sessionID, model: ref(sol) })
+      expect(yield* stale(afterAgent.revision)).toMatchObject({ reason: "selection-stale" })
+      expect((yield* rig.sessions.inbox(rig.sessionID)).filter((item) => item.type === "user")).toEqual([])
+    }),
+  ),
+)
+
 for (const attachment of ["unsupported", "drop", "change"] as const) {
   it.live(`does not disclose replay when an attached image is ${attachment}`, () =>
     fixture(
