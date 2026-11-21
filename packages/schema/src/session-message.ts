@@ -17,6 +17,7 @@ import { Skill as SkillSchema } from "./skill.js"
 import { Money } from "./money.js"
 import { Snapshot } from "./snapshot.js"
 import { TokenUsage } from "./token-usage.js"
+import { RouteSwitch } from "./route-switch.js"
 
 export const ID = Schema.String.check(Schema.isStartingWith("msg_")).pipe(
   Schema.brand("Session.Message.ID"),
@@ -81,6 +82,7 @@ export const User = Schema.Struct({
   files: Prompt.fields.files,
   agents: Prompt.fields.agents,
   skills: Prompt.fields.skills,
+  selection: optional(RouteSwitch.Route),
   type: Schema.tag("user"),
 }).annotate({ identifier: "Session.Message.User" })
 

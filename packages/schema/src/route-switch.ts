@@ -1,7 +1,7 @@
 export * as RouteSwitch from "./route-switch.js"
 
 import { Schema } from "effect"
-import { Session } from "./session.js"
+import { SessionID } from "./session-id.js"
 import { NonNegativeInt, optional } from "./schema.js"
 
 export const Preference = Schema.Literals(["inherit", "off", "on"])
@@ -50,9 +50,13 @@ export interface QuotaStop extends Schema.Schema.Type<typeof QuotaStop> {}
 const ownerEpoch = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
 const guard = { ownerEpoch, revision: NonNegativeInt }
 export const Retry = Schema.Struct(guard).annotate({ identifier: "RouteSwitch.Retry" })
+export const PromptSelection = Schema.Struct({ ...guard, route: optional(Route) }).annotate({
+  identifier: "RouteSwitch.PromptSelection",
+})
+export interface PromptSelection extends Schema.Schema.Type<typeof PromptSelection> {}
 const status = {
   version: Schema.Literal(1),
-  sessionID: Session.ID,
+  sessionID: SessionID,
   preference: Preference,
   reason: Reason,
   preferred: Schema.NullOr(Route),

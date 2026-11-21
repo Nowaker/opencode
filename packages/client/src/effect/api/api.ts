@@ -13,11 +13,11 @@ import type { SessionMessage } from "@opencode/schema/session-message"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 import type { PromptInput } from "@opencode/schema/prompt-input"
 import type { AgentAttachment } from "@opencode/schema/prompt"
+import type { RouteSwitch } from "@opencode/schema/route-switch"
 import type { FileDiff } from "@opencode/schema/file-diff"
 import type { Money } from "@opencode/schema/money"
 import type { Form } from "@opencode/schema/form"
 import type { DateTime } from "effect"
-import type { RouteSwitch } from "@opencode/schema/route-switch"
 import type { Skill } from "@opencode/schema/skill"
 import type { InstructionEntry } from "@opencode/schema/instruction-entry"
 import type { Schema } from "effect"
@@ -69,6 +69,7 @@ export type ServerInfoOutput = {
         readonly sessionSelection?: boolean | undefined
         readonly sessionCompareAndInterrupt?: true | undefined
         readonly sessionConditionalPrompt?: true | undefined
+        readonly sessionPromptSelection?: true | undefined
         readonly subagentOptions?: boolean | undefined
         readonly pluginConfiguration?: boolean | undefined
         readonly compactionSummary?: boolean | undefined
@@ -243,7 +244,12 @@ export type SessionPromptInput = {
   readonly agents?: ReadonlyArray<AgentAttachment> | undefined
   readonly skills?: ReadonlyArray<PromptInput.SkillAttachment> | undefined
   readonly metadata?: { readonly [x: string]: unknown } | undefined
-  readonly experimental?: { readonly expected?: Session.PromptExpected | undefined } | undefined
+  readonly experimental?:
+    | {
+        readonly expected?: Session.PromptExpected | undefined
+        readonly selection?: RouteSwitch.PromptSelection | undefined
+      }
+    | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
   readonly resume?: boolean | undefined
 }

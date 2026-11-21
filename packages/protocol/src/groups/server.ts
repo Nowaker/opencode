@@ -48,6 +48,9 @@ export const ServerInfo = Schema.Struct({
       }),
       sessionCompareAndInterrupt: Schema.optional(Schema.Literal(true)),
       sessionConditionalPrompt: Schema.optional(Schema.Literal(true)),
+      sessionPromptSelection: Schema.optional(Schema.Literal(true)).annotate({
+        description: "Supports owner-fenced interactive prompt admission with an optional exact picker selection.",
+      }),
       subagentOptions: Schema.optional(Schema.Boolean).annotate({
         description: "Supports native subagent fork, completion notice policies and timed foreground handoff.",
       }),
