@@ -272,15 +272,17 @@ function togglePreference(preference: RouteSwitch.Preference, enabled: boolean) 
 function RouteAction(props: { readonly label: string; readonly enabled: boolean; readonly run: () => void }) {
   const theme = useTheme()
   const [hovered, setHovered] = createSignal(false)
+  const highlight = () => props.enabled && hovered()
   return (
     <text
       fg={
         props.enabled
-          ? hovered()
-            ? theme.text.action.primary.focused
+          ? highlight()
+            ? theme.text.action.primary.hovered
             : theme.text.action.primary.base
-          : theme.text.muted
+          : theme.text.action.primary.disabled
       }
+      bg={highlight() ? theme.background.action.primary.hovered : undefined}
       maxWidth="100%"
       wrapMode="word"
       onMouseOver={() => setHovered(true)}
