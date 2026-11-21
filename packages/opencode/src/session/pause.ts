@@ -98,7 +98,7 @@ export function refusal(error: { name: string; data?: unknown }): Refusal | unde
     return at === -1 ? [] : [{ message: value.slice(at) }]
   })[0]
   if (!found) return undefined
-  const message = typeof found.message === "string" ? found.message : REFUSAL_PREFIX.trim()
+  const message = typeof found.message === "string" ? found.message : "No routable account"
   const incident = string(found.incident_id) ?? /\(incident (inc_\d+_\d+)\)\s*$/.exec(message)?.[1]
   return {
     code: REFUSAL_CODE,

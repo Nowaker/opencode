@@ -2672,20 +2672,21 @@ const layer = Layer.effect(
               ? "unsafe-step"
               : !handle.routeRefusal ? "stale-evidence" : episode?.turnID === lastUser.id || sticky ? "attempted" : "route-ineligible"
             let alternateProjectionReason: AutoSwitchTranscript.BlockReason | undefined
+            const sourceEffort = preferredProvider && MeridianRouting.wireEffort({ provider: preferredProvider, model, variant: preferredRoute.variant })
+            const exactSource = !!handle.routeRefusal && handle.routeRefusal.type === preferredProvider &&
+              handle.routeRefusal.wireModel === model.api.id && model.id === model.api.id &&
+              sourceEffort !== undefined && handle.routeRefusal.variant === sourceEffort
+            let gate = !exactSource ? "source-wire" : !plannedAlternate ? "policy-candidate" : "source-admission"
             if (
               !sticky &&
               !sourceRequestChanged &&
-              handle.routeRefusal &&
-              preferredProvider &&
-              handle.routeRefusal.type === preferredProvider &&
-              handle.routeRefusal.wireModel === model.api.id && model.id === model.api.id &&
-              MeridianRouting.supports({ provider: preferredProvider, model, variant: preferredRoute.variant }) &&
-              handle.routeRefusal.variant === MeridianRouting.wireEffort({ provider: preferredProvider, model, variant: preferredRoute.variant }) &&
+              exactSource &&
               switchState?.policy?.enabled &&
               AutoSwitch.same(switchState.source, preferredRoute) &&
               (!episode || episode.turnID < lastUser.id) &&
               (yield* latestInputIsCurrent())
             ) {
+              gate = "target-catalog-or-agent"
               for (const candidate of switchState.policy.alternates) {
               if (!AutoSwitch.eligiblePair(preferredRoute, candidate)) continue
               const targetProvider = MeridianRouting.routeProvider(candidate.providerID)
@@ -2717,6 +2718,7 @@ const layer = Layer.effect(
                   plugin,
                 }))
               ) {
+                gate = "target-availability"
                 const freshUntil = yield* MeridianRouting.probe({
                   provider: targetProvider,
                   model: target.value,
@@ -2724,6 +2726,7 @@ const layer = Layer.effect(
                 })
                 if (freshUntil === undefined) blockedReason = "stale-evidence"
                 if (freshUntil !== undefined) {
+                  gate = "target-request-fence"
                   const claim: AutoSwitchSchema.Episode = {
                     sessionId: sessionID,
                     source: preferredRoute,
@@ -2823,6 +2826,7 @@ const layer = Layer.effect(
             }
             if (switchState?.policy?.enabled && (plannedAlternate || handle.routeRefusal)) {
               AutoSwitch.noteBlocked(sessionID, switchState.revision, blockedReason)
+              yield* Effect.logInfo("auto-switch stopped before alternate", { sessionID, step, gate, reason: blockedReason })
             }
             yield* park({
               session,

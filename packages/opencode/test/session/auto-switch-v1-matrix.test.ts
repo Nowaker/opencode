@@ -306,6 +306,7 @@ for (const cause of ["unsupported-output", "context-budget", "missing response m
       }
       if (cause === "missing response marker" || pinnedProfile) {
         expect(ctx.fixture.captured.filter((request) => request.wire === "availability")).toEqual([])
+        expect(pause?.reason).not.toContain("Claude")
         return
       }
       expect(pause?.reason).toContain(cause)
