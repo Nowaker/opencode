@@ -93,6 +93,12 @@ import type {
   ExperimentalSessionExportOutput,
   ExperimentalSessionRecoveryInput,
   ExperimentalSessionRecoveryOutput,
+  ExperimentalSessionAutoSwitchGetInput,
+  ExperimentalSessionAutoSwitchGetOutput,
+  ExperimentalSessionAutoSwitchEditInput,
+  ExperimentalSessionAutoSwitchEditOutput,
+  ExperimentalSessionAutoSwitchRetryInput,
+  ExperimentalSessionAutoSwitchRetryOutput,
   ExperimentalSessionSkillInput,
   ExperimentalSessionSkillOutput,
   ExperimentalSessionWaitInput,
@@ -1126,6 +1132,43 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ).then((value) => value.data),
+        autoSwitch: {
+          get: (input: ExperimentalSessionAutoSwitchGetInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalSessionAutoSwitchGetOutput }>(
+              {
+                method: "GET",
+                path: `/api/experimental/session/${encodeURIComponent(input.sessionID)}/auto-switch`,
+                successStatus: 200,
+                declaredStatuses: [400, 401, 404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          edit: (input: ExperimentalSessionAutoSwitchEditInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalSessionAutoSwitchEditOutput }>(
+              {
+                method: "PUT",
+                path: `/api/experimental/session/${encodeURIComponent(input.sessionID)}/auto-switch`,
+                body: input["payload"],
+                successStatus: 200,
+                declaredStatuses: [400, 401, 404, 409, 503],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          retry: (input: ExperimentalSessionAutoSwitchRetryInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalSessionAutoSwitchRetryOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/session/${encodeURIComponent(input.sessionID)}/auto-switch/retry`,
+                body: { ownerEpoch: input["ownerEpoch"], revision: input["revision"] },
+                successStatus: 200,
+                declaredStatuses: [400, 401, 404, 409, 503],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+        },
         skill: (input: ExperimentalSessionSkillInput, requestOptions?: RequestOptions) =>
           request<ExperimentalSessionSkillOutput>(
             {

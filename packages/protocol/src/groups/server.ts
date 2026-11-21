@@ -22,6 +22,12 @@ export const ServerInfo = Schema.Struct({
       engineStop: Schema.optional(Schema.Boolean).annotate({
         description: "Experimental process-local admission sealing for idle stop and forced restart.",
       }),
+      autoSwitch: Schema.optional(Schema.Literal(true)).annotate({
+        description: "Experimental owner-bound session route status and preference controls.",
+      }),
+      autoSwitchRetry: Schema.optional(Schema.Literal(true)).annotate({
+        description: "Experimental guarded retry of one native quota-stopped inference step.",
+      }),
       toolDeferral: Schema.optional(Schema.Boolean).annotate({
         description: "Awaited session context hooks can defer ordinary tools through native provider tool search.",
       }),

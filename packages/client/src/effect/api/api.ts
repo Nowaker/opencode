@@ -17,6 +17,7 @@ import type { FileDiff } from "@opencode/schema/file-diff"
 import type { Money } from "@opencode/schema/money"
 import type { Form } from "@opencode/schema/form"
 import type { DateTime } from "effect"
+import type { RouteSwitch } from "@opencode/schema/route-switch"
 import type { Skill } from "@opencode/schema/skill"
 import type { InstructionEntry } from "@opencode/schema/instruction-entry"
 import type { Schema } from "effect"
@@ -58,6 +59,8 @@ export type ServerInfoOutput = {
     | {
         readonly persistentPty?: boolean | undefined
         readonly engineStop?: boolean | undefined
+        readonly autoSwitch?: true | undefined
+        readonly autoSwitchRetry?: true | undefined
         readonly toolDeferral?: boolean | undefined
         readonly jobControl?: boolean | undefined
         readonly jobResults?: boolean | undefined
@@ -607,6 +610,31 @@ export type ExperimentalSessionRecoveryOutput = Session.Recovery
 export type ExperimentalSessionRecoveryOperation<E = never> = (
   input: ExperimentalSessionRecoveryInput,
 ) => Effect.Effect<ExperimentalSessionRecoveryOutput, E>
+
+export type ExperimentalSessionAutoSwitchGetInput = { readonly sessionID: Session.ID }
+export type ExperimentalSessionAutoSwitchGetOutput = RouteSwitch.Status
+export type ExperimentalSessionAutoSwitchGetOperation<E = never> = (
+  input: ExperimentalSessionAutoSwitchGetInput,
+) => Effect.Effect<ExperimentalSessionAutoSwitchGetOutput, E>
+
+export type ExperimentalSessionAutoSwitchEditInput = {
+  readonly sessionID: Session.ID
+  readonly payload: RouteSwitch.Mutation
+}
+export type ExperimentalSessionAutoSwitchEditOutput = RouteSwitch.Status
+export type ExperimentalSessionAutoSwitchEditOperation<E = never> = (
+  input: ExperimentalSessionAutoSwitchEditInput,
+) => Effect.Effect<ExperimentalSessionAutoSwitchEditOutput, E>
+
+export type ExperimentalSessionAutoSwitchRetryInput = {
+  readonly sessionID: Session.ID
+  readonly ownerEpoch: string
+  readonly revision: number
+}
+export type ExperimentalSessionAutoSwitchRetryOutput = RouteSwitch.Status
+export type ExperimentalSessionAutoSwitchRetryOperation<E = never> = (
+  input: ExperimentalSessionAutoSwitchRetryInput,
+) => Effect.Effect<ExperimentalSessionAutoSwitchRetryOutput, E>
 
 export type ExperimentalSessionSkillInput = {
   readonly sessionID: Session.ID
@@ -1487,6 +1515,11 @@ export interface ExperimentalSessionApi<E = never> {
   readonly import: ExperimentalSessionImportOperation<E>
   readonly export: ExperimentalSessionExportOperation<E>
   readonly recovery: ExperimentalSessionRecoveryOperation<E>
+  readonly autoSwitch: {
+    readonly get: ExperimentalSessionAutoSwitchGetOperation<E>
+    readonly edit: ExperimentalSessionAutoSwitchEditOperation<E>
+    readonly retry: ExperimentalSessionAutoSwitchRetryOperation<E>
+  }
   readonly skill: ExperimentalSessionSkillOperation<E>
   readonly wait: ExperimentalSessionWaitOperation<E>
   readonly instructions: {
@@ -2132,6 +2165,7 @@ export type EventSubscribeInput = {
         | "session.archived"
         | "session.unarchived"
         | "session.usage.updated"
+        | "session.route-switch.updated"
         | "session.deleted"
         | "session.forked"
         | "session.inbox.delivered"

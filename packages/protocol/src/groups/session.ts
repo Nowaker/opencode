@@ -2,6 +2,7 @@ import { SessionMessage } from "@opencode/schema/session-message"
 import { SessionInbox } from "@opencode/schema/session-inbox"
 import { PromptInput } from "@opencode/schema/prompt-input"
 import { Session } from "@opencode/schema/session"
+import { RouteSwitch } from "@opencode/schema/route-switch"
 import { SessionStats } from "@opencode/schema/session-stats"
 import { TokenUsage } from "@opencode/schema/token-usage"
 import { Money } from "@opencode/schema/money"
@@ -12,6 +13,7 @@ import { Event } from "@opencode/schema/event"
 import { SessionLegacy } from "@opencode/schema/session-legacy"
 import { Context, Schema, SchemaGetter, Struct } from "effect"
 import { EngineStopRefusedError } from "../engine-stop.js"
+import { AutoSwitchConflict, AutoSwitchUnavailable } from "../route-switch.js"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/http-api"
 import {
   ConflictError,
@@ -51,6 +53,8 @@ const PublicSessionInfo = Schema.Struct({
   ...Struct.omit(Session.Info.fields, ["location"]),
   location: Location.PublicRef,
 }).annotate({ identifier: "Session.Info" })
+
+const AutoSwitchResponse = Schema.Struct({ data: RouteSwitch.Status })
 
 const PublicSessionTransfer = Schema.Struct({
   info: PublicSessionInfo,
@@ -257,6 +261,50 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           summary: "Observe session recovery state",
           description:
             "Experimental: may change without compatibility guarantees. Read projected history and input revision together with the process-local execution owner.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.autoSwitch.get", "/api/experimental/session/:sessionID/auto-switch", {
+        params: { sessionID: Session.ID },
+        success: AutoSwitchResponse,
+        error: SessionNotFoundError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "experimental.session.autoSwitch.get",
+          summary: "Read session auto-switch status",
+          description:
+            "Experimental: may change without compatibility guarantees. Read the current owner's route status, refreshing exact availability at an eligible idle boundary without starting inference.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.put("session.autoSwitch.edit", "/api/experimental/session/:sessionID/auto-switch", {
+        params: { sessionID: Session.ID },
+        payload: RouteSwitch.Mutation,
+        success: AutoSwitchResponse,
+        error: [SessionNotFoundError, AutoSwitchConflict, AutoSwitchUnavailable],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "experimental.session.autoSwitch.edit",
+          summary: "Edit session auto-switch preference",
+          description:
+            "Experimental: may change without compatibility guarantees. An edit requires the observed owner epoch and revision; a conflict returns the current snapshot.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.autoSwitch.retry", "/api/experimental/session/:sessionID/auto-switch/retry", {
+        params: { sessionID: Session.ID },
+        payload: RouteSwitch.Retry,
+        success: AutoSwitchResponse,
+        error: [SessionNotFoundError, AutoSwitchConflict, AutoSwitchUnavailable],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "experimental.session.autoSwitch.retry",
+          summary: "Retry a native quota-stopped step",
+          description:
+            "Experimental: may change without compatibility guarantees. Request one retry of the exact stopped step without adding input. Success acknowledges acceptance, not completion.",
         }),
       ),
     )

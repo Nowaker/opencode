@@ -10,6 +10,8 @@ export type ServerInfo = {
     | {
         persistentPty?: boolean | undefined
         engineStop?: boolean | undefined
+        autoSwitch?: true | undefined
+        autoSwitchRetry?: true | undefined
         toolDeferral?: boolean | undefined
         jobControl?: boolean | undefined
         jobResults?: boolean | undefined
@@ -188,6 +190,8 @@ export type SessionStatsToolUsage = {
 export type SessionStatsActivity = { date: string; steps: number }
 
 export type EventID = string
+
+export type RouteSwitchRoute = { agent: string; providerID: string; modelID: string; variant: string | null }
 
 export type InstructionEntryKey = string
 
@@ -728,6 +732,8 @@ export type SessionStatsTools =
   | { mode: "detail"; totals: SessionStatsToolTotals; usage: Array<SessionStatsToolUsage> }
 
 export type SessionInputRevision = { seq: number; eventID: EventID }
+
+export type RouteSwitchQuotaStop = { route: RouteSwitchRoute; reason: "quota_exhausted" | "reserve_held" }
 
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
 
@@ -1276,6 +1282,84 @@ export type SessionRecovery = {
   inputRevision: SessionInputRevision | null
   pendingInput: boolean
 }
+
+export type RouteSwitchStatus =
+  | {
+      version: 1
+      sessionID: SessionID
+      preference: "inherit" | "off" | "on"
+      reason:
+        | "session-on"
+        | "session-off"
+        | "rule-on"
+        | "rule-off"
+        | "default-on"
+        | "default-off"
+        | "global-disabled"
+        | "pinned"
+        | "older-engine"
+        | "owner-unavailable"
+        | "policy-unavailable"
+        | "no-approved-alternate"
+        | "route-ineligible"
+        | "unsafe-step"
+        | "stale-evidence"
+        | "attempted"
+        | "alternate-active"
+        | "return-pending"
+        | "busy"
+      preferred: RouteSwitchRoute | null
+      effective: RouteSwitchRoute | null
+      returnPending: boolean
+      returnPreference: "inherit" | "off" | "on"
+      returnEnabled: boolean
+      returnState: "preferred" | "alternate" | "returning" | "return-off"
+      next: RouteSwitchRoute | null
+      previewExpiresAt?: number
+      quotaStop?: RouteSwitchQuotaStop
+      ownerEpoch: string
+      revision: number
+      availability: "available"
+      enabled: boolean
+    }
+  | {
+      version: 1
+      sessionID: SessionID
+      preference: "inherit" | "off" | "on"
+      reason:
+        | "session-on"
+        | "session-off"
+        | "rule-on"
+        | "rule-off"
+        | "default-on"
+        | "default-off"
+        | "global-disabled"
+        | "pinned"
+        | "older-engine"
+        | "owner-unavailable"
+        | "policy-unavailable"
+        | "no-approved-alternate"
+        | "route-ineligible"
+        | "unsafe-step"
+        | "stale-evidence"
+        | "attempted"
+        | "alternate-active"
+        | "return-pending"
+        | "busy"
+      preferred: RouteSwitchRoute | null
+      effective: RouteSwitchRoute | null
+      returnPending: boolean
+      returnPreference: "inherit" | "off" | "on"
+      returnEnabled: boolean
+      returnState: "preferred" | "alternate" | "returning" | "return-off"
+      next: RouteSwitchRoute | null
+      previewExpiresAt?: number
+      quotaStop?: RouteSwitchQuotaStop
+      availability: "unavailable"
+      ownerEpoch: string | null
+      revision: number | null
+      enabled: false
+    }
 
 export type SessionAgentSelected = {
   id: EventID
@@ -1853,6 +1937,15 @@ export type SessionUsageUpdated = {
   type: "session.usage.updated"
   location?: LocationRef
   data: { sessionID: SessionID; cost: MoneyUSD; tokens: TokenUsageInfo }
+}
+
+export type SessionRouteSwitchUpdated = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.route-switch.updated"
+  location?: LocationRef
+  data: { sessionID: SessionID }
 }
 
 export type SessionTextDelta = {
@@ -2997,6 +3090,7 @@ export type V2Event =
   | SessionArchived
   | SessionUnarchived
   | SessionUsageUpdated
+  | SessionRouteSwitchUpdated
   | SessionDeleted
   | SessionForked
   | SessionInboxDelivered
@@ -3236,6 +3330,264 @@ export type FormAlreadySettledError = {
 }
 export const isFormAlreadySettledError = (value: unknown): value is FormAlreadySettledError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "FormAlreadySettledError"
+
+export type AutoSwitchConflict = {
+  readonly _tag: "AutoSwitchConflict"
+  readonly data:
+    | {
+        readonly version: 1
+        readonly sessionID: string
+        readonly preference: "inherit" | "off" | "on"
+        readonly reason:
+          | "session-on"
+          | "session-off"
+          | "rule-on"
+          | "rule-off"
+          | "default-on"
+          | "default-off"
+          | "global-disabled"
+          | "pinned"
+          | "older-engine"
+          | "owner-unavailable"
+          | "policy-unavailable"
+          | "no-approved-alternate"
+          | "route-ineligible"
+          | "unsafe-step"
+          | "stale-evidence"
+          | "attempted"
+          | "alternate-active"
+          | "return-pending"
+          | "busy"
+        readonly preferred: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly effective: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly returnPending: boolean
+        readonly returnPreference: "inherit" | "off" | "on"
+        readonly returnEnabled: boolean
+        readonly returnState: "preferred" | "alternate" | "returning" | "return-off"
+        readonly next: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly previewExpiresAt?: number
+        readonly quotaStop?: {
+          readonly route: {
+            readonly agent: string
+            readonly providerID: string
+            readonly modelID: string
+            readonly variant: string | null
+          }
+          readonly reason: "quota_exhausted" | "reserve_held"
+        }
+        readonly ownerEpoch: string
+        readonly revision: number
+        readonly availability: "available"
+        readonly enabled: boolean
+      }
+    | {
+        readonly version: 1
+        readonly sessionID: string
+        readonly preference: "inherit" | "off" | "on"
+        readonly reason:
+          | "session-on"
+          | "session-off"
+          | "rule-on"
+          | "rule-off"
+          | "default-on"
+          | "default-off"
+          | "global-disabled"
+          | "pinned"
+          | "older-engine"
+          | "owner-unavailable"
+          | "policy-unavailable"
+          | "no-approved-alternate"
+          | "route-ineligible"
+          | "unsafe-step"
+          | "stale-evidence"
+          | "attempted"
+          | "alternate-active"
+          | "return-pending"
+          | "busy"
+        readonly preferred: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly effective: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly returnPending: boolean
+        readonly returnPreference: "inherit" | "off" | "on"
+        readonly returnEnabled: boolean
+        readonly returnState: "preferred" | "alternate" | "returning" | "return-off"
+        readonly next: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly previewExpiresAt?: number
+        readonly quotaStop?: {
+          readonly route: {
+            readonly agent: string
+            readonly providerID: string
+            readonly modelID: string
+            readonly variant: string | null
+          }
+          readonly reason: "quota_exhausted" | "reserve_held"
+        }
+        readonly availability: "unavailable"
+        readonly ownerEpoch: string | null
+        readonly revision: number | null
+        readonly enabled: false
+      }
+}
+export const isAutoSwitchConflict = (value: unknown): value is AutoSwitchConflict =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "AutoSwitchConflict"
+
+export type AutoSwitchUnavailable = {
+  readonly _tag: "AutoSwitchUnavailable"
+  readonly data:
+    | {
+        readonly version: 1
+        readonly sessionID: string
+        readonly preference: "inherit" | "off" | "on"
+        readonly reason:
+          | "session-on"
+          | "session-off"
+          | "rule-on"
+          | "rule-off"
+          | "default-on"
+          | "default-off"
+          | "global-disabled"
+          | "pinned"
+          | "older-engine"
+          | "owner-unavailable"
+          | "policy-unavailable"
+          | "no-approved-alternate"
+          | "route-ineligible"
+          | "unsafe-step"
+          | "stale-evidence"
+          | "attempted"
+          | "alternate-active"
+          | "return-pending"
+          | "busy"
+        readonly preferred: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly effective: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly returnPending: boolean
+        readonly returnPreference: "inherit" | "off" | "on"
+        readonly returnEnabled: boolean
+        readonly returnState: "preferred" | "alternate" | "returning" | "return-off"
+        readonly next: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly previewExpiresAt?: number
+        readonly quotaStop?: {
+          readonly route: {
+            readonly agent: string
+            readonly providerID: string
+            readonly modelID: string
+            readonly variant: string | null
+          }
+          readonly reason: "quota_exhausted" | "reserve_held"
+        }
+        readonly ownerEpoch: string
+        readonly revision: number
+        readonly availability: "available"
+        readonly enabled: boolean
+      }
+    | {
+        readonly version: 1
+        readonly sessionID: string
+        readonly preference: "inherit" | "off" | "on"
+        readonly reason:
+          | "session-on"
+          | "session-off"
+          | "rule-on"
+          | "rule-off"
+          | "default-on"
+          | "default-off"
+          | "global-disabled"
+          | "pinned"
+          | "older-engine"
+          | "owner-unavailable"
+          | "policy-unavailable"
+          | "no-approved-alternate"
+          | "route-ineligible"
+          | "unsafe-step"
+          | "stale-evidence"
+          | "attempted"
+          | "alternate-active"
+          | "return-pending"
+          | "busy"
+        readonly preferred: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly effective: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly returnPending: boolean
+        readonly returnPreference: "inherit" | "off" | "on"
+        readonly returnEnabled: boolean
+        readonly returnState: "preferred" | "alternate" | "returning" | "return-off"
+        readonly next: {
+          readonly agent: string
+          readonly providerID: string
+          readonly modelID: string
+          readonly variant: string | null
+        } | null
+        readonly previewExpiresAt?: number
+        readonly quotaStop?: {
+          readonly route: {
+            readonly agent: string
+            readonly providerID: string
+            readonly modelID: string
+            readonly variant: string | null
+          }
+          readonly reason: "quota_exhausted" | "reserve_held"
+        }
+        readonly availability: "unavailable"
+        readonly ownerEpoch: string | null
+        readonly revision: number | null
+        readonly enabled: false
+      }
+}
+export const isAutoSwitchUnavailable = (value: unknown): value is AutoSwitchUnavailable =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "AutoSwitchUnavailable"
 
 export type SkillNotFoundError = {
   readonly _tag: "SkillNotFoundError"
@@ -4074,6 +4426,38 @@ export type ExperimentalSessionRecoveryInput = { readonly sessionID: string }
 
 export type ExperimentalSessionRecoveryOutput = { data: SessionRecovery }["data"]
 
+export type ExperimentalSessionAutoSwitchGetInput = { readonly sessionID: string }
+
+export type ExperimentalSessionAutoSwitchGetOutput = { data: RouteSwitchStatus }["data"]
+
+export type ExperimentalSessionAutoSwitchEditInput = {
+  readonly sessionID: string
+  readonly payload:
+    | {
+        readonly ownerEpoch: string
+        readonly revision: number
+        readonly action: "set-preference"
+        readonly preference: "inherit" | "off" | "on"
+      }
+    | {
+        readonly ownerEpoch: string
+        readonly revision: number
+        readonly action: "set-return-preference"
+        readonly preference: "inherit" | "off" | "on"
+      }
+    | { readonly ownerEpoch: string; readonly revision: number; readonly action: "return-to-preferred" }
+}
+
+export type ExperimentalSessionAutoSwitchEditOutput = { data: RouteSwitchStatus }["data"]
+
+export type ExperimentalSessionAutoSwitchRetryInput = {
+  readonly sessionID: string
+  readonly ownerEpoch: string
+  readonly revision: number
+}
+
+export type ExperimentalSessionAutoSwitchRetryOutput = { data: RouteSwitchStatus }["data"]
+
 export type ExperimentalSessionSkillInput = {
   readonly sessionID: string
   readonly id: string
@@ -4580,6 +4964,7 @@ export type EventSubscribeInput = {
         | "session.archived"
         | "session.unarchived"
         | "session.usage.updated"
+        | "session.route-switch.updated"
         | "session.deleted"
         | "session.forked"
         | "session.inbox.delivered"
