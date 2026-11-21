@@ -3,6 +3,7 @@ import { Permission } from "@/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 
 import { Session } from "@/session/session"
+import { AutoSwitchSchema } from "@/session/auto-switch-schema"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -22,6 +23,8 @@ import {
 } from "../middleware/workspace-routing"
 import {
   ApiNotFoundError,
+  AutoSwitchConflict,
+  AutoSwitchUnavailable,
   PermissionNotFoundError,
   PromptAdmissionError,
   PromptNotQueuedError,
@@ -110,6 +113,7 @@ export const SessionPaths = {
   list: root,
   status: `${root}/status`,
   get: `${root}/:sessionID`,
+  autoSwitch: `${root}/:sessionID/auto-switch`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
@@ -176,6 +180,28 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.get",
             summary: "Get session",
             description: "Retrieve detailed information about a specific OpenCode session.",
+          }),
+        ),
+        HttpApiEndpoint.get("autoSwitchStatus", SessionPaths.autoSwitch, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: AutoSwitchSchema.Status,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.autoSwitch.status",
+            summary: "Get session auto-switch status",
+          }),
+        ),
+        HttpApiEndpoint.put("autoSwitchUpdate", SessionPaths.autoSwitch, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: AutoSwitchSchema.Mutation,
+          success: AutoSwitchSchema.Status,
+          error: [AutoSwitchConflict, AutoSwitchUnavailable],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.autoSwitch.update",
+            summary: "Update session auto-switch",
           }),
         ),
         HttpApiEndpoint.get("children", SessionPaths.children, {

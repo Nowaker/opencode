@@ -15,6 +15,7 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  AutoSwitchMutation,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -190,6 +191,10 @@ import type {
   SessionAbortResponses,
   SessionApplyRevertErrors,
   SessionApplyRevertResponses,
+  SessionAutoSwitchStatusErrors,
+  SessionAutoSwitchStatusResponses,
+  SessionAutoSwitchUpdateErrors,
+  SessionAutoSwitchUpdateResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -3508,6 +3513,83 @@ export class Provider extends HeyApiClient {
   }
 }
 
+export class AutoSwitch extends HeyApiClient {
+  /**
+   * Get session auto-switch status
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionAutoSwitchStatusResponses,
+      SessionAutoSwitchStatusErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/auto-switch",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update session auto-switch
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      autoSwitchMutation: AutoSwitchMutation
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "autoSwitchMutation", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<
+      SessionAutoSwitchUpdateResponses,
+      SessionAutoSwitchUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/auto-switch",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -4753,6 +4835,11 @@ export class Session2 extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  private _autoSwitch?: AutoSwitch
+  get autoSwitch(): AutoSwitch {
+    return (this._autoSwitch ??= new AutoSwitch({ client: this.client }))
   }
 }
 

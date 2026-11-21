@@ -20,10 +20,11 @@ export async function validateSession(input: {
     throw new Error(`Invalid session ID: ${error instanceof Error ? error.message : "unknown error"}`, { cause: error })
   }
 
-  await createOpencodeClient({
+  const result = await createOpencodeClient({
     baseUrl: input.url,
     directory: input.directory,
     fetch: input.fetch,
     headers: input.headers,
   }).session.get({ sessionID }, { throwOnError: true })
+  return result.data
 }

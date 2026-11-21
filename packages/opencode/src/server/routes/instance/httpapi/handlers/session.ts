@@ -7,6 +7,7 @@ import { OwnerQuiescence } from "@/owner/quiescence"
 import { Permission } from "@/permission"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
+import { AutoSwitch } from "@/session/auto-switch"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -42,7 +43,15 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { notFound, PermissionNotFoundError, PromptAdmissionError, PromptNotQueuedError, SendNowRefusedError } from "../errors"
+import {
+  AutoSwitchConflict,
+  AutoSwitchUnavailable,
+  notFound,
+  PermissionNotFoundError,
+  PromptAdmissionError,
+  PromptNotQueuedError,
+  SendNowRefusedError,
+} from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -583,6 +592,15 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("list", list)
       .handle("status", status)
       .handle("get", get)
+      .handle("autoSwitchStatus", (ctx) => AutoSwitch.read(session, ctx.params.sessionID))
+      .handle("autoSwitchUpdate", (ctx) =>
+        Effect.gen(function* () {
+          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload)
+          if (result.statusCode === 409) return yield* new AutoSwitchConflict(result.status)
+          if (result.statusCode === 503) return yield* new AutoSwitchUnavailable(result.status)
+          return result.status
+        }),
+      )
       .handle("children", children)
       .handle("todo", todo)
       .handle("diff", diff)

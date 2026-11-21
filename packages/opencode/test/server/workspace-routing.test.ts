@@ -19,6 +19,12 @@ describe("isLocalWorkspaceRoute", () => {
     expect(isLocalWorkspaceRoute("POST", "/session")).toBe(false)
   })
 
+  test("auto-switch keeps both requests on the serving process", () => {
+    expect(isLocalWorkspaceRoute("GET", "/session/ses_abc/auto-switch")).toBe(true)
+    expect(isLocalWorkspaceRoute("PUT", "/session/ses_abc/auto-switch")).toBe(true)
+    expect(isLocalWorkspaceRoute("PUT", "/session/ses_abc/auto-switch/extra")).toBe(false)
+  })
+
   test("/session/status is forwarded regardless of method", () => {
     expect(isLocalWorkspaceRoute("GET", "/session/status")).toBe(false)
     expect(isLocalWorkspaceRoute("POST", "/session/status")).toBe(false)

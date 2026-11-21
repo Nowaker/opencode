@@ -1204,6 +1204,21 @@ const scenarios: Scenario[] = [
     }))
     .status(404),
   http.protected
+    .get("/session/{sessionID}/auto-switch", "session.autoSwitch.status")
+    .seeded((ctx) => ctx.session({ title: "Auto-switch status" }))
+    .at((ctx) => ({ path: route("/session/{sessionID}/auto-switch", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(200),
+  http.protected
+    .put("/session/{sessionID}/auto-switch", "session.autoSwitch.update")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Auto-switch update" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/auto-switch", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { action: "set-preference", preference: "on", ownerEpoch: "unbound", revision: 0 },
+    }))
+    .json(503),
+  http.protected
     .patch("/session/{sessionID}", "session.update")
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Before rename" }))

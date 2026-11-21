@@ -2728,6 +2728,143 @@ export type NotFoundError = {
   }
 }
 
+export type AutoSwitchRoute = {
+  agent: string
+  providerID: string
+  modelID: string
+  variant: string | null
+}
+
+export type AutoSwitchStatus = {
+  version: 1
+  sessionID: string
+  availability: "available" | "unavailable"
+  ownerEpoch: string | null
+  revision: number | null
+  preference: "inherit" | "on" | "off"
+  enabled: boolean
+  reason:
+    | "session-on"
+    | "session-off"
+    | "rule-on"
+    | "rule-off"
+    | "default-on"
+    | "default-off"
+    | "pinned"
+    | "older-engine"
+    | "owner-unavailable"
+    | "no-approved-alternate"
+    | "route-ineligible"
+    | "unsafe-step"
+    | "stale-evidence"
+    | "attempted"
+    | "alternate-active"
+    | "return-pending"
+    | "global-disabled"
+    | "policy-unavailable"
+    | "busy"
+  preferred: AutoSwitchRoute | null
+  effective: AutoSwitchRoute | null
+  returnPending: boolean
+  returnPreference?: "inherit" | "on" | "off"
+  returnEnabled?: boolean
+  returnState?: "preferred" | "alternate" | "returning" | "return-off"
+  next?: AutoSwitchRoute | null
+}
+
+export type AutoSwitchMutation =
+  | {
+      action: "set-preference"
+      preference: "inherit" | "on" | "off"
+      ownerEpoch: string
+      revision: number
+    }
+  | {
+      action: "set-return-preference"
+      preference: "inherit" | "on" | "off"
+      ownerEpoch: string
+      revision: number
+    }
+  | {
+      action: "return-to-preferred"
+      ownerEpoch: string
+      revision: number
+    }
+
+export type AutoSwitchConflict = {
+  version: 1
+  sessionID: string
+  availability: "available" | "unavailable"
+  ownerEpoch: string | null
+  revision: number | null
+  preference: "inherit" | "on" | "off"
+  enabled: boolean
+  reason:
+    | "session-on"
+    | "session-off"
+    | "rule-on"
+    | "rule-off"
+    | "default-on"
+    | "default-off"
+    | "pinned"
+    | "older-engine"
+    | "owner-unavailable"
+    | "no-approved-alternate"
+    | "route-ineligible"
+    | "unsafe-step"
+    | "stale-evidence"
+    | "attempted"
+    | "alternate-active"
+    | "return-pending"
+    | "global-disabled"
+    | "policy-unavailable"
+    | "busy"
+  preferred: AutoSwitchRoute | null
+  effective: AutoSwitchRoute | null
+  returnPending: boolean
+  returnPreference?: "inherit" | "on" | "off"
+  returnEnabled?: boolean
+  returnState?: "preferred" | "alternate" | "returning" | "return-off"
+  next?: AutoSwitchRoute | null
+}
+
+export type AutoSwitchUnavailable = {
+  version: 1
+  sessionID: string
+  availability: "available" | "unavailable"
+  ownerEpoch: string | null
+  revision: number | null
+  preference: "inherit" | "on" | "off"
+  enabled: boolean
+  reason:
+    | "session-on"
+    | "session-off"
+    | "rule-on"
+    | "rule-off"
+    | "default-on"
+    | "default-off"
+    | "pinned"
+    | "older-engine"
+    | "owner-unavailable"
+    | "no-approved-alternate"
+    | "route-ineligible"
+    | "unsafe-step"
+    | "stale-evidence"
+    | "attempted"
+    | "alternate-active"
+    | "return-pending"
+    | "global-disabled"
+    | "policy-unavailable"
+    | "busy"
+  preferred: AutoSwitchRoute | null
+  effective: AutoSwitchRoute | null
+  returnPending: boolean
+  returnPreference?: "inherit" | "on" | "off"
+  returnEnabled?: boolean
+  returnState?: "preferred" | "alternate" | "returning" | "return-off"
+  next?: AutoSwitchRoute | null
+}
+
 export type OwnerSealed = {
   _tag: "OwnerSealed"
   generation: number
@@ -7730,6 +7867,7 @@ export type GlobalHealthResponses = {
     healthy: true
     version: string
     sessionUnpauseSelection: true
+    autoSwitch?: 1
   }
 }
 
@@ -10246,6 +10384,74 @@ export type SessionUpdateResponses = {
 }
 
 export type SessionUpdateResponse = SessionUpdateResponses[keyof SessionUpdateResponses]
+
+export type SessionAutoSwitchStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/auto-switch"
+}
+
+export type SessionAutoSwitchStatusErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionAutoSwitchStatusError = SessionAutoSwitchStatusErrors[keyof SessionAutoSwitchStatusErrors]
+
+export type SessionAutoSwitchStatusResponses = {
+  /**
+   * AutoSwitchStatus
+   */
+  200: AutoSwitchStatus
+}
+
+export type SessionAutoSwitchStatusResponse = SessionAutoSwitchStatusResponses[keyof SessionAutoSwitchStatusResponses]
+
+export type SessionAutoSwitchUpdateData = {
+  body: AutoSwitchMutation
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/auto-switch"
+}
+
+export type SessionAutoSwitchUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * AutoSwitchConflict
+   */
+  409: AutoSwitchConflict
+  /**
+   * AutoSwitchUnavailable
+   */
+  503: AutoSwitchUnavailable
+}
+
+export type SessionAutoSwitchUpdateError = SessionAutoSwitchUpdateErrors[keyof SessionAutoSwitchUpdateErrors]
+
+export type SessionAutoSwitchUpdateResponses = {
+  /**
+   * AutoSwitchStatus
+   */
+  200: AutoSwitchStatus
+}
+
+export type SessionAutoSwitchUpdateResponse = SessionAutoSwitchUpdateResponses[keyof SessionAutoSwitchUpdateResponses]
 
 export type SessionChildrenData = {
   body?: never

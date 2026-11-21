@@ -289,13 +289,16 @@ export const TuiThreadCommand = cmd({
           }
 
       try {
-        await validateSession({
+        const validated = await validateSession({
           url: transport.url,
           sessionID: args.session,
           directory: cwd,
           fetch: transport.fetch,
           headers,
         })
+        if (validated && !args.fork && !args.continue) {
+          await client.call("bindAutoSwitchOwner", { sessionID: validated.id })
+        }
       } catch (error) {
         UI.error(errorMessage(error))
         process.exitCode = 1

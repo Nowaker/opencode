@@ -1,5 +1,16 @@
 import { Schema } from "effect"
 import { Details } from "@opencode-ai/schema/session-archive"
+import { AutoSwitchSchema } from "@/session/auto-switch-schema"
+
+export class AutoSwitchConflict extends Schema.ErrorClass<AutoSwitchConflict>("AutoSwitchConflict")(
+  AutoSwitchSchema.Status.fields,
+  { httpApiStatus: 409 },
+) {}
+
+export class AutoSwitchUnavailable extends Schema.ErrorClass<AutoSwitchUnavailable>("AutoSwitchUnavailable")(
+  AutoSwitchSchema.Status.fields,
+  { httpApiStatus: 503 },
+) {}
 
 export class SessionArchivedError extends Schema.ErrorClass<SessionArchivedError>("SessionArchivedError")(
   { name: Schema.Literal("SessionArchivedError"), data: Details },

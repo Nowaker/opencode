@@ -189,7 +189,11 @@ function withContext<A, E>(
         const result = yield* use({ ...base, state })
         yield* trace(options, scenario, `${label} use done`)
         return result
-      }).pipe(Effect.ensuring(context.llm ? context.llm.reset : Effect.void)),
+      }).pipe(
+        Effect.ensuring(context.llm ? context.llm.reset : Effect.void),
+        // Release the scenario's AppLayer connection before resetState removes the database files.
+        Effect.scoped,
+      ),
     ),
     Effect.ensuring(scenario.reset ? resetState : Effect.void),
   )

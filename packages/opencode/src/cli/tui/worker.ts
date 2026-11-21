@@ -8,8 +8,10 @@ import { ServerAuth } from "@/server/auth"
 import { writeHeapSnapshot } from "node:v8"
 import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { AutoSwitch } from "@/session/auto-switch"
+import { SessionID } from "@/session/schema"
 import { Global } from "@opencode-ai/core/global"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { ErrorRecord } from "@opencode-ai/core/observability/error-record"
@@ -40,6 +42,9 @@ GlobalBus.on("event", (event) => {
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
 export const rpc = {
+  bindAutoSwitchOwner(input: { sessionID: string }) {
+    return AutoSwitch.bindOwner(Schema.decodeUnknownSync(SessionID)(input.sessionID))
+  },
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
     const headers = { ...input.headers }
     const auth = ServerAuth.header()

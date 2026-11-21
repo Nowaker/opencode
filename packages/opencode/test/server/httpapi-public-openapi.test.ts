@@ -70,6 +70,27 @@ function isBuiltInEndpointError(name: string) {
 }
 
 describe("PublicApi OpenAPI v2 errors", () => {
+  test("auto-switch status responses allow omitted return fields and preserve a nullable next route", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    const route = spec.paths["/session/{sessionID}/auto-switch"]
+    for (const [method, status] of [["get", "200"], ["put", "200"], ["put", "409"], ["put", "503"]] as const) {
+      const ref = responseRef(route?.[method]?.responses?.[status])
+      if (!ref) throw new Error(`Missing auto-switch status schema for ${method.toUpperCase()} ${status}`)
+      const schema = spec.components.schemas[componentName(ref)]
+      expect(schema?.properties?.returnPreference?.enum).toEqual(["inherit", "on", "off"])
+      expect(schema?.properties?.returnEnabled?.type).toBe("boolean")
+      expect(schema?.properties?.returnState?.enum).toEqual(["preferred", "alternate", "returning", "return-off"])
+      expect(schema?.properties?.next?.anyOf).toHaveLength(2)
+      expect(schema?.properties?.next?.anyOf).toEqual(
+        expect.arrayContaining([{ $ref: "#/components/schemas/AutoSwitchRoute" }, { type: "null" }]),
+      )
+      expect(schema?.required).toContain("preference")
+      for (const field of ["returnPreference", "returnEnabled", "returnState", "next"]) {
+        expect(schema?.required).not.toContain(field)
+      }
+    }
+  })
+
   test("archive conflicts expose pause source actors with an optional machine", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     expect(spec.components.schemas.SessionArchivedError?.properties?.name?.enum).toEqual(["SessionArchivedError"])
@@ -273,15 +294,13 @@ describe("PublicApi OpenAPI v2 errors", () => {
   test("documents session busy errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
-    for (const route of [
-      ["post", "/session/{sessionID}/shell"],
-      ["post", "/session/{sessionID}/revert"],
-      ["post", "/session/{sessionID}/unrevert"],
-      ["delete", "/session/{sessionID}/message/{messageID}"],
+    for (const [method, path, errors] of [
+      ["post", "/session/{sessionID}/shell", ["OwnerSealed", "SessionArchivedError", "SessionBusyError"]],
+      ["post", "/session/{sessionID}/revert", ["SessionBusyError"]],
+      ["post", "/session/{sessionID}/unrevert", ["SessionBusyError"]],
+      ["delete", "/session/{sessionID}/message/{messageID}", ["SessionBusyError"]],
     ] as const) {
-      expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["409"]) ?? "")).toBe(
-        "SessionBusyError",
-      )
+      expect(componentNames(spec.paths[path]?.[method]?.responses?.["409"]).sort()).toEqual([...errors])
     }
   })
 
