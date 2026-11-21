@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import { HttpClientRequest } from "effect/http"
 import { Auth } from "./auth.js"
 import { Endpoint, type EndpointPatch } from "./endpoint.js"
 import { RequestExecutor } from "./executor.js"
@@ -614,6 +615,16 @@ const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest, o
     }),
   )
 
+/** Lower a direct HTTP request without executing its transport or middleware. */
+const prepareHttpRequest = Effect.fn("LLM.prepareHttpRequest")(function* (request: LLMRequest) {
+  const compiled = yield* compile(request)
+  const prepared = compiled.prepared
+  const http = prepared && typeof prepared === "object" && "http" in prepared ? prepared.http : prepared
+  return http && typeof http === "object" && "request" in http && HttpClientRequest.isHttpClientRequest(http.request)
+    ? http.request
+    : undefined
+})
+
 export const generateWith = (stream: Interface["stream"]) =>
   Effect.fn("LLM.generate")(function* (request: LLMRequest, options?: StreamOptions) {
     let state = ResponseFold.empty()
@@ -698,4 +709,5 @@ export const LLMClient = {
   layer,
   stream,
   generate,
+  prepareHttpRequest,
 } as const

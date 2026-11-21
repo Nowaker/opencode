@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema, Stream } from "effect"
+import { HttpClientRequest } from "effect/http"
 import * as OpenAIChat from "../src/protocols/openai-chat.js"
 import { ai, AIError, HttpContext, InvalidProviderOutputError } from "../src/effect.js"
 import { Anthropic } from "../src/providers.js"
@@ -56,6 +57,19 @@ describe("Route diagnostics", () => {
   const route = OpenAIChat.route.with({ endpoint: { baseURL: "https://provider.test/v1" } })
   const request = ai.request({ model: route.model({ id: "test" }), prompt: "Hello" })
   const headers = { "content-type": "text/event-stream", "x-request-id": "req_stream" }
+
+  it.effect("lowers the effective HTTP request without requiring a transport service", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepareHttpRequest({
+        ...request,
+        http: { query: { route: "owned" }, body: { model: "wire-model" } },
+      })
+      expect(prepared).toMatchObject({ method: "POST", url: "https://provider.test/v1/chat/completions?route=owned" })
+      if (!prepared) throw new Error("Expected a compiled HTTP request")
+      const web = yield* HttpClientRequest.toWeb(prepared)
+      expect(yield* Effect.promise(() => web.json())).toMatchObject({ model: "wire-model" })
+    }),
+  )
 
   it.effect("retains an entire invalid event and its validation cause", () =>
     Effect.gen(function* () {
