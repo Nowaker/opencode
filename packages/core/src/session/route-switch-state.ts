@@ -9,6 +9,7 @@ import { SessionMessage } from "./message.js"
 import type { Database } from "../database/database.js"
 import { KVTable } from "../kv/sql.js"
 import type { SessionSchema } from "./schema.js"
+import { SessionTable } from "./sql.js"
 
 type DB = Database.Interface["db"]
 const key = (sessionID: SessionSchema.ID) => `opencode/session-route-switch/${sessionID}`
@@ -128,8 +129,16 @@ export const operatorSelected = (db: DB, sessionID: SessionSchema.ID) =>
       .where(eq(KVTable.key, key(sessionID)))
       .get()
       .pipe(Effect.orDie)
-    if (!row) return
-    const state = decode(row.value)
+    const session = row
+      ? undefined
+      : yield* db
+          .select({ parent: SessionTable.parent_id })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+    if (!row && !session) return
+    const state = row ? decode(row.value) : defaults(session?.parent != null)
     yield* write(db, sessionID, {
       ...state,
       revision: state.revision + 1,
