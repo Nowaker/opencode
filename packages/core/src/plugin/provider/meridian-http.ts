@@ -125,7 +125,7 @@ export function bindHttp(options: StreamOptions | undefined, route: Route, fence
   const veto = new DispatchBlocked()
   let sends = 0
   let attempted = false
-  let evidence: Awaited<ReturnType<typeof readRefusal>>
+  let evidence: (NonNullable<Awaited<ReturnType<typeof readRefusal>>> & { readonly diagnosticURL: string }) | undefined
   const http: HttpMiddleware = (original, next) => {
     if (!fence && options?.http && !wireRequest(original, route)) return options.http(original, next)
     const send = (request: HttpClientRequest.HttpClientRequest) =>
@@ -162,7 +162,11 @@ export function bindHttp(options: StreamOptions | undefined, route: Route, fence
             await response.body?.cancel()
             throw new MeridianRedirect()
           }
-          if (sends === 1 && response.url === wire.url) evidence = await readRefusal(response, route, requestID)
+          if (sends === 1 && response.url === wire.url) {
+            const proof = await readRefusal(response, route, requestID)
+            // AIError reports request.url, while Fetch sends the URL with separately stored query parameters.
+            if (proof) evidence = { ...proof, diagnosticURL: request.url }
+          }
           return response
         }
         return yield* HttpClient.execute(outbound).pipe(
@@ -179,7 +183,7 @@ export function bindHttp(options: StreamOptions | undefined, route: Route, fence
       evidence &&
       sends === 1 &&
       error.status === 429 &&
-      error.reason.http?.url === evidence.url &&
+      error.reason.http?.url === evidence.diagnosticURL &&
       error.reason.body === evidence.body &&
       !error.partial
         ? evidence.refusal
@@ -219,5 +223,5 @@ async function readRefusal(response: Response, route: Route, requestID: string) 
     variant: route.variant,
     reason: proof.reason,
   }
-  return { url: response.url, body, refusal }
+  return { body, refusal }
 }

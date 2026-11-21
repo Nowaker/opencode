@@ -64,8 +64,15 @@ const cases: ReadonlyArray<{
   readonly reason?: string
   readonly redirect?: boolean
   readonly failedFirst?: boolean
+  readonly nativeHook?: boolean
 }> = [
   { test: "Claude direct refusal", provider: "claude", accepted: true },
+  {
+    test: "Claude beta query survives the native hook round trip",
+    provider: "claude",
+    accepted: true,
+    nativeHook: true,
+  },
   { test: "ChatGPT direct refusal", provider: "chatgpt", accepted: true },
   { test: "no GPT gateway marker", provider: "chatgpt", responseMarker: false },
   { test: "wrong nonce", provider: "chatgpt", responseNonce: "other-request" },
@@ -86,11 +93,12 @@ for (const test of cases) {
       const wire: Array<{ id: string | null; optIn: string | null; method: string; url: string }> = []
       const server = yield* serve(async (request) => {
         const id = request.headers.get(nonce)
+        const url = new URL(request.url)
         wire.push({
           id,
           optIn: request.headers.get(marker),
           method: request.method,
-          url: new URL(request.url).pathname,
+          url: url.pathname + url.search,
         })
         if (test.redirect && wire.length === 1)
           return new Response(null, { status: 307, headers: { location: "/followed" } })
@@ -128,18 +136,27 @@ for (const test of cases) {
         selection: { providerID: request.model.provider, variant },
         options: test.failedFirst
           ? { http: (req, send) => send(req).pipe(Effect.flatMap(() => send(req))) }
-          : undefined,
+          : test.nativeHook
+            ? {
+                http: (req, send) =>
+                  Effect.gen(function* () {
+                    const web = yield* HttpClientRequest.toWeb(req)
+                    return yield* send(HttpClientRequest.setBody(HttpClientRequest.fromWeb(web), req.body))
+                  }),
+              }
+            : undefined,
       }).pipe(Effect.provideService(MeridianRouting.Trust, endpoint(server)))
       const result = yield* LLMClient.stream(request, binding.options).pipe(Stream.runDrain, Effect.result)
       const sent = {
         id: expect.stringMatching(/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/),
         optIn: "1",
         method: "POST",
-        url: test.provider === "claude" ? "/relay/v1/messages" : "/relay/v1/responses",
+        url: test.provider === "claude" ? "/relay/v1/messages?beta=true" : "/relay/v1/responses",
       }
       expect(wire).toEqual(test.failedFirst ? [sent, sent] : [sent])
       if (test.failedFirst) expect(wire[0]?.id).not.toBe(wire[1]?.id)
       if (Result.isSuccess(result)) throw new Error("Expected provider failure")
+      if (test.nativeHook) expect(result.failure.reason.http?.url).toBe(new URL("/relay/v1/messages", server.url).href)
       const requestID = wire[0]?.id
       if (!requestID) throw new Error("Expected outbound request ID")
       expect(binding.refusalOf(result.failure)).toEqual(
@@ -224,9 +241,26 @@ const fenceCases: ReadonlyArray<{
   readonly pin?: boolean
   readonly veto?: boolean
   readonly sticky?: boolean
+  readonly provider?: keyof typeof model
+  readonly redirect?: boolean
 }> = [
   { test: "unchanged tuple sends once even when the hook tries twice", dispatches: 1, claims: 1, repeat: true },
   { test: "mismatched hook URL sends nothing", dispatches: 0, claims: 0, url: "/changed" },
+  {
+    test: "changed Claude beta query sends nothing",
+    provider: "claude",
+    url: "/relay/v1/messages?beta=false",
+    dispatches: 0,
+    claims: 0,
+  },
+  {
+    test: "dropped Claude beta query sends nothing",
+    provider: "claude",
+    url: "/relay/v1/messages",
+    dispatches: 0,
+    claims: 0,
+  },
+  { test: "alternate redirect target receives no request", redirect: true, dispatches: 1, claims: 1 },
   { test: "mismatched hook effort sends nothing", dispatches: 0, claims: 0, effort: "medium" },
   { test: "hook injects provider session state", dispatches: 0, claims: 0, injectBody: true },
   { test: "hook changes inference credentials", dispatches: 0, claims: 0, changeAuth: true },
@@ -239,24 +273,27 @@ for (const test of fenceCases) {
   it.live(`fences alternate at final wire: ${test.test}`, () =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
+      const provider = test.provider ?? "chatgpt"
       const wire: string[] = []
       let claims = 0
       const server = yield* serve((request) => {
         const url = new URL(request.url)
-        wire.push(`${request.method} ${url.pathname}`)
+        wire.push(`${request.method} ${url.pathname}${request.method === "GET" ? "" : url.search}`)
         if (request.method === "GET")
           return Response.json({
             version: 1,
-            provider: "chatgpt",
-            model: model.chatgpt,
+            provider,
+            model: model[provider],
             variant,
             available: true,
             routable_allotment: 1,
             observed_at: now,
           })
+        if (test.redirect && url.pathname === "/relay/v1/responses")
+          return new Response(null, { status: 307, headers: { location: "/unapproved-redirect-target" } })
         return Response.json({ error: { message: "synthetic server error" } }, { status: 503 })
       })
-      const request = requestFor(server, "chatgpt")
+      const request = requestFor(server, provider)
       const options: StreamOptions = {
         http: (req, send) => {
           if (test.url) return send(HttpClientRequest.setUrl(req, new URL(test.url, server.url)))
@@ -295,6 +332,7 @@ for (const test of fenceCases) {
       const result = yield* LLMClient.stream(request, binding.options).pipe(Stream.runDrain, Effect.result)
       if (Result.isSuccess(result)) throw new Error("Expected provider failure or local veto")
       expect(binding.blocked(result.failure)).toBe(test.dispatches === 0)
+      expect(binding.refusalOf(result.failure)).toBeUndefined()
       expect(wire).toEqual([
         ...(test.sticky ? [] : ["GET /relay/profiles/route-availability"]),
         ...(test.dispatches ? ["POST /relay/v1/responses"] : []),
