@@ -17,6 +17,9 @@ import { PersistentPty } from "@opencode/core/persistent-pty"
 import { Project } from "@opencode/core/project"
 import { Worktree } from "@opencode/core/worktree"
 import { Session } from "@opencode/core/session"
+import { SessionRouteSwitch } from "@opencode/core/session/route-switch"
+import { SessionRouteSwitchPreview } from "@opencode/core/session/route-switch-preview"
+import { SessionRouteSwitchRecovery } from "@opencode/core/session/route-switch-recovery"
 import { Instance } from "@opencode/core/instance/service"
 import { SessionTransfer } from "@opencode/core/session/transfer"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
@@ -71,6 +74,9 @@ const applicationServiceNodes = [
   Project.sweepNode,
   Worktree.node,
   Session.node,
+  SessionRouteSwitch.node,
+  SessionRouteSwitchPreview.node,
+  SessionRouteSwitchRecovery.node,
   Instance.node,
   SessionTransfer.node,
   InstructionEntry.node,
