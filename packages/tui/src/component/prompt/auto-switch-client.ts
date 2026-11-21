@@ -61,7 +61,7 @@ function acknowledges(status: RouteSwitch.Status, payload: Mutation) {
     case "set-return-preference":
       return status.returnPreference === payload.preference
     case "return-to-preferred":
-      return status.returnPending || status.returnState === "returning"
+      return status.returnPending
     default:
       return payload satisfies never
   }
