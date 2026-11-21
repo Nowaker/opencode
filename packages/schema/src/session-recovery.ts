@@ -3,6 +3,7 @@ import { Event } from "./event.js"
 import { SessionID } from "./session-id.js"
 import { SessionMessage } from "./session-message.js"
 import { optional } from "./schema.js"
+import { RouteSwitch } from "./route-switch.js"
 
 export const InputRevision = Schema.Struct({ seq: Schema.Int, eventID: Event.ID }).annotate({
   identifier: "Session.InputRevision",
@@ -38,7 +39,10 @@ export interface PromptExpected extends Schema.Schema.Type<typeof PromptExpected
 
 export const InterruptExperimental = Schema.Struct({ expected: InterruptExpected.pipe(optional) })
 export interface InterruptExperimental extends Schema.Schema.Type<typeof InterruptExperimental> {}
-export const PromptExperimental = Schema.Struct({ expected: PromptExpected.pipe(optional) })
+export const PromptExperimental = Schema.Struct({
+  expected: PromptExpected.pipe(optional),
+  selection: RouteSwitch.PromptSelection.pipe(optional),
+})
 export interface PromptExperimental extends Schema.Schema.Type<typeof PromptExperimental> {}
 export const InterruptBody = Schema.Struct({ experimental: InterruptExperimental.pipe(optional) })
 export interface InterruptBody extends Schema.Schema.Type<typeof InterruptBody> {}
@@ -52,6 +56,13 @@ export class InterruptGuardError extends Schema.TaggedError<InterruptGuardError>
 
 export class PromptGuardError extends Schema.TaggedError<PromptGuardError>()("Session.PromptGuardError", {
   accepted: Schema.Literal(false),
-  reason: Schema.Literals(["not-idle", "input-changed", "idle-changed"]),
+  reason: Schema.Literals([
+    "not-idle",
+    "input-changed",
+    "idle-changed",
+    "selection-stale",
+    "selection-unavailable",
+    "selection-pinned",
+  ]),
   sessionID: SessionID,
 }) {}

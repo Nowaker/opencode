@@ -20,6 +20,7 @@ export type ServerInfo = {
         sessionSelection?: boolean | undefined
         sessionCompareAndInterrupt?: true | undefined
         sessionConditionalPrompt?: true | undefined
+        sessionPromptSelection?: true | undefined
         subagentOptions?: boolean | undefined
         pluginConfiguration?: boolean | undefined
         compactionSummary?: boolean | undefined
@@ -123,6 +124,8 @@ export type SkillID = string
 
 export type SkillName = string
 
+export type RouteSwitchRoute = { agent: string; providerID: string; modelID: string; variant: string | null }
+
 export type SessionInboxDelivery = "steer" | "queue"
 
 export type SessionInboxSyntheticPayload = {
@@ -190,8 +193,6 @@ export type SessionStatsToolUsage = {
 export type SessionStatsActivity = { date: string; steps: number }
 
 export type EventID = string
-
-export type RouteSwitchRoute = { agent: string; providerID: string; modelID: string; variant: string | null }
 
 export type InstructionEntryKey = string
 
@@ -562,6 +563,8 @@ export type SkillInfo = {
   content: string
 }
 
+export type RouteSwitchQuotaStop = { route: RouteSwitchRoute; reason: "quota_exhausted" | "reserve_held" }
+
 export type SessionInboxSynthetic = {
   id: SessionMessageID
   sessionID: SessionID
@@ -732,8 +735,6 @@ export type SessionStatsTools =
   | { mode: "detail"; totals: SessionStatsToolTotals; usage: Array<SessionStatsToolUsage> }
 
 export type SessionInputRevision = { seq: number; eventID: EventID }
-
-export type RouteSwitchQuotaStop = { route: RouteSwitchRoute; reason: "quota_exhausted" | "reserve_held" }
 
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
 
@@ -1219,6 +1220,7 @@ export type SessionInboxUserPayload = {
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
   metadata?: { [x: string]: JsonValue }
+  selection?: RouteSwitchRoute
 }
 
 export type SessionMessageUser = {
@@ -1230,6 +1232,7 @@ export type SessionMessageUser = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
+  selection?: RouteSwitchRoute
   type: "user"
 }
 
@@ -1240,47 +1243,7 @@ export type SessionInboxUserPayload1 = {
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
   metadata?: { [x: string]: any }
-}
-
-export type SessionSyntheticResult = SessionInboxSynthetic | SessionSyntheticAppendResult
-
-export type SessionMessageToolStateCompleted = {
-  status: "completed"
-  input: { [x: string]: JsonValue }
-  content: [ToolContent, ...Array<ToolContent>]
-  metadata?: { [x: string]: JsonValue }
-}
-
-export type SessionMessageToolStateError = {
-  status: "error"
-  input: { [x: string]: JsonValue }
-  error: SessionStructuredError
-  content?: [ToolContent, ...Array<ToolContent>]
-  metadata?: { [x: string]: JsonValue }
-}
-
-export type FormField =
-  | FormStringField
-  | FormNumberField
-  | FormIntegerField
-  | FormBooleanField
-  | FormMultiselectField
-  | FormExternalField
-
-export type FormState =
-  | { status: "pending" }
-  | { status: "answered"; answer: FormAnswer }
-  | { status: "cancelled"; message?: string }
-
-export type SessionRecovery = {
-  assistantMessageID: SessionMessageID | null
-  idleMessageID: SessionMessageID | null
-  throughSeq: number
-  executionID: EventID | null
-  executionClaim: number | null
-  localActive: boolean
-  inputRevision: SessionInputRevision | null
-  pendingInput: boolean
+  selection?: RouteSwitchRoute
 }
 
 export type RouteSwitchStatus =
@@ -1360,6 +1323,47 @@ export type RouteSwitchStatus =
       revision: number | null
       enabled: false
     }
+
+export type SessionSyntheticResult = SessionInboxSynthetic | SessionSyntheticAppendResult
+
+export type SessionMessageToolStateCompleted = {
+  status: "completed"
+  input: { [x: string]: JsonValue }
+  content: [ToolContent, ...Array<ToolContent>]
+  metadata?: { [x: string]: JsonValue }
+}
+
+export type SessionMessageToolStateError = {
+  status: "error"
+  input: { [x: string]: JsonValue }
+  error: SessionStructuredError
+  content?: [ToolContent, ...Array<ToolContent>]
+  metadata?: { [x: string]: JsonValue }
+}
+
+export type FormField =
+  | FormStringField
+  | FormNumberField
+  | FormIntegerField
+  | FormBooleanField
+  | FormMultiselectField
+  | FormExternalField
+
+export type FormState =
+  | { status: "pending" }
+  | { status: "answered"; answer: FormAnswer }
+  | { status: "cancelled"; message?: string }
+
+export type SessionRecovery = {
+  assistantMessageID: SessionMessageID | null
+  idleMessageID: SessionMessageID | null
+  throughSeq: number
+  executionID: EventID | null
+  executionClaim: number | null
+  localActive: boolean
+  inputRevision: SessionInputRevision | null
+  pendingInput: boolean
+}
 
 export type SessionAgentSelected = {
   id: EventID
@@ -3263,7 +3267,13 @@ export const isConflictError = (value: unknown): value is ConflictError =>
 export type SessionPromptGuardError = {
   readonly _tag: "Session.PromptGuardError"
   readonly accepted: false
-  readonly reason: "not-idle" | "input-changed" | "idle-changed"
+  readonly reason:
+    | "not-idle"
+    | "input-changed"
+    | "idle-changed"
+    | "selection-stale"
+    | "selection-unavailable"
+    | "selection-pinned"
   readonly sessionID: string
 }
 export const isSessionPromptGuardError = (value: unknown): value is SessionPromptGuardError =>
@@ -3957,6 +3967,16 @@ export type SessionPromptInput = {
           readonly idleMessageID: string | null
           readonly throughSeq: number
           readonly inputRevision: { readonly seq: number; readonly eventID: string } | null
+        }
+        readonly selection?: {
+          readonly ownerEpoch: string
+          readonly revision: number
+          readonly route?: {
+            readonly agent: string
+            readonly providerID: string
+            readonly modelID: string
+            readonly variant: string | null
+          }
         }
       }
     | undefined
