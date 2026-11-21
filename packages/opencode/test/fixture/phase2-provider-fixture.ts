@@ -5,6 +5,7 @@ export type Reply = string | boolean | {
   readonly reasoning?: string | { readonly text: string; readonly signature?: string; readonly encryptedContent?: string }
   readonly tool?: ToolReply
   readonly refusal?: boolean | "quota_exhausted" | "reserve_held"
+  readonly ordinaryRefusal?: boolean
   readonly omitResponseMarker?: boolean
   readonly available?: boolean
   readonly routableAllotment?: number
@@ -162,6 +163,16 @@ export function createProviderFixture() {
         if (queued === undefined) return Response.json({ error: `No ${wire} fixture reply queued` }, { status: 409 })
         const reply = normalize(queued)
         id++
+        if (wire === "openai" && reply.ordinaryRefusal) {
+          return Response.json({
+            error: {
+              type: "rate_limit_error",
+              code: "no_routable_account",
+              message: "No routable GPT account: pinned fixture",
+            },
+          }, { status: 429 })
+        }
+
         if (reply.refusal) {
           const requestID = request.headers.get("x-request-id")
           if (!requestID || !uuid.test(requestID)) return Response.json({ error: "Refusal requires the exact request UUID" }, { status: 409 })
