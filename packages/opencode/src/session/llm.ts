@@ -10,6 +10,7 @@ import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
 import type { AutoSwitchContext } from "@opencode-ai/plugin"
+import { AutoSwitch } from "./auto-switch"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -112,9 +113,13 @@ const live: Layer.Layer<
         return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
       }
       const trust = yield* MeridianRouting.resolvedTrust()
-      const target = beforeDispatch && {
-        model: { providerID: input.model.providerID, api: { ...input.model.api } },
-        variant: input.user.model.variant ?? "",
+      const routeProvider = MeridianRouting.routeProvider(input.model.providerID)
+      const target = beforeDispatch && routeProvider && {
+        effort: MeridianRouting.wireEffort({
+          provider: routeProvider,
+          model: input.model,
+          variant: input.user.model.variant ?? null,
+        }),
       }
       const source = beforeDispatch ? undefined : MeridianRouting.transportFor(trust, input.model)
       const [standardLanguage, cfg, item, info] = yield* Effect.all(
@@ -151,18 +156,20 @@ const live: Layer.Layer<
         options: prepared.params.options,
       }) ?? Effect.succeed(true)
       const fenced = (() => {
-        if (!beforeDispatch || !target) return undefined
+        if (!beforeDispatch || !target || target.effort === undefined) return undefined
         const fence = {
-          variant: target.variant,
+          effort: target.effort,
           singleDispatch: input.retries === 0,
           dispatch: (send: () => Promise<Response>) => bridge.promise(Effect.gen(function* () {
-            if (!(yield* validate()) || !(yield* beforeDispatch())) {
-              return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
-            }
-            return yield* Effect.tryPromise({ try: send, catch: (error) => error })
+            if (!(yield* validate())) return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
+            const started = yield* AutoSwitch.withOwnerDispatch(Effect.gen(function* () {
+              if (!(yield* beforeDispatch())) return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
+              return yield* Effect.try({ try: () => ({ result: send() }), catch: (error) => error })
+            }))
+            return yield* Effect.tryPromise({ try: () => started.result, catch: (error) => error })
           })),
         }
-        return MeridianRouting.transportFor(trust, target.model, fence)
+        return MeridianRouting.transportFor(trust, input.model, fence)
       })()
       const language = fenced ? yield* provider.getLanguage(input.model, fenced) : standardLanguage
       if (!language || (beforeDispatch && !fenced) || (!fenced && validateRequest && !(yield* validate()))) {

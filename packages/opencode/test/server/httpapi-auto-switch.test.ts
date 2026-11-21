@@ -95,7 +95,7 @@ test("the native worker keeps return and switch preferences independent and leav
       preference: "inherit",
       revision: 0,
       returnPreference: "inherit",
-      returnEnabled: true,
+      returnEnabled: false,
       returnState: "preferred",
       next: route,
     })
@@ -114,7 +114,7 @@ test("the native worker keeps return and switch preferences independent and leav
 
     const update = await client.session.autoSwitch.update({ sessionID: root, autoSwitchMutation: mutation })
     expect(update.response.status).toBe(200)
-    expect(update.data).toMatchObject({ sessionID: root, preference: "on", enabled: true, revision: 1 })
+    expect(update.data).toMatchObject({ sessionID: root, preference: "on", enabled: true, returnEnabled: true, revision: 1 })
 
     const stale = await client.session.autoSwitch.update({ sessionID: root, autoSwitchMutation: mutation })
     expect(stale.response.status).toBe(409)

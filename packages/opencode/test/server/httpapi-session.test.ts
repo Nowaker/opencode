@@ -1488,6 +1488,26 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
+    "does not let generic part edits replace inbox admission metadata",
+    () => Effect.gen(function* () {
+      const test = yield* TestInstance
+      const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+      const chat = yield* createSession({ title: "inbox authority" })
+      const message = yield* createTextMessage(chat.id, "first")
+      const params = { sessionID: chat.id, messageID: message.info.id, partID: message.part.id }
+      const url = pathFor(SessionPaths.updatePart, params)
+      const stamp = { ...message.part, metadata: { vibeterm: { acceptedAt: 100 } } }
+      expect((yield* request(url, { method: "PATCH", headers, body: JSON.stringify(stamp) })).status).toBe(400)
+      const sessions = yield* Session.Service
+      yield* sessions.updatePart(stamp)
+      expect((yield* request(url, { method: "PATCH", headers, body: JSON.stringify(message.part) })).status).toBe(400)
+      expect((yield* request(url, { method: "DELETE", headers })).status).toBe(400)
+      expect(yield* sessions.getPart(params)).toMatchObject({ metadata: stamp.metadata })
+    }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "serves remaining non-LLM session mutation routes",
     () =>
       Effect.gen(function* () {

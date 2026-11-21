@@ -69,6 +69,7 @@ import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, u
 import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
+import { autoSwitchTransport, createAutoSwitch } from "./auto-switch"
 import { useComposerSeal } from "../../context/composer-seal"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
@@ -301,6 +302,20 @@ export function Prompt(props: PromptProps) {
   const pasteStyleId = syntax().getStyleId("extmark.paste")!
   let promptPartTypeId = 0
   const event = useEvent()
+
+  const autoSwitch = createAutoSwitch({ sessionID: () => props.sessionID, request: autoSwitchTransport(sdk) })
+  event.on("session.updated", (evt) => {
+    if (evt.properties.info.id === props.sessionID) autoSwitch.refresh()
+  })
+  // The owner settles whether a return is ready when the session goes idle, which changes no session row.
+  event.on("session.status", (evt) => {
+    if (evt.properties.sessionID === props.sessionID && evt.properties.status.type === "idle") autoSwitch.refresh()
+  })
+  // Runs an auto-switch control, or says why it cannot run; it never touches the draft or sends a prompt.
+  function autoSwitchAction(run: () => string | undefined) {
+    const refusal = run()
+    if (refusal) toast.show({ message: refusal, variant: "info", duration: 3000 })
+  }
 
   event.on("tui.prompt.append", (evt, { workspace }) => {
     if (workspace !== project.workspace.current()) return
@@ -696,6 +711,61 @@ export function Prompt(props: PromptProps) {
         enabled: Boolean(props.sessionID),
         run: () => {
           pauseAction("discard")
+          dialog.clear()
+        },
+      },
+      {
+        title: "Toggle auto-switch",
+        name: "session.auto_switch.toggle",
+        category: "Session",
+        slashName: "auto-switch",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          autoSwitchAction(autoSwitch.toggle)
+          dialog.clear()
+        },
+      },
+      {
+        title: "Return to preferred model",
+        name: "session.auto_switch.return",
+        category: "Session",
+        slashName: "auto-switch-return",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          autoSwitchAction(autoSwitch.returnToPreferred)
+          dialog.clear()
+        },
+      },
+      {
+        title: "Auto-switch: follow the default",
+        name: "session.auto_switch.default",
+        category: "Session",
+        slashName: "auto-switch-default",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          autoSwitchAction(autoSwitch.useDefault)
+          dialog.clear()
+        },
+      },
+      {
+        title: "Toggle auto-return",
+        name: "session.auto_return.toggle",
+        category: "Session",
+        slashName: "auto-return",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          autoSwitchAction(autoSwitch.toggleAutoReturn)
+          dialog.clear()
+        },
+      },
+      {
+        title: "Auto-return: follow the default",
+        name: "session.auto_return.default",
+        category: "Session",
+        slashName: "auto-return-default",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          autoSwitchAction(autoSwitch.useAutoReturnDefault)
           dialog.clear()
         },
       },
@@ -2411,6 +2481,41 @@ export function Prompt(props: PromptProps) {
                             </span>
                           </text>
                         </Show>
+                        <Show when={props.sessionID}>
+                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                          <text
+                            flexShrink={0}
+                            fg={fadeColor(autoSwitch.view().on ? theme.success : theme.textMuted, modelMetaAlpha())}
+                            {...onClick(() => autoSwitchAction(autoSwitch.toggle))}
+                          >
+                            {autoSwitch.view().text}
+                          </text>
+                          <Show when={autoSwitch.view().detail}>
+                            {(detail) => <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{detail()}</text>}
+                          </Show>
+                          <Show when={autoSwitch.view().autoReturn}>
+                            {(toggle) => (
+                              <>
+                                <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                                <text
+                                  flexShrink={0}
+                                  fg={fadeColor(toggle().on ? theme.success : theme.textMuted, modelMetaAlpha())}
+                                  {...onClick(() => autoSwitchAction(autoSwitch.toggleAutoReturn))}
+                                >
+                                  {toggle().text}
+                                </text>
+                                <Show when={toggle().detail}>
+                                  {(detail) => <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{detail()}</text>}
+                                </Show>
+                              </>
+                            )}
+                          </Show>
+                          <Show when={autoSwitch.view().notice}>
+                            {(notice) => (
+                              <text fg={notice().kind === "stale" ? theme.warning : theme.error}>{notice().text}</text>
+                            )}
+                          </Show>
+                        </Show>
                       </box>
                     </Show>
                   </>
@@ -2426,6 +2531,40 @@ export function Prompt(props: PromptProps) {
               </box>
             </Show>
           </box>
+          <Show when={props.sessionID && store.mode === "normal" ? autoSwitch.view().active : undefined}>
+            {(active) => (
+              <box flexDirection="column" flexShrink={0}>
+                <box flexDirection="row" flexShrink={0} gap={2}>
+                <Show
+                  when={active().using}
+                  fallback={
+                    <text fg={theme.warning}>
+                      Next: {active().next} (preferred: {active().preferred})
+                    </text>
+                  }
+                >
+                  {(using) => (
+                    <text fg={theme.warning}>
+                      Using {using()} (preferred: {active().preferred})
+                      {active().next ? ` · next: ${active().next}` : ""}
+                    </text>
+                  )}
+                </Show>
+                <Show when={active().canReturn}>
+                  <text fg={theme.primary} {...onClick(() => autoSwitchAction(autoSwitch.returnToPreferred))}>
+                    Return to preferred
+                  </text>
+                </Show>
+                <Show when={active().returning}>
+                  <text fg={theme.textMuted}>returning at next step</text>
+                </Show>
+                </box>
+                <Show when={active().context}>
+                  {(context) => <text fg={theme.textMuted}>Next: {active().planned} · {context()}</text>}
+                </Show>
+              </box>
+            )}
+          </Show>
         </PromptFrame>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>

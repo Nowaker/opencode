@@ -4,6 +4,11 @@ import type { SessionV1 } from "@opencode-ai/core/v1/session"
 const Receipt = Schema.Struct({ version: Schema.Literal(1), partIds: Schema.Array(Schema.String) })
 const Stamp = Schema.Struct({ acceptedAt: Schema.Int.check(Schema.isGreaterThan(0)) })
 
+export function ownsPart(part: SessionV1.Part | undefined) {
+  return part?.type === "text" && (part.metadata?.vibetermInboxReceipt !== undefined ||
+    part.metadata?.vibeterm?.acceptedAt !== undefined)
+}
+
 export function acceptedAt(message: SessionV1.WithParts) {
   const text = message.parts.filter((part): part is SessionV1.TextPart => part.type === "text")
   const receipts = text.filter((part) => part.metadata?.vibetermInboxReceipt !== undefined)

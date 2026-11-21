@@ -5,10 +5,11 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Command } from "@/command"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { Permission } from "@/permission"
-import { Provider } from "@/provider/provider"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
+import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
+import { Provider } from "@/provider/provider"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -64,7 +65,6 @@ const tryParseJson = (text: string) =>
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
-    const provider = yield* Provider.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
@@ -570,6 +570,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
     }) {
       yield* requireSession(ctx.params.sessionID)
+      if (AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))) return yield* new HttpApiError.BadRequest({})
       yield* session.removePart(ctx.params)
       return true
     })
@@ -583,7 +584,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (
         payload.id !== ctx.params.partID ||
         payload.messageID !== ctx.params.messageID ||
-        payload.sessionID !== ctx.params.sessionID
+        payload.sessionID !== ctx.params.sessionID || AutoSwitchAdmission.ownsPart(payload) ||
+        AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))
       ) {
         return yield* new HttpApiError.BadRequest({})
       }
@@ -594,10 +596,15 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("list", list)
       .handle("status", status)
       .handle("get", get)
-      .handle("autoSwitchStatus", (ctx) => AutoSwitch.read(session, ctx.params.sessionID, provider.list))
+      .handle("autoSwitchStatus", (ctx) => Provider.Service.use((provider) =>
+        AutoSwitch.read(session, ctx.params.sessionID).pipe(Effect.provideService(AutoSwitch.Providers, provider)),
+      ))
       .handle("autoSwitchUpdate", (ctx) =>
         Effect.gen(function* () {
-          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload, provider.list)
+          const provider = yield* Provider.Service
+          const result = yield* AutoSwitch.mutate(session, ctx.params.sessionID, ctx.payload).pipe(
+            Effect.provideService(AutoSwitch.Providers, provider),
+          )
           if (result.statusCode === 409) return yield* new AutoSwitchConflict(result.status)
           if (result.statusCode === 503) return yield* new AutoSwitchUnavailable(result.status)
           return result.status
