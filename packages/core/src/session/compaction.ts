@@ -1428,7 +1428,7 @@ const fitOutput = (request: LLMRequest, limit: SessionContext.Loaded["model"]["l
   return { ...request, maxTokens }
 }
 
-const estimateRequest = (request: Pick<LLMRequest, "system" | "tools" | "messages">) =>
+export const estimateRequest = (request: Pick<LLMRequest, "system" | "tools" | "messages">) =>
   request.system.reduce((sum, part) => sum + Token.estimate(part.text), 0) +
   request.tools.reduce((sum, tool) => sum + estimateTool(tool), 0) +
   request.messages.reduce((sum, message) => sum + estimateMessage(message), 0)

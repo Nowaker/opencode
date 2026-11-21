@@ -1,6 +1,8 @@
 export * as SessionContext from "./context.js"
 
 import { Model } from "../model.js"
+import { Provider } from "@opencode/schema/provider"
+import type { RouteSwitch } from "@opencode/schema/route-switch"
 import { Permission } from "../permission.js"
 import { Context, Effect, Layer } from "effect"
 import { Agent } from "../agent.js"
@@ -25,6 +27,7 @@ import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
+import { exactRoute, sameRoute } from "./route-switch-policy.js"
 
 export interface Selection {
   readonly session: SessionSchema.Info
@@ -53,6 +56,7 @@ export interface Interface {
   readonly select: (sessionID: SessionSchema.ID) => Effect.Effect<Selection, AgentNotFoundError>
   /** Resolves the model and active history for that selection. */
   readonly load: (selection: Selection) => Effect.Effect<Loaded, SessionRunnerModel.Error>
+  readonly loadRoute: (selection: Selection, route: RouteSwitch.Route) => Effect.Effect<Loaded | undefined>
   readonly resolveModel: (
     session: SessionSchema.Info,
     request: { readonly kind: SessionRequestKind; readonly agent: Agent.ID },
@@ -175,8 +179,7 @@ const layer = Layer.effect(
       }
     })
 
-    const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
-      const model = yield* resolveModel(selection.session, { kind: "primary", agent: selection.agent.id })
+    const historyFor = Effect.fnUntraced(function* (selection: Selection, model: SessionRunnerModel.Resolved) {
       const history = yield* SessionHistory.entriesForRunner(
         db,
         selection.session.id,
@@ -193,7 +196,41 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ select, load, resolveModel, selectTitle, request })
+    const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
+      const model = yield* resolveModel(selection.session, { kind: "primary", agent: selection.agent.id })
+      return yield* historyFor(selection, model)
+    })
+    const loadRoute = Effect.fn("SessionContext.loadRoute")(function* (selection: Selection, route: RouteSwitch.Route) {
+      const id = Agent.ID.make(route.agent)
+      const mapped = id !== selection.agent.id
+      const info = mapped ? yield* agents.get(id) : selection.agent.info
+      if (!info) return
+      const ref = Model.Ref.make({
+        providerID: Provider.ID.make(route.providerID),
+        id: Model.ID.make(route.modelID),
+        variant: route.variant === null ? undefined : Model.VariantID.make(route.variant),
+      })
+      if (mapped) {
+        const pin = info.model
+        if (
+          !pin ||
+          pin.providerID !== ref.providerID ||
+          pin.id !== ref.id ||
+          (pin.variant !== undefined && pin.variant !== ref.variant)
+        )
+          return
+      }
+      const target = yield* model.get(ref.providerID, ref.id)
+      if (!target || (ref.variant !== undefined && !target.variants.some((variant) => variant.id === ref.variant)))
+        return
+      const resolved = yield* resolveModel({ ...selection.session, model: ref }, { kind: "primary", agent: id }).pipe(
+        Effect.orElseSucceed(() => undefined),
+      )
+      if (!resolved || !sameRoute(exactRoute(id, resolved.ref), route)) return
+      return yield* historyFor({ ...selection, agent: { ...selection.agent, id, info } }, resolved)
+    })
+
+    return Service.of({ select, load, loadRoute, resolveModel, selectTitle, request })
   }),
 )
 
