@@ -61,6 +61,7 @@ const status = {
   returnEnabled: Schema.Boolean,
   returnState: ReturnState,
   next: Schema.NullOr(Route),
+  previewExpiresAt: optional(NonNegativeInt),
   quotaStop: optional(QuotaStop),
 }
 
