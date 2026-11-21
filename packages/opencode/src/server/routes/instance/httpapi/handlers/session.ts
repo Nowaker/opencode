@@ -8,6 +8,7 @@ import { Permission } from "@/permission"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
+import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -568,6 +569,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
     }) {
       yield* requireSession(ctx.params.sessionID)
+      if (AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))) return yield* new HttpApiError.BadRequest({})
       yield* session.removePart(ctx.params)
       return true
     })
@@ -581,7 +583,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (
         payload.id !== ctx.params.partID ||
         payload.messageID !== ctx.params.messageID ||
-        payload.sessionID !== ctx.params.sessionID
+        payload.sessionID !== ctx.params.sessionID || AutoSwitchAdmission.ownsPart(payload) ||
+        AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))
       ) {
         return yield* new HttpApiError.BadRequest({})
       }
