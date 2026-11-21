@@ -99,6 +99,12 @@ import type {
   ExperimentalSessionExportOutput,
   ExperimentalSessionRecoveryInput,
   ExperimentalSessionRecoveryOutput,
+  ExperimentalSessionAutoSwitchGetInput,
+  ExperimentalSessionAutoSwitchGetOutput,
+  ExperimentalSessionAutoSwitchEditInput,
+  ExperimentalSessionAutoSwitchEditOutput,
+  ExperimentalSessionAutoSwitchRetryInput,
+  ExperimentalSessionAutoSwitchRetryOutput,
   ExperimentalSessionSkillInput,
   ExperimentalSessionSkillOutput,
   ExperimentalSessionWaitInput,
@@ -857,6 +863,42 @@ const EndpointExperimentalSessionRecovery =
       ),
     )
 
+const EndpointExperimentalSessionAutoSwitchGet =
+  (raw: RawClient["server.session"]) => (input: ExperimentalSessionAutoSwitchGetInput) =>
+    preserveEffect<ExperimentalSessionAutoSwitchGetOutput>()(
+      raw["session.autoSwitch.get"]({ params: { sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+type ExperimentalSessionAutoSwitchEditRequest = Parameters<
+  RawClient["server.session"]["session.autoSwitch.edit"]
+>[0] & { readonly responseMode?: "decoded-only" }
+const EndpointExperimentalSessionAutoSwitchEdit =
+  (raw: RawClient["server.session"]) => (input: ExperimentalSessionAutoSwitchEditInput) =>
+    preserveEffect<ExperimentalSessionAutoSwitchEditOutput>()(
+      raw["session.autoSwitch.edit"]({
+        params: { sessionID: input["sessionID"] },
+        payload: input["payload"],
+      } as ExperimentalSessionAutoSwitchEditRequest).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const EndpointExperimentalSessionAutoSwitchRetry =
+  (raw: RawClient["server.session"]) => (input: ExperimentalSessionAutoSwitchRetryInput) =>
+    preserveEffect<ExperimentalSessionAutoSwitchRetryOutput>()(
+      raw["session.autoSwitch.retry"]({
+        params: { sessionID: input["sessionID"] },
+        payload: { ownerEpoch: input["ownerEpoch"], revision: input["revision"] },
+      }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
 const EndpointExperimentalSessionSkill = (raw: RawClient["server.session"]) => (input: ExperimentalSessionSkillInput) =>
   preserveEffect<ExperimentalSessionSkillOutput>()(
     raw["session.skill"]({
@@ -922,6 +964,11 @@ const adaptGroupExperimentalSession = (raw: RawClient["server.session"]) => ({
   import: EndpointExperimentalSessionImport(raw),
   export: EndpointExperimentalSessionExport(raw),
   recovery: EndpointExperimentalSessionRecovery(raw),
+  autoSwitch: {
+    get: EndpointExperimentalSessionAutoSwitchGet(raw),
+    edit: EndpointExperimentalSessionAutoSwitchEdit(raw),
+    retry: EndpointExperimentalSessionAutoSwitchRetry(raw),
+  },
   skill: EndpointExperimentalSessionSkill(raw),
   wait: EndpointExperimentalSessionWait(raw),
   instructions: {

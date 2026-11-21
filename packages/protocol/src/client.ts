@@ -76,7 +76,13 @@ export const clientNamespace = (endpoint: { readonly path: string }) =>
 
 // Moving an endpoint under /api/experimental keeps its old client path as a deprecated alias. These endpoints were
 // added there directly, so no caller ever had an older path to keep.
-const experimentalSinceAdded = new Set(["session.recovery", "session.cancelChild"])
+const experimentalSinceAdded = new Set([
+  "session.recovery",
+  "session.cancelChild",
+  "session.autoSwitch.get",
+  "session.autoSwitch.edit",
+  "session.autoSwitch.retry",
+])
 export const clientAlias = (endpoint: { readonly identifier: string }) =>
   !experimentalSinceAdded.has(endpoint.identifier)
 

@@ -49,6 +49,7 @@ export interface QuotaStop extends Schema.Schema.Type<typeof QuotaStop> {}
 
 const ownerEpoch = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
 const guard = { ownerEpoch, revision: NonNegativeInt }
+export const Retry = Schema.Struct(guard).annotate({ identifier: "RouteSwitch.Retry" })
 const status = {
   version: Schema.Literal(1),
   sessionID: Session.ID,
