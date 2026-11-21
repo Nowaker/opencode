@@ -27,7 +27,7 @@ import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
-import { exactRoute, sameRoute } from "./route-switch-policy.js"
+import { exactRoute, matchesAgentPin, sameRoute } from "./route-switch-policy.js"
 
 export interface Selection {
   readonly session: SessionSchema.Info
@@ -210,16 +210,7 @@ const layer = Layer.effect(
         id: Model.ID.make(route.modelID),
         variant: route.variant === null ? undefined : Model.VariantID.make(route.variant),
       })
-      if (mapped) {
-        const pin = info.model
-        if (
-          !pin ||
-          pin.providerID !== ref.providerID ||
-          pin.id !== ref.id ||
-          (pin.variant !== undefined && pin.variant !== ref.variant)
-        )
-          return
-      }
+      if (mapped && !matchesAgentPin(info.model, route)) return
       const target = yield* model.get(ref.providerID, ref.id)
       if (!target || (ref.variant !== undefined && !target.variants.some((variant) => variant.id === ref.variant)))
         return

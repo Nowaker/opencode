@@ -33,6 +33,7 @@ import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { PluginHooks } from "../../plugin/hooks.js"
 import { Model } from "../../model.js"
+import { Agent } from "../../agent.js"
 import { MeridianRouting } from "../../plugin/provider/meridian-routing.js"
 import { SessionRouteSwitch } from "../route-switch.js"
 import { exactRoute, sameRoute } from "../route-switch-policy.js"
@@ -239,7 +240,10 @@ const layer = Layer.effect(
                       { onlyIfMissing: true },
                     )
                   if (promoted.length > 0) step = 1
-                  return { _tag: "Ready" as const, context: yield* context.load(selected) }
+                  const actual = promoted.some((input) => input.changesSelection)
+                    ? yield* prepareContext(sessionID)
+                    : selected
+                  return { _tag: "Ready" as const, context: yield* context.load(actual) }
                 }),
               )
               if (ready) return ready
@@ -299,6 +303,18 @@ const layer = Layer.effect(
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
         const preferred = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
+        const lastUser = preferred.messages.findLast((message) => message.type === "user")
+        if (
+          lastUser?.selection &&
+          preferred.session.agent === lastUser.selection.agent &&
+          preferred.session.model?.providerID === lastUser.selection.providerID &&
+          preferred.session.model.id === lastUser.selection.modelID &&
+          (preferred.session.model.variant ?? null) === lastUser.selection.variant &&
+          !sameRoute(exactRoute(preferred.agent.id, preferred.model.ref), lastUser.selection)
+        )
+          return yield* new StepFailedError({
+            error: { type: "route.selection-unavailable", message: "The admitted selection is no longer available" },
+          })
         initial = undefined
         let fence = owner ? yield* routeSwitch.observe(preferred, owner) : undefined
         const manual = fence?.state.manualRetry
@@ -702,6 +718,7 @@ export const node = makeLocationNode({
     ToolOutput.node,
     Database.node,
     Model.node,
+    Agent.node,
     SessionRouteSwitch.node,
   ],
 })

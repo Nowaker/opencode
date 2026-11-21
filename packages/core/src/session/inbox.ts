@@ -153,6 +153,7 @@ const promotedFromMessage = Effect.fn("SessionInbox.promotedFromMessage")(functi
         files: message.files,
         agents: message.agents,
         skills: message.skills,
+        selection: message.selection,
         metadata: message.metadata,
       }),
     })
@@ -631,7 +632,14 @@ const publish = Effect.fn("SessionInbox.publish")(function* (
   )
   return rows.flatMap((row) =>
     row.type === "user" || row.type === "synthetic"
-      ? [{ id: row.id, type: row.type, enqueuedSeq: row.enqueued_seq }]
+      ? [
+          {
+            id: row.id,
+            type: row.type,
+            enqueuedSeq: row.enqueued_seq,
+            changesSelection: row.type === "user" && "selection" in row.payload,
+          },
+        ]
       : [],
   )
 })

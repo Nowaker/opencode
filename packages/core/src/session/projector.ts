@@ -31,6 +31,8 @@ import { AbsolutePath, RelativePath } from "../schema.js"
 import type { SessionSchema } from "./schema.js"
 import { SessionHistory } from "./history.js"
 import { ProjectTable } from "../project/sql.js"
+import { selectionOf } from "./route-switch-policy.js"
+import { SessionRouteSwitchState } from "./route-switch-state.js"
 
 type DatabaseService = Database.Interface["db"]
 type MessageEvent = Exclude<
@@ -980,12 +982,14 @@ const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         yield* run(db, event)
         yield* setSession(db, event.data.sessionID, { agent: event.data.agent, time_updated: event.created })
+        yield* SessionRouteSwitchState.operatorSelected(db, event.data.sessionID)
       }),
     )
     yield* bus.project(SessionEvent.ModelSelected, (event) =>
       Effect.gen(function* () {
         yield* run(db, event)
         yield* setSession(db, event.data.sessionID, { model: event.data.model, time_updated: event.created })
+        yield* SessionRouteSwitchState.operatorSelected(db, event.data.sessionID)
       }),
     )
     yield* bus.project(SessionEvent.Renamed, (event) =>
@@ -1022,7 +1026,14 @@ const layer = Layer.effectDiscard(
           sessionID: event.data.sessionID,
         })
         const time = { created: DateTime.makeUnsafe(event.created) }
-        if (input.type === "user")
+        if (input.type === "user") {
+          if (input.payload.selection) {
+            yield* setSession(db, event.data.sessionID, {
+              ...selectionOf(input.payload.selection),
+              time_updated: event.created,
+            })
+            yield* SessionRouteSwitchState.operatorSelected(db, event.data.sessionID)
+          }
           yield* insertMessage(db, event, {
             id: input.id,
             type: "user",
@@ -1032,8 +1043,10 @@ const layer = Layer.effectDiscard(
             files: input.payload.files,
             agents: input.payload.agents,
             skills: input.payload.skills,
+            selection: input.payload.selection,
             time,
           })
+        }
         if (input.type === "synthetic")
           yield* insertMessage(db, event, {
             id: input.id,
