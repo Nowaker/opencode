@@ -73,6 +73,7 @@ import { SessionEnvironment } from "./session/environment.js"
 import { InstructionEntry } from "./session/instruction-entry.js"
 import { SessionChildCancellation } from "./session/child-cancellation.js"
 import { EngineStop } from "./engine-stop.js"
+import { SessionRouteSwitchState } from "./session/route-switch-state.js"
 
 // get project -> project.locations
 //
@@ -400,7 +401,15 @@ const layer = Layer.effect(
               permissions: input.permissions ?? parent?.permissions,
               model: input.model,
             },
-            { location },
+            {
+              location,
+              ...(parent
+                ? {
+                    commit: () =>
+                      SessionRouteSwitchState.snapshotChild(db, parent.id, sessionID, parent.parentID !== undefined),
+                  }
+                : {}),
+            },
           )
           .pipe(
             Effect.as({ type: "created" } as const),
@@ -461,31 +470,40 @@ const layer = Layer.effect(
         const compaction = context.find((message) => message.type === "compaction" && message.status === "completed")
         const recent = compaction?.metadata?.recent
         yield* bus
-          .publish(SessionEvent.Forked, {
-            sessionID,
-            parentID: parent.id,
-            boundary: { type: input.before ? "before" : "through", messageID: boundary.id },
-            ...(input.child
+          .publish(
+            SessionEvent.Forked,
+            {
+              sessionID,
+              parentID: parent.id,
+              boundary: { type: input.before ? "before" : "through", messageID: boundary.id },
+              ...(input.child
+                ? {
+                    child: {
+                      ...input.child,
+                      context: context
+                        .filter((message) =>
+                          message.type === "assistant"
+                            ? message.time.completed !== undefined
+                            : message.type === "shell" || message.type === "compaction"
+                              ? message.status !== "running"
+                              : true,
+                        )
+                        .map((message) => message.id),
+                      ...(compaction && typeof recent === "string"
+                        ? { recent: { messageID: compaction.id, text: recent } }
+                        : {}),
+                    },
+                  }
+                : {}),
+              ...inherited,
+            },
+            input.child
               ? {
-                  child: {
-                    ...input.child,
-                    context: context
-                      .filter((message) =>
-                        message.type === "assistant"
-                          ? message.time.completed !== undefined
-                          : message.type === "shell" || message.type === "compaction"
-                            ? message.status !== "running"
-                            : true,
-                      )
-                      .map((message) => message.id),
-                    ...(compaction && typeof recent === "string"
-                      ? { recent: { messageID: compaction.id, text: recent } }
-                      : {}),
-                  },
+                  commit: () =>
+                    SessionRouteSwitchState.snapshotChild(db, parent.id, sessionID, parent.parentID !== undefined),
                 }
-              : {}),
-            ...inherited,
-          })
+              : undefined,
+          )
           .pipe(Effect.provideService(SessionBlob.ForkMedia, media))
         return yield* result.get(sessionID).pipe(Effect.orDie)
       }, claims.within),
@@ -508,7 +526,13 @@ const layer = Layer.effect(
         const children = yield* store.list({ parentID: sessionID })
         yield* Effect.forEach(children, (child) => result.remove(child.id), { concurrency: 1, discard: true })
         yield* environments.clear(sessionID)
-        yield* bus.publish(SessionEvent.Deleted, { sessionID })
+        yield* bus.publish(
+          SessionEvent.Deleted,
+          { sessionID },
+          {
+            commit: () => SessionRouteSwitchState.remove(db, sessionID),
+          },
+        )
         yield* bus.remove(sessionID)
       }, claims.within),
       list: Effect.fn("Session.list")(function* (input = {}) {

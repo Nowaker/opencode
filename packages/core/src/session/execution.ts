@@ -18,6 +18,7 @@ import { SessionInbox } from "./inbox.js"
 import { Event } from "@opencode/schema/event"
 import { SessionRecovery } from "./recovery.js"
 import { SessionInputRevision } from "./input-revision.js"
+import { SessionRouteSwitchState } from "./route-switch-state.js"
 
 export type InterruptOptions = SessionSchema.InterruptBody & { readonly resume?: boolean }
 export type UnguardedInterruptOptions = { readonly resume?: boolean; readonly experimental?: undefined }
@@ -32,6 +33,10 @@ export interface Interface {
   readonly resume: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<void, SessionRunner.RunError | EngineStop.RefusedError>
+  readonly resumeDetached?: (
+    sessionID: SessionSchema.ID,
+    retry: string,
+  ) => Effect.Effect<boolean, EngineStop.RefusedError>
   /** Registers newly recorded work. Repeated wakeups may coalesce. */
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /**
@@ -85,8 +90,13 @@ export const layer = Layer.effect(
     // preserves the claim so the next server start resumes the turn. A claim that survives with no
     // terminal is the signature of a process that died without teardown (crash, SIGKILL, eviction);
     // recovery is a property of the database, never of a shutdown hook that may not run.
-    const claimOnCommit = (sessionID: SessionSchema.ID) => ({
-      commit: () => store.claim(sessionID),
+    const claimOnCommit = (sessionID: SessionSchema.ID, owner: Event.ID) => ({
+      commit: () =>
+        Effect.gen(function* () {
+          yield* store.claim(sessionID)
+          const session = yield* store.get(sessionID)
+          if (session) yield* SessionRouteSwitchState.stampOwner(db, sessionID, owner, session.parentID !== undefined)
+        }),
     })
     const releaseOnCommit = (sessionID: SessionSchema.ID) => ({
       commit: () => store.release(sessionID),
@@ -97,11 +107,12 @@ export const layer = Layer.effect(
       continuation?: SessionRunner.Continuation,
       promotable: SessionInbox.Promotable = "input",
       stepped = false,
+      owner?: SessionRunCoordinator.Owner,
     ): Effect.fn.Return<void, SessionRunner.RunError> {
       const session = yield* store.get(sessionID)
       if (!session) return yield* Effect.die(new Error(`Session not found: ${sessionID}`))
       const result = yield* SessionRunner.Service.use((runner) =>
-        runner.drain({ sessionID, force, continuation, promotable, stepped }),
+        runner.drain({ sessionID, force, continuation, promotable, stepped, owner }),
       ).pipe(
         instances.provide(session),
         Effect.tapCause((cause) =>
@@ -112,8 +123,8 @@ export const layer = Layer.effect(
       )
       return yield* SessionRunner.DrainResult.$match(result, {
         Complete: () => Effect.void,
-        Moved: (result) => drain(sessionID, false, result.continuation, promotable, result.stepped),
-        Reloaded: (result) => drain(sessionID, result.force, result.continuation, promotable, result.stepped),
+        Moved: (result) => drain(sessionID, false, result.continuation, promotable, result.stepped, owner),
+        Reloaded: (result) => drain(sessionID, result.force, result.continuation, promotable, result.stepped, owner),
       })
     })
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError, InterruptReason>({
@@ -123,9 +134,9 @@ export const layer = Layer.effect(
       started: (sessionID, id) =>
         reportLifecycle(
           sessionID,
-          bus.publish(SessionEvent.Execution.Started, { sessionID }, { ...claimOnCommit(sessionID), id }),
+          bus.publish(SessionEvent.Execution.Started, { sessionID }, { ...claimOnCommit(sessionID, id), id }),
         ),
-      drain: (sessionID, force, promotable) => drain(sessionID, force, undefined, promotable),
+      drain: (sessionID, force, promotable, owner) => drain(sessionID, force, undefined, promotable, false, owner),
       // One terminal observation per busy period, covering every coalesced drain.
       settled: (sessionID, exit, reason) =>
         reportLifecycle(
@@ -226,6 +237,7 @@ export const layer = Layer.effect(
       isActive: coordinator.isActive,
       interrupt,
       resume: coordinator.run,
+      resumeDetached: coordinator.start,
       wake: coordinator.wake,
       awaitIdle: coordinator.awaitIdle,
     })

@@ -8,6 +8,7 @@ import type { Promotable } from "../inbox.js"
 import type { AgentNotFoundError, MessageDecodeError, StepFailedError } from "../error.js"
 import { SessionRunnerModel } from "./model.js"
 import type { Instructions } from "../../instructions/index.js"
+import type { SessionRunCoordinator } from "../run-coordinator.js"
 
 export type RunError =
   | AIError
@@ -38,6 +39,7 @@ export interface Interface {
     readonly promotable?: Promotable
     /** The previous drain ran a step before handing off, so reaching idle still runs the idle hook. */
     readonly stepped?: boolean
+    readonly owner?: SessionRunCoordinator.Owner
   }) => Effect.Effect<DrainResult, RunError>
 }
 

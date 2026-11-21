@@ -63,6 +63,7 @@ export interface Prepared<Event = SessionRequest> {
   readonly event: Event
   readonly request: LLMRequest
   readonly options: StreamOptions
+  readonly mediaPreserved?: boolean
   readonly retry: (event: PluginHooks.Domains["session"]["retry"]) => Effect.Effect<void>
   /** Runs a tool call against the tools this request advertised. */
   readonly executeTool: (
@@ -276,6 +277,7 @@ export const layer = Layer.effect(
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
       const affinity = SessionAffinity.get(session)
+      const messages = boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider))
       const base = ai.request({
         model: model.model,
         headers: {
@@ -295,7 +297,7 @@ export const layer = Layer.effect(
         promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
         system: shaped.system,
-        messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
+        messages,
         tools: SessionModelRequestTools.declarations(hooked, model.model.route.protocol),
         toolChoice: input.toolChoice,
         ...generation,
@@ -379,6 +381,7 @@ export const layer = Layer.effect(
 
       return {
         event: shaped,
+        mediaPreserved: messages.every((message, index) => message === shaped.messages[index]),
         request,
         options: { ...(http ? { http } : {}), ...(webSocket ? { webSocket } : {}) },
         retry: (event: Parameters<Prepared["retry"]>[0]) =>

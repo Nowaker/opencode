@@ -629,16 +629,20 @@ const publish = Effect.fn("SessionInbox.publish")(function* (
     },
     { discard: true },
   )
-  return rows.length
+  return rows.flatMap((row) =>
+    row.type === "user" || row.type === "synthetic"
+      ? [{ id: row.id, type: row.type, enqueuedSeq: row.enqueued_seq }]
+      : [],
+  )
 })
 
 /**
- * Promotes pending input into visible messages and returns the promoted count,
+ * Promotes pending input into visible messages and returns their admission identities,
  * or undefined when the runner must first handle a pending control.
  * Steered compaction takes priority over pending prompts, without crossing a move.
  * Only the "input" scope may fall through to one queued input.
  */
-export const promote = Effect.fn("SessionInbox.promote")(function* (
+export const promoteAdmissions = Effect.fn("SessionInbox.promote")(function* (
   db: DatabaseService,
   bus: Bus.Interface,
   sessionID: SessionSchema.ID,
@@ -654,13 +658,16 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
       }
 
       const queued = yield* firstQueued(db, sessionID)
-      if (!queued) return 0
+      if (!queued) return []
       if (isControl(queued)) return undefined
       const promoted = yield* publish(db, bus, sessionID, [queued])
-      return promoted + (yield* publish(db, bus, sessionID, beforeControl(yield* pendingSteers(db, sessionID))))
+      return [...promoted, ...(yield* publish(db, bus, sessionID, beforeControl(yield* pendingSteers(db, sessionID))))]
     }),
   )
 })
+
+export const promote = (db: DatabaseService, bus: Bus.Interface, sessionID: SessionSchema.ID, scope: Promotable) =>
+  promoteAdmissions(db, bus, sessionID, scope).pipe(Effect.map((items) => items?.length))
 
 const isControl = (row: typeof SessionInboxTable.$inferSelect) => row.type === "compaction" || row.type === "move"
 

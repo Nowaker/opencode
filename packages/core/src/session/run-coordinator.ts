@@ -15,6 +15,7 @@ export interface Coordinator<Key, E, Reason = never> {
   readonly isActive: (key: Key) => Effect.Effect<boolean>
   /** Starts an execution while idle, or joins the active execution and returns its exit. */
   readonly run: (key: Key) => Effect.Effect<void, E | EngineStop.RefusedError>
+  readonly start: (key: Key, retry: string) => Effect.Effect<boolean, EngineStop.RefusedError>
   /** Rings the doorbell: an idle key starts an execution; an active one drains again before settling. */
   readonly wake: (key: Key, scope?: Promotable) => Effect.Effect<void>
   /**
@@ -38,6 +39,7 @@ export interface Coordinator<Key, E, Reason = never> {
  */
 type Execution<E, Reason> = {
   readonly id: Event.ID
+  readonly retry?: string
   readonly done: Deferred.Deferred<void, E>
   owner?: Fiber.Fiber<void, unknown>
   scope: Promotable
@@ -60,7 +62,7 @@ type Execution<E, Reason> = {
  * ```
  */
 export const make = <Key, E, Reason = never>(options: {
-  readonly drain: (key: Key, force: boolean, scope: Promotable) => Effect.Effect<void, E>
+  readonly drain: (key: Key, force: boolean, scope: Promotable, owner: Owner) => Effect.Effect<void, E>
   /** Runs once when a process-local busy period begins, before its first drain. */
   readonly started?: (key: Key, id: Event.ID) => Effect.Effect<void>
   /**
@@ -84,7 +86,13 @@ export const make = <Key, E, Reason = never>(options: {
     const claims = options.claims
 
     const loop = (key: Key, execution: Execution<E, Reason>, force: boolean): Effect.Effect<void, E> =>
-      Effect.suspend(() => options.drain(key, force, execution.scope)).pipe(
+      Effect.suspend(() =>
+        options.drain(key, force, execution.scope, {
+          id: execution.id,
+          retry: execution.retry,
+          current: () => executions.get(key) === execution && !execution.stopping && execution.owner !== undefined,
+        }),
+      ).pipe(
         Effect.andThen(
           Effect.suspend(() => {
             if (execution.stopping || execution.pendingWake === undefined) return Effect.void
@@ -118,6 +126,7 @@ export const make = <Key, E, Reason = never>(options: {
       scope: Promotable,
       existing: (execution: Execution<E, Reason>) => A,
       created: (execution: Execution<E, Reason>) => A,
+      retry?: string,
     ): Effect.Effect<A, EngineStop.RefusedError> =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -129,6 +138,7 @@ export const make = <Key, E, Reason = never>(options: {
           if (current !== undefined) return existing(current)
           const execution: Execution<E, Reason> = {
             id: Event.ID.create(),
+            retry,
             done: Deferred.makeUnsafe<void, E>(),
             scope,
             stopping: false,
@@ -214,6 +224,16 @@ export const make = <Key, E, Reason = never>(options: {
         ).pipe(Effect.flatten)
       })
 
+    const startDetached = (key: Key, retry: string) =>
+      start(
+        key,
+        true,
+        "input",
+        () => false,
+        () => true,
+        retry,
+      )
+
     const ring = (execution: Execution<E, Reason>, scope: Promotable) => {
       // Coalesced wakes keep the widest scope: "input" subsumes "steer".
       execution.pendingWake = execution.pendingWake === "input" ? "input" : scope
@@ -276,8 +296,16 @@ export const make = <Key, E, Reason = never>(options: {
       compareAndInterrupt,
       isActive,
       run,
+      start: startDetached,
       wake,
       interrupt,
       awaitIdle,
     }
   })
+
+/** Permission to dispatch exists only while this process-local execution may still run. */
+export interface Owner {
+  readonly id: Event.ID
+  readonly retry?: string
+  readonly current: () => boolean
+}
