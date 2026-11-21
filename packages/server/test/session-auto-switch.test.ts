@@ -49,7 +49,7 @@ const fixture = Effect.gen(function* () {
   const result = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Struct({ id: Session.ID }) }))(
     yield* Effect.promise(() => created.json()),
   )
-  return { request, path: `/api/experimental/session/${result.data.id}/auto-switch` }
+  return { request, sessionID: result.data.id, path: `/api/experimental/session/${result.data.id}/auto-switch` }
 })
 
 it.live("requires authentication before exposing an owner's session auto-switch status", () =>
@@ -87,5 +87,25 @@ it.live("requires authentication before requesting retry of a quota-stopped step
       body: { ownerEpoch: "fixture-owner", revision: 0 },
     })
     expect(denied.status).toBe(401)
+  }),
+)
+
+it.live("returns a typed 409 and admits nothing for a prompt from a stale native owner", () =>
+  Effect.gen(function* () {
+    const owner = yield* fixture
+    const path = `/api/session/${owner.sessionID}`
+    const response = yield* owner.request(`${path}/prompt`, {
+      method: "POST",
+      body: { text: "Do not admit", resume: false, experimental: { selection: { ownerEpoch: "old", revision: 0 } } },
+    })
+    expect(response.status).toBe(409)
+    expect(yield* Effect.promise(() => response.json())).toMatchObject({
+      _tag: "Session.PromptGuardError",
+      accepted: false,
+      reason: "selection-stale",
+      sessionID: owner.sessionID,
+    })
+    const inbox = yield* owner.request(`${path}/inbox`)
+    expect(yield* Effect.promise(() => inbox.json())).toEqual({ data: [] })
   }),
 )
