@@ -26,6 +26,7 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
+import type { MeridianRouting } from "../../plugin/provider/meridian-routing.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -37,6 +38,7 @@ export type Outcome = Data.TaggedEnum<{
   RecoverFull: {}
   Compacted: {}
   OutputLimit: { readonly needsContinuation: boolean }
+  Refused: { readonly refusal: MeridianRouting.Refusal; readonly error: SessionError.Error }
 }>
 export const Outcome = Data.taggedEnum<Outcome>()
 
@@ -45,6 +47,7 @@ interface Input {
   readonly sessionID: SessionSchema.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly agent: Agent.ID
+  readonly toolAgent?: Agent.ID
   readonly model: SessionRunnerModel.Resolved
   readonly prepared: Omit<SessionModelRequest.Prepared, "event">
   /** Set when this attempt runs because an earlier one in the step scheduled a retry. */
@@ -57,6 +60,8 @@ interface Input {
   readonly recoverContinuation: boolean
   /** The runner owns compaction policy; the attempt invokes it only before durable output. */
   readonly recoverOverflow: Effect.Effect<boolean>
+  readonly routing?: MeridianRouting.Binding
+  readonly singleSend?: boolean
 }
 
 const TOOLS_INTERRUPTED = { type: "aborted", message: "Tool execution interrupted" } as const
@@ -98,13 +103,14 @@ export const make = Effect.gen(function* () {
       readonly call: ToolCall
       readonly fiber: Fiber.Fiber<void, Permission.DeclinedError | QuestionTool.CancelledError>
     }> = []
+    let receivedEvent = false
     const interruptTools = Effect.suspend(() => Fiber.interruptAll(toolRuns.map((run) => run.fiber)))
     const executeTool = (call: ToolCall) => {
       if (input.prepared.request.toolChoice?.type === "none")
         return new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
       return input.prepared.executeTool({
         sessionID: input.sessionID,
-        agent: input.agent,
+        agent: input.toolAgent ?? input.agent,
         messageID: input.assistantMessageID,
         call,
         progress: (update) => publisher.progress(call.id, update),
@@ -115,33 +121,36 @@ export const make = Effect.gen(function* () {
     // A local execution starts only after its Tool.Called publication completes.
     // Read to the end, not just the finish event, so the next request can reuse this response.
     // The span covers only the provider stream, so model time separates from tools, which run in this consumer.
-    const providerStream = llm.stream(input.prepared.request, input.prepared.options).pipe(
-      Stream.withSpan("LLM.stream", { attributes: modelAttributes }),
-      Stream.runForEach((event) =>
-        Effect.gen(function* () {
-          if (publisher.record().providerFailed) return
-          // Wait here, where cancellation still works, rather than inside the uninterruptible publish.
-          if (!publisher.hasStarted()) yield* Fiber.join(pendingStartSnapshot)
-          yield* publisher.publish(event)
-          if (firstOutputAt === undefined && publisher.record().outputStarted)
-            firstOutputAt = yield* Clock.currentTimeMillis
-          if (event.type !== "tool-call" || event.providerExecuted) return
-          toolRuns.push({
-            call: event,
-            fiber: yield* Effect.uninterruptibleMask((restore) =>
-              restore(executeTool(event)).pipe(
-                Effect.flatMap(toolOutput.truncate),
-                Effect.flatMap((outcome) => publisher.toolExecution(event.id, event.name, outcome)),
-                Effect.catchTag("Tool.Error", (error) =>
-                  publisher.failTool(event.id, toSessionError(error), error.metadata).pipe(Effect.asVoid),
+    const providerStream = llm
+      .stream(input.prepared.request, input.routing ? input.routing.options : input.prepared.options)
+      .pipe(
+        Stream.withSpan("LLM.stream", { attributes: modelAttributes }),
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            receivedEvent = true
+            if (publisher.record().providerFailed) return
+            // Wait here, where cancellation still works, rather than inside the uninterruptible publish.
+            if (!publisher.hasStarted()) yield* Fiber.join(pendingStartSnapshot)
+            yield* publisher.publish(event)
+            if (firstOutputAt === undefined && publisher.record().outputStarted)
+              firstOutputAt = yield* Clock.currentTimeMillis
+            if (event.type !== "tool-call" || event.providerExecuted) return
+            toolRuns.push({
+              call: event,
+              fiber: yield* Effect.uninterruptibleMask((restore) =>
+                restore(executeTool(event)).pipe(
+                  Effect.flatMap(toolOutput.truncate),
+                  Effect.flatMap((outcome) => publisher.toolExecution(event.id, event.name, outcome)),
+                  Effect.catchTag("Tool.Error", (error) =>
+                    publisher.failTool(event.id, toSessionError(error), error.metadata).pipe(Effect.asVoid),
+                  ),
                 ),
-              ),
-            ).pipe(Effect.forkScoped),
-          })
-        }),
-      ),
-      Effect.ensuring(publisher.flush()),
-    )
+              ).pipe(Effect.forkScoped),
+            })
+          }),
+        ),
+        Effect.ensuring(publisher.flush()),
+      )
 
     // Keep the final tool and Step events uninterruptible, even when the work itself is cancelled.
     return yield* Effect.uninterruptibleMask((restore) =>
@@ -162,8 +171,36 @@ export const make = Effect.gen(function* () {
         const joined = yield* restore(Fiber.awaitAll(toolRuns.map((run) => run.fiber))).pipe(Effect.exit)
         if (Exit.isFailure(joined)) yield* interruptTools
         const tools = classifyToolExits(joined, toolRuns)
+        if (
+          !receivedEvent &&
+          toolRuns.length === 0 &&
+          !streamInterrupted &&
+          Exit.isFailure(stream) &&
+          stream.cause.reasons.length === 1 &&
+          streamFailure instanceof AIError &&
+          input.routing
+        ) {
+          if (input.routing.blocked(streamFailure))
+            return yield* new StepFailedError({
+              error: { type: "route.dispatch-blocked", message: "Route authorization changed before dispatch" },
+            })
+          const refusal = input.routing.refusalOf(streamFailure)
+          if (refusal) {
+            const error = {
+              type: "route.quota-exhausted",
+              message:
+                refusal.reason === "reserve_held"
+                  ? "The route's quota reserve is held"
+                  : "The route's quota is exhausted",
+            }
+            yield* publisher.failAssistant(error)
+            yield* publisher.publishStepFailure({})
+            return Outcome.Refused({ refusal, error })
+          }
+        }
 
         if (
+          !input.singleSend &&
           !publisher.record().outputStarted &&
           isContextOverflowFailure(streamFailure) &&
           (yield* restore(input.recoverOverflow))
@@ -203,6 +240,7 @@ export const make = Effect.gen(function* () {
           ...(llmFailure === undefined ? {} : { "error.type": llmFailure.reason._tag }),
         })
         if (
+          !input.singleSend &&
           input.recoverContinuation &&
           llmFailure?.reason._tag === "Transport" &&
           (llmFailure.reason.recovery === "retry-full" || llmFailure.reason.recovery === "rotate-and-retry-full") &&
@@ -210,7 +248,7 @@ export const make = Effect.gen(function* () {
         )
           return Outcome.RecoverFull()
         const retry =
-          llmFailure && llmError && !isContextOverflowFailure(llmFailure)
+          !input.singleSend && llmFailure && llmError && !isContextOverflowFailure(llmFailure)
             ? yield* restore(
                 input.retry(
                   llmFailure,
