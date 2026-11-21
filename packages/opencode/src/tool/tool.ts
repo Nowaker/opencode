@@ -35,6 +35,7 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 }
 
 export type Context<M extends Metadata = Metadata> = {
+  readonly autoSwitch?: import("@opencode-ai/plugin").AutoSwitchContext
   sessionID: SessionID
   messageID: MessageID
   agent: string

@@ -1,9 +1,11 @@
 import { z } from "zod"
+import type { AutoSwitchContext } from "./index"
 
 export type ToolContext = {
   sessionID: string
   messageID: string
   agent: string
+  readonly autoSwitch?: AutoSwitchContext
   /**
    * Current project directory for this session.
    * Prefer this over process.cwd() when resolving relative paths.

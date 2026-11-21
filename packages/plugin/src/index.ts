@@ -247,7 +247,29 @@ export type CompactionModel = {
   limit: { context: number; input?: number; output: number }
 }
 
+export type AutoSwitchRoute = {
+  readonly agent: string
+  readonly providerID: string
+  readonly modelID: string
+  readonly variant: string | null
+}
+
+export type AutoSwitchContext = {
+  readonly version: 1
+  readonly preferred: AutoSwitchRoute
+  readonly effective: AutoSwitchRoute
+}
+
 export interface Hooks {
+  "experimental.chat.autoSwitch.prepare"?: (
+    input: {
+      readonly version: 1
+      readonly sessionID: string
+      readonly source: AutoSwitchRoute
+      readonly target: AutoSwitchRoute
+    },
+    output: { decision?: "allow" | "deny" },
+  ) => Promise<void>
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
   config?: (input: Config) => Promise<void>
@@ -273,7 +295,14 @@ export interface Hooks {
    * Modify parameters sent to LLM
    */
   "chat.params"?: (
-    input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
+    input: {
+      sessionID: string
+      agent: string
+      model: Model
+      provider: ProviderContext
+      message: UserMessage
+      autoSwitch?: AutoSwitchContext
+    },
     output: {
       temperature: number
       topP: number
@@ -283,7 +312,14 @@ export interface Hooks {
     },
   ) => Promise<void>
   "chat.headers"?: (
-    input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
+    input: {
+      sessionID: string
+      agent: string
+      model: Model
+      provider: ProviderContext
+      message: UserMessage
+      autoSwitch?: AutoSwitchContext
+    },
     output: { headers: Record<string, string> },
   ) => Promise<void>
   "permission.ask"?: (input: Permission, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
@@ -292,7 +328,7 @@ export interface Hooks {
     output: { parts: Part[] },
   ) => Promise<void>
   "tool.execute.before"?: (
-    input: { tool: string; sessionID: string; callID: string },
+    input: { tool: string; sessionID: string; callID: string; autoSwitch?: AutoSwitchContext },
     output: { args: any },
   ) => Promise<void>
   "shell.env"?: (
@@ -307,7 +343,7 @@ export interface Hooks {
     output: { env: Record<string, string> },
   ) => Promise<void>
   "tool.execute.after"?: (
-    input: { tool: string; sessionID: string; callID: string; args: any },
+    input: { tool: string; sessionID: string; callID: string; args: any; autoSwitch?: AutoSwitchContext },
     output: {
       title: string
       output: string
@@ -315,7 +351,7 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.messages.transform"?: (
-    input: {},
+    input: { autoSwitch?: AutoSwitchContext },
     output: {
       messages: {
         info: Message
@@ -324,7 +360,7 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.system.transform"?: (
-    input: { sessionID?: string; model: Model },
+    input: { sessionID?: string; model: Model; autoSwitch?: AutoSwitchContext },
     output: {
       system: string[]
     },

@@ -10,6 +10,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { SystemPrompt } from "../system"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Record } from "effect"
+import type { AutoSwitchContext } from "@opencode-ai/plugin"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
@@ -17,6 +18,7 @@ import { mergeDeep } from "remeda"
 const USER_AGENT = `opencode/${InstallationVersion}`
 
 type PrepareInput = {
+  readonly autoSwitch?: AutoSwitchContext
   readonly user: SessionV1.User
   readonly sessionID: string
   readonly parentSessionID?: string
@@ -68,7 +70,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const header = system[0]
   yield* input.plugin.trigger(
     "experimental.chat.system.transform",
-    { sessionID: input.sessionID, model: input.model },
+    { sessionID: input.sessionID, model: input.model, ...(input.autoSwitch && { autoSwitch: input.autoSwitch }) },
     { system },
   )
   if (system.length > 2 && system[0] === header) {
@@ -106,6 +108,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       model: input.model,
       provider: input.provider,
       message: input.user,
+      ...(input.autoSwitch && { autoSwitch: input.autoSwitch }),
     },
     {
       temperature: input.model.capabilities.temperature
@@ -126,6 +129,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       model: input.model,
       provider: input.provider,
       message: input.user,
+      ...(input.autoSwitch && { autoSwitch: input.autoSwitch }),
     },
     {
       headers: {},
