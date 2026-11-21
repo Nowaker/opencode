@@ -1,5 +1,8 @@
 import { Instance } from "@opencode/core/instance/service"
 import { Session } from "@opencode/core/session"
+import { SessionRouteSwitch } from "@opencode/core/session/route-switch"
+import { SessionRouteSwitchPreview } from "@opencode/core/session/route-switch-preview"
+import { SessionRouteSwitchRecovery } from "@opencode/core/session/route-switch-recovery"
 import { SessionStats } from "@opencode/core/session/stats"
 import { SessionTitle } from "@opencode/core/session/title"
 import { SessionTransfer } from "@opencode/core/session/transfer"
@@ -8,10 +11,12 @@ import { Form } from "@opencode/core/form"
 import { EngineStop } from "@opencode/core/engine-stop"
 import { DateTime, Effect, Schema, Stream } from "effect"
 import { InterruptBody } from "@opencode/schema/session"
-import { HttpServerResponse } from "effect/http"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { SessionMediaMessageResponse } from "@opencode/protocol/groups/message"
 import { SessionMediaInboxResponse } from "@opencode/protocol/groups/session"
+import { AutoSwitchConflict, AutoSwitchUnavailable } from "@opencode/protocol/route-switch"
+import type { RouteSwitch } from "@opencode/schema/route-switch"
 import { Api } from "../api"
 import { wantsMediaRefs } from "../media-uri"
 import {
@@ -36,9 +41,30 @@ function missingForm(id: Form.ID) {
   return new FormNotFoundError({ id, message: `Form not found: ${id}` })
 }
 
+const noStore = HttpEffect.appendPreResponseHandler((_request, response) =>
+  Effect.succeed(HttpServerResponse.setHeader(response, "cache-control", "no-store")),
+)
+
+function autoSwitchReply(
+  result: RouteSwitch.EditResult,
+): Effect.Effect<{ readonly data: RouteSwitch.Status }, AutoSwitchConflict | AutoSwitchUnavailable> {
+  const body = { data: result.data }
+  switch (result.status) {
+    case 200:
+      return Effect.succeed(body)
+    case 409:
+      return Effect.fail(new AutoSwitchConflict(body))
+    case 503:
+      return Effect.fail(new AutoSwitchUnavailable(body))
+  }
+}
+
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
+    const routeSwitch = yield* SessionRouteSwitch.Service
+    const routeSwitchPreview = yield* SessionRouteSwitchPreview.Service
+    const routeSwitchRecovery = yield* SessionRouteSwitchRecovery.Service
     const transfer = yield* SessionTransfer.Service
     const instructions = yield* InstructionEntry.Service
     const instances = yield* Instance.Service
@@ -188,6 +214,27 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle("session.recovery", (ctx) =>
         session.recovery(ctx.params).pipe(
           Effect.map((data) => ({ data })),
+          Effect.catchTag("Session.NotFoundError", missingSession),
+        ),
+      )
+      .handle("session.autoSwitch.get", (ctx) =>
+        noStore.pipe(
+          Effect.andThen(routeSwitchPreview.refresh(ctx.params.sessionID)),
+          Effect.map((data) => ({ data })),
+          Effect.catchTag("Session.NotFoundError", missingSession),
+        ),
+      )
+      .handle("session.autoSwitch.edit", (ctx) =>
+        noStore.pipe(
+          Effect.andThen(routeSwitch.edit({ ...ctx.payload, sessionID: ctx.params.sessionID })),
+          Effect.flatMap(autoSwitchReply),
+          Effect.catchTag("Session.NotFoundError", missingSession),
+        ),
+      )
+      .handle("session.autoSwitch.retry", (ctx) =>
+        noStore.pipe(
+          Effect.andThen(routeSwitchRecovery.retry({ ...ctx.payload, sessionID: ctx.params.sessionID })),
+          Effect.flatMap(autoSwitchReply),
           Effect.catchTag("Session.NotFoundError", missingSession),
         ),
       )
