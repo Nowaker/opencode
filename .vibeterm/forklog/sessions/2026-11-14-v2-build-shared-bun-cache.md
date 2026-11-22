@@ -53,6 +53,13 @@ git log --format='%H %(trailers:key=AI-Session-ID,valueonly)' -- \
   .vibeterm/forklog/sessions/2026-11-14-v2-build-shared-bun-cache.md
 ```
 
+## Follow-up 2026-11-22: the build step too
+
+- Problem: `packages/cli/script/build.ts:74` runs `bun install --os="*" --cpu="*" --libc="*"` for every platform's native packages inside the build step, which still ran with the private scratch cache. Each v2 build tree kept 8.96 GB (3,876 files) of platform binaries shared with nothing; on desktop on 2026-11-22 `chat-text-click-v2` got it from one build (02:53-03:25Z), and `v2-nowaker` and `subagent-default` hold identical copies.
+- Change: `fix(build): share the caller's bun cache in the isolated v2 build step too` gives `run_v2 ... bun ./script/build.ts --single` the same `BUN_INSTALL_CACHE_DIR` as the install step; the installed binary's probe run stays fully isolated.
+- Verification: `build.test.sh` records the cache each step sees and asserts both; it failed (`unset`) before the change and passes after. An all-platform `bun install --os=* --cpu=* --libc=* @opentui/core@0.8.1` in a scratch tree under the same isolated environment installed all 8 platform packages hardlinked to `~/.bun/install/cache` (every file link count 2+) and created no private cache.
+- Not run: a full `build.sh --v2`.
+
 ## Unknowns and blocked verification
 
 - No end-to-end `build.sh --v2` run by this session; the next W1 build is the first full confirmation. `v2-nowaker`'s existing 12.4 GB of unshared `node_modules` was left to W1 to relink.
