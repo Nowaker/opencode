@@ -39,7 +39,14 @@ const gptMax = { ...gpt, variant: "max" } as const
 const claude = {
   agent: "build", providerID: ProviderV2.ID.make("anthropic"), modelID: ModelV2.ID.make("claude-opus-5-5"), variant: "high",
 } as const
-type Route = typeof claude | typeof gpt | typeof gptMax
+type Route = { readonly agent: string; readonly providerID: ProviderV2.ID; readonly modelID: ModelV2.ID; readonly variant: string }
+
+const reverseFamilies = [
+  ["gpt-6.2-astra", "high", "claude-fable-5-2", "high"],
+  ["gpt-6.1-terra", "medium", "claude-sonnet-5-5", "high"],
+  ["gpt-6-luna", "low", "claude-haiku-5-5", "low"],
+  ["gpt-6-luna-fast", "low", "claude-haiku-5-5", "low"],
+] as const
 
 const gptReasoning = { text: "matrix-gpt-private-reasoning", encryptedContent: "matrix-gpt-encrypted-blob" } as const
 const claudeReasoning = { text: "matrix-claude-private-thinking", signature: "matrix-claude-signature" } as const
@@ -51,9 +58,16 @@ const refusal = { refusal: "quota_exhausted" } as const
 const uuid = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 
-const setup = Effect.fnUntraced(function* (fixtureOptions: { readonly claudeInputLimit?: number; readonly pinnedProfile?: string } = {}) {
+const setup = Effect.fnUntraced(function* (fixtureOptions: {
+  readonly claudeInputLimit?: number
+  readonly pinnedProfile?: string
+  readonly routes?: { readonly source: Route; readonly target: Route }
+  readonly disableClaudeEffort?: boolean
+} = {}) {
+  const openai = fixtureOptions.routes?.source ?? gpt
+  const anthropic = fixtureOptions.routes?.target ?? claude
   const fixture = yield* Effect.acquireRelease(
-    Effect.sync(createProviderFixture),
+    Effect.sync(() => createProviderFixture(openai.modelID)),
     (server) => Effect.promise(() => server.close()),
   )
   const options = { apiKey: "fixture-only", baseURL: new URL("/v1", fixture.url).href }
@@ -69,17 +83,21 @@ const setup = Effect.fnUntraced(function* (fixtureOptions: { readonly claudeInpu
     compaction: { auto: false },
     enabled_providers: [gpt.providerID, claude.providerID],
     provider: {
-      [gpt.providerID]: {
+      [openai.providerID]: {
         npm: "@ai-sdk/openai", options,
-        models: { [gpt.modelID]: {
-          ...model, options: { store: false }, variants: { xhigh: { reasoningEffort: "xhigh" }, max: { reasoningEffort: "max" } },
+        models: { [openai.modelID]: {
+          ...model, options: { store: false }, variants: {
+            [openai.variant]: { reasoningEffort: openai.variant }, max: { reasoningEffort: "max" },
+          },
           headers: fixtureOptions.pinnedProfile ? { "x-meridian-profile": fixtureOptions.pinnedProfile } : undefined,
         } },
       },
-      [claude.providerID]: {
+      [anthropic.providerID]: {
         npm: "@ai-sdk/anthropic", options,
-        models: { [claude.modelID]: {
-          ...model, limit: { ...model.limit, input: fixtureOptions.claudeInputLimit }, variants: { high: { effort: "high" } },
+        models: { [anthropic.modelID]: {
+          ...model, limit: { ...model.limit, input: fixtureOptions.claudeInputLimit }, variants: {
+            [anthropic.variant]: { effort: anthropic.variant, disabled: fixtureOptions.disableClaudeEffort },
+          },
         } },
       },
     },
@@ -95,7 +113,7 @@ const setup = Effect.fnUntraced(function* (fixtureOptions: { readonly claudeInpu
       enabled: true,
       reason: "default-on",
       policyRevision: "matrix",
-      alternates: source?.providerID === claude.providerID ? [gpt] : [claude],
+      alternates: source?.providerID === anthropic.providerID ? [openai] : [anthropic],
       returnEnabled: true,
     })),
     Effect.provideService(MeridianRouting.Trust, {
@@ -274,6 +292,54 @@ it.instance("preserves a supported inline PNG on the GPT-to-Claude replacement w
       { type: "text", text: input.parts[0].text }, { type: "image", source: { type: "base64", media_type: "image/png", data: png } },
     ])
     expectAnswer(result, claude, input.messageID, "Claude handled the image turn")
+  }),
+)
+
+for (const [sourceID, sourceEffort, targetID, targetEffort] of reverseFamilies) {
+  it.instance(`switches ${sourceID} to the approved ${targetID} effort and returns to its exact saved GPT route`, () =>
+    Effect.gen(function* () {
+      const source = { ...gpt, modelID: ModelV2.ID.make(sourceID), variant: sourceEffort }
+      const target = { ...claude, modelID: ModelV2.ID.make(targetID), variant: targetEffort }
+      const ctx = yield* setup({ routes: { source, target } })
+      ctx.fixture.enqueue("openai", refusal, "GPT preferred returned")
+      ctx.fixture.enqueue("anthropic", "Claude alternate completed")
+      const first = submission(ctx.sessionID, source, "Continue using the approved alternate if needed.")
+
+      expectAnswer(yield* ctx.submit(first), target, first.messageID, "Claude alternate completed")
+      yield* awaitFreshAdmission(ctx.sessionID)
+      const next = submission(ctx.sessionID, source, "Continue on the saved route.")
+      expectAnswer(yield* ctx.submit(next), source, next.messageID, "GPT preferred returned")
+
+      const [original, alternate, returning] = expectPosts(ctx.fixture, ["/v1/responses", "/v1/messages", "/v1/responses"])
+      expect(original?.body).toMatchObject({ model: sourceID, reasoning: { effort: sourceEffort } })
+      expect(alternate?.body).toMatchObject({ model: targetID, output_config: { effort: targetEffort } })
+      expect(returning?.body).toMatchObject({ model: sourceID, reasoning: { effort: sourceEffort } })
+      expect(ctx.fixture.captured.filter((request) => request.wire === "availability").map((request) => request.query)).toEqual([
+        { provider: "claude", model: targetID, variant: targetEffort },
+        { provider: "chatgpt", model: sourceID, variant: sourceEffort },
+      ])
+      expect(userIDs(yield* ctx.sessions.messages({ sessionID: ctx.sessionID }))).toEqual([first.messageID, next.messageID])
+      expect(AutoSwitch.preferred(yield* ctx.sessions.get(ctx.sessionID))).toEqual(source)
+    }),
+  )
+}
+
+it.instance("parks a Luna refusal when Haiku lacks the approved explicit effort", () =>
+  Effect.gen(function* () {
+    const source = { ...gpt, modelID: ModelV2.ID.make("gpt-6-luna"), variant: "low" }
+    const target = { ...claude, modelID: ModelV2.ID.make("claude-haiku-5-5"), variant: "low" }
+    const ctx = yield* setup({ routes: { source, target }, disableClaudeEffort: true })
+    ctx.fixture.enqueue("openai", refusal)
+
+    yield* ctx.submit(submission(ctx.sessionID, source, "Use only approved effort."))
+
+    expectPosts(ctx.fixture, ["/v1/responses"])
+    expect(ctx.fixture.captured.filter((request) => request.wire === "availability")).toEqual([])
+    const pauses = yield* SessionPause.Service
+    const pause = yield* pauses.get(ctx.sessionID)
+    expect(pause?.error).toMatchObject({ code: "no_routable_account", model: {
+      providerID: source.providerID, modelID: source.modelID,
+    } })
   }),
 )
 

@@ -119,7 +119,7 @@ async function requestBody(request: Request) {
   return value as Record<string, unknown>
 }
 
-export function createProviderFixture() {
+export function createProviderFixture(gptModel = "gpt-6.2-sol") {
   const captured: Captured[] = []
   const unexpected: string[] = []
   const queues: Record<Wire, Reply[]> = { anthropic: [], openai: [], availability: [] }
@@ -131,7 +131,7 @@ export function createProviderFixture() {
       const url = new URL(request.url)
       const path = url.pathname
       const query = Object.fromEntries(url.searchParams)
-      if (request.method === "GET" && path === "/v1/models") return Response.json({ data: [{ id: "gpt-6.2-sol" }] })
+      if (request.method === "GET" && path === "/v1/models") return Response.json({ data: [{ id: gptModel }] })
       if (request.method === "GET" && path === "/profiles/route-availability") {
         const capturedRequest: Captured = { wire: "availability", method: request.method, path, query, headers: Object.fromEntries(request.headers), body: {} }
         captured.push(capturedRequest)
