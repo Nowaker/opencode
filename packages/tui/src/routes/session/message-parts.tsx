@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
+import { createMemo, createSignal, Match, Show, Switch, useContext } from "solid-js"
 import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
 import { useRenderer, type JSX } from "@opentui/solid"
 import type {
@@ -12,7 +12,7 @@ import { reasoningSummary } from "../../context/thinking"
 import { usePlugin } from "../../plugin/context"
 import { SplitBorder } from "../../ui/border"
 import { Locale } from "../../util/locale"
-import { use } from "./render-context"
+import { context, use } from "./render-context"
 import { generateThinkingSyntax } from "./thinking-syntax"
 import { canonicalToolName } from "../../util/tool-display"
 
@@ -81,7 +81,7 @@ export function ReasoningPart(props: {
           borderColor={theme.decrease(theme.background.base)}
           paddingLeft={!inMinimal() || expanded() ? 1 : 0}
         >
-          <box onMouseUp={toggle}>
+          <box onMouseUp={(event) => !ctx.textClick?.(event) && toggle()}>
             <ReasoningHeader
               toggleable={inMinimal()}
               open={!inMinimal() || expanded()}
@@ -218,8 +218,16 @@ export function InlineToolRow(props: {
   onMouseOut?: () => void
   onMouseUp?: (event: MouseEvent) => void
 }) {
+  const ctx = useContext(context)
   return (
-    <box paddingLeft={3} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
+    <box
+      paddingLeft={3}
+      onMouseOver={props.onMouseOver}
+      onMouseOut={props.onMouseOut}
+      onMouseUp={(event) => {
+        if (props.onMouseUp && !ctx?.textClick?.(event)) props.onMouseUp(event)
+      }}
+    >
       <Switch>
         <Match when={props.spinner}>
           <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>

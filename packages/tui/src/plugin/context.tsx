@@ -51,6 +51,7 @@ type RegisteredPlugin = {
 }
 
 type Value = {
+  readonly textClicks: ReturnType<typeof usePluginHost>["textClicks"]
   readonly ready: () => boolean
   readonly list: () => ReadonlyArray<State>
   readonly server: () => readonly PluginInfo[]
@@ -597,6 +598,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   return (
     <PluginContext.Provider
       value={{
+        textClicks: host.textClicks,
         ready: () => store.ready,
         list: () => store.states,
         server: serverPlugins,

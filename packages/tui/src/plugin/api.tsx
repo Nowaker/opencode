@@ -48,6 +48,8 @@ import { errorMessage } from "../util/error"
 import { abbreviateHome } from "../util/path-format"
 import { usePromptRef } from "../context/prompt"
 import { createComposerApi } from "./composer"
+import { textClickHandlers } from "../ui/text-click"
+import { useLog } from "../context/log"
 
 export type Dispose = () => Promise<void>
 
@@ -78,9 +80,13 @@ export type Registry = {
 // The host services a plugin context adapts. Collected once by the provider
 // (hooks must run during component setup) and shared by every activation.
 export function usePluginHost() {
+  const log = useLog({ component: "plugin" })
   return {
     owner: getOwner(),
     renderer: useRenderer(),
+    textClicks: textClickHandlers((error) => {
+      log.error("TUI text click handler failed", { name: error instanceof Error ? error.name : "unknown" })
+    }),
     client: useClient(),
     data: useData(),
     route: useRoute(),
@@ -177,6 +183,13 @@ export function createPluginContext(input: {
     },
     app: { version: host.app.version, channel: host.app.channel },
     renderer: host.renderer,
+    click: {
+      onText(handler) {
+        const remove = host.textClicks.on(handler)
+        input.owned.push(async () => remove())
+        return remove
+      },
+    },
     client: host.client.api,
     data: host.data,
     attention: host.attention,

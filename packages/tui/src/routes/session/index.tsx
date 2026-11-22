@@ -103,6 +103,7 @@ import { usePathFormatter } from "../../context/path-format"
 import { useLocation } from "../../context/location"
 import { Slot } from "../../plugin/render"
 import { usePlugin } from "../../plugin/context"
+import { transcriptClick } from "../../ui/text-click"
 import {
   cacheReuseDrop,
   completeGroupBoundary,
@@ -647,6 +648,13 @@ export function Session(props: {
     current.submit()
   })
   const dialog = useDialog()
+  const textClicks = usePlugin().textClicks
+  const textClick = transcriptClick({
+    renderer,
+    sessionID,
+    enabled: () => textClicks.active && dialog.stack.length === 0,
+    run: textClicks.run,
+  })
   const storage = useStorage()
   const [goUpsell, updateGoUpsell] = storage.store<{ lastSeenAt?: number; dontShow?: boolean }>("go-upsell", {
     initial: {},
@@ -1518,6 +1526,7 @@ export function Session(props: {
           },
         },
         sessionID: route.sessionID,
+        textClick: textClick.onMouseUp,
         thinkingMode,
         markdownMode,
         groupExploration,
@@ -1541,6 +1550,9 @@ export function Session(props: {
           <Show when={session()}>
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
+                onMouseDown={textClick.onMouseDown}
+                onMouseDrag={textClick.onMouseDrag}
+                onMouseUp={textClick.onMouseUp}
                 ref={(r) => {
                   scroll = r
                   props.scrollRef?.(r)
@@ -2169,7 +2181,8 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
         marginLeft={3}
         onMouseOver={() => childID() && setHover(true)}
         onMouseOut={() => setHover(false)}
-        onMouseUp={() => {
+        onMouseUp={(event) => {
+          if (ctx.textClick?.(event)) return
           if (renderer.getSelection()?.getSelectedText()) return
           const id = childID()
           if (id) navigate({ type: "session", sessionID: id })
@@ -2421,7 +2434,8 @@ function UserMessage(props: { message: SessionMessageUser }) {
           onMouseOut={() => {
             setHover(false)
           }}
-          onMouseUp={() => {
+          onMouseUp={(event) => {
+            if (ctx.textClick?.(event)) return
             if (renderer.getSelection()?.getSelectedText()) return
             if (delivery() === "steer") {
               dialog.replace(() => (
@@ -2944,7 +2958,8 @@ function BlockTool(props: BlockToolProps) {
       borderColor={theme.background.base}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
+      onMouseUp={(event) => {
+        if (ctx.textClick?.(event)) return
         if (renderer.getSelection()?.getSelectedText()) return
         props.onClick?.()
       }}
@@ -3378,6 +3393,7 @@ export function isBackgroundSubagent(
 export { executeCallSummary }
 
 function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
+  const ctx = use()
   const theme = useTheme()
   const renderer = useRenderer()
   const [expanded, setExpanded] = createSignal(false)
@@ -3396,7 +3412,8 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
       paddingLeft={3}
       onMouseOver={() => expandable() && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
+      onMouseUp={(event) => {
+        if (ctx.textClick?.(event)) return
         if (!expandable() || renderer.getSelection()?.getSelectedText()) return
         setExpanded((value) => !value)
       }}

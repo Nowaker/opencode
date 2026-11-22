@@ -546,11 +546,27 @@ export interface UI {
   readonly slot: (claim: SlotClaim) => () => void
 }
 
+export type TextClickEvent = {
+  /** Rendered visual row, or its full logical line when the renderer can resolve it. */
+  readonly text: string
+  /** Zero-based display-cell offset in text, not a JavaScript string index. */
+  readonly column: number
+  /** The explicit terminal hyperlink under the pointer, when present. */
+  readonly href?: string
+  readonly sessionID?: string
+}
+
+export type TextClickHandler = (event: TextClickEvent) => boolean | void
+
 export interface Context {
   readonly options: Readonly<Record<string, any>>
   readonly location: LocationRef | undefined
   readonly app: App
   readonly renderer: CliRenderer
+  readonly click: {
+    /** Offers a plain left click on transcript text. Return true synchronously to claim it. */
+    readonly onText: (handler: TextClickHandler) => () => void
+  }
   readonly client: OpenCodeClient
   readonly data: Data
   readonly attention: Attention

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "solid-js"
-import type { Renderable } from "@opentui/core"
+import type { MouseEvent, Renderable } from "@opentui/core"
 import type { ModelInfo } from "@opencode/client"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 import type { useConfig } from "../../config"
@@ -19,6 +19,7 @@ export const context = createContext<{
    */
   terminal: { width: number; height: number }
   sessionID: string
+  textClick?: (event: MouseEvent) => boolean
   anchors: ReturnType<typeof createTimelineAnchors>
   /** Saved disclosure, falling back to the verbosity default for the group kind. */
   groupExpanded: (groupID: string, kind: GroupKind) => boolean
