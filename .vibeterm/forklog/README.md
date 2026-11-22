@@ -20,6 +20,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [TUI transcript text clicks](./features/2026-11-21-tui-transcript-text-clicks.md)
 - [Session replacement maintenance](./features/session-maintenance.md)
 
 - [Global memory diagnostics](./features/2026-05-13-global-memory-diagnostics.md)
@@ -37,6 +38,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-21 TUI transcript text clicks](./sessions/2026-11-21-tui-transcript-text-clicks.md) - the v1 and native v2 forks offer displayed chat text and explicit hyperlink targets to TUI plugins without owning file URI parsing or opening.
 - [Session maintenance protocol-3 distribution](./sessions/session-maintenance.md)
 
 - [2026-08-29 `ses_166c2c2b5ffe5Fr8aJwwuDgWT3`](./sessions/2026-08-29-upstream-bump-and-forklog.md)
