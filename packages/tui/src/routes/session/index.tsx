@@ -1680,7 +1680,9 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
                               <box
                                 onMouseOver={() => setHover(true)}
                                 onMouseOut={() => setHover(false)}
-                                onMouseUp={handleUnrevert}
+                                onMouseUp={(event) => {
+                                  if (!textClick.onMouseUp(event)) void handleUnrevert()
+                                }}
                                 marginTop={1}
                                 flexShrink={0}
                                 border={["left"]}

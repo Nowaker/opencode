@@ -1,7 +1,8 @@
 import { MouseButton, TextBufferRenderable, getLinkId, resolveRenderLib } from "@opentui/core"
 import type { CliRenderer, MouseEvent } from "@opentui/core"
 import type { TuiTextClickHandler } from "@opencode-ai/plugin/tui"
-import { cellText } from "./id-click"
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 export function transcriptClick(input: {
   renderer: CliRenderer
@@ -12,7 +13,7 @@ export function transcriptClick(input: {
   let press: { x: number; y: number; target: MouseEvent["target"] } | undefined
   return {
     onMouseDown(event: MouseEvent) {
-      press = event.button === MouseButton.LEFT ? { x: event.x, y: event.y, target: event.target } : undefined
+      press = plainLeft(event) ? { x: event.x, y: event.y, target: event.target } : undefined
     },
     onMouseDrag() {
       press = undefined
@@ -20,8 +21,7 @@ export function transcriptClick(input: {
     onMouseUp(event: MouseEvent) {
       const start = press
       press = undefined
-      if (event.button !== MouseButton.LEFT || start?.x !== event.x || start.y !== event.y) return false
-      if (event.modifiers.alt || event.modifiers.ctrl || event.modifiers.shift || event.defaultPrevented) return false
+      if (!plainLeft(event) || start?.x !== event.x || start.y !== event.y) return false
       if (!input.enabled() || input.renderer.getSelection()?.getSelectedText()) return false
       const target = event.target
       if (!target || target !== start.target) return false
@@ -37,15 +37,45 @@ export function transcriptClick(input: {
         renderLib && "linkGetUrl" in renderLib && typeof renderLib.linkGetUrl === "function"
           ? renderLib.linkGetUrl(link, 8192)
           : undefined
-      const text = line?.text ?? cellText(cells, event.y, left, right)
+      const text = line?.text ?? renderedRow(cells, event.y, { left, right })
       const column = line?.column ?? event.x - left
       const href = typeof url === "string" && url ? url : undefined
-      if (input.run({ text, column, href, sessionID: input.sessionID }) !== true) return false
+      if (input.run({ text, column, href, sessionID: input.sessionID, ...(line ? {} : { rowOnly: true }) }) !== true)
+        return false
       event.preventDefault()
       event.stopPropagation()
       return true
     },
   }
+}
+
+function plainLeft(event: MouseEvent) {
+  return (
+    event.button === MouseButton.LEFT &&
+    !event.modifiers.alt &&
+    !event.modifiers.ctrl &&
+    !event.modifiers.shift &&
+    !event.defaultPrevented
+  )
+}
+
+function renderedRow(cells: CliRenderer["currentRenderBuffer"], y: number, bounds: { left: number; right: number }) {
+  const row = new TextDecoder("utf-8", { ignoreBOM: true }).decode(cells.getRealCharBytes(true)).split("\n")[y] ?? ""
+  const clusters = graphemes.segment(row)[Symbol.iterator]()
+  const chars = cells.buffers.char
+  const offset = y * cells.width
+  let text = ""
+  for (let x = 0; x < bounds.right; x++) {
+    // OpenTUI marks the trailing cells of a wide grapheme with both high bits.
+    if (chars[offset + x] >>> 30 === 3) {
+      if (x === bounds.left) text += " "
+      continue
+    }
+    const cluster = clusters.next().value?.segment ?? " "
+    if (x < bounds.left) continue
+    text += x + 1 === bounds.right && chars[offset + x + 1] >>> 30 === 3 ? " " : cluster
+  }
+  return text
 }
 
 function logicalText(target: MouseEvent["target"], event: MouseEvent) {

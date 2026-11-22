@@ -623,7 +623,14 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
         return scope.track(api.click.onDirectory(handler))
       },
       onText(handler) {
-        return scope.track(api.click.onText(handler))
+        const signal = scope.lifecycle.signal
+        if (signal.aborted) return () => {}
+        const remove = api.click.onText((event) => handler(event))
+        signal.addEventListener("abort", remove, { once: true })
+        return () => {
+          signal.removeEventListener("abort", remove)
+          remove()
+        }
       },
     },
     blocks: {
