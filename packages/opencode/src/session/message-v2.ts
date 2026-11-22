@@ -35,6 +35,7 @@ import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
+import { heifPixelsUnavailable, isHeifMime, projectHeif } from "@/image/heif"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { Effect, Schema } from "effect"
@@ -462,6 +463,13 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: "text",
               text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
             })
+          } else if (isHeifMime(part.mime)) {
+            const image = model.capabilities.input.image ? yield* projectHeif(part) : undefined
+            userMessage.parts.push(
+              image
+                ? { type: "file", url: image.url, mediaType: image.mime, filename: image.filename }
+                : { type: "text", text: heifPixelsUnavailable(part) },
+            )
           } else {
             userMessage.parts.push({
               type: "file",
@@ -537,13 +545,26 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         if (part.type === "tool") {
           toolNames.add(part.tool)
           if (part.state.status === "completed") {
-            const outputText = part.state.time.compacted
+            const text = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const attachments =
-              part.state.time.compacted || options?.stripMedia
-                ? []
-                : (part.state.attachments ?? []).filter((a) => !rejectedByProvider(a))
+            const attachments: typeof media = []
+            const notes: string[] = []
+            if (!part.state.time.compacted && !options?.stripMedia) {
+              for (const attachment of part.state.attachments ?? []) {
+                const projected = isHeifMime(attachment.mime)
+                  ? model.capabilities.input.image
+                    ? yield* projectHeif(attachment)
+                    : undefined
+                  : attachment
+                if (!projected) {
+                  notes.push(heifPixelsUnavailable(attachment))
+                  continue
+                }
+                if (!rejectedByProvider(projected)) attachments.push(projected)
+              }
+            }
+            const outputText = notes.length ? [text, ...notes].filter(Boolean).join("\n\n") : text
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message

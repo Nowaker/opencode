@@ -740,6 +740,105 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+it.instance("persists the original HEIC and never sends raw HEIC to the model", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => {
+      const config = providerCfg(url)
+      const provider = config.provider.test
+      return {
+        provider: {
+          test: {
+            ...provider,
+            models: {
+              "test-model": {
+                ...provider.models["test-model"],
+                attachment: true,
+                modalities: { input: ["text", "image"], output: ["text"] },
+              },
+            },
+          },
+        },
+      }
+    })
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Image attachments" })
+    // Synthetic gradient and solid-color JPEG generated with ImageMagick.
+    const heic = [
+      "AAAAHGZ0eXBoZWl4AAAAAG1pZjFoZWl4bWlhZgAAAWhtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAA",
+      "ACJpbG9jAAAAAERAAAEAAQAAAAABjAABAAAAAAAAADIAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRt",
+      "AAAAAAABAAAA6GlwcnAAAADJaXBjbwAAAHVodmNDAQQIAAAAAAAAAAAAHvAA/P38/AAADwNgAAEAF0ABDAH//wQIAAADAJm4AAAD",
+      "AAAeugJAYQABACpCAQEECAAAAwCZuAAAAwAAHqAggQRSlurkprm4CGgwIAAAAwMgAAADACFiAAEABkQBwXPAiQAAABRpc3BlAAAA",
+      "AAAAAEAAAABAAAAAKGNsYXAAAAAgAAAAAQAAACAAAAAB////4AAAAAL////gAAAAAgAAABBwaXhpAAAAAAMMDAwAAAAXaXBtYQAA",
+      "AAAAAAABAAEEgQIEgwAAADptZGF0AAAALigBrxOA9UVt2t28fJB8F9P/ln1jXPt36EW7FFQvwyO44Uk+8Hm5P+Ax/7jURfw=",
+    ].join("")
+    const jpeg = [
+      "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8Q",
+      "EBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+      "EBAQEBAQEBD/wAARCAAQABADAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QA",
+      "FgEBAQEAAAAAAAAAAAAAAAAAAAYJ/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8Anu1TQ4AAD//Z",
+    ].join("")
+    const files = [
+      { type: "file", mime: "image/heic", filename: "gradient.heic", url: `data:image/heic;base64,${heic}` },
+      { type: "file", mime: "image/jpeg", filename: "blue.jpg", url: `data:image/jpeg;base64,${jpeg}` },
+    ] as const
+
+    yield* llm.text("ok")
+    const result = yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [...files] })
+
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const stored = messages.find((message) => message.info.role === "user")
+    expect(
+      stored?.parts.map(
+        (part) =>
+          part.type === "file" && {
+            type: part.type,
+            mime: part.mime,
+            filename: part.filename,
+            url: part.url,
+          },
+      ),
+    ).toEqual([...files])
+    expect(result.info).toMatchObject({ role: "assistant", finish: "stop" })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(1)
+    const body = JSON.stringify(hits[0]?.body)
+    const images = body.match(/data:image\/jpeg;base64,[A-Za-z0-9+/=]+/g) ?? []
+    expect(images.at(-1)).toBe(files[1].url)
+    expect(body).not.toContain(heic)
+    if (images.length === 1) {
+      expect(body).toContain(files[0].filename)
+    } else {
+      expect(images).toHaveLength(2)
+      expect(images[0]).toStartWith("data:image/jpeg;base64,/9j/")
+      expect(images[0]).not.toBe(files[1].url)
+    }
+  }),
+)
+
+noLLMServer.instance(
+  "rejects a corrupt JPEG before storing the user's prompt",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({})
+
+      const error = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "file", mime: "image/jpeg", filename: "broken.jpg", url: "data:image/jpeg;base64,/9j/" }],
+        })
+        .pipe(Effect.flip)
+
+      expect(error).toBeInstanceOf(Image.DecodeError)
+      expect(yield* sessions.messages({ sessionID: chat.id })).toEqual([])
+    }),
+  { config: cfg },
+)
+
 withMcpInstructions.instance(
   "loop includes MCP instructions in model system context",
   () =>

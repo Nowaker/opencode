@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { AutoSwitchContext } from "./index"
+import type { AutoSwitchContext } from "./index.js"
 
 export type ToolContext = {
   sessionID: string

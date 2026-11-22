@@ -161,6 +161,8 @@ import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
 import { TuiLayout } from "../../layout"
 import { cellText, idUnder, markOwnIds } from "../../ui/id-click"
+import { transcriptClick } from "../../ui/text-click"
+import type { TuiTextClickHandler } from "@opencode-ai/plugin/tui"
 import { secondTicker } from "../../util/ticker"
 import { onClick } from "../../ui/click"
 import { DialogModel } from "../../component/dialog-model"
@@ -265,6 +267,7 @@ const [footerOverrides, setFooterOverrides] = createSignal<Record<string, boolea
 const context = createContext<{
   width: number
   sessionID: string
+  textClick: (event: MouseEvent) => boolean
   conceal: () => boolean
   thinkingMode: () => ThinkingMode
   filter: () => TranscriptFilter.Selection
@@ -282,7 +285,7 @@ function use() {
   return ctx
 }
 
-export function Session() {
+export function Session(props: { textClicks: { readonly active: boolean; readonly run: TuiTextClickHandler } }) {
   const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
   const writeExport = async (file: string, content: string) => {
@@ -590,6 +593,12 @@ export function Session() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
+  const textClick = transcriptClick({
+    renderer,
+    sessionID: route.sessionID,
+    enabled: () => props.textClicks.active && dialog.stack.length === 0,
+    run: props.textClicks.run,
+  })
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
@@ -1568,6 +1577,7 @@ export function Session() {
             return contentWidth()
           },
           sessionID: route.sessionID,
+          textClick: textClick.onMouseUp,
           conceal,
           thinkingMode,
           filter,
@@ -1593,6 +1603,9 @@ export function Session() {
           >
             <Show when={session()}>
               <scrollbox
+                onMouseDown={textClick.onMouseDown}
+                onMouseDrag={textClick.onMouseDrag}
+                onMouseUp={textClick.onMouseUp}
                 ref={(r) => {
                   scroll = r
                   keepScrollAnchor(renderer, r)
@@ -1667,7 +1680,9 @@ export function Session() {
                               <box
                                 onMouseOver={() => setHover(true)}
                                 onMouseOut={() => setHover(false)}
-                                onMouseUp={handleUnrevert}
+                                onMouseUp={(event) => {
+                                  if (!textClick.onMouseUp(event)) void handleUnrevert()
+                                }}
                                 marginTop={1}
                                 flexShrink={0}
                                 border={["left"]}
@@ -1749,6 +1764,7 @@ export function Session() {
                           <UserMessage
                             index={index()}
                             onMouseUp={(event) => {
+                              if (textClick.onMouseUp(event)) return
                               if (renderer.getSelection()?.getSelectedText()) return
                               if (idUnder(renderer.currentRenderBuffer, event)) return
                               const views = messageProvenance(sync.data.part[message.id] ?? [])
@@ -2280,7 +2296,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         flexDirection="column"
         flexShrink={0}
       >
-        <box onMouseUp={toggle}>
+        <box onMouseUp={(event) => !ctx.textClick(event) && toggle()}>
           <ReasoningHeader
             toggleable={inMinimal() && !opaque()}
             open={!inMinimal() || expanded()}
@@ -2948,6 +2964,7 @@ function InlineTool(props: {
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={(event) => {
+        if (ctx.textClick(event)) return
         if (renderer.getSelection()?.getSelectedText()) return
         if (idUnder(renderer.currentRenderBuffer, event)) return
         if (failed()) {
@@ -3097,6 +3114,7 @@ function BlockTool(props: {
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={(event: MouseEvent) => {
+        if (ctx.textClick(event)) return
         if (renderer.getSelection()?.getSelectedText()) return
         if (idUnder(renderer.currentRenderBuffer, event)) return
         props.onClick?.()

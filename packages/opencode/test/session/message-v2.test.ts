@@ -396,6 +396,13 @@ describe("session.message-v2.toModelMessage", () => {
                   filename: "attachment.png",
                   url: "data:image/png;base64,Zm9v",
                 },
+                {
+                  ...basePart(assistantID, "file-2"),
+                  type: "file",
+                  mime: "image/heif",
+                  filename: "attachment.heif",
+                  url: "data:image/heif;base64,Zm9v",
+                },
               ],
             },
             metadata: { openai: { tool: "meta" } },
@@ -433,7 +440,7 @@ describe("session.message-v2.toModelMessage", () => {
             output: {
               type: "content",
               value: [
-                { type: "text", text: "ok" },
+                { type: "text", text: expect.stringMatching(/^ok\b.*attachment\.heif/s) },
                 { type: "media", mediaType: "image/png", data: "Zm9v" },
               ],
             },

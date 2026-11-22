@@ -644,7 +644,23 @@ export type TuiDirectoryClickEvent = {
 /** Return true to take the click; otherwise opencode copies the path. */
 export type TuiDirectoryClickHandler = (event: TuiDirectoryClickEvent) => boolean | void
 
+export type TuiTextClickEvent = {
+  /** Rendered visual row, or its full logical line when the renderer can resolve it. */
+  readonly text: string
+  /** Zero-based display-cell offset in text, not a JavaScript string index. */
+  readonly column: number
+  /** The rendered row can be a fragment of a wrapped or clipped logical line. */
+  readonly rowOnly?: true
+  /** The explicit terminal hyperlink under the pointer, when present. */
+  readonly href?: string
+  readonly sessionID?: string
+}
+
+export type TuiTextClickHandler = (event: TuiTextClickEvent) => boolean | void
+
 export type TuiClick = {
+  /** Offers a plain left click on transcript text. Return true synchronously to claim it. */
+  onText: (handler: TuiTextClickHandler) => () => void
   /**
    * Called for a plain click (press and release on one cell, nothing selected)
    * on an ID in message text, reasoning or tool calls, most

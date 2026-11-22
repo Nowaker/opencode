@@ -5,6 +5,7 @@ import photonWasm from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { typ
 import { Context, Effect, Layer, Schema } from "effect"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { isHeifMime } from "./heif"
 
 const MAX_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_WIDTH = 2000
@@ -81,6 +82,8 @@ const layer = Layer.effect(
       }
       if (!input.url.startsWith("data:") || !input.url.includes(";base64,"))
         return yield* new InvalidDataUrlError({ url: input.url })
+      // Photon cannot decode HEIF. Keep the original file; model projection handles its pixels separately.
+      if (isHeifMime(input.mime)) return input
 
       const base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
       const bytes = Buffer.byteLength(base64, "utf8")

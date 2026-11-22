@@ -69,8 +69,8 @@ if [ "$1" = install ]; then
   printf '%s\n' "${BUN_INSTALL_CACHE_DIR-unset}" > install-cache-seen
   exit 0
 fi
-[ -z "${BUN_INSTALL_CACHE_DIR+set}" ] || exit 45
 [ "$*" = './script/build.ts --single' ]
+printf '%s\n' "${BUN_INSTALL_CACHE_DIR-unset}" > ../../build-cache-seen
 printf 'build changed lock\n' > ../../bun.lock
 [ ! -f ../../fail-build ] || exit 42
 mkdir -p dist/cli-native/bin
@@ -225,12 +225,14 @@ status 0
 printf 'PASS: default v2 install uses isolated build/probes, restores lockfile and swaps only opencode2 inode\n'
 
 equal "$(<"$MANAGED/install-cache-seen")" "$ROOT/live-home/.bun/install/cache"
+equal "$(<"$MANAGED/build-cache-seen")" "$ROOT/live-home/.bun/install/cache"
 CACHE_OVERRIDE="$ROOT/shared-bun-cache"
 run --v2
 status 0
 equal "$(<"$MANAGED/install-cache-seen")" "$ROOT/shared-bun-cache"
+equal "$(<"$MANAGED/build-cache-seen")" "$ROOT/shared-bun-cache"
 CACHE_OVERRIDE=""
-printf 'PASS: v2 install shares the caller bun cache, the explicit one first; the build step gets none\n'
+printf 'PASS: v2 install and build share the caller bun cache, the explicit one first\n'
 
 PREVIOUS_INODE="$(inode "$INSTALL_ROOT/opencode2")"
 PREVIOUS_DIGEST="$(digest "$INSTALL_ROOT/opencode2")"
