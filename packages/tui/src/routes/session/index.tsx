@@ -2309,7 +2309,8 @@ function RevertMessage(props: {
     <box
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
+      onMouseUp={(event) => {
+        if (ctx.textClick?.(event)) return
         if (renderer.getSelection()?.getSelectedText()) return
         void (async () => {
           const error = await client.api.session.revert.clear({ sessionID: route.sessionID }).then(

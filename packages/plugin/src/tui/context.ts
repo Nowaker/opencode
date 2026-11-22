@@ -551,6 +551,8 @@ export type TextClickEvent = {
   readonly text: string
   /** Zero-based display-cell offset in text, not a JavaScript string index. */
   readonly column: number
+  /** The rendered row can be a fragment of a wrapped or clipped logical line. */
+  readonly rowOnly?: true
   /** The explicit terminal hyperlink under the pointer, when present. */
   readonly href?: string
   readonly sessionID?: string

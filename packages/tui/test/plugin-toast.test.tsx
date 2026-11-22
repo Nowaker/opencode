@@ -36,7 +36,14 @@ function setup(route: Route) {
     data: { session: { root, get: (sessionID: string) => sessions[sessionID] } },
   } as unknown as Host
   const registry: Registry = { has: () => false, set() {}, remove() {}, active: () => true }
-  const context = createPluginContext({ host, id: "test", options: undefined, owned: [], registry })
+  const context = createPluginContext({
+    host,
+    id: "test",
+    options: undefined,
+    owned: [],
+    signal: new AbortController().signal,
+    registry,
+  })
   return { shown, navigated, toast: context.ui.toast }
 }
 

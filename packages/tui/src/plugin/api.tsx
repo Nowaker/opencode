@@ -116,6 +116,7 @@ export function createPluginContext(input: {
   id: string
   options: Readonly<Record<string, any>> | undefined
   owned: Dispose[]
+  signal: AbortSignal
   registry: Registry
 }): Context {
   const host = input.host
@@ -185,9 +186,13 @@ export function createPluginContext(input: {
     renderer: host.renderer,
     click: {
       onText(handler) {
+        if (input.signal.aborted) return () => {}
         const remove = host.textClicks.on(handler)
-        input.owned.push(async () => remove())
-        return remove
+        input.signal.addEventListener("abort", remove, { once: true })
+        return () => {
+          input.signal.removeEventListener("abort", remove)
+          remove()
+        }
       },
     },
     client: host.client.api,

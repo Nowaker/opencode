@@ -91,6 +91,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   const log = useLog({ component: "plugin" })
   const config = useConfig()
   const lifecycle = useTuiLifecycle()
+  const activations = new Map<string, AbortController>()
   const client = useClient()
   const data = useData()
   const [serverPlugins, setServerPlugins] = createSignal<readonly PluginInfo[]>([])
@@ -157,11 +158,14 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       setStore("registrations", id, "cleanups", [])
     })
     const owned: Dispose[] = []
+    const activation = new AbortController()
+    activations.set(id, activation)
     const context = createPluginContext({
       host,
       id,
       options: item.options,
       owned,
+      signal: activation.signal,
       registry: {
         has: (kind, name) => Boolean(store.registrations[id]?.[kind][name]),
         set: (
@@ -181,8 +185,10 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       },
     })
     const cleanup = await trace("setup", { plugin: id, target: item.target }, () =>
-      setup(item.plugin, context, owned),
+      setup(item.plugin, context, owned, activation),
     ).catch((error) => {
+      activation.abort()
+      activations.delete(id)
       clearContributions(id)
       if (item.target)
         setupFailures.set(item.target, {
@@ -209,6 +215,8 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   const deactivate = async (id: string) => {
     const item = store.registrations[id]
     if (!item?.active) return false
+    activations.get(id)?.abort()
+    activations.delete(id)
     const cleanups = [...item.cleanups]
     batch(() => {
       setStore("registrations", id, "active", false)
@@ -639,10 +647,11 @@ async function disposeAll(cleanups: Dispose[]) {
   if (failures.length) throw failures[0]
 }
 
-async function setup(plugin: Plugin.Definition, context: Plugin.Context, owned: Dispose[]) {
+async function setup(plugin: Plugin.Definition, context: Plugin.Context, owned: Dispose[], activation: AbortController) {
   try {
     return await plugin.setup(context)
   } catch (error) {
+    activation.abort()
     await disposeAll(owned).catch(() => undefined)
     throw error
   }

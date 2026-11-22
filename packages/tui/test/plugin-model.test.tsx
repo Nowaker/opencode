@@ -14,7 +14,14 @@ function pluginModel(local: ReturnType<typeof usePluginHost>["local"]) {
     local,
   } as unknown as ReturnType<typeof usePluginHost>
   const registry: Registry = { has: () => false, set() {}, remove() {}, active: () => true }
-  return createPluginContext({ host, id: "test", options: undefined, owned: [], registry }).ui.model
+  return createPluginContext({
+    host,
+    id: "test",
+    options: undefined,
+    owned: [],
+    signal: new AbortController().signal,
+    registry,
+  }).ui.model
 }
 
 test("plugins read and select variants of the selected model", async () => {
