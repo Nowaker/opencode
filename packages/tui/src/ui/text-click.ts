@@ -60,6 +60,7 @@ export function transcriptClick(input: {
       if (event.x < left || event.x >= right || event.y < 0 || event.y >= cells.height) return false
       const line = logicalText(target, event)
       const text = line?.text ?? renderedRow(cells, event.y, { left, right })
+      if (text === undefined) return false
       const column = line?.column ?? event.x - left
       const href = input.renderer.getLinkAt(event.x, event.y) ?? undefined
       if (input.run({ text, column, href, sessionID: input.sessionID, ...(line ? {} : { rowOnly: true }) }) !== true)
@@ -83,21 +84,25 @@ function plainLeft(event: MouseEvent) {
 
 function renderedRow(cells: CliRenderer["currentRenderBuffer"], y: number, bounds: { left: number; right: number }) {
   const row = new TextDecoder("utf-8", { ignoreBOM: true }).decode(cells.getRealCharBytes(true)).split("\n")[y] ?? ""
-  const chars = Locale.graphemes(row)
-  let column = 0
-  let text = ""
-  for (const char of chars) {
-    if (column >= bounds.right) break
-    const end = column + stringWidth(char)
-    if (end > bounds.left) {
-      text +=
-        column >= bounds.left && end <= bounds.right
-          ? char
-          : " ".repeat(Math.min(end, bounds.right) - Math.max(column, bounds.left))
+  return cells.withBuffers(({ char, width }) => {
+    const clusters = Locale.graphemes(row)[Symbol.iterator]()
+    const offset = y * width
+    let text = ""
+    for (let x = 0; x < bounds.right; x++) {
+      if (char[offset + x] >>> 30 === 3) {
+        if (x === bounds.left) text += " "
+        continue
+      }
+      const cluster = clusters.next().value
+      const code = char[offset + x]
+      const wide = x + 1 < width && char[offset + x + 1] >>> 30 === 3
+      if (cluster === undefined || stringWidth(cluster) !== (wide ? 2 : 1)) return
+      if (code <= 0x10ffff && cluster !== String.fromCodePoint(code || 32)) return
+      if (x < bounds.left) continue
+      text += x + 1 === bounds.right && wide ? " " : cluster
     }
-    column = end
-  }
-  return text
+    return text
+  })
 }
 
 function logicalText(target: MouseEvent["target"], event: MouseEvent) {
