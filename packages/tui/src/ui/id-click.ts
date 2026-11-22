@@ -78,6 +78,9 @@ export function idUnder(cells: Cells, event: { x: number; y: number; target: Tar
 export function createClickHandlers<Event>() {
   const handlers: ((event: Event) => boolean | void)[] = []
   return {
+    get active() {
+      return handlers.length > 0
+    },
     on(handler: (event: Event) => boolean | void) {
       handlers.push(handler)
       return () => {
