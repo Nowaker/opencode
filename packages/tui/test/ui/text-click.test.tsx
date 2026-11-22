@@ -95,3 +95,31 @@ test("a custom renderable's visible row is not marked as a complete logical line
     app.renderer.destroy()
   }
 })
+
+test("a fallback click declines when separately drawn regional indicators merge in the row snapshot", async () => {
+  const clicked: TuiTextClickEvent[] = []
+  function Transcript() {
+    const click = transcriptClick({
+      renderer: useRenderer(),
+      sessionID: "fixture-session",
+      enabled: () => true,
+      run: (event) => clicked.push(event) > 0,
+    })
+    return (
+      <box flexDirection="row" {...click}>
+        <text width={1}>🇺</text>
+        <text width={1}>🇸</text>
+        <box id="hit" border title="/tmp/x" width={12} height={3} />
+      </box>
+    )
+  }
+  const app = await testRender(() => <Transcript />, { width: 28, height: 5 })
+  try {
+    await app.renderOnce()
+    expect(app.captureCharFrame().split("\n")[0]).toContain("🇺🇸┌─/tmp/x")
+    await app.mockMouse.click(4, 0, undefined, { delayMs: 0 })
+    expect(clicked).toEqual([])
+  } finally {
+    app.renderer.destroy()
+  }
+})

@@ -38,6 +38,7 @@ export function transcriptClick(input: {
           ? renderLib.linkGetUrl(link, 8192)
           : undefined
       const text = line?.text ?? renderedRow(cells, event.y, { left, right })
+      if (text === undefined) return false
       const column = line?.column ?? event.x - left
       const href = typeof url === "string" && url ? url : undefined
       if (input.run({ text, column, href, sessionID: input.sessionID, ...(line ? {} : { rowOnly: true }) }) !== true)
@@ -71,9 +72,13 @@ function renderedRow(cells: CliRenderer["currentRenderBuffer"], y: number, bound
       if (x === bounds.left) text += " "
       continue
     }
-    const cluster = clusters.next().value?.segment ?? " "
+    const cluster = clusters.next().value?.segment
+    const code = chars[offset + x]
+    const wide = x + 1 < cells.width && chars[offset + x + 1] >>> 30 === 3
+    if (cluster === undefined || Bun.stringWidth(cluster) !== (wide ? 2 : 1)) return
+    if (code <= 0x10ffff && cluster !== String.fromCodePoint(code || 32)) return
     if (x < bounds.left) continue
-    text += x + 1 === bounds.right && chars[offset + x + 1] >>> 30 === 3 ? " " : cluster
+    text += x + 1 === bounds.right && wide ? " " : cluster
   }
   return text
 }
