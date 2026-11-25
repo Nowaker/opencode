@@ -8,7 +8,8 @@ export type RequestAttribution = {
   readonly version: string
 }
 
-const modelPath = /\/v1\/(?:messages|chat\/completions|responses)$/
+// @ai-sdk/anthropic posts to `${baseURL}/messages`, so a base without /v1 yields a bare /messages path.
+const modelPath = /\/(?:v1\/(?:messages|chat\/completions|responses)|messages)$/
 const localhost = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*localhost$/
 const endpoints = new Set(readEndpoints(process.env.VIBETERM_MERIDIAN_ATTRIBUTION_ENDPOINTS))
 const httpProxyVariables = ["http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"] as const
@@ -65,7 +66,7 @@ export function wrapFetch(fetch: Fetch, attribution: RequestAttribution): Fetch 
     headers.set("x-meridian-purpose", attribution.purpose)
     headers.delete("x-meridian-session")
     const affinity = headers.get("x-opencode-session") ?? headers.get("x-session-affinity")
-    const openAIAffinity = !url.pathname.endsWith("/v1/messages") && headers.get("x-session-id")?.trim()
+    const openAIAffinity = !url.pathname.endsWith("/messages") && headers.get("x-session-id")?.trim()
     if (!affinity && !openAIAffinity && attribution.sessionID && /^[A-Za-z0-9._:-]{1,128}$/.test(attribution.sessionID)) {
       headers.set("x-meridian-session", attribution.sessionID)
     }

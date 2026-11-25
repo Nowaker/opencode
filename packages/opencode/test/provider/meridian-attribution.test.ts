@@ -71,6 +71,15 @@ test.each(sessionCases)(
   },
 )
 
+test("attributes the bare /messages path an Anthropic base without /v1 posts to", async () => {
+  await using target = receiver()
+  const endpoint = new URL("/messages", target.server.url).href
+  const endpoints = JSON.stringify(["http://meridian-proxy.localhost:3450/messages", endpoint, "http://127.0.0.1:3457/v1/responses"])
+  const result = await dispatch({ target: endpoint, endpoints, headers: { "x-session-affinity": "ses_adapter" } })
+  expect(result).toEqual({ code: 0, stderr: "" })
+  expect(target.seen).toEqual([{ client: "opencode/1.19.5-vt-42-abc+fixture", purpose: "title", session: null }])
+})
+
 test("does not send an inherited or invalid fallback session when the trusted request has no adapter mapping", async () => {
   await using target = receiver()
   const endpoint = new URL("/v1/messages", target.server.url).href
