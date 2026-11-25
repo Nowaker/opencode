@@ -36,7 +36,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, quoting the user:
   session, counted in messages only. Opening a session fetches
   `session.messages({ limit: 100 })`; every new message past 100 `shift()`s
   the oldest from the sync store. All parts of a kept message stay loaded,
-  whatever their size. Nothing else limits what the transcript renders.
+  whatever their size. [Bounded assistant Markdown](../sessions/2026-11-18-bounded-assistant-markdown.md) limits rich rendering, not what the session loads.
 - `tui.json` `transcript.max_messages` (default `100`) and
   `transcript.keep_first_prompt` (default `true`).
 - A centered divider on a horizontal rule wherever messages are hidden,
