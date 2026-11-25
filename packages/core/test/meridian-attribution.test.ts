@@ -52,7 +52,7 @@ const fixture = () => {
       }
       if (path === responses)
         return eventStream({ type: "response.completed", response: { id: "resp_fixture", output: [checkpoint] } })
-      if (path === messages) {
+      if (path === messages || path === "/messages") {
         const events = [
           {
             type: "message_start",
@@ -168,6 +168,12 @@ test("tags trigger compaction when its native transport sends the Responses POST
   await using proxy = fixture()
   await proxy.run("trigger", JSON.stringify([proxy.endpoint(responses)]))
   expect(proxy.seen).toMatchObject([{ path: responses, client: `opencode/${build}`, purpose: "compaction" }])
+})
+
+test("tags the bare /messages route an Anthropic base without /v1 posts to", async () => {
+  await using proxy = fixture()
+  await proxy.run("bare-messages", JSON.stringify([proxy.endpoint("/messages"), proxy.endpoint(messages)]))
+  expect(proxy.seen).toMatchObject([{ path: "/messages", client: `opencode/${build}`, purpose: "chat" }])
 })
 
 test("tags the native Anthropic Messages route used by Meridian", async () => {

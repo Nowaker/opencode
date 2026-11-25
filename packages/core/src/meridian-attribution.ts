@@ -13,7 +13,8 @@ function isEndpoint(value: string): boolean {
   const url = URL.parse(value)
   if (!url || url.href !== value || value.includes("?") || value.includes("#") || url.username || url.password)
     return false
-  if (!/\/v1\/(?:messages|chat\/completions|responses)$/.test(url.pathname)) return false
+  // An Anthropic base without /v1 posts to a bare /messages path.
+  if (!/\/(?:v1\/(?:messages|chat\/completions|responses)|messages)$/.test(url.pathname)) return false
   return (
     url.protocol === "https:" ||
     (url.protocol === "http:" &&

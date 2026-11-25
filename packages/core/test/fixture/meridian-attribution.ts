@@ -117,8 +117,10 @@ await Effect.runPromise(
       yield* llm.generate(prepared.request, prepared.options)
       return
     }
-    if (mode === "messages") {
-      const messages = AnthropicCompatible.configure({ provider: "meridian", baseURL: ordinaryBase, apiKey: false })
+    if (mode === "messages" || mode === "bare-messages") {
+      // A Meridian base without /v1 makes the Messages route post to a bare /messages path.
+      const baseURL = mode === "bare-messages" ? new URL(origin).origin : ordinaryBase
+      const messages = AnthropicCompatible.configure({ provider: "meridian", baseURL, apiKey: false })
       const prepared = yield* requests.primary({ ...input, model: { ...model, model: messages.model("fixture") } })
       const reply = yield* llm.generate(prepared.request, prepared.options)
       if (reply.text !== "OK") throw new Error("Messages fixture did not complete the model call")
