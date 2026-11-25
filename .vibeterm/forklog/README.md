@@ -173,6 +173,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-25 native v1 Phase 2 cross-provider switching record](./sessions/2026-11-25-cross-provider-switch-phase-two.md) - GPT-origin same-step continuation, bidirectional dispatch fences, exact idle return and November 22 verification and installation.
 - [2026-11-21 plugin tool import extension](./sessions/2026-11-21-plugin-tool-import-extension.md) - `packages/plugin/src/tool.ts` imported `"./index"` under `nodenext`, so the plugin typecheck failed (TS2835) and the GitHub pre-push hook refused `dev-nowaker`; now `"./index.js"`; `5f86d0f260`; plugin typecheck clean, hook 30/30.
 - [2026-11-20 native v1 Phase 1 cross-provider switching](./sessions/2026-11-20-cross-provider-switch.md) - exact Claude-origin switching and verified return; preserve the refusal park when evidence, owner, or candidate checks fail.
 - [2026-11-19 resume a paused v1 turn with the composer selection](./sessions/2026-11-19-unpause-composer.md) - manual TUI slash and footer actions resume the actual waiting prompt with the current pick, without changing automation behavior; 24/24 isolated real-TUI checks and a scratch build.

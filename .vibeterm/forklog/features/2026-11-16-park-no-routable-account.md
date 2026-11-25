@@ -58,6 +58,10 @@ rg --no-heading -F 'auto-switch stopped before alternate' "${XDG_DATA_HOME:-$HOM
 
 The record carries `sessionID`, `step`, `gate`, and public `reason`, not request contents, credentials, or account IDs. `source-admission` also covers a pending request for permission or stale run/pause/input state; it is not proof a newer message arrived. `target-catalog-or-agent` includes an empty original candidate snapshot, missing model/variant, or unqualified agent. For an isolated reproduction, retain separately the actual outbound effort/model, initial candidate count, latest visible message ID, pending-permission boolean, and owner epoch/revision. Avoid capturing prompt text, credentials, and full wire bodies.
 
+## Native v1 cross-provider switching (Phase 2)
+
+- GPT-origin refusals can now continue on a policy-approved Claude route when trusted pre-inference refusal evidence and fresh exact allowance agree. The same step continues once without rerunning completed tools or changing the saved preference. When enabled, return waits for a fresh submission after clean idle and restores the exact preferred route. See the [Phase 2 session record](../sessions/2026-11-25-cross-provider-switch-phase-two.md) for stable seams, tests and deployment evidence.
+
 ## Rationale and constraints
 
 - Inside a 200 stream, `@ai-sdk/anthropic` parses the SSE error frame with a zod schema `{type, error:{type, message}}` that strips unknown keys, so only the message reaches opencode. Hence the prefix fallback, and the incident is read from the message's trailing `(incident inc_<ms>_<seq>)` token, which Meridian added to the contract for this reason. A pre-stream HTTP 429 keeps the full body.
@@ -86,6 +90,7 @@ Session [`ses_e19b13eecffe6sjiKlzQOQXiNl`](../sessions/2026-11-16-park-no-routab
 
 ## Timeline
 
+- 2026-11-22 [Phase 2 and follow-ups](../sessions/2026-11-25-cross-provider-switch-phase-two.md) - GPT-origin same-step continuation and exact idle return landed at `936fbe45d2`, with the reverse-family routing matrix and guarded installs on both hosts.
 - 2026-11-20 [Phase 1 switch and guarded rollout](../sessions/2026-11-20-cross-provider-switch.md) - exact Claude-origin phase only; three independent safe-gate reproductions, historical Junior attribution unproven, coordinator-approved rollout.
 - 2026-11-19 [Manual unpause uses the composer selection](../sessions/2026-11-19-unpause-composer.md) - explicitly retry the waiting prompt on another route, including when the old route's refusal arrives as a pending step drains.
 - 2026-11-19 [`ses_e0d56ddd9ffessGDbwhaZsBHiv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0d56ddd9ffessGDbwhaZsBHiv) - route-aware park `02caa6450b`: red first (both route tests failed on `76888120c7`), then `pause.test.ts` + `pause-refusal.test.ts` 46/46, `prompt-admission.test.ts` + `prompt.test.ts` 111/111, typecheck clean, SDK regenerated. Installed `1.19.5-vt-559-006d837c50` on desktop and m4max. Live on desktop: [`ses_e0cedca36ffeqHVJ3glFUVHpmT`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0cedca36ffeqHVJ3glFUVHpmT) parked on `anthropic-cybersec/claude-opus-5-5` with `error.model` recorded; a prompt on `anthropic-meridian/n-dh-c2/claude-mythos-5-2` lifted it within a second (`/unpause`, `client: prompt`) and reached Meridian on `profile=n-dh-c2`.
