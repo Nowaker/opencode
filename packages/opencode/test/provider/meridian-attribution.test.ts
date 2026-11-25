@@ -155,3 +155,28 @@ test.each(["ambient", "lowercase no_proxy wins", "non-ASCII separator", "explici
       : [])
   },
 )
+
+// 2026-11-25: desktop's Claude provider points at Meridian with a base that has no path, so no Claude request was tagged.
+test.each([
+  { base: "http://127.0.0.1:3450", sdk: "@ai-sdk/anthropic", expected: true },
+  { base: "http://127.0.0.1:3450/", sdk: "@ai-sdk/anthropic", expected: true },
+  { base: "http://127.0.0.1:3457/v1", sdk: "@ai-sdk/openai", expected: true },
+  { base: "http://127.0.0.1:3457/v1/", sdk: "@ai-sdk/openai", expected: true },
+  { base: "http://127.0.0.1:3459", sdk: "@ai-sdk/anthropic", expected: false },
+])("matches $base for $sdk against the trusted list: $expected", async ({ base, sdk, expected }) => {
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", `
+    import { MeridianAttribution } from ${JSON.stringify(moduleURL)}
+    process.stdout.write(String(MeridianAttribution.matchesBase(${JSON.stringify(base)}, ${JSON.stringify(sdk)})))
+  `], {
+    env: {
+      VIBETERM_MERIDIAN_ATTRIBUTION_ENDPOINTS: JSON.stringify([
+        "http://127.0.0.1:3450/messages",
+        "http://127.0.0.1:3457/v1/responses",
+      ]),
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()])
+  expect({ code, stdout }).toEqual({ code: 0, stdout: String(expected) })
+})

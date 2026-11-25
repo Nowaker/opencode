@@ -44,7 +44,9 @@ export function matchesBase(base: string | undefined, sdk: string) {
   if (!base || /[?#]/.test(base)) return false
   const url = URL.parse(base.replace(/\/+$/, ""))
   if (!url || url.username || url.password) return false
-  const has = (resource: string) => endpoints.has(new URL(resource, url.href + "/").href)
+  // A base without a path already serializes with a trailing slash ("http://host:3450/").
+  const directory = url.href.endsWith("/") ? url.href : url.href + "/"
+  const has = (resource: string) => endpoints.has(new URL(resource, directory).href)
   switch (sdk) {
     case "@ai-sdk/anthropic": return has("messages")
     case "@ai-sdk/openai": return has("responses") || has("chat/completions")
