@@ -2682,22 +2682,22 @@ export function Prompt(props: PromptProps) {
               </box>
             </Match>
             <Match when={paused()}>
-              <box paddingLeft={3} flexDirection="row" gap={1} flexGrow={1} flexShrink={1}>
-                <text fg={theme.warning} flexShrink={0} {...onClick(() => pauseAction("unpause"))}>
-                  paused <span style={{ fg: theme.textMuted }}>- /unpause to continue</span>
+              {/* One line that truncates on the right, so its parts never wrap into misaligned columns. */}
+              <box paddingLeft={3} paddingRight={TuiLayout.Prompt.statusGap} flexGrow={1} flexShrink={1}>
+                <text fg={theme.warning} wrapMode="none" {...onClick(() => pauseAction("unpause"))}>
+                  paused <span style={{ fg: theme.textMuted }}>· /unpause</span>
+                  <Show when={pauseTools().deferred > 0}>
+                    <span style={{ fg: theme.textMuted }}>
+                      {" "}
+                      · {pauseTools().deferred} deferred, /discard
+                    </span>
+                  </Show>
+                  <Show when={paused()?.reason}>
+                    {(reason) => (
+                      <span style={{ fg: paused()?.error ? theme.error : theme.textMuted }}> · {reason()}</span>
+                    )}
+                  </Show>
                 </text>
-                <Show when={paused()?.reason}>
-                  {(reason) => (
-                    <text fg={paused()?.error ? theme.error : theme.textMuted} flexShrink={1} wrapMode="none">
-                      {reason()}
-                    </text>
-                  )}
-                </Show>
-                <Show when={pauseTools().deferred > 0}>
-                  <text fg={theme.textMuted}>
-                    {pauseTools().deferred} deferred tool call{pauseTools().deferred === 1 ? "" : "s"}, /discard to drop
-                  </text>
-                </Show>
               </box>
             </Match>
             <Match when={admissionShown()}>
