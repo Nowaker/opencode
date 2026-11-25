@@ -1006,6 +1006,8 @@ Serve lifetime delivery by `ses_eeda1d251ffel81U5Y42j4kb33`, 2026-10-16:
   vt305 inode. The CPU coordinator received installed version and operator
   restart requirements. No default Vibeterm server or Meridian restart occurred.
 
+November 25 weekly audit: [session record](./sessions/fork-audit.md#november-25-weekly-audit) and [canonical ledger](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#november-25-live-census). Frozen history covers 60 v1 and 13 v2 commits, with record gaps listed separately from the two missing source-session trailers. The previous Bun-cache record gap is closed. Upstream v1 did not move; selected dev history improvements are partial overlaps only. No patch removal, upstream write or build occurred during the audit.
+
 November 18 weekly audit by [`ses_ea3ec7a53ffeXJgN8sQHkeA52H`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ea3ec7a53ffeXJgN8sQHkeA52H), reviewed and published by coordinator [`ses_eeda1d251ffel81U5Y42j4kb33`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_eeda1d251ffel81U5Y42j4kb33) after rerunning its validator:
 
 - [Current audit record](./sessions/fork-audit.md#november-18-weekly-audit) links 93/93 anonymous pull details: 74 author PRs, three open / 70 closed unmerged / one merged, plus 19 references. #54578 and reference #55261 closed unmerged; new #63897 fills the freed author slot alongside #63062/#63063. Queue `00-open-slots.md`, entries 01-10 and holds 90-98 were read; prepared heads are not counted as filed. The two November 17 nudges are independently read back, not reposted.

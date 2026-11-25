@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Workdays: 2026-10-06 through 2026-11-17 (America/Chicago)
+- Workdays: 2026-10-06 through 2026-11-24 (America/Chicago)
 - Session: `ses_eeda1d251ffel81U5Y42j4kb33`
 - Agent/platform: Hephaestus / Linux
 - Integration branch: `dev-nowaker`
@@ -14,6 +14,13 @@
 - Source baseline: `e6abfddbcc228ad755a699a6a359d20af1011013`
 - Upstream baseline: `907b3bc518`; fetched `github/dev`: `4ac0d9c3d1`
 - Forklog commit: this file's introducing commit
+
+## November 25 weekly audit
+
+- Published baselines: tools `90b51b9120` plus closure `e18ae76`; fork `af93419c51` plus closure `54129679f9`. The owner record `2aebb30032` closed the earlier `4cd4357861` cache-sharing record gap; its follow-up documents `60078d97c0` as well. Read the [daily slot/nudge record](../pr-queue/00-open-slots.md) and queue before capture. The weekly audit does not write upstream objects or change the queue.
+- The anonymous [PR census](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#november-25-live-census) verified all 93 individual pulls: 74 authors (3 open, 70 closed unmerged, 1 merged) and 19 references. #63062/#63063/#63897 remain the only open author PRs. Reference #62785 closed unmerged at `2026-11-23T01:30:06Z`; no author disposition changed. The three nudge reads matched the daily queue. Raw evidence is private under `upstream-pr-census/run-20261125T/`.
+- Both live mirrors matched frozen `dev-nowaker` `906d1d1caabc10eb0ceb131b8d6f608487a757cd` and `v2-nowaker` `2c000ae41b64d9c1d38bec666e7b082170fe9546`. Since the published v1 audit there are 60 commits, and since `24042aa0df` there are 13 v2 commits. The [tools reconciliation](https://gitlab.com/Nowaker/opencode-tools/-/blob/master/docs/opencode-patches/README.md#november-25-fork-history) lists all 25 uncovered behavioral-record commits. The bounded Markdown pair lacks trailers but has commit and push receipts in [`ses_e0f0339a3ffeIJRU1VTvRDRUhT`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0f0339a3ffeIJRU1VTvRDRUhT); the other 23 gaps retain their owning trailers. The private `weekly-audit-nov25/history.json` gives every exact row, category, owner, matching record or explicit gap.
+- Upstream `v1` was unchanged at `c618499abc63a8f3006ab640c698e45b1e77ccf8`; `dev` advanced to `1a6aea85ee463a8c225d5104deea912151a37888` (456 commits). Selected native history-refresh and projection changes overlap the fork's performance goals but do not establish replacement of legacy hydration caching or scroll/anchor behavior. The main coordinator was notified of the overlap before any removal. No regression rerun, patch removal, source change, live service/TUI change or build was performed.
 
 ## November 18 weekly audit
 
