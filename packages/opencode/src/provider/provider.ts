@@ -32,6 +32,7 @@ import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
 import { MeridianRouting } from "./meridian-routing"
+import { MeridianAttribution } from "./meridian-attribution"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 300_000
 
@@ -92,11 +93,18 @@ function timeoutController(ms: number) {
   }
 }
 
+type LanguageOptions = {
+  readonly transport?: MeridianRouting.Transport
+  readonly attribution?: MeridianAttribution.RequestAttribution
+}
+
 // Applies the `headerTimeout`, `chunkTimeout` (SSE idle) and `timeout` provider options at the
 // fetch layer, on top of `options.fetch` when a custom fetch is configured.
-function timeoutFetch(options: Record<string, any>, transport?: MeridianRouting.Transport) {
+function timeoutFetch(options: Record<string, any>, request?: LanguageOptions) {
   const customFetch = options["fetch"]
-  const fetchFn = customFetch ?? (transport ? MeridianRouting.wrapFetch(fetch, transport) : fetch)
+  const transport = request?.transport
+  const nativeFetch = request?.attribution ? MeridianAttribution.wrapFetch(fetch, request.attribution) : fetch
+  const fetchFn = customFetch ?? (transport ? MeridianRouting.wrapFetch(nativeFetch, transport) : nativeFetch)
   const chunkTimeout = options["chunkTimeout"] ?? 300_000
   const headerTimeout = options["headerTimeout"] ?? 300_000
   const timeout = options["timeout"]
@@ -1366,7 +1374,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Record<ProviderV2.ID, Info>>
   readonly getProvider: (providerID: ProviderV2.ID) => Effect.Effect<Info>
   readonly getModel: (providerID: ProviderV2.ID, modelID: ModelV2.ID) => Effect.Effect<Model, ModelNotFoundError>
-  readonly getLanguage: (model: Model, transport?: MeridianRouting.Transport) => Effect.Effect<LanguageModelV3, ModelNotFoundError>
+  readonly getLanguage: (model: Model, request?: LanguageOptions) => Effect.Effect<LanguageModelV3, ModelNotFoundError>
   readonly closest: (
     providerID: ProviderV2.ID,
     query: string[],
@@ -1942,9 +1950,26 @@ const layer = Layer.effect(
 
     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
 
+    function resolveBaseURL(input: {
+      readonly model: Model
+      readonly options: Info["options"]
+      readonly varsLoader: CustomVarsLoader | undefined
+      readonly envs: Record<string, string | undefined>
+    }) {
+      let url = typeof input.options.baseURL === "string" && input.options.baseURL !== "" ? input.options.baseURL : input.model.api.url
+      if (!url) return
+
+      if (input.varsLoader) {
+        for (const [key, value] of Object.entries(input.varsLoader(input.options))) {
+          url = url.replaceAll("${" + key + "}", value)
+        }
+      }
+      return url.replace(/\$\{([^}]+)\}/g, (item, key) => input.envs[String(key)] ?? item)
+    }
+
     async function resolveSDK(model: Model, s: State, input: {
       readonly envs: Record<string, string | undefined>
-      readonly transport?: MeridianRouting.Transport
+      readonly request?: LanguageOptions
     }) {
       try {
         const provider = s.providers[model.providerID]
@@ -1970,26 +1995,7 @@ const layer = Layer.effect(
           options["includeUsage"] = true
         }
 
-        const baseURL = iife(() => {
-          let url =
-            typeof options["baseURL"] === "string" && options["baseURL"] !== "" ? options["baseURL"] : model.api.url
-          if (!url) return
-
-          const loader = s.varsLoaders[model.providerID]
-          if (loader) {
-            const vars = loader(options)
-            for (const [key, value] of Object.entries(vars)) {
-              const field = "${" + key + "}"
-              url = url.replaceAll(field, value)
-            }
-          }
-
-          url = url.replace(/\$\{([^}]+)\}/g, (item, key) => {
-            const val = input.envs[String(key)]
-            return val ?? item
-          })
-          return url
-        })
+        const baseURL = resolveBaseURL({ model, options, varsLoader: s.varsLoaders[model.providerID], envs: input.envs })
 
         if (baseURL !== undefined) options["baseURL"] = baseURL
         if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
@@ -2006,10 +2012,11 @@ const layer = Layer.effect(
             options,
           }),
         )
-        const existing = input.transport ? undefined : s.sdk.get(key)
+        const scoped = input.request?.transport || input.request?.attribution
+        const existing = scoped ? undefined : s.sdk.get(key)
         if (existing) return existing
 
-        options["fetch"] = timeoutFetch(options, input.transport)
+        options["fetch"] = timeoutFetch(options, input.request)
         delete options["chunkTimeout"]
         delete options["headerTimeout"]
 
@@ -2020,7 +2027,7 @@ const layer = Layer.effect(
             name: model.providerID,
             ...options,
           })
-          if (!input.transport) s.sdk.set(key, loaded)
+          if (!scoped) s.sdk.set(key, loaded)
           return loaded as SDK
         }
 
@@ -2043,7 +2050,7 @@ const layer = Layer.effect(
           name: model.providerID,
           ...options,
         })
-        if (!input.transport) s.sdk.set(key, loaded)
+        if (!scoped) s.sdk.set(key, loaded)
         return loaded as SDK
       } catch (e) {
         throw new InitError({ providerID: model.providerID, cause: e })
@@ -2078,17 +2085,30 @@ const layer = Layer.effect(
       return info
     })
 
-    const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model, transport?: MeridianRouting.Transport) {
+    const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model, request?: LanguageOptions) {
       const s = yield* InstanceState.get(state)
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
-      const cached = transport ? undefined : s.models.get(key)
+      const provider = s.providers[model.providerID]
+      const attribution =
+        request?.attribution && provider.options.fetch == null &&
+        MeridianAttribution.matchesBase(
+          resolveBaseURL({ model, options: provider.options, varsLoader: s.varsLoaders[model.providerID], envs }),
+          model.api.npm,
+        ) &&
+        (yield* auth.get(model.providerID).pipe(Effect.match({
+          onFailure: () => false,
+          onSuccess: (info) => info?.type !== "oauth",
+        })))
+          ? request.attribution
+          : undefined
+      const scoped = request?.transport || attribution
+      const cached = scoped ? undefined : s.models.get(key)
       if (cached) return cached
 
-      const provider = s.providers[model.providerID]
       return yield* EffectPromise.refineRejection(
         async () => {
-          const sdk = await resolveSDK(model, s, { envs, transport })
+          const sdk = await resolveSDK(model, s, { envs, request: { transport: request?.transport, attribution } })
           const language = s.modelLoaders[model.providerID]
             ? await s.modelLoaders[model.providerID](
                 sdk,
@@ -2100,7 +2120,7 @@ const layer = Layer.effect(
                 model,
               )
             : sdk.languageModel(model.api.id)
-          if (!transport) s.models.set(key, language)
+          if (!scoped) s.models.set(key, language)
           return language
         },
         (cause) =>

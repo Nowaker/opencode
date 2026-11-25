@@ -423,6 +423,7 @@ const layer = Layer.effect(
           user: firstInfo,
           system: [],
           small: true,
+          meridianPurpose: "title",
           tools: {},
           model: mdl,
           sessionID: input.session.id,
@@ -2469,6 +2470,7 @@ const layer = Layer.effect(
                 permission: session.permission,
                 sessionID,
                 parentSessionID: session.parentID,
+                meridianPurpose: session.parentID ? "subagent" : "chat",
                 system,
                 messages: [
                   ...modelMsgs,

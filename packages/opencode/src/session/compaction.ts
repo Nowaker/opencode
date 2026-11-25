@@ -516,6 +516,7 @@ const layer = Layer.effect(
         user: userMessage,
         agent,
         sessionID: input.sessionID,
+        meridianPurpose: "compaction",
         tools: {},
         system: [],
         messages: [

@@ -3,6 +3,8 @@ import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Provider } from "@/provider/provider"
 import { MeridianRouting } from "@/provider/meridian-routing"
+import { MeridianAttribution } from "@/provider/meridian-attribution"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
@@ -56,6 +58,7 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  readonly meridianPurpose?: MeridianAttribution.Purpose
   readonly validateRequest?: (request: PreparedRequest) => Effect.Effect<boolean>
   readonly beforeDispatch?: () => Effect.Effect<boolean>
   readonly preferredReturn?: true
@@ -122,9 +125,12 @@ const live: Layer.Layer<
         }),
       }
       const source = beforeDispatch ? undefined : MeridianRouting.transportFor(trust, input.model)
+      const attribution = input.meridianPurpose
+        ? MeridianAttribution.request({ purpose: input.meridianPurpose, sessionID: input.sessionID, version: InstallationVersion })
+        : undefined
       const [standardLanguage, cfg, item, info] = yield* Effect.all(
         [
-          beforeDispatch ? Effect.void : provider.getLanguage(input.model, source),
+          beforeDispatch ? Effect.void : provider.getLanguage(input.model, { transport: source, attribution }),
           config.get(),
           provider.getProvider(input.model.providerID),
           auth.get(input.model.providerID),
@@ -171,7 +177,7 @@ const live: Layer.Layer<
         }
         return MeridianRouting.transportFor(trust, input.model, fence)
       })()
-      const language = fenced ? yield* provider.getLanguage(input.model, fenced) : standardLanguage
+      const language = fenced ? yield* provider.getLanguage(input.model, { transport: fenced, attribution }) : standardLanguage
       if (!language || (beforeDispatch && !fenced) || (!fenced && validateRequest && !(yield* validate()))) {
         return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
       }
@@ -296,6 +302,7 @@ const live: Layer.Layer<
           topK: prepared.params.topK,
           maxOutputTokens: prepared.params.maxOutputTokens,
           providerOptions: prepared.params.options,
+          attribution,
           headers: prepared.headers,
           abort: input.abort,
         })

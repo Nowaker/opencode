@@ -1,8 +1,10 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Config } from "@/config/config"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Provider } from "@/provider/provider"
+import { MeridianAttribution } from "@/provider/meridian-attribution"
 
 import { generateObject, streamObject, type ModelMessage } from "ai"
 import { Truncate } from "@/tool/truncate"
@@ -374,7 +376,8 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const model = input.model ?? (yield* provider.defaultModel())
         const resolved = yield* provider.getModel(model.providerID, model.modelID)
-        const language = yield* provider.getLanguage(resolved)
+        const attribution = MeridianAttribution.request({ purpose: "helper", version: InstallationVersion })
+        const language = yield* provider.getLanguage(resolved, { attribution })
         const tracer = cfg.experimental?.openTelemetry
           ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer.OtelTracer))
           : undefined

@@ -1,5 +1,6 @@
 import type { Auth } from "@/auth"
 import type { Provider } from "@/provider/provider"
+import { MeridianAttribution } from "@/provider/meridian-attribution"
 import { ProviderTransform } from "@/provider/transform"
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
@@ -40,6 +41,7 @@ type StreamInput = {
   readonly maxOutputTokens?: number
   readonly providerOptions?: Record<string, any>
   readonly headers: Record<string, string>
+  readonly attribution?: MeridianAttribution.RequestAttribution
   readonly abort: AbortSignal
 }
 
@@ -134,7 +136,15 @@ export function stream(input: StreamInput): StreamResult {
               ),
             ),
           )
-        return provider.pipe(Stream.concat(Stream.fromQueue(results)))
+        const stream = provider.pipe(Stream.concat(Stream.fromQueue(results)))
+        if (
+          fetch || !input.attribution || input.auth?.type === "oauth" || input.provider.options.fetch != null ||
+          !MeridianAttribution.matchesBase(current.baseURL ?? input.model.api.url, input.model.api.npm)
+        ) return stream
+        const currentFetch = yield* FetchHttpClient.Fetch
+        if (currentFetch !== globalThis.fetch) return stream
+        const taggedFetch = Object.assign(MeridianAttribution.wrapFetch(currentFetch, input.attribution), currentFetch)
+        return stream.pipe(Stream.provideService(FetchHttpClient.Fetch, taggedFetch))
       }),
     ),
   )
