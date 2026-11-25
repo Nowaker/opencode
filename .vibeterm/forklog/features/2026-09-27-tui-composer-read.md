@@ -54,6 +54,7 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
 |---|---|---|---|
 | `2638af5a71` | 2026-09-27 | `api.prompt.read()` returns input, parts, mode, generation, revision, readiness, `reason`, session ID; `replace()` accepts `promptParts` and accepts only an exact readback of text and parts | `packages/plugin/src/tui-prompt.ts` `TuiComposerDraft`, `TuiComposerApi`; `packages/tui/src/plugin/prompt-control.ts` `createPromptControl`; `packages/tui/test/prompt-control.test.ts` |
 | `fe286c02ed` | 2026-11-18 | The interactive native composer exposes count-only `observeTyping`; `read().draftID` and `replace({ draftID })` preserve explicitly restored identity, and prompt/slash submit waits for plugin storage of the intent with the exact outgoing message ID. | `packages/plugin/src/tui-prompt.ts`, `packages/tui/src/component/prompt/typing.ts`, `packages/tui/test/component/prompt-typing.test.tsx` |
+| [`830bf1d14d`](https://github.com/Nowaker/opencode/commit/830bf1d14dc5b6459082f54d48d79cdf2ff45437) | 2026-11-19 | Deleting the last text from the native composer records the deletion, then emits `cleared` for that draft. The next edit starts a new UUID. Previously a full-selection Backspace emptied the visible composer but reused the old UUID, making two drafts look like one. This changes count-only telemetry, not prompt history or draft recovery. | `packages/tui/src/component/prompt/typing.ts` (`createComposerTyping().capture`); `packages/tui/test/component/prompt-typing.test.tsx` (full-selection deletion regression) |
 
 ## Verification
 
@@ -67,6 +68,8 @@ Spawned by coordinator `ses_f19c07ea0ffe0BXye8vomz4ZzU`:
   server for a session tab and a sessionless tab, and are never submitted.
 
 ## Timeline
+
+- 2026-11-19 [full-deletion draft boundary](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0ec4a79affeAzulh14tlAN545) - The full-selection Backspace regression failed before the fix because no `cleared` event followed the five-character deletion. After the fix the typing suite passed 13 tests (68 assertions), including a new ID on the next edit; the TUI typecheck and both pre-push gates passed. On desktop, the canonical build installed `1.19.5-vt-568-006d837c50` after the migration guard passed. The separate real-PTY restore-and-submit test passed 268 assertions on that binary; it was not a separate full-deletion test. No existing user tab was restarted for this change. Mac runtime coverage and upstream disposition were not verified for this fix.
 
 - 2026-11-18 [durable draft typing](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e0ec4a79affeAzulh14tlAN545) - Native observer tests passed (12 tests, 63 assertions) and the TUI package typecheck passed. Vibeterm owns durable storage, replication, and admission confirmation. The existing bounded Up/Down prompt recall is unchanged.
 
