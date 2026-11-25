@@ -74,6 +74,13 @@ export interface HttpJsonTransport<Body, Frame> extends Transport<Body, HttpPrep
   readonly with: (patch: HttpJsonPatch<Body, Frame>) => HttpJsonTransport<Body, Frame>
 }
 
+const modelMiddleware = (ordinary: HttpMiddleware | undefined, native: HttpMiddleware | undefined) => {
+  if (!native) return ordinary
+  if (!ordinary) return native
+  const middleware: HttpMiddleware = (request, send) => ordinary(request, (final) => native(final, send))
+  return middleware
+}
+
 export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJsonTransport<Body, Frame> => ({
   id: "http-json",
   with: (patch) => httpJson({ ...input, ...patch }),
@@ -92,7 +99,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         middleware: prepareInput.middleware,
       }
     }),
-  execute: (prepared, request, runtime) =>
+  execute: (prepared, request, runtime, options) =>
     Effect.gen(function* () {
       const timeout = (operation: "request" | "read", message: string, http?: HttpContext) =>
         new AIError({
@@ -109,7 +116,11 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
       const limits = timeoutConfig(request.timeout)
       // Unlike the header and chunk limits, the whole-request budget has no default.
       const total = limits.total ? Duration.millis(limits.total) : Duration.infinity
-      const response = yield* runtime.http.execute(prepared.request, prepared.middleware).pipe(
+      const middleware = modelMiddleware(
+        prepared.middleware,
+        request.fetch === undefined ? options?.nativeHttp : undefined,
+      )
+      const response = yield* runtime.http.execute(prepared.request, middleware).pipe(
         Effect.timeoutOrElse({
           duration: Duration.min(timeoutDuration(limits.headers), total),
           orElse: () => timeout("request", "Timed out waiting for response headers"),

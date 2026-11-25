@@ -144,6 +144,8 @@ export interface Interface {
 
 export interface StreamOptions {
   readonly http?: HttpMiddleware
+  /** Runs after ordinary HTTP middleware, only on built-in model HTTP sends without a fetch override. */
+  readonly nativeHttp?: HttpMiddleware
   readonly webSocket?: WebSocketChannelExecutor
 }
 

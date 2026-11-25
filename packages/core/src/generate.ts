@@ -4,11 +4,13 @@ import { ai, AIError, DecisionClient, ImageClient, LLMClient, Media } from "@ope
 import type { DecisionRequest, DecisionResult, ImageRequest, ImageResult } from "@opencode/schema/generate"
 import { Money } from "@opencode/schema/money"
 import { SessionID } from "@opencode/schema/session-id"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { RequestExecutor } from "@opencode/ai/route"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { App } from "./app.js"
 import { llmClient, requestExecutor } from "./effect/app-node-platform.js"
 import { Integration } from "./integration.js"
+import { meridianAttribution } from "./meridian-attribution.js"
 import { ModelResolver } from "./model-resolver.js"
 import { Model } from "./model.js"
 import { ModelRetry } from "./model-retry.js"
@@ -88,6 +90,8 @@ export const layer = Layer.effect(
     const executor = yield* RequestExecutor.Service
     const images = yield* ImageClient.Service
     const decisionClient = yield* DecisionClient.Service
+    const app = Option.getOrUndefined(yield* Effect.serviceOption(App.Service))
+    const nativeHttp = meridianAttribution(app?.version, "helper")
 
     const runText = Effect.fn("Generate.text")(function* (input: TextInput) {
       const resolved = yield* resolver.resolve(input.model).pipe(
@@ -119,6 +123,7 @@ export const layer = Layer.effect(
             // Gateways require session attribution even for a stateless call; no Session is stored.
             headers: { "x-opencode-session": SessionID.create() },
           }),
+          nativeHttp ? { nativeHttp } : undefined,
         )
         .pipe(
           ModelRetry.retryOneShot,
@@ -277,5 +282,5 @@ function failureReason(tag: AIError["reason"]["_tag"], status: number | undefine
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [ModelResolver.node, Model.node, llmClient, requestExecutor],
+  deps: [App.node, ModelResolver.node, Model.node, llmClient, requestExecutor],
 })

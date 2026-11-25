@@ -19,6 +19,7 @@ export interface TransportExecution<Frame> {
 }
 
 export interface TransportExecuteOptions {
+  readonly nativeHttp?: HttpMiddleware
   readonly webSocket?: WebSocketChannelExecutor
 }
 

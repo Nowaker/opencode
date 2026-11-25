@@ -2,7 +2,7 @@
 // ioredis, and node:sqlite, which runtimes such as workerd cannot load.
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Effect, FileSystem, Layer, Path } from "effect"
+import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { makeGlobalNode } from "./app-node.js"
 
@@ -23,6 +23,12 @@ export const fetchLayer = (fetch?: Fetch) =>
     }),
   )
 export const httpFetch = makeGlobalNode({ service: FetchHttpClient.Fetch, layer: fetchLayer(), deps: [] })
+
+export const NativeFetchInit = Context.Reference<((url: URL, init: RequestInit) => RequestInit) | undefined>(
+  "@opencode/HttpClient/NativeFetchInit",
+  { defaultValue: () => undefined },
+)
+
 // Provided per request, so a caller's context can't swap `httpFetch` for another fetch.
 export const httpClient = makeGlobalNode({
   service: HttpClient.HttpClient,
@@ -31,7 +37,25 @@ export const httpClient = makeGlobalNode({
     Effect.gen(function* () {
       const fetch = yield* FetchHttpClient.Fetch
       const client = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
-      return HttpClient.transformResponse(client, Effect.provideService(FetchHttpClient.Fetch, fetch))
+      if (fetch !== globalThis.fetch)
+        return HttpClient.transformResponse(client, Effect.provideService(FetchHttpClient.Fetch, fetch))
+
+      return HttpClient.transformResponse(client, (send) =>
+        Effect.flatMap(NativeFetchInit, (initialize) =>
+          send.pipe(
+            Effect.provideService(
+              FetchHttpClient.Fetch,
+              initialize
+                ? Object.assign(
+                    (input: Request | URL | string, init?: RequestInit) =>
+                      fetch(input, input instanceof URL && init !== undefined ? initialize(input, init) : init),
+                    { preconnect: fetch.preconnect },
+                  )
+                : fetch,
+            ),
+          ),
+        ),
+      )
     }),
   ),
   deps: [httpFetch],

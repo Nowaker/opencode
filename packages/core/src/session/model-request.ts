@@ -35,6 +35,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import { Agent } from "../agent.js"
 import { Instructions } from "../instructions/index.js"
+import { meridianAttribution, type MeridianPurpose } from "../meridian-attribution.js"
 import { Permission } from "../permission.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { QuestionTool } from "../tool/plugin/question.js"
@@ -227,6 +228,18 @@ export const boundImages = (messages: LLMRequest["messages"]) => {
 
 type Definitions = PluginHooks.Domains["session"]["context"]["tools"]
 
+function meridianPurpose(kind: SessionRequestKind, session: SessionSchema.Info): MeridianPurpose {
+  switch (kind) {
+    case "title":
+    case "compaction":
+      return kind
+    case "generate":
+      return "helper"
+    case "primary":
+      return session.parentID ? "subagent" : "chat"
+  }
+}
+
 /** Builds the model request for each session flow. Each entry runs its own plugin hook. */
 export interface Interface {
   readonly primary: (input: Input) => Effect.Effect<Prepared<SessionContext>>
@@ -377,10 +390,15 @@ export const layer = Layer.effect(
             )
           : undefined
 
+      const nativeHttp = meridianAttribution(app.version, meridianPurpose(kind, session))
       return {
         event: shaped,
         request,
-        options: { ...(http ? { http } : {}), ...(webSocket ? { webSocket } : {}) },
+        options: {
+          ...(http ? { http } : {}),
+          ...(nativeHttp ? { nativeHttp } : {}),
+          ...(webSocket ? { webSocket } : {}),
+        },
         retry: (event: Parameters<Prepared["retry"]>[0]) =>
           hooks.trigger("session", "retry", event).pipe(Effect.asVoid),
         // Permission.assert and the question tool throw declines as defects so tools cannot
