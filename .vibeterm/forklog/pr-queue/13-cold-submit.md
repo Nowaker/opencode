@@ -1,6 +1,6 @@
 # 13 - Keep a submit pressed while model catalogs load
 
-Status: PREPARED, NOT FILED. Filing needs Damian's say-so ([`qst_1f17844ba001`](https://portal.vibeterm.desktop.ts.nowaker.net/question/qst_1f17844ba001)) and a free author slot; the three-slot cap is full (open: [#63062](https://github.com/anomalyco/opencode/pull/63062), [#63063](https://github.com/anomalyco/opencode/pull/63063), [#63897](https://github.com/anomalyco/opencode/pull/63897), checked 2026-11-19 around 01:45Z through the public search API). Queue order: after entries 10, 11 and 12.
+Status: READY TO FILE, NOT FILED. Damian approved queuing it on [2026-11-26 CST](https://portal.vibeterm.desktop.ts.nowaker.net/question/qst_1f17844ba001uVrVonrX41LQ9i). The daily PR drain files it after entries 10, 11 and 12 when one of the [three author slots](00-open-slots.md) frees. Recheck upstream `dev` and rerun the regression if the base has moved.
 
 - Target: `anomalyco/opencode:dev`. Branch cut from tag `v2.2.7` (`fedc6f208a`): [`Nowaker:cold-submit-upstream`](https://github.com/Nowaker/opencode/tree/cold-submit-upstream), `34c8882550`, on both fork mirrors. Not merged into `v2-nowaker`.
 - Live target check 2026-11-19: `dev` at `88ca792e02` changed `packages/tui/src/component/prompt/index.tsx` since the tag (#63605, #63265, #63262, #63275); the commit applies onto it without conflicts (`git merge-tree --merge-base fedc6f208a github/dev 34c8882550`, clean). Tests have not been rerun on that base.

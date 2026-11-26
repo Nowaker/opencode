@@ -1,6 +1,6 @@
 # 14 - Shift+arrow in the prompt selects only the crossed cells (v1)
 
-Status: PREPARED, NOT FILED. Filing needs Damian's say-so (the [v2 coordinator](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_e383ee7faffe6JX8m2EP26dXUC) is asking him, 2026-11-19) and a free author slot; the three-slot cap is full (see [00-open-slots](00-open-slots.md)). Queue order: after entries 10, 11, 12 and 13. No PR, issue or comment was posted.
+Status: READY TO FILE, NOT FILED. Damian approved queuing it on [2026-11-26 CST](https://portal.vibeterm.desktop.ts.nowaker.net/question/qst_1f2061dd90014fpE7b6897eTcc). The daily PR drain files it after entries 10, 11, 12 and 13 when one of the [three author slots](00-open-slots.md) frees. Recheck upstream `v1` and rerun the regression if the base has moved.
 
 - Target: `anomalyco/opencode:v1`. Branch [`Nowaker:selection-boundary-v1`](https://github.com/Nowaker/opencode/tree/selection-boundary-v1), [`7c9c67ee2a`](https://github.com/Nowaker/opencode/commit/7c9c67ee2a39ff3bdd4fc13bc83426c0a03b0ab6), on both fork mirrors, one commit, 3 files +187/-1. Not merged anywhere.
 - Base: v1.19.6 (tree of `c618499abc`). Upstream `v1` was `c618499abc` and tag `v1.19.6` (`f4e363c829`) has the same tree `53420ce9`, checked with `git ls-remote github` 2026-11-19 around 04:20Z, so no rebase is needed as of that check.
