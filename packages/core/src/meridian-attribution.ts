@@ -8,6 +8,8 @@ const decodeEndpoints = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.
 const configured = Option.getOrUndefined(decodeEndpoints(process.env["VIBETERM_MERIDIAN_ATTRIBUTION_ENDPOINTS"]))
 const endpoints = new Set(configured?.every(isEndpoint) ? configured : [])
 const httpProxyVariables = ["http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"] as const
+// The Vibeterm machine short name the launcher sets beside the endpoints; anything else is never sent.
+const device = /^[a-z0-9-]{1,63}$/.exec(process.env["VIBETERM_MERIDIAN_ATTRIBUTION_DEVICE"] ?? "")?.[0]
 
 function isEndpoint(value: string): boolean {
   const url = URL.parse(value)
@@ -39,6 +41,8 @@ export function meridianAttribution(version: string | undefined, purpose: Meridi
         headers.set("x-meridian-client", `opencode/${version}`)
         headers.set("x-meridian-purpose", purpose)
         headers.delete("x-meridian-session")
+        headers.delete("x-meridian-device")
+        if (device) headers.set("x-meridian-device", device)
         return { ...init, headers, redirect: "error" }
       }),
     )

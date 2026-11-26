@@ -19,6 +19,7 @@ const fixture = () => {
     readonly session: string | null
     readonly affinity: string | null
     readonly source: string | null
+    readonly device: string | null
   }> = []
   const checkpoint = { type: "compaction", id: "cmp_1", encrypted_content: "fixture-checkpoint" }
   const eventStream = (data: unknown) =>
@@ -39,6 +40,7 @@ const fixture = () => {
         session: request.headers.get("x-meridian-session"),
         affinity: request.headers.get("x-opencode-session"),
         source: request.headers.get("x-meridian-source"),
+        device: request.headers.get("x-meridian-device"),
       })
       if (path === "/trusted-redirect/v1/chat/completions")
         return new Response(null, { status: 307, headers: { location: direct } })
@@ -174,6 +176,16 @@ test("tags the bare /messages route an Anthropic base without /v1 posts to", asy
   await using proxy = fixture()
   await proxy.run("bare-messages", JSON.stringify([proxy.endpoint("/messages"), proxy.endpoint(messages)]))
   expect(proxy.seen).toMatchObject([{ path: "/messages", client: `opencode/${build}`, purpose: "chat" }])
+})
+
+test.each([
+  { device: "desktop", sent: "desktop" },
+  { device: "Desktop.local", sent: null },
+  { device: "", sent: null },
+] as const)("sends the launcher's machine short name $device as x-meridian-device only when it is valid", async ({ device, sent }) => {
+  await using proxy = fixture()
+  await proxy.run("messages", JSON.stringify([proxy.endpoint(messages)]), build, { VIBETERM_MERIDIAN_ATTRIBUTION_DEVICE: device })
+  expect(proxy.seen).toMatchObject([{ path: messages, client: `opencode/${build}`, device: sent }])
 })
 
 test("tags the native Anthropic Messages route used by Meridian", async () => {
