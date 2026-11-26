@@ -34,6 +34,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Active features
 
+- [MCP OAuth callbacks shared by every process on the machine](./features/2026-11-25-mcp-oauth-shared-callback.md)
 - [Native v2 engine stop: seal admission for idle stop and restart](./features/2026-11-18-v2-engine-stop.md)
 - [Shift+arrow in the prompt selects only the crossed cells](./features/2026-11-18-prompt-keyboard-selection.md)
 - [The TUI's pick follows the session's latest agent, model and variant](./features/2026-11-18-follow-latest-selection.md)
@@ -174,6 +175,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-25 MCP OAuth callbacks shared by every process](./sessions/2026-11-25-mcp-oauth-shared-callback.md) - a Vibeterm warm spare held `127.0.0.1:19876` and refused other tabs' sign-ins; `74e6e381562` adds a per-machine callback registry so the port holder forwards, lingers and hands over, and stops `startAuth` binding the port; opencode-tools `ba272b4ee` joins vibeterm-api; vt-614 on this Mac with an installed two-process check.
 - [2026-11-25 native v2 audit follow-up](./sessions/2026-11-25-v2-audit-followup.md) - streamed tool arguments, CLI config reload receipts, per-directory plugin watches, and two client test/codegen fixes, with historical verification and its limits.
 - [2026-11-21 preserve HEIF attachments](./sessions/2026-11-21-heif-attachments.md) - `67040ca8c6` and `2404423cda` preserve original HEIC/HEIF in v1 sessions and send a separate JPEG to image-capable models when conversion is available; verified on desktop `vt-583`.
 - [2026-11-21 TUI transcript text clicks](./sessions/2026-11-21-tui-transcript-text-clicks.md) - six v1/v2 commits for plugin-owned transcript clicks, with renderer, isolated tmux and install coverage.
