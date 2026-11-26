@@ -175,6 +175,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-26 W1 Bash job controls and cancellation receipts](./sessions/2026-11-26-bash-job-controls.md) - native TUI same-process handoff, bounded readiness and line notices, and compiled paired cancellation inbox-admission proof; landed as `564dd3cc30`, desktop vt-625.
 - [2026-11-26 native installs](./sessions/2026-11-26-native-install.md) - m4max v1 vt-617 with the retry patch preserved; desktop and m4max v2 vt-58 with 13/13 pre-swap and installed-path probes on each host.
 - [2026-11-25 MCP OAuth callbacks shared by every process](./sessions/2026-11-25-mcp-oauth-shared-callback.md) - a Vibeterm warm spare held `127.0.0.1:19876` and refused other tabs' sign-ins; `74e6e381562` adds a per-machine callback registry so the port holder forwards, lingers and hands over, and stops `startAuth` binding the port; opencode-tools `ba272b4ee` joins vibeterm-api; vt-614 on this Mac with an installed two-process check.
 - [2026-11-25 native v2 audit follow-up](./sessions/2026-11-25-v2-audit-followup.md) - streamed tool arguments, CLI config reload receipts, per-directory plugin watches, and two client test/codegen fixes, with historical verification and its limits.
