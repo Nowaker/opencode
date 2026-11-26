@@ -211,8 +211,12 @@ export function wrapFetch(fetch: Fetch, transport: Transport): Fetch {
   }
 }
 
+// `anthropic-restricted` is Vibeterm's config-generated Claude provider that Meridian routes only to accounts
+// without Cyber Verification access; it switches like any Claude route. `anthropic-cybersec` is left out on
+// purpose: security work moved to GPT is refused there, so a cybersec session waits for a CVP account instead.
 export function routeProvider(providerID: string): RouteProvider | undefined {
-  if (providerID === "anthropic" || providerID === "anthropic-meridian") return "claude"
+  if (providerID === "anthropic" || providerID === "anthropic-meridian" || providerID === "anthropic-restricted")
+    return "claude"
   if (providerID === "openai" || providerID === "openai-meridian") return "chatgpt"
 }
 
