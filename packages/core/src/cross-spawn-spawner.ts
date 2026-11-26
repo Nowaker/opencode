@@ -457,7 +457,7 @@ export const make = Effect.gen(function* () {
             all: out.all,
             getInputFd: fd.getInputFd,
             getOutputFd: fd.getOutputFd,
-            isRunning: Effect.map(Deferred.isDone(signal), (done) => !done),
+            isRunning: Effect.sync(() => proc.exitCode === null && proc.signalCode === null),
             exitCode: Effect.flatMap(Deferred.await(signal), ([code, signal]) => {
               if (Predicate.isNotNull(code)) return Effect.succeed(ExitCode(code))
               return Effect.fail(

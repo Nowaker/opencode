@@ -478,6 +478,7 @@ export const ShellTool = Tool.define(
       let expired = false
       let aborted = false
       let capped = false
+      let isProcessRunning = Effect.succeed(false)
       // A loaded host can take many seconds to spawn, and the exit event can be published later still, so the reported
       // duration runs from the spawn to the exit rather than from the call to the publish.
       const exited: { code: number | null; spawnedAt?: number; at?: number } = { code: null }
@@ -590,14 +591,15 @@ export const ShellTool = Tool.define(
           const job = yield* background.get(id)
           if (job?.metadata?.background !== true) return
           yield* Deferred.await(announced)
-          const status =
-            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-              ? "cancelled"
-              : capped
-                ? "timeout"
-                : exited.code === 0
-                  ? "completed"
-                  : "failed"
+          const status = capped
+            ? "timeout"
+            : exited.code !== null
+              ? exited.code === 0
+                ? "completed"
+                : "failed"
+              : Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+                ? "cancelled"
+                : "failed"
           const raw = list.map((item) => item.text).join("")
           const finalLines = observed?.finish()
           yield* events.publish(ShellBackgroundEvent.Exited, {
@@ -605,6 +607,9 @@ export const ShellTool = Tool.define(
             id,
             command: input.command,
             status,
+            ...(status === "cancelled" && job.cancelReportedBy === "background_cancel"
+              ? { reportedBy: "background_cancel" as const }
+              : {}),
             ...(exited.code === null ? {} : { exitCode: exited.code }),
             durationMs: Math.max(0, (exited.at ?? Date.now()) - (exited.spawnedAt ?? startedAt)),
             outputPath: file,
@@ -622,6 +627,7 @@ export const ShellTool = Tool.define(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          isProcessRunning = handle.isRunning.pipe(Effect.orDie)
           exited.spawnedAt = Date.now()
           yield* Deferred.succeed(spawned, undefined)
           const reader = yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.all), onChunk))
@@ -647,7 +653,7 @@ export const ShellTool = Tool.define(
               Effect.forkScoped,
             )
           }
-          handoff?.open(handle.isRunning.pipe(Effect.orDie))
+          handoff?.open(isProcessRunning)
           if (handoff?.available()) yield* preview_(last)
           const ended = yield* Effect.raceFirst(
             handle.exitCode.pipe(
@@ -692,6 +698,7 @@ export const ShellTool = Tool.define(
           outputPath,
           reason,
           timeoutMs: input.backgroundTimeoutMs === false ? null : input.backgroundTimeoutMs,
+          cancelToolReceipt: 1,
         })
         return outputPath
       })
@@ -713,6 +720,9 @@ export const ShellTool = Tool.define(
           ...(input.runInBackground ? { background: true } : {}),
         },
         foreground: handoff,
+        canReportCancellation: Effect.suspend(() =>
+          capped || exited.at !== undefined ? Effect.succeed(false) : isProcessRunning,
+        ),
         run: runProcess,
       })
 

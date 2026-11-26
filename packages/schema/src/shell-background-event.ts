@@ -18,6 +18,7 @@ export const Started = define({
     reason: Schema.Literals(["requested", "timeout", "user"]),
     /** The longest it may run, counted from its start, or null for no limit. */
     timeoutMs: Schema.NullOr(NonNegativeInt),
+    cancelToolReceipt: optional(Schema.Literal(1)),
   },
 })
 
@@ -45,6 +46,7 @@ export const Exited = define({
     id: Schema.String,
     command: Schema.String,
     status: Schema.Literals(["completed", "failed", "timeout", "cancelled"]),
+    reportedBy: optional(Schema.Literal("background_cancel")),
     exitCode: optional(Schema.Int),
     durationMs: NonNegativeInt,
     outputPath: Schema.String,

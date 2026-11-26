@@ -15,6 +15,7 @@ export type Info = {
   completed_at?: number
   output?: string
   error?: string
+  cancelReportedBy?: string
   metadata?: Record<string, unknown>
 }
 
@@ -30,6 +31,7 @@ type Active = {
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
   foreground?: ForegroundControl
+  canReportCancellation?: Effect.Effect<boolean>
 }
 
 type State = {
@@ -69,6 +71,7 @@ export type StartInput = {
   metadata?: Record<string, unknown>
   onPromote?: Effect.Effect<void>
   foreground?: ForegroundControl
+  canReportCancellation?: Effect.Effect<boolean>
   run: Effect.Effect<string, unknown>
 }
 
@@ -94,6 +97,11 @@ export type WaitResult = {
   timedOut: boolean
 }
 
+export type CancelReport = {
+  readonly matches: (job: Info) => boolean
+  readonly source: string
+}
+
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
@@ -103,7 +111,7 @@ export interface Interface {
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
   readonly waitForPromotion: (id: string) => Effect.Effect<Info>
   readonly promote: (id: string) => Effect.Effect<Info | undefined>
-  readonly cancel: (id: string) => Effect.Effect<Info | undefined>
+  readonly cancel: (id: string, report?: CancelReport) => Effect.Effect<Info | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/BackgroundJob") {}
@@ -165,6 +173,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
         ...job,
         onPromote: undefined,
         foreground: undefined,
+        canReportCancellation: undefined,
         pending: 0,
         output,
         info: {
@@ -251,6 +260,7 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
               promoted,
               onPromote: input.onPromote,
               foreground: input.foreground,
+              canReportCancellation: input.canReportCancellation,
             }
             return [{ info: snapshot(job), scope, token }, new Map(jobs).set(id, job)] as readonly [
               StartResult,
@@ -352,26 +362,34 @@ export const makeWithFork = Effect.fn("BackgroundJob.makeWithFork")(function* (
     return result.info
   })
 
-  const cancel: Interface["cancel"] = Effect.fn("BackgroundJob.cancel")(function* (id) {
+  const cancel: Interface["cancel"] = Effect.fn("BackgroundJob.cancel")(function* (id, report) {
     const completed_at = yield* Clock.currentTimeMillis
-    const result = yield* SynchronizedRef.modify(state.jobs, (jobs): readonly [FinishResult, Map<string, Active>] => {
-      const job = jobs.get(id)
-      if (!job) return [{}, jobs]
-      if (job.info.status !== "running") return [{ info: snapshot(job) }, jobs]
-      job.foreground?.close()
-      const next = {
-        ...job,
-        onPromote: undefined,
-        foreground: undefined,
-        pending: 0,
-        info: {
-          ...job.info,
-          status: "cancelled" as const,
-          completed_at,
-        },
-      }
-      return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
-    })
+    const result = yield* SynchronizedRef.modifyEffect(
+      state.jobs,
+      Effect.fnUntraced(function* (jobs): Effect.fn.Return<readonly [FinishResult, Map<string, Active>]> {
+        const job = jobs.get(id)
+        if (job?.info.status !== "running") return [{}, jobs]
+        if (report) {
+          if (!report.matches(snapshot(job)) || !job.canReportCancellation) return [{}, jobs]
+          if (!(yield* job.canReportCancellation)) return [{}, jobs]
+        }
+        job.foreground?.close()
+        const next = {
+          ...job,
+          onPromote: undefined,
+          foreground: undefined,
+          canReportCancellation: undefined,
+          pending: 0,
+          info: {
+            ...job.info,
+            status: "cancelled" as const,
+            completed_at,
+            ...(report ? { cancelReportedBy: report.source } : {}),
+          },
+        }
+        return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+      }),
+    )
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) yield* Scope.close(result.scope, Exit.void)
     return result.info

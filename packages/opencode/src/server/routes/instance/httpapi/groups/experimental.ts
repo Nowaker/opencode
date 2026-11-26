@@ -60,6 +60,11 @@ export const ToolListQuery = Schema.Struct({
   model: ModelV2.ID,
 })
 
+export const BackgroundCancelQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  toolResultForSessionID: Schema.optionalKey(SessionID),
+})
+
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeNotGitError"),
@@ -248,7 +253,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
         ),
         HttpApiEndpoint.post("backgroundCancel", ExperimentalPaths.backgroundCancel, {
           params: { jobID: Schema.String },
-          query: WorkspaceRoutingQuery,
+          query: BackgroundCancelQuery,
           success: described(Schema.Boolean, "Whether a running job was stopped"),
           error: HttpApiError.BadRequest,
         }).annotateMerge(
@@ -256,7 +261,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.background.cancel",
             summary: "Cancel a background job",
             description:
-              "Stop a running background job, such as a bash command started with run_in_background or a background subagent. Returns false when no job with this ID is running.",
+              "Stop a running background job. An optional toolResultForSessionID scopes the stop to a running background Bash job of that session and marks a winning stop as reported by background_cancel. Returns true only when this request stopped the job.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

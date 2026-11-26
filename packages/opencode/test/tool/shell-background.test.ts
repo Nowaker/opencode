@@ -12,6 +12,8 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { BackgroundJob } from "@/background/job"
+import { Server } from "@/server/server"
+import { ExperimentalPaths } from "@/server/routes/instance/httpapi/groups/experimental"
 import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
@@ -22,9 +24,9 @@ import { ShellHandoff } from "../../src/tool/shell/handoff"
 import { InstanceState } from "@/effect/instance-state"
 import path from "node:path"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
-import { awaitWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, testEffectShared } from "../lib/effect"
 
-const it = testEffect(
+const it = testEffectShared(
   Layer.mergeAll(
     LayerNode.compile(
       LayerNode.group([
@@ -88,6 +90,19 @@ const runShell = Effect.fn("ShellBackgroundTest.run")(function* (
   const info = yield* ShellTool
   const tool = yield* info.init()
   return yield* tool.execute(args, context)
+})
+
+const cancelViaRoute = Effect.fnUntraced(function* (jobID: string, toolResultForSessionID?: SessionID) {
+  const directory = yield* InstanceState.directory
+  const url = new URL(ExperimentalPaths.backgroundCancel.replace(":jobID", encodeURIComponent(jobID)), "http://localhost")
+  url.searchParams.set("directory", directory)
+  if (toolResultForSessionID !== undefined) url.searchParams.set("toolResultForSessionID", toolResultForSessionID)
+  return yield* Effect.promise(async (signal) => {
+    const response = await Server.Default().app.fetch(new Request(url, { method: "POST", signal }))
+    expect(response.status).toBe(200)
+    const value: unknown = await response.json()
+    return value
+  })
 })
 
 Shell.acceptable.reset()
@@ -521,7 +536,7 @@ describe.skipIf(process.platform === "win32")("tool.shell background", () => {
   )
 
   it.live(
-    "#given a background command #when its job is cancelled #then it is stopped and reported as cancelled",
+    "publishes an unmarked cancellation for the legacy stop request",
     () =>
       inProject(
         { bash_background: { timeout: false } },
@@ -533,16 +548,145 @@ describe.skipIf(process.platform === "win32")("tool.shell background", () => {
           expect(started.timeoutMs).toBeNull()
 
           // when
-          yield* (yield* BackgroundJob.Service).cancel(started.id)
+          expect(yield* cancelViaRoute(started.id)).toBe(true)
           const exited = yield* seen.exited
 
           // then
           expect(exited).toMatchObject({ id: started.id, status: "cancelled" })
+          expect(exited).not.toHaveProperty("reportedBy")
           expect(exited.durationMs).toBeLessThan(10_000)
         }),
       ),
     30_000,
   )
+
+  it.live(
+    "rejects the wrong owner and marks only one winner of duplicate scoped Bash stops",
+    () =>
+      inProject(
+        { shell: "/bin/bash" },
+        Effect.gen(function* () {
+          const seen = yield* watch()
+          const order = yield* watchOrder()
+          const result = yield* runShell({
+            command: "printf 'STARTED\\n'; sleep 30",
+            run_in_background: true,
+            ready: { log: "^STARTED$" },
+          })
+          const started = yield* seen.started
+          expect(result.metadata).toMatchObject({ readiness: "ready" })
+          expect(started.cancelToolReceipt).toBe(1)
+          expect(yield* cancelViaRoute(started.id, SessionID.make("ses_wrong"))).toBe(false)
+
+          const replies = yield* Effect.all(
+            [cancelViaRoute(started.id, ctx.sessionID), cancelViaRoute(started.id, ctx.sessionID)],
+            { concurrency: "unbounded" },
+          )
+
+          expect(replies.filter((reply) => reply === true)).toHaveLength(1)
+          expect(replies.filter((reply) => reply === false)).toHaveLength(1)
+          expect(yield* seen.exited).toMatchObject({ id: started.id, status: "cancelled", reportedBy: "background_cancel" })
+          expect(yield* cancelViaRoute(started.id, ctx.sessionID)).toBe(false)
+          expect(order.order).toEqual(["started", "exited"])
+        }),
+      ),
+    25_000,
+  )
+
+  it.live("rejects missing jobs and leaves non-Bash jobs to the legacy unscoped stop", () =>
+    inProject({}, Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const job = yield* jobs.start({
+        type: "task",
+        metadata: { background: true, parentSessionId: ctx.sessionID },
+        canReportCancellation: Effect.succeed(true),
+        run: Effect.never,
+      })
+
+      expect(yield* cancelViaRoute("bash_missing", ctx.sessionID)).toBe(false)
+      expect(yield* cancelViaRoute("bash_missing")).toBe(false)
+      expect(yield* cancelViaRoute(job.id, ctx.sessionID)).toBe(false)
+      expect((yield* jobs.get(job.id))?.status).toBe("running")
+      expect(yield* cancelViaRoute(job.id)).toBe(true)
+
+      const settled = yield* jobs.get(job.id)
+      expect(settled?.status).toBe("cancelled")
+      expect(settled).not.toHaveProperty("cancelReportedBy")
+    })),
+  )
+
+  it.live(
+    "does not report a scoped stop before the background process actually starts",
+    () =>
+      inProject(
+        {},
+        Effect.gen(function* () {
+          const seen = yield* watch()
+          const spawner = yield* ChildProcessSpawner
+          const spawnAllowed = yield* Deferred.make<void>()
+          const gated = makeSpawner((command) => Deferred.await(spawnAllowed).pipe(Effect.andThen(spawner.spawn(command))))
+          yield* runShell({ command: "exit 0", run_in_background: true }).pipe(
+            Effect.provideService(ChildProcessSpawner, gated),
+          )
+          const started = yield* seen.started
+
+          expect(yield* cancelViaRoute(started.id, ctx.sessionID)).toBe(false)
+          yield* Deferred.succeed(spawnAllowed, undefined)
+
+          const exit = yield* seen.exited
+          expect(exit).toMatchObject({ id: started.id, status: "completed", exitCode: 0 })
+          expect(exit).not.toHaveProperty("reportedBy")
+        }),
+      ),
+    25_000,
+  )
+
+  for (const outcome of [
+    { status: "completed", command: "exit 0", timeout: false, exitCode: 0 },
+    { status: "failed", command: "exit 7", timeout: false, exitCode: 7 },
+    { status: "timeout", command: "sleep 30", timeout: 500, exitCode: undefined },
+  ] as const) {
+    it.live(
+      `refuses a scoped stop after ${outcome.status} wins, before the registry settles`,
+      () =>
+        inProject(
+          { bash_background: { timeout: outcome.timeout } },
+          Effect.gen(function* () {
+            const seen = yield* watch()
+            const jobs = yield* BackgroundJob.Service
+            const events = yield* EventV2Bridge.Service
+            const entered = yield* Deferred.make<void>()
+            const release = yield* Deferred.make<void>()
+            // The real process has finished; only the exit publication keeps the registry running.
+            const unsubscribe = yield* events.listen((event) =>
+              event.type === ShellBackgroundEvent.Exited.type
+                ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)))
+                : Effect.void,
+            )
+            yield* Effect.addFinalizer(() => unsubscribe)
+            yield* Effect.gen(function* () {
+              yield* runShell({ command: outcome.command, run_in_background: true })
+              const started = yield* seen.started
+              yield* awaitWithTimeout(Deferred.await(entered), "Bash exit publication did not begin", "10 seconds")
+              expect((yield* jobs.get(started.id))?.status).toBe("running")
+
+              const reply = yield* awaitWithTimeout(
+                cancelViaRoute(started.id, ctx.sessionID),
+                "late stop blocked settlement",
+                "5 seconds",
+              )
+              expect(reply).toBe(false)
+
+              const exit = yield* seen.exited
+              expect(exit).toMatchObject({ id: started.id, status: outcome.status })
+              expect(exit.exitCode).toBe(outcome.exitCode)
+              expect(exit).not.toHaveProperty("reportedBy")
+            }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)))
+          }),
+        ),
+      25_000,
+    )
+  }
 
   /** Records the order of this file's background events, subscribed before the command starts. */
   const watchOrder = Effect.fn("ShellBackgroundTest.watchOrder")(function* () {

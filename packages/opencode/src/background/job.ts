@@ -31,8 +31,10 @@ const layer = Layer.effect(
       wait: (input) => InstanceState.useEffect(state, (jobs) => jobs.wait(input)),
       waitForPromotion: (id) => InstanceState.useEffect(state, (jobs) => jobs.waitForPromotion(id)),
       promote: (id) => OwnerQuiescence.activity(InstanceState.useEffect(state, (jobs) => jobs.promote(id))),
-      cancel: (id) =>
-        OwnerQuiescence.activity(InstanceState.useEffect(state, (jobs) => jobs.cancel(id)).pipe(Effect.uninterruptible)),
+      cancel: (id, report) =>
+        OwnerQuiescence.activity(
+          InstanceState.useEffect(state, (jobs) => jobs.cancel(id, report)).pipe(Effect.uninterruptible),
+        ),
     })
   }),
 )

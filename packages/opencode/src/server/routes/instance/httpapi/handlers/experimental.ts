@@ -10,12 +10,19 @@ import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
+import { ShellID } from "@/tool/shell/id"
 import { Worktree } from "@/worktree"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  BackgroundCancelQuery,
+  ConsoleSwitchPayload,
+  SessionListQuery,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -173,10 +180,20 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     const backgroundCancel = Effect.fn("ExperimentalHttpApi.backgroundCancel")(function* (ctx: {
       params: { jobID: string }
+      query: typeof BackgroundCancelQuery.Type
     }) {
-      const job = yield* background.get(ctx.params.jobID)
-      if (job?.status !== "running") return false
-      return (yield* background.cancel(ctx.params.jobID)) !== undefined
+      const sessionID = ctx.query.toolResultForSessionID
+      const stopped = yield* background.cancel(
+        ctx.params.jobID,
+        sessionID === undefined
+          ? undefined
+          : {
+              source: "background_cancel",
+              matches: (job) =>
+                job.type === ShellID.ToolID && job.metadata?.background === true && job.metadata.parentSessionId === sessionID,
+            },
+      )
+      return stopped !== undefined
     })
 
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
