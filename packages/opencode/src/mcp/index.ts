@@ -131,6 +131,13 @@ function remoteURL(value: string) {
   if (URL.canParse(value)) return new URL(value)
 }
 
+// The configured desktop redirect: explicit redirectUri, else the callbackPort shorthand, else the default.
+function configuredRedirectUri(mcp: ConfigMCPV1.Info) {
+  if (mcp.type !== "remote" || typeof mcp.oauth !== "object") return undefined
+  const { redirectUri, callbackPort } = mcp.oauth
+  return redirectUri ?? (callbackPort ? `http://127.0.0.1:${callbackPort}${OAUTH_CALLBACK_PATH}` : undefined)
+}
+
 interface CreateResult {
   mcpClient?: MCPClient
   status: Status
@@ -864,14 +871,9 @@ const layer = Layer.effect(
         // OAuth config is optional - if not provided, we'll use auto-discovery
         const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
 
-        // Resolve effective redirect URI: explicit redirectUri > callbackPort shorthand > default
-        const effectiveRedirectUri =
-          flow?.redirectUri ??
-          oauthConfig?.redirectUri ??
-          (oauthConfig?.callbackPort ? `http://127.0.0.1:${oauthConfig.callbackPort}${OAUTH_CALLBACK_PATH}` : undefined)
-
-        // Start the callback server with custom redirectUri if configured
-        if (!flow) yield* Effect.promise(() => McpOAuthCallback.ensureRunning(effectiveRedirectUri))
+        // A desktop flow's callback listener starts in authenticate, which waits for it; a caller that
+        // only starts the flow completes it with the code itself, and must not leave a listener behind.
+        const effectiveRedirectUri = flow?.redirectUri ?? configuredRedirectUri(mcpConfig)
 
         const oauthState =
           flow?.oauthState ??
@@ -1005,7 +1007,10 @@ const layer = Layer.effect(
         return yield* storeClient(s, mcpName, client, listed, client.getInstructions()?.trim(), mcpConfig.timeout)
       }
 
-      const callbackPromise = McpOAuthCallback.waitForCallback(result.oauthState, mcpName)
+      const mcpConfig = yield* requireMcpConfig(mcpName)
+      const { code: callbackPromise } = yield* Effect.promise(() =>
+        McpOAuthCallback.listenFor(result.oauthState, mcpName, configuredRedirectUri(mcpConfig)),
+      )
       onAuthorization?.(result.authorizationUrl)
 
       yield* browser.open(result.authorizationUrl).pipe(
