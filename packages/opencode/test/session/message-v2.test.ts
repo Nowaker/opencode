@@ -320,6 +320,43 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("replays a textual or unsupported attachment from older history as text, never as a file", async () => {
+    const messageID = "m-user"
+    const markdown = "# Notes\n\nbody"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(messageID),
+        parts: [
+          {
+            ...basePart(messageID, "p1"),
+            type: "file",
+            mime: "text/markdown",
+            filename: "notes.md",
+            url: `data:text/markdown;base64,${Buffer.from(markdown).toString("base64")}`,
+          },
+          {
+            ...basePart(messageID, "p2"),
+            type: "file",
+            mime: "application/zip",
+            filename: "bundle.zip",
+            url: "data:application/zip;base64,UEsDBA==",
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: 'Called the Read tool with the following input: {"filePath":"notes.md"}' },
+          { type: "text", text: markdown },
+          { type: "text", text: "[Attached application/zip: bundle.zip]" },
+        ],
+      },
+    ])
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

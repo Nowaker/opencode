@@ -8,6 +8,19 @@ export function isMedia(mime: string) {
   return mime.startsWith("image/") || isPdfAttachment(mime)
 }
 
+const TEXT_APPLICATION_MIMES = new Set(["application/json", "application/xml", "application/yaml", "application/x-yaml"])
+
+// Attachments whose bytes are text the model reads as text. Providers accept only a few file types
+// (Anthropic: image/*, application/pdf, text/plain), so these are sent decoded rather than as files.
+export function isTextAttachment(mime: string) {
+  const type = mime.split(";")[0]!.trim().toLowerCase()
+  return (
+    type.startsWith("text/") ||
+    TEXT_APPLICATION_MIMES.has(type) ||
+    (type.startsWith("application/") && (type.endsWith("+json") || type.endsWith("+xml")))
+  )
+}
+
 export function isImageAttachment(mime: string) {
   return mime.startsWith("image/") && mime !== "image/svg+xml" && mime !== "image/vnd.fastbidsheet"
 }

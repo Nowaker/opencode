@@ -554,6 +554,48 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+// A data:text/markdown upload sent as a file part is rejected by Anthropic, and the part replays from history,
+// so every later turn of the session would fail.
+it.instance("sends a textual attachment as text on its turn and on every replay", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Markdown attachment" })
+    const markdown = "# Audit\n\nmarkdown-body-4c1e"
+    const file = {
+      type: "file",
+      mime: "text/markdown",
+      filename: "audit.md",
+      url: `data:text/markdown;base64,${Buffer.from(markdown).toString("base64")}`,
+    } as const
+
+    yield* llm.text("first")
+    yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "read this" }, file] })
+    yield* llm.text("second")
+    const second = yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "again" }] })
+
+    expect(second.info).toMatchObject({ role: "assistant", finish: "stop" })
+    const history = yield* sessions.messages({ sessionID: chat.id })
+    const stored = history.find((message) => message.info.role === "user")
+    expect(stored?.parts.find((part) => part.type === "file")).toMatchObject({ mime: "text/markdown", url: file.url })
+    // Anthropic accepts only image/*, application/pdf and text/plain files, so no replayed turn may carry this one.
+    const providers = yield* ProviderSvc.Service
+    const replayed = yield* MessageV2.toModelMessagesEffect(history, yield* providers.getModel(ProviderV2.ID.make("test"), ModelV2.ID.make("test-model")))
+    expect(
+      replayed.flatMap((message): unknown[] => (Array.isArray(message.content) ? message.content : [])),
+    ).not.toContainEqual(expect.objectContaining({ type: "file", mediaType: "text/markdown" }))
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    for (const hit of hits) {
+      const body = JSON.stringify(hit.body)
+      expect(body.split("markdown-body-4c1e").length - 1).toBe(1)
+      expect(body).not.toContain("text/markdown")
+    }
+  }),
+  15_000,
+)
+
 withMcpInstructions.instance(
   "loop includes MCP instructions in model system context",
   () =>
