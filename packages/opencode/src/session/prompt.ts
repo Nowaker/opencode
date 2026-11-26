@@ -55,6 +55,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
+import { isTextAttachment } from "@/util/media"
 import { Process } from "@/util/process"
 import { Cause, Deferred, Effect, Exit, Latch, Layer, Option, Scope, Semaphore, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
@@ -962,7 +963,7 @@ const layer = Layer.effect(
           const url = new URL(part.url)
           switch (url.protocol) {
             case "data:":
-              if (part.mime === "text/plain") {
+              if (isTextAttachment(part.mime)) {
                 return [
                   {
                     messageID: info.id,

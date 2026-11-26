@@ -34,7 +34,8 @@ import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
-import { isMedia } from "@/util/media"
+import { isMedia, isTextAttachment } from "@/util/media"
+import { decodeDataUrl } from "@/util/data-url"
 import { heifPixelsUnavailable, isHeifMime, projectHeif } from "@/image/heif"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
@@ -449,6 +450,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         role: "user",
         parts: [],
       }
+      const texts = new Set(msg.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])))
       for (const part of msg.parts) {
         // User message parts should never be empty
         if (part.type === "text" && !part.ignored && part.text !== "")
@@ -458,11 +460,24 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         // text/plain and directory files are converted into text parts, ignore them
         if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
-          if (options?.stripMedia && isMedia(part.mime)) {
-            userMessage.parts.push({
-              type: "text",
-              text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
-            })
+          const placeholder = { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
+          if (isTextAttachment(part.mime)) {
+            // Prompts admitted since textual attachments were decoded carry the text already; older ones do not,
+            // and sending the file itself makes a provider that rejects its type fail every later turn.
+            const text = part.url.startsWith("data:") ? decodeDataUrl(part.url) : undefined
+            if (text === undefined) userMessage.parts.push(placeholder)
+            else if (!texts.has(text))
+              userMessage.parts.push(
+                {
+                  type: "text",
+                  text: `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
+                },
+                { type: "text", text },
+              )
+          } else if (!isMedia(part.mime) && !/^(audio|video)\//.test(part.mime)) {
+            userMessage.parts.push(placeholder)
+          } else if (options?.stripMedia && isMedia(part.mime)) {
+            userMessage.parts.push(placeholder)
           } else if (isHeifMime(part.mime)) {
             const image = model.capabilities.input.image ? yield* projectHeif(part) : undefined
             userMessage.parts.push(
