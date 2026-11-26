@@ -12,6 +12,8 @@ export type RequestAttribution = {
 const modelPath = /\/(?:v1\/(?:messages|chat\/completions|responses)|messages)$/
 const localhost = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*localhost$/
 const endpoints = new Set(readEndpoints(process.env.VIBETERM_MERIDIAN_ATTRIBUTION_ENDPOINTS))
+// The Vibeterm machine short name the launcher sets beside the endpoints; anything else is never sent.
+const device = /^[a-z0-9-]{1,63}$/.exec(process.env.VIBETERM_MERIDIAN_ATTRIBUTION_DEVICE ?? "")?.[0]
 const httpProxyVariables = ["http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"] as const
 
 function readEndpoints(raw: string | undefined): string[] {
@@ -67,6 +69,8 @@ export function wrapFetch(fetch: Fetch, attribution: RequestAttribution): Fetch 
     headers.set("x-meridian-client", `opencode/${attribution.version}`)
     headers.set("x-meridian-purpose", attribution.purpose)
     headers.delete("x-meridian-session")
+    headers.delete("x-meridian-device")
+    if (device) headers.set("x-meridian-device", device)
     const affinity = headers.get("x-opencode-session") ?? headers.get("x-session-affinity")
     const openAIAffinity = !url.pathname.endsWith("/messages") && headers.get("x-session-id")?.trim()
     if (!affinity && !openAIAffinity && attribution.sessionID && /^[A-Za-z0-9._:-]{1,128}$/.test(attribution.sessionID)) {

@@ -10,6 +10,7 @@ async function dispatch(input: {
   readonly headers?: Record<string, string>
   readonly proxy?: string
   readonly proxyEnv?: Record<string, string>
+  readonly device?: string
 }) {
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", `
     import { MeridianAttribution } from ${JSON.stringify(moduleURL)}
@@ -25,6 +26,7 @@ async function dispatch(input: {
     env: {
       ...input.proxyEnv,
       ...(input.endpoints === undefined ? {} : { VIBETERM_MERIDIAN_ATTRIBUTION_ENDPOINTS: input.endpoints }),
+      ...(input.device === undefined ? {} : { VIBETERM_MERIDIAN_ATTRIBUTION_DEVICE: input.device }),
     },
     stdout: "ignore",
     stderr: "pipe",
@@ -89,6 +91,27 @@ test("does not send an inherited or invalid fallback session when the trusted re
   })
   expect(result.code).toBe(0)
   expect(target.seen).toEqual([{ client: "opencode/1.19.5-vt-42-abc+fixture", purpose: "title", session: null }])
+})
+
+test.each([
+  { device: "desktop", sent: "desktop" },
+  { device: "Desktop.local", sent: null },
+  { device: "", sent: null },
+  { device: undefined, sent: null },
+] as const)("sends the launcher's machine short name $device as x-meridian-device only when it is valid", async ({ device, sent }) => {
+  const seen: (string | null)[] = []
+  await using target = {
+    server: Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      seen.push(request.headers.get("x-meridian-device"))
+      return new Response(null, { status: 204 })
+    } }),
+    async [Symbol.asyncDispose]() { await this.server.stop(true) },
+  }
+  const endpoint = new URL("/v1/messages", target.server.url).href
+  const result = await dispatch({ target: endpoint, endpoints: JSON.stringify([endpoint]), device,
+    headers: { "x-meridian-device": "inherited" } })
+  expect(result).toEqual({ code: 0, stderr: "" })
+  expect(seen).toEqual([sent])
 })
 
 test.each(["no opt-in", "wrong path", "different port", "GET", "IPv4 alias", "bad entry", "empty query"] as const)(
