@@ -1,12 +1,17 @@
+import { SessionV1 } from "@opencode-ai/schema/session-v1"
+import { Schema } from "effect"
+
 export type Purpose = "chat" | "title" | "compaction" | "summary" | "subagent" | "review" | "helper" | "test"
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
-export type RequestAttribution = {
+type EngineAttribution = {
   readonly purpose: Purpose
   readonly sessionID?: string
   readonly version: string
 }
+
+export type RequestAttribution = EngineAttribution & { readonly client: "opencode" | SessionV1.PromptOrigin["client"] }
 
 // @ai-sdk/anthropic posts to `${baseURL}/messages`, so a base without /v1 yields a bare /messages path.
 const modelPath = /\/(?:v1\/(?:messages|chat\/completions|responses)|messages)$/
@@ -38,8 +43,12 @@ function readEndpoints(raw: string | undefined): string[] {
   }
 }
 
-export function request(input: RequestAttribution): RequestAttribution | undefined {
-  if (endpoints.size > 0 && /^[A-Za-z0-9._+-]{1,64}$/.test(input.version)) return input
+const versionIsSafe = Schema.is(SessionV1.PromptOriginVersion)
+
+export function request(input: EngineAttribution, promptOrigin?: SessionV1.PromptOrigin): RequestAttribution | undefined {
+  if (endpoints.size === 0) return
+  if (promptOrigin) return { ...promptOrigin, sessionID: input.sessionID }
+  if (versionIsSafe(input.version)) return { ...input, client: "opencode" }
 }
 
 export function matchesBase(base: string | undefined, sdk: string) {
@@ -66,7 +75,7 @@ export function wrapFetch(fetch: Fetch, attribution: RequestAttribution): Fetch 
     if (url.protocol === "http:" && !directCleartext(url, init)) return fetch(input, init)
 
     const headers = new Headers(init?.headers ?? request?.headers)
-    headers.set("x-meridian-client", `opencode/${attribution.version}`)
+    headers.set("x-meridian-client", `${attribution.client}/${attribution.version}`)
     headers.set("x-meridian-purpose", attribution.purpose)
     headers.delete("x-meridian-session")
     headers.delete("x-meridian-device")

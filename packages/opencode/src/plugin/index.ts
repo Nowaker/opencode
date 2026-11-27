@@ -163,6 +163,7 @@ const layer = Layer.effect(
         })
         const cfg = yield* config.get()
         const input: PluginInput = {
+          promptOrigin: 1,
           ownerQuiescence: OwnerQuiescence.control,
           liveEvents: {
             open: ({ sessionID, signal }) =>

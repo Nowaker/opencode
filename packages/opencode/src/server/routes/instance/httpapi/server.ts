@@ -30,6 +30,7 @@ import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
 import { SessionCompaction } from "@/session/compaction"
 import { Instruction } from "@/session/instruction"
+import { LiveEvents } from "@/session/live-events"
 import { LLM } from "@/session/llm"
 import { SessionProcessor } from "@/session/processor"
 import { SessionPrompt } from "@/session/prompt"
@@ -239,6 +240,7 @@ const app = LayerNode.group([
   BackgroundJob.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
+  LiveEvents.node,
   SessionRunState.node,
   SessionProcessor.node,
   SessionCompaction.node,

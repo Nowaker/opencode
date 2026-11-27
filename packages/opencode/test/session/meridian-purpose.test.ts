@@ -102,11 +102,26 @@ test("a source v1 process attributes overlapping title and chat, child turns, an
   await using unlisted = fakeInference()
 
   const plugin = path.join(home.path, "rewrite.mjs")
-  await Bun.write(plugin, `export default async () => ({ auth: {
-    provider: "rewrite", methods: [], loader: async () => ({
-      fetch: async (_input, init) => fetch(${JSON.stringify(unlisted.url)}, init),
-    }),
-  } })`)
+  const capability = path.join(home.path, "capability.json")
+  await Bun.write(plugin, `export default async (input) => {
+    await Bun.write(${JSON.stringify(capability)}, JSON.stringify({ promptOrigin: input.promptOrigin }))
+    const injected = { client: "oh-my-openagent", version: "not-the-producer", purpose: "review" }
+    return {
+      "chat.message": async (_input, out) => { out.message.promptOrigin = injected },
+      "experimental.chat.messages.transform": async (_input, out) => {
+        for (const message of out.messages) {
+          if (message.info.role !== "user") continue
+          if (message.info.promptOrigin) delete message.info.promptOrigin
+          else message.info.promptOrigin = injected
+        }
+      },
+      auth: {
+        provider: "rewrite", methods: [], loader: async () => ({
+          fetch: async (_input, init) => fetch(${JSON.stringify(unlisted.url)}, init),
+        }),
+      },
+    }
+  }`)
   const config = testProviderConfig(trusted.baseURL)
   const main = config.provider.test
   const configured = {
@@ -144,19 +159,41 @@ test("a source v1 process attributes overlapping title and chat, child turns, an
     const api = createOpencodeClient({ baseUrl: baseURL, directory: home.path })
     const call = { throwOnError: true, signal: AbortSignal.timeout(timeout - 3_000) } as const
     const root = await api.session.create({}, call)
-    const prompt = (sessionID: string, providerID = "test") => api.session.prompt({
-      sessionID, agent: "build", model: { providerID, modelID }, parts: [{ type: "text", text: "fixture prompt" }],
+    const origin = { client: "oh-my-openagent", version: "5.0.0+fixture", purpose: "helper" } as const
+    const prompt = (sessionID: string, providerID = "test", promptOrigin?: typeof origin) => api.session.prompt({
+      sessionID, agent: "build", model: { providerID, modelID }, promptOrigin, parts: [{ type: "text", text: "fixture prompt" }],
     }, call)
-    const result = await prompt(root.data.id)
+    const result = await prompt(root.data.id, "test", origin)
     expect(result.data.info.error).toBeUndefined()
+    expect(await Bun.file(capability).json()).toEqual({ promptOrigin: 1 })
     expect(trusted.hits.toSorted((a, b) => String(a.model).localeCompare(String(b.model)))).toEqual([
-      { model: modelID, client: "opencode/local", purpose: "chat", affinity: root.data.id, fallback: null, source: "fixture" },
+      { model: modelID, client: "oh-my-openagent/5.0.0+fixture", purpose: "helper", affinity: root.data.id, fallback: null, source: "fixture" },
       { model: titleModelID, client: "opencode/local", purpose: "title", affinity: root.data.id, fallback: null, source: null },
     ])
 
     const childSession = await api.session.create({ parentID: root.data.id }, call)
-    expect((await prompt(childSession.data.id)).data.info.error).toBeUndefined()
-    expect(trusted.hits.at(-1)).toMatchObject({ purpose: "subagent", affinity: childSession.data.id })
+    const ordinary = await prompt(childSession.data.id)
+    expect(ordinary.data.info.error).toBeUndefined()
+    expect(trusted.hits.at(-1)).toMatchObject({ client: "opencode/local", purpose: "subagent", affinity: childSession.data.id })
+
+    const historyOrigins = async (sessionID: string, messageID: string) => {
+      const list = await api.session.messages({ sessionID }, call)
+      const page = await api.session.messages({ sessionID, limit: 1, order: "asc" }, call)
+      const finalPage = await api.session.messages({ sessionID, limit: 100 }, call)
+      const single = await api.session.message({ sessionID, messageID }, call)
+      expect(page.response.headers.get("x-next-cursor")).not.toBeNull()
+      expect(finalPage.response.headers.get("x-next-cursor")).toBeNull()
+      const rows = [list.data.find(({ info }) => info.id === messageID), page.data[0],
+        finalPage.data.find(({ info }) => info.id === messageID), single.data]
+      return rows.map((row) => {
+        expect(row?.info.id).toBe(messageID)
+        return row?.info.role === "user" ? row.info.promptOrigin ?? null : null
+      })
+    }
+    expect({
+      tagged: await historyOrigins(root.data.id, result.data.info.parentID),
+      ordinary: await historyOrigins(childSession.data.id, ordinary.data.info.parentID),
+    }).toEqual({ tagged: [origin, origin, origin, origin], ordinary: [null, null, null, null] })
 
     const compacted = await api.session.summarize({ sessionID: root.data.id, providerID: "test", modelID, auto: false }, call)
     expect(compacted.data).toBe(true)
@@ -167,7 +204,7 @@ test("a source v1 process attributes overlapping title and chat, child turns, an
     const initialTrustedCount = trusted.hits.length
     for (const providerID of ["direct", "rewrite"]) {
       const target = await api.session.create({ title: providerID }, call)
-      expect((await prompt(target.data.id, providerID)).data.info.error).toBeUndefined()
+      expect((await prompt(target.data.id, providerID, origin)).data.info.error).toBeUndefined()
     }
     expect(trusted.hits).toHaveLength(initialTrustedCount)
     expect(unlisted.hits.map(({ client, purpose, fallback }) => ({ client, purpose, fallback }))).toEqual([
