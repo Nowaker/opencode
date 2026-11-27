@@ -519,7 +519,11 @@ export interface Interface {
   readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
-  readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
+  readonly setTitle: (input: {
+    readonly sessionID: SessionID
+    readonly title: string
+    readonly onlyIfDefault?: true
+  }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly updateAutoSwitch: (input: {
@@ -913,11 +917,12 @@ const layer: Layer.Layer<
       return session
     })
 
-    const patch = (sessionID: SessionID, info: Patch) =>
+    const patch = (sessionID: SessionID, info: Patch, when?: (current: Info) => boolean) =>
       DatabaseTransaction.immediate(db, () =>
         Effect.gen(function* () {
           // The full-row projector must use a snapshot read under the same write lock.
           const current = yield* get(sessionID)
+          if (when && !when(current)) return
           const next = {
             ...current,
             ...info,
@@ -935,8 +940,12 @@ const layer: Layer.Layer<
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 
-    const setTitle = Effect.fn("Session.setTitle")(function* (input: { sessionID: SessionID; title: string }) {
-      yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
+    const setTitle: Interface["setTitle"] = Effect.fn("Session.setTitle")(function* (input) {
+      yield* patch(
+        input.sessionID,
+        { title: input.title },
+        input.onlyIfDefault ? (current) => isDefaultTitle(current.title) : undefined,
+      )
     })
 
     const setModel = Effect.fn("Session.setModel")(function* (input: {

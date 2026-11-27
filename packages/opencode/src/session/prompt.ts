@@ -445,7 +445,7 @@ const layer = Layer.effect(
       if (!cleaned) return
       const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
       yield* sessions
-        .setTitle({ sessionID: input.session.id, title: t })
+        .setTitle({ sessionID: input.session.id, title: t, onlyIfDefault: true })
         .pipe(Effect.catchCause((cause) => Effect.logError("failed to generate title", { error: Cause.squash(cause) })))
     })
 
