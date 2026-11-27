@@ -19,7 +19,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, which recorded the user
 ## Goals
 
 - Start each step's file snapshot in the background and send the model request at the same time.
-- Tools that may write wait for every snapshot the session has started; read-only built-ins and the next model request do not.
+- Tools that may write wait for snapshots independently of their execution budget; read-only built-ins and the next model request do not.
 - Take the step-finish snapshot and patch off the critical path the same way.
 - Diffs (`summary.diffs`), Modified Files (patch parts) and undo (revert) stay identical to synchronous snapshots.
 
@@ -31,10 +31,10 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, which recorded the user
 ## Rationale and constraints
 
 - Measured per-turn cost on desktop averaged ~398 ms; a pathological worktree took 25-36 s per snapshot. The request waited for all of it.
-- Invariant: no tool that may modify the worktree starts executing until every snapshot the session has started has finished. `SessionTools.resolve` calls `Handle.waitForSnapshots` before such a tool runs, ahead of `tool.execute.before` hooks.
+- `SessionTools.resolve` waits before `tool.execute.before`. After 120 seconds, it may dispatch a streamed tool only after persisting `state.metadata.engine.snapshot: "skipped"` and revoking unfinished capture publication for that session. An aborted call, real snapshot failure or deferred replay without a capture fence does not dispatch on a failed wait.
 - Classification lives in one place, `ToolRegistry`, keyed by built-in definitions. Read-only: `read`, `glob`, `grep`, `webfetch`, `websearch`, `todowrite`, `question`, `skill`, `lsp`, `plan_exit`, `invalid`. Everything else waits: shell, edit, write, apply_patch, code mode, every plugin, MCP and MCP-resource tool, a custom tool reusing a built-in name, and `task` (subagents edit the same worktree and their changes belong to the parent step's diff).
 - `step-start`, `step-finish` and `patch` parts are written when their event arrives and get their hash when the snapshot finishes; the patch part ID is allocated at step end so part order is unchanged. The summary runs after both hashes exist.
-- `SessionPrompt.loop` settles pending snapshots before returning and on abort or failure, so the session stays busy until the hashes exist and revert (which requires a non-busy session) never sees a finished step without them. A write-capable tool released after an abort does not start.
+- `SessionPrompt.loop` settles captures whose publication remains authorized. Revoked work cannot attach a hash or patch later, and its process cleanup need not hold the turn. A write-capable tool released after an abort does not start.
 - Fork-only adaptation in the merge: the fork's `ToolTimeout.guard` would count the snapshot wait against a tool's time limit, so the wait runs inside `call.hold`. Snapshot calls pass `sessionID` for snapshot housekeeping.
 
 ## Changes
@@ -54,6 +54,7 @@ See [the session record](../sessions/2026-11-01-async-snapshots.md#verification)
 
 ## Timeline
 
+- 2026-11-27 [snapshot preflight verification](../sessions/2026-11-27-snapshot-preflight.md) - bound tool snapshot wait and refuse file undo across an explicit gap (`0518402385`, integration `fb97c606d4`).
 - 2026-11-01 [`ses_e6649eb52ffeWA5U81qVUQP5Td`](../sessions/2026-11-01-async-snapshots.md) - initial build on `github/v1`, merge into `dev-nowaker`, install on desktop and m4max. Evidence: `5890ad1411`, `6977deacde`.
 - 2026-11-05 [`ses_e552a0970ffenpqGnyRp4OwJE1`](../sessions/2026-11-05-async-snapshot-reliability.md) - 3-day reliability check on desktop and m4max, read-only: no regression in the async code, no source change. See [Reliability check 2026-11-05](#reliability-check-2026-11-05).
 - 2026-11-10 [`ses_e3b674d77ffe6z70yBg7vCW6nj`](../sessions/2026-11-10-snapshot-index-lock.md) - follow-up, no change to this feature: the hashless steps traced to cross-process `index.lock` collisions are addressed by [Wait for an index.lock another process holds in the snapshot store](./2026-11-10-snapshot-index-lock.md). Evidence: `29e7545775`, merge `3b0f177f0b`.

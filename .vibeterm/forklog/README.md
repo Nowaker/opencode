@@ -175,6 +175,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-27 snapshot preflight and store liveness](./sessions/2026-11-27-snapshot-preflight.md) - cap a locked diff, let timed-out tools proceed without file undo, and separate queue wait from lock hold. Compiled held-baseline, locked-diff and natural controls passed; source landed as `fb97c606d4` on both mirrors.
 - [2026-11-27 MCP manual sign-ins finished by the browser callback](./sessions/2026-11-27-mcp-oauth-manual-callback.md) - dh-panel-context still failed from Portal: its manual flow's callback reached no waiter and an unfinished manual flow refused later Portal starts; `93993bfd5d` makes a manual start wait for its own browser callback, lets an external start replace it, and keeps a sign-in's transport across connects; vt-634 on this Mac.
 - [2026-11-26 W1 Bash job controls and cancellation receipts](./sessions/2026-11-26-bash-job-controls.md) - native TUI same-process handoff, bounded readiness and line notices, and compiled paired cancellation inbox-admission proof; landed as `564dd3cc30`, desktop vt-625.
 - [2026-11-26 native installs](./sessions/2026-11-26-native-install.md) - m4max v1 vt-617 with the retry patch preserved; desktop and m4max v2 vt-58 with 13/13 pre-swap and installed-path probes on each host.
