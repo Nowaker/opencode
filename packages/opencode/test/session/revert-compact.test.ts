@@ -5,8 +5,9 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import fs from "fs/promises"
 import path from "path"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Effect } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Session } from "@/session/session"
+import { SessionSummary } from "@/session/summary"
 
 import { SessionRevert } from "../../src/session/revert"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -27,6 +28,7 @@ const it = testEffect(
     LayerNode.group([
       Session.node,
       SessionRevert.node,
+      SessionSummary.node,
       Snapshot.node,
       SessionProjector.node,
       CrossSpawnSpawner.node,
@@ -89,21 +91,26 @@ const text = Effect.fn("test.text")(function* (sessionID: SessionID, messageID: 
   })
 })
 
-const tool = Effect.fn("test.tool")(function* (sessionID: SessionID, messageID: MessageID) {
+const tool = Effect.fn("test.tool")(function* (
+  sessionID: SessionID,
+  messageID: MessageID,
+  metadata: SessionV1.ToolStateCompleted["metadata"] = {},
+) {
   const session = yield* Session.Service
+  const id = PartID.ascending()
   return yield* session.updatePart({
-    id: PartID.ascending(),
+    id,
     messageID,
     sessionID,
     type: "tool" as const,
     tool: "bash",
-    callID: "call-1",
+    callID: id,
     state: {
       status: "completed" as const,
       input: {},
       output: "done",
       title: "",
-      metadata: {},
+      metadata,
       time: { start: 0, end: 1 },
     },
   })
@@ -693,41 +700,130 @@ describe("revert + compact workflow", () => {
     ),
   )
 
-  const fileTurns = Effect.fn("test.fileTurns")(function* (dir: string, sid: SessionID) {
+  const fileStep = Effect.fn("test.fileStep")(function* (
+    a: SessionV1.Assistant,
+    file: string,
+    change: { readonly next: string; readonly skipped?: boolean },
+  ) {
     const session = yield* Session.Service
     const snapshot = yield* Snapshot.Service
-    return Effect.fn("test.fileTurn")(function* (file: string, next: string) {
-      const u = yield* user(sid)
-      yield* text(sid, u.id, `${file}:${next}`)
-      const a = yield* assistant(sid, u.id, dir)
-      const before = yield* snapshot.track()
-      if (!before) throw new Error("expected snapshot")
-      yield* write(path.join(dir, file), next)
-      const after = yield* snapshot.track()
-      if (!after) throw new Error("expected snapshot")
+    const before = change.skipped ? undefined : yield* snapshot.track()
+    if (!change.skipped && !before) throw new Error("expected snapshot")
+    const owner = { messageID: a.id, sessionID: a.sessionID }
+    yield* session.updatePart({ ...owner, id: PartID.ascending(), type: "step-start", snapshot: before })
+    yield* write(file, change.next)
+    yield* tool(a.sessionID, a.id, change.skipped ? { engine: { snapshot: "skipped" } } : {})
+    const cutoff = yield* text(a.sessionID, a.id, `wrote ${path.basename(file)}`)
+    const after = change.skipped ? undefined : yield* snapshot.track()
+    if (!change.skipped && !after) throw new Error("expected snapshot")
+    yield* session.updatePart({
+      ...owner,
+      id: PartID.ascending(),
+      type: "step-finish",
+      reason: "stop",
+      snapshot: after,
+      cost: 0,
+      tokens,
+    })
+    if (before) {
       const patch = yield* snapshot.patch(before)
-      yield* session.updatePart({ id: PartID.ascending(), messageID: a.id, sessionID: sid, type: "step-start", snapshot: before })
       yield* session.updatePart({
+        ...owner,
         id: PartID.ascending(),
-        messageID: a.id,
-        sessionID: sid,
-        type: "step-finish",
-        reason: "stop",
-        snapshot: after,
-        cost: 0,
-        tokens,
-      })
-      yield* session.updatePart({
-        id: PartID.ascending(),
-        messageID: a.id,
-        sessionID: sid,
         type: "patch",
         hash: patch.hash,
         files: patch.files,
       })
+    }
+    return cutoff.id
+  })
+
+  const fileTurns = (dir: string, sid: SessionID) =>
+    Effect.fn("test.fileTurn")(function* (file: string, next: string, skipped = false) {
+      const u = yield* user(sid)
+      yield* text(sid, u.id, `${file}:${next}`)
+      const a = yield* assistant(sid, u.id, dir)
+      yield* fileStep(a, path.join(dir, file), { next, skipped })
       return u.id
     })
-  })
+
+  for (const scope of ["prompt", "part"]) {
+    it.live(
+      `file revert refuses a skipped snapshot at the ${scope} cutoff without changing an armed revert`,
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.gen(function* () {
+            const session = yield* Session.Service
+            const revert = yield* SessionRevert.Service
+            const bridge = yield* EventV2Bridge.Service
+            const file = path.join(dir, "a.txt")
+            yield* write(file, "original")
+            const sid = (yield* session.create({})).id
+            const u = yield* user(sid)
+            yield* text(sid, u.id, "edit a.txt")
+            const a = yield* assistant(sid, u.id, dir)
+            yield* fileStep(a, file, { next: "tracked edit" })
+            const skippedCutoff = yield* fileStep(a, file, { next: "untracked edit", skipped: true })
+            const safeCutoff = yield* fileStep(a, file, { next: "later edit" })
+
+            const safe = yield* revert.revert({ sessionID: sid, messageID: a.id, partID: safeCutoff })
+            expect(safe.revert?.partID).toBe(safeCutoff)
+            expect(safe.revert?.snapshot).toBeString()
+            expect(yield* read(file)).toBe("untracked edit")
+            yield* write(file, "edited while revert is armed")
+
+            const errors: string[] = []
+            const decodeError = Schema.decodeUnknownOption(Session.Event.Error.data)
+            const off = yield* bridge.listen((event) => {
+              if (event.type !== Session.Event.Error.type) return Effect.void
+              const data = decodeError(event.data)
+              if (Option.isSome(data) && data.value.sessionID === sid && data.value.error?.name === "UnknownError") {
+                errors.push(data.value.error.data.message)
+              }
+              return Effect.void
+            })
+            yield* Effect.addFinalizer(() => off)
+
+            const target = scope === "prompt" ? { messageID: u.id } : { messageID: a.id, partID: skippedCutoff }
+            const error = yield* Effect.flip(revert.revert({ sessionID: sid, ...target }))
+
+            expect(yield* read(file)).toBe("edited while revert is armed")
+            expect((yield* session.get(sid)).revert).toEqual(safe.revert)
+            expect(error).toBeInstanceOf(SessionRevert.NoUndoSnapshot)
+            expect(error.message).toMatch(/^No undo snapshot exists\b/)
+            expect(errors).toEqual([error.message])
+          }),
+        { git: true },
+      ),
+    )
+  }
+
+  it.live(
+    "aggregate summary clears an earlier diff rather than spanning a skipped snapshot",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const summary = yield* SessionSummary.Service
+          const file = path.join(dir, "a.txt")
+          yield* write(file, "original\n")
+          const sid = (yield* session.create({})).id
+          const u = yield* user(sid)
+          const a = yield* assistant(sid, u.id, dir)
+          const input = { sessionID: sid, messageID: u.id }
+          yield* fileStep(a, file, { next: "tracked edit\n" })
+          yield* summary.summarize(input)
+          expect((yield* summary.diff(input)).map((diff) => diff.file)).toEqual(["a.txt"])
+          yield* fileStep(a, file, { next: "untracked edit\n", skipped: true })
+          yield* fileStep(a, file, { next: "later edit\n" })
+
+          yield* summary.summarize(input)
+
+          expect(yield* summary.diff(input)).toEqual([])
+        }),
+      { git: true },
+    ),
+  )
 
   it.live(
     "a messages-only revert leaves files alone and stores no snapshot, so unrevert restores messages only",
@@ -738,7 +834,7 @@ describe("revert + compact workflow", () => {
           const revert = yield* SessionRevert.Service
           yield* write(path.join(dir, "a.txt"), "a0")
           const sid = (yield* session.create({})).id
-          const turn = yield* fileTurns(dir, sid)
+          const turn = fileTurns(dir, sid)
           const first = yield* turn("a.txt", "a1")
           yield* turn("a.txt", "a2")
 
@@ -756,7 +852,7 @@ describe("revert + compact workflow", () => {
   )
 
   it.live(
-    "a messages-only revert after a file revert keeps that revert's snapshot, so unrevert still restores the files",
+    "a messages-only revert across a skipped snapshot keeps an existing file revert's undo snapshot",
     provideTmpdirInstance(
       (dir) =>
         Effect.gen(function* () {
@@ -765,8 +861,8 @@ describe("revert + compact workflow", () => {
           yield* write(path.join(dir, "a.txt"), "a0")
           yield* write(path.join(dir, "b.txt"), "b0")
           const sid = (yield* session.create({})).id
-          const turn = yield* fileTurns(dir, sid)
-          const first = yield* turn("a.txt", "a1")
+          const turn = fileTurns(dir, sid)
+          const first = yield* turn("a.txt", "a1", true)
           const second = yield* turn("b.txt", "b2")
 
           yield* revert.revert({ sessionID: sid, messageID: second })

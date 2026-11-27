@@ -10,6 +10,7 @@ import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
 import { SessionSummary } from "./summary"
+import { skippedSnapshot } from "./snapshot-gap"
 import { InstanceState } from "@/effect/instance-state"
 import { NamedError } from "@opencode-ai/core/util/error"
 import path from "path"
@@ -25,8 +26,12 @@ export const RevertInput = Schema.Struct({
 })
 export type RevertInput = Schema.Schema.Type<typeof RevertInput>
 
+export class NoUndoSnapshot extends Schema.TaggedErrorClass<NoUndoSnapshot>()("NoUndoSnapshot", {
+  message: Schema.String,
+}) {}
+
 export interface Interface {
-  readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError>
+  readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError | NoUndoSnapshot>
   readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
   readonly apply: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
   readonly cleanup: (session: Session.Info) => Effect.Effect<void>
@@ -76,31 +81,46 @@ const layer = Layer.effect(
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
 
       let rev: Session.Info["revert"]
+      let crossesGap = false
       const patches: Snapshot.Patch[] = []
       for (const msg of all) {
         if (msg.info.role === "user") lastUser = msg.info
         const remaining = []
+        let stepSkipped = false
         for (const part of msg.parts) {
+          const skipped = input.files !== false && skippedSnapshot(part)
           if (rev) {
+            crossesGap ||= skipped
             if (part.type === "patch") patches.push(part)
             continue
           }
 
-          if (!rev) {
-            if ((msg.info.id === input.messageID && !input.partID) || part.id === input.partID) {
-              const partID = remaining.some((item) => ["text", "tool"].includes(item.type)) ? input.partID : undefined
-              rev = {
-                messageID: !partID && lastUser ? lastUser.id : msg.info.id,
-                partID,
-              }
+          if (part.type === "step-start") stepSkipped = false
+          stepSkipped ||= skipped
+          if ((msg.info.id === input.messageID && !input.partID) || part.id === input.partID) {
+            const partID = remaining.some((item) => ["text", "tool"].includes(item.type)) ? input.partID : undefined
+            rev = {
+              messageID: !partID && lastUser ? lastUser.id : msg.info.id,
+              partID,
             }
-            remaining.push(part)
+            // File patches operate on whole steps even when the transcript cutoff is inside one.
+            crossesGap = stepSkipped
           }
+          if (part.type === "step-finish") stepSkipped = false
+          remaining.push(part)
         }
       }
 
       if (!rev) return session
       if (input.files === false) return yield* revertMessages(session, rev)
+      if (crossesGap) {
+        const message = "No undo snapshot exists for a step in this revert. Use Revert messages to keep file changes."
+        yield* events.publish(Session.Event.Error, {
+          sessionID: input.sessionID,
+          error: new NamedError.Unknown({ message }).toObject(),
+        })
+        return yield* new NoUndoSnapshot({ message })
+      }
 
       rev.snapshot = session.revert?.snapshot ?? (yield* snap.track(input.sessionID))
       if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)

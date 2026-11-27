@@ -1,8 +1,9 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { KeyedMutex } from "@opencode-ai/core/effect/keyed-mutex"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Latch, Layer, Context, Scope, Schema, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -35,6 +36,23 @@ import { LiveEvents } from "./live-events"
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
 
+export type ToolEnginePhase =
+  | { readonly phase: "waiting-for-snapshot"; readonly snapshotWaitStartedAt: number }
+  | {
+      readonly phase: "running"
+      readonly snapshotWaitMs: number
+      readonly executionStartedAt: number
+      readonly snapshot?: "skipped"
+    }
+
+class SnapshotPreflightFailed extends Error {
+  override readonly name = "SnapshotPreflightFailed"
+
+  constructor() {
+    super("Snapshot preflight failed; the tool was not started")
+  }
+}
+
 export interface Handle {
   readonly message: SessionV1.Assistant
   /**
@@ -48,6 +66,7 @@ export interface Handle {
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
+    tool?: string,
   ) => Effect.Effect<SessionV1.ToolPart | undefined>
   readonly completeToolCall: (
     toolCallID: string,
@@ -64,7 +83,11 @@ export interface Handle {
    * this before executing, so their changes always land after the step's "before" snapshot and after the
    * previous step's "after" snapshot.
    */
-  readonly waitForSnapshots: Effect.Effect<void>
+  readonly waitForSnapshots: Effect.Effect<void | "skipped", SnapshotPreflightFailed>
+  readonly skipSnapshot?: (
+    signal: AbortSignal,
+    mark: Effect.Effect<boolean>,
+  ) => Effect.Effect<boolean, SnapshotPreflightFailed>
 }
 
 type Input = {
@@ -89,10 +112,18 @@ type ToolCall = {
   pending?: SessionV1.ToolPart
 }
 
+type ToolOutput = Parameters<Handle["completeToolCall"]>[1]
+type EarlyToolResult =
+  | { readonly type: "completed"; readonly output: ToolOutput }
+  | { readonly type: "error"; readonly error: unknown }
+
+type SnapshotPublication = { allowed: boolean; readonly revoked: Latch.Latch }
+type SnapshotWork<A> = { readonly publication: SnapshotPublication; readonly fiber: Fiber.Fiber<A> }
+
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   shouldBreak: boolean
-  snapshot: Fiber.Fiber<string | undefined> | undefined
+  snapshot: SnapshotWork<string | undefined> | undefined
   blocked: boolean
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
@@ -123,37 +154,50 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const live = yield* LiveEvents.Service
 
-    // Snapshots run in the background so they never delay the model request. Every snapshot a session starts
-    // is tracked here until it has finished and written its hash into the step-start, step-finish or patch
-    // part, so write-capable tools, aborts and the end of the loop can wait for it.
-    const pending = new Map<SessionID, Set<Fiber.Fiber<unknown>>>()
+    // Snapshots run in the background so they never delay the model request. Track each one until it
+    // finishes publishing or the tool preflight revokes its right to publish.
+    const pending = new Map<SessionID, Set<SnapshotWork<unknown>>>()
+    const publications = KeyedMutex.makeUnsafe<SessionID>()
 
-    const background = Effect.fnUntraced(function* <A>(sessionID: SessionID, work: Effect.Effect<A>) {
-      const fiber = yield* work.pipe(
-        Effect.tapCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.void
-            : Effect.logError("snapshot failed", { "session.id": sessionID, cause: Cause.pretty(cause) }),
-        ),
-        Effect.forkIn(scope),
+    const background = <A>(
+      sessionID: SessionID,
+      enabled: () => boolean,
+      work: (publication: SnapshotPublication) => Effect.Effect<A>,
+    ) =>
+      publications.withLock(sessionID)(
+        Effect.gen(function* () {
+          if (!enabled()) return undefined
+          const publication: SnapshotPublication = { allowed: true, revoked: Latch.makeUnsafe() }
+          const fiber = yield* work(publication).pipe(
+            Effect.tapCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : Effect.logError("snapshot failed", { "session.id": sessionID, cause: Cause.pretty(cause) }),
+            ),
+            Effect.forkIn(scope),
+          )
+          const entry = { publication, fiber }
+          const entries = pending.get(sessionID) ?? new Set<SnapshotWork<unknown>>()
+          pending.set(sessionID, entries)
+          entries.add(entry)
+          fiber.addObserver(() => {
+            entries.delete(entry)
+            if (entries.size === 0 && pending.get(sessionID) === entries) pending.delete(sessionID)
+          })
+          return entry
+        }),
       )
-      const fibers = pending.get(sessionID) ?? new Set()
-      pending.set(sessionID, fibers)
-      fibers.add(fiber)
-      fiber.addObserver(() => {
-        fibers.delete(fiber)
-        if (fibers.size === 0 && pending.get(sessionID) === fibers) pending.delete(sessionID)
-      })
-      return fiber
-    })
+
+    const awaitSnapshot = <A>(entry: SnapshotWork<A>) =>
+      Effect.raceFirst(entry.publication.revoked.await.pipe(Effect.as(undefined)), Fiber.await(entry.fiber))
 
     const settle = Effect.fn("SessionProcessor.settle")(function* (sessionID: SessionID) {
-      const fibers = pending.get(sessionID)
-      if (fibers?.size) yield* Fiber.awaitAll([...fibers])
+      const entries = pending.get(sessionID)
+      if (entries?.size) yield* Effect.forEach([...entries], awaitSnapshot, { concurrency: "unbounded", discard: true })
     })
 
-    const hashOf = (fiber: Fiber.Fiber<string | undefined>) =>
-      Fiber.await(fiber).pipe(Effect.map((exit) => (Exit.isSuccess(exit) ? exit.value : undefined)))
+    const hashOf = (entry: SnapshotWork<string | undefined>) =>
+      awaitSnapshot(entry).pipe(Effect.map((exit) => (exit && Exit.isSuccess(exit) ? exit.value : undefined)))
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       const stopSequences = input.stopSequences?.length ? input.stopSequences : undefined
@@ -173,7 +217,10 @@ const layer = Layer.effect(
       // Start the snapshot before the LLM stream starts. The AI SDK may execute tools internally before
       // emitting start-step events, so starting it inside the event handler can be too late. Tools that may
       // write wait for it through waitForSnapshots; the model request and read-only tools do not.
-      const initialSnapshot = yield* background(input.sessionID, snapshot.track(input.sessionID))
+      let snapshotSkipped = false
+      const snapshotAllowed = () => !snapshotSkipped
+      const snapshotLock = publications.withLock(input.sessionID)
+      const initialSnapshot = yield* background(input.sessionID, snapshotAllowed, () => snapshot.track(input.sessionID))
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -191,6 +238,61 @@ const layer = Layer.effect(
       let abort: SessionAbort.Metadata | undefined
       const abandoned = new Map<PartID, SessionV1.TextPart | SessionV1.ReasoningPart>()
       const mutate = <A, E, R>(work: Effect.Effect<A, E, R>) => live.guard(ctx.sessionID, work)
+      const toolPermit = (yield* Semaphore.make(1)).withPermit
+      const mutateTool = <A, E, R>(work: Effect.Effect<A, E, R>) => toolPermit(mutate(work))
+      const promotedTools = new Set<string>()
+      const settledTools = new Set<string>()
+      const earlyResults = new Map<string, EarlyToolResult>()
+      let acceptingToolCalls = true
+      const snapshotWork = () => {
+        const entries = new Set(pending.get(ctx.sessionID))
+        const start = ctx.snapshot ?? initialSnapshot
+        if (start) entries.add(start)
+        return [...entries]
+      }
+      const snapshotFailed = (exit: Exit.Exit<unknown> | undefined) =>
+        exit !== undefined && (Exit.isFailure(exit) || exit.value === "")
+      const waitForSnapshots = Effect.gen(function* () {
+        if (snapshotSkipped) return "skipped" as const
+        yield* Effect.forEach(
+          snapshotWork(),
+          (entry) => awaitSnapshot(entry).pipe(
+            Effect.flatMap((exit) =>
+              !snapshotSkipped && snapshotFailed(exit) ? Effect.fail(new SnapshotPreflightFailed()) : Effect.void,
+            ),
+          ),
+          { concurrency: "unbounded", discard: true },
+        )
+        if (snapshotSkipped) return "skipped" as const
+      })
+      const skipSnapshot: NonNullable<Handle["skipSnapshot"]> = (signal, mark) =>
+        snapshotLock(
+          Effect.uninterruptible(Effect.gen(function* () {
+            if (signal.aborted || !acceptingToolCalls) return false
+            if (!snapshotSkipped && snapshotWork().some(({ fiber }) => snapshotFailed(fiber.pollUnsafe()))) {
+              return yield* Effect.fail(new SnapshotPreflightFailed())
+            }
+            if (!(yield* mark)) return false
+            if (snapshotSkipped) return true
+            snapshotSkipped = true
+            const entries = [...(pending.get(ctx.sessionID) ?? [])]
+            for (const { publication } of entries) {
+              publication.allowed = false
+              publication.revoked.openUnsafe()
+            }
+            pending.delete(ctx.sessionID)
+            // Revocation is complete before requesting interruption; Git cleanup may still hold its store lock.
+            for (const { fiber } of entries) fiber.interruptUnsafe()
+            return true
+          })),
+        )
+      const publishSnapshot = (publication: SnapshotPublication, part: SessionV1.Part) =>
+        snapshotLock(
+          Effect.suspend(() => publication.allowed ? session.updatePart(part).pipe(Effect.asVoid) : Effect.void),
+        )
+      const summarizeSnapshots = summary
+        .summarize({ sessionID: ctx.sessionID, messageID: ctx.assistantMessage.parentID })
+        .pipe(Effect.ignore, Effect.forkIn(scope))
       const clearRaw = () => {
         for (const call of Object.values(ctx.toolcalls)) {
           call.raw = ""
@@ -241,9 +343,10 @@ const layer = Layer.effect(
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
         const done = ctx.toolcalls[toolCallID]?.done
+        settledTools.add(toolCallID)
         delete ctx.toolcalls[toolCallID]
         if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
-      }, mutate)
+      })
 
       const readToolCall = Effect.fn("SessionProcessor.readToolCall")(function* (toolCallID: string) {
         const call = ctx.toolcalls[toolCallID]
@@ -254,19 +357,24 @@ const layer = Layer.effect(
           sessionID: call.sessionID,
         })
         if (!part || part.type !== "tool") {
-          delete ctx.toolcalls[toolCallID]
+          yield* settleToolCall(toolCallID)
           return undefined
         }
         return { call, part }
-      }, mutate)
+      })
 
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
         update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
+        tool?: string,
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match) return undefined
+        if (!match) {
+          if (tool === undefined) return undefined
+          return (yield* ensureToolCall({ id: toolCallID, name: tool }, update))?.part
+        }
         const next = update(match.part)
+        if (next === match.part) return match.part
         if (next.state.status !== "pending") {
           match.call.raw = ""
           match.call.pending = undefined
@@ -281,33 +389,39 @@ const layer = Layer.effect(
           pending: part.state.status === "pending" ? part : undefined,
         }
         return part
-      }, mutate)
+      }, mutateTool)
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
-        output: {
-          title: string
-          metadata: Record<string, any>
-          output: string
-          attachments?: SessionV1.FilePart[]
-        },
+        output: ToolOutput,
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return
+        if (!match) return
+        const state = match.part.state
+        if (
+          (state.status === "pending" || state.status === "running") &&
+          state.metadata?.engine !== undefined &&
+          !promotedTools.has(toolCallID)
+        ) {
+          earlyResults.set(toolCallID, { type: "completed", output })
+          return
+        }
+        if (state.status !== "running") return
+        const engine = state.metadata?.engine
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "completed",
-            input: match.part.state.input,
+            input: state.input,
             output: output.output,
-            metadata: output.metadata,
+            metadata: engine === undefined ? output.metadata : { ...output.metadata, engine },
             title: output.title,
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: state.time.start, end: Date.now() },
             attachments: output.attachments,
           },
         })
         yield* settleToolCall(toolCallID)
-      }, mutate)
+      }, mutateTool)
 
       /*
        * A call the paused session did not start keeps its full input as pending work. Settling it here keeps the
@@ -330,24 +444,32 @@ const layer = Layer.effect(
           state: { status: "pending", input: match.part.state.input, raw: "", metadata: { deferred } },
         })
         yield* settleToolCall(toolCallID)
-      }, mutate)
+      }, mutateTool)
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
-        if (match) {
-          match.call.raw = ""
-          match.call.pending = undefined
+        if (!match) return false
+        const state = match.part.state
+        if (
+          (state.status === "pending" || state.status === "running") &&
+          state.metadata?.engine !== undefined &&
+          !promotedTools.has(toolCallID)
+        ) {
+          earlyResults.set(toolCallID, { type: "error", error })
+          return false
         }
-        if (!match || match.part.state.status !== "running") return false
+        match.call.raw = ""
+        match.call.pending = undefined
+        if (state.status !== "running") return false
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
-            input: match.part.state.input,
+            input: state.input,
             error: errorMessage(error),
             // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
-            metadata: match.part.state.metadata,
-            time: { start: match.part.state.time.start, end: Date.now() },
+            metadata: state.metadata,
+            time: { start: state.time.start, end: Date.now() },
           },
         })
         if (error instanceof PermissionV1.RejectedError || error instanceof Question.RejectedError) {
@@ -355,7 +477,7 @@ const layer = Layer.effect(
         }
         yield* settleToolCall(toolCallID)
         return true
-      }, mutate)
+      }, mutateTool)
 
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
@@ -366,11 +488,11 @@ const layer = Layer.effect(
         delete ctx.reasoningMap[reasoningID]
       }, mutate)
 
-      const ensureToolCall = Effect.fn("SessionProcessor.ensureToolCall")(function* (input: {
-        id: string
-        name: string
-        providerExecuted?: boolean
-      }) {
+      const ensureToolCall = Effect.fn("SessionProcessor.ensureToolCall")(function* (
+        input: { id: string; name: string; providerExecuted?: boolean },
+        initialize?: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
+      ) {
+        if (settledTools.has(input.id)) return undefined
         const existing = yield* readToolCall(input.id)
         if (existing) {
           if (!input.providerExecuted || existing.part.metadata?.providerExecuted) return existing
@@ -378,15 +500,10 @@ const layer = Layer.effect(
             ...existing.part,
             metadata: { ...existing.part.metadata, providerExecuted: true },
           })
-          ctx.toolcalls[input.id] = {
-            ...existing.call,
-            partID: part.id,
-            messageID: part.messageID,
-            sessionID: part.sessionID,
-          }
-          return { call: ctx.toolcalls[input.id], part }
+          return { call: existing.call, part }
         }
-        const part = yield* session.updatePart({
+        if (!acceptingToolCalls) return undefined
+        const initial: SessionV1.ToolPart = {
           id: PartID.ascending(),
           messageID: ctx.assistantMessage.id,
           sessionID: ctx.assistantMessage.sessionID,
@@ -395,36 +512,40 @@ const layer = Layer.effect(
           callID: input.id,
           state: { status: "pending", input: {}, raw: "" },
           metadata: input.providerExecuted ? { providerExecuted: true } : undefined,
-        } satisfies SessionV1.ToolPart)
+        }
+        const next = initialize ? initialize(initial) : initial
+        if (initialize && next === initial) return undefined
+        const part = yield* session.updatePart(next)
         ctx.toolcalls[input.id] = {
           done: yield* Deferred.make<void>(),
           partID: part.id,
           messageID: part.messageID,
           sessionID: part.sessionID,
           raw: "",
-          pending: part,
+          pending: part.state.status === "pending" ? part : undefined,
         }
         return { call: ctx.toolcalls[input.id], part }
-      }, mutate)
+      })
 
       // The patch part ID is allocated when the step ends so the part keeps its place in the message even
       // though the patch itself is computed later.
-      const recordPatch = (start: Fiber.Fiber<string | undefined>) => {
+      const recordPatch = (start: SnapshotWork<string | undefined>) => {
         const id = PartID.ascending()
-        return Effect.gen(function* () {
-          const from = yield* hashOf(start)
-          if (!from) return
-          const patch = yield* snapshot.patch(from, ctx.sessionID)
-          if (!patch.files.length) return
-          yield* session.updatePart({
-            id,
-            messageID: ctx.assistantMessage.id,
-            sessionID: ctx.sessionID,
-            type: "patch",
-            hash: patch.hash,
-            files: patch.files,
+        return (publication: SnapshotPublication) =>
+          Effect.gen(function* () {
+            const from = yield* hashOf(start)
+            if (!from || !publication.allowed) return
+            const patch = yield* snapshot.patch(from, ctx.sessionID)
+            if (!patch.files.length) return
+            yield* publishSnapshot(publication, {
+              id,
+              messageID: ctx.assistantMessage.id,
+              sessionID: ctx.sessionID,
+              type: "patch",
+              hash: patch.hash,
+              files: patch.files,
+            })
           })
-        })
       }
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
@@ -570,14 +691,14 @@ const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
-            yield* ensureToolCall(value)
+            yield* mutateTool(ensureToolCall(value))
             return
 
           case "tool-input-delta":
-            yield* mutate(
+            yield* mutateTool(
               Effect.gen(function* () {
                 const match = yield* ensureToolCall(value)
-                if (match.part.state.status !== "pending") return
+                if (match?.part.state.status !== "pending") return
                 match.call.raw += value.text
                 live.raw(match.part, value.text)
               }),
@@ -585,7 +706,7 @@ const layer = Layer.effect(
             return
 
           case "tool-input-end": {
-            yield* ensureToolCall(value)
+            yield* mutateTool(ensureToolCall(value))
             return
           }
 
@@ -593,26 +714,45 @@ const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
-            yield* ensureToolCall(value)
+            if (promotedTools.has(value.id)) return
+            if (value.providerExecuted) yield* mutateTool(ensureToolCall(value))
             const input = isRecord(value.input) ? value.input : { value: value.input }
-            const call = yield* updateToolCall(value.id, (match) => ({
-              ...match,
-              tool: value.name,
-              state:
-                match.state.status === "running"
-                  ? { ...match.state, input }
-                  : {
-                      status: "running",
-                      input,
-                      time: { start: Date.now() },
-                    },
-              metadata: match.metadata?.providerExecuted
-                ? { ...value.providerMetadata, providerExecuted: true }
-                : value.providerMetadata,
-            }))
+            const call = yield* updateToolCall(
+              value.id,
+              (match) => {
+                if (match.state.status !== "pending" && match.state.status !== "running") return match
+                promotedTools.add(value.id)
+                return {
+                  ...match,
+                  tool: value.name,
+                  state:
+                    match.state.status === "running"
+                      ? { ...match.state, input }
+                      : { status: "running", input, metadata: match.state.metadata, time: { start: Date.now() } },
+                  metadata:
+                    value.providerExecuted || match.metadata?.providerExecuted
+                      ? { ...match.metadata, ...value.providerMetadata, providerExecuted: true }
+                      : value.providerMetadata ?? match.metadata,
+                }
+              },
+              value.name,
+            )
             // The provider has already run its own tools (e.g. OpenAI's hosted tool_search) by the time we
             // see the call, so a doom_loop ask can neither stop nor change them; it would only block the turn.
-            if (call?.metadata?.providerExecuted) return
+            if (!call || call.metadata?.providerExecuted) return
+            const result = earlyResults.get(value.id)
+            switch (result?.type) {
+              case "completed":
+                earlyResults.delete(value.id)
+                yield* completeToolCall(value.id, result.output)
+                return
+              case "error":
+                earlyResults.delete(value.id)
+                yield* failToolCall(value.id, result.error)
+                return
+              case undefined:
+                break
+            }
             const deferred = early.get(value.id)
             if (deferred) {
               early.delete(value.id)
@@ -660,8 +800,6 @@ const layer = Layer.effect(
           }
 
           case "tool-result": {
-            const toolCall = yield* readToolCall(value.id)
-            if (!toolCall && value.result.type === "error") return
             if (value.result.type === "error") {
               yield* failToolCall(value.id, value.result.value)
               return
@@ -713,9 +851,14 @@ const layer = Layer.effect(
               sessionID: ctx.sessionID,
               type: "step-start",
             } satisfies SessionV1.StepStartPart
-            const ready = prior?.pollUnsafe()
+            const ready = prior?.fiber.pollUnsafe()
             if (ready && Exit.isSuccess(ready) && ready.value) {
-              yield* session.updatePart({ ...part, snapshot: ready.value })
+              const hash = ready.value
+              yield* snapshotLock(
+                Effect.suspend(() =>
+                  session.updatePart(snapshotSkipped || !prior?.publication.allowed ? part : { ...part, snapshot: hash }),
+                ),
+              )
               return
             }
             // The snapshot is still running: write the part now and fill in its hash once the snapshot is
@@ -723,9 +866,12 @@ const layer = Layer.effect(
             yield* session.updatePart(part)
             ctx.snapshot = yield* background(
               ctx.sessionID,
-              Effect.gen(function* () {
-                const hash = (prior ? yield* hashOf(prior) : undefined) || (yield* snapshot.track(ctx.sessionID))
-                if (hash) yield* session.updatePart({ ...part, snapshot: hash })
+              snapshotAllowed,
+              (publication) => Effect.gen(function* () {
+                const previous = prior ? yield* hashOf(prior) : undefined
+                if (!publication.allowed) return
+                const hash = previous || (yield* snapshot.track(ctx.sessionID))
+                if (hash) yield* publishSnapshot(publication, { ...part, snapshot: hash })
                 return hash
               }),
             )
@@ -769,22 +915,22 @@ const layer = Layer.effect(
             yield* session.updateMessage(ctx.assistantMessage)
             const start = ctx.snapshot
             ctx.snapshot = undefined
-            const patch = start ? recordPatch(start) : Effect.void
+            const patch = start ? recordPatch(start) : undefined
             // The "after" snapshot and the patch run off the critical path. The next step's write-capable
             // tools wait for them, and the summary is computed only once both hashes are recorded.
             yield* background(
               ctx.sessionID,
-              Effect.gen(function* () {
-                if (start) yield* Fiber.await(start)
+              snapshotAllowed,
+              (publication) => Effect.gen(function* () {
+                if (start) yield* awaitSnapshot(start)
+                if (!publication.allowed) return
                 const completed = yield* snapshot.track(ctx.sessionID)
-                if (completed) yield* session.updatePart({ ...finish, snapshot: completed })
-                yield* patch
-                yield* summary
-                  .summarize({
-                    sessionID: ctx.sessionID,
-                    messageID: ctx.assistantMessage.parentID,
-                  })
-                  .pipe(Effect.ignore, Effect.forkIn(scope))
+                if (completed) yield* publishSnapshot(publication, { ...finish, snapshot: completed })
+                if (!publication.allowed) return
+                if (patch) yield* patch(publication)
+                if (!publication.allowed) return
+                yield* summarizeSnapshots
+                return completed
               }),
             )
             if (
@@ -833,12 +979,13 @@ const layer = Layer.effect(
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
         if (ctx.snapshot) {
-          yield* background(ctx.sessionID, recordPatch(ctx.snapshot))
+          yield* background(ctx.sessionID, snapshotAllowed, recordPatch(ctx.snapshot))
           ctx.snapshot = undefined
         }
 
-        yield* mutate(
+        yield* mutateTool(
           Effect.gen(function* () {
+            acceptingToolCalls = false
             clearRaw()
             if (ctx.currentText) {
               const end = Date.now()
@@ -864,12 +1011,13 @@ const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
-        yield* mutate(
+        yield* mutateTool(
           Effect.gen(function* () {
             for (const toolCallID of Object.keys(ctx.toolcalls)) {
               const match = yield* readToolCall(toolCallID)
               if (!match) continue
               const part = match.part
+              if (part.state.status !== "pending" && part.state.status !== "running") continue
               const end = Date.now()
               const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
               yield* session.updatePart({
@@ -888,10 +1036,11 @@ const layer = Layer.effect(
         )
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        if (snapshotSkipped) yield* summarizeSnapshots
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown, replacement: boolean) {
-        yield* mutate(Effect.sync(clearRaw))
+        yield* mutateTool(Effect.sync(clearRaw))
         if (e instanceof MeridianRouting.DispatchBlocked) {
           dispatchBlocked = true
           return
@@ -1069,7 +1218,8 @@ const layer = Layer.effect(
         updateToolCall,
         completeToolCall,
         process,
-        waitForSnapshots: settle(input.sessionID),
+        waitForSnapshots,
+        skipSnapshot,
       } satisfies Handle
     })
 

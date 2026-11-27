@@ -9,6 +9,7 @@ import { Session } from "./session"
 import { LiveEvents } from "./live-events"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
+import { skippedSnapshot } from "./snapshot-gap"
 import { Config } from "@/config/config"
 import { isDeepStrictEqual } from "node:util"
 
@@ -90,15 +91,9 @@ const layer = Layer.effect(
       let from: string | undefined
       let to: string | undefined
       for (const item of input.messages) {
-        if (!from) {
-          for (const part of item.parts) {
-            if (part.type === "step-start" && part.snapshot) {
-              from = part.snapshot
-              break
-            }
-          }
-        }
         for (const part of item.parts) {
+          if (skippedSnapshot(part)) return []
+          if (!from && part.type === "step-start" && part.snapshot) from = part.snapshot
           if (part.type === "step-finish" && part.snapshot) to = part.snapshot
         }
       }

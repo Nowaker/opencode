@@ -453,7 +453,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof RevertPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }))
+      return yield* revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }).pipe(
+        SessionError.mapBusy,
+        Effect.catchTag("NoUndoSnapshot", () => Effect.fail(new HttpApiError.BadRequest({}))),
+      )
     })
 
     const applyRevert = Effect.fn("SessionHttpApi.applyRevert")(function* (ctx: { params: { sessionID: SessionID } }) {

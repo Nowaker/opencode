@@ -1,4 +1,9 @@
 import { expect } from "bun:test"
+import { readdir } from "node:fs/promises"
+import path from "node:path"
+import { setImmediate } from "node:timers/promises"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -16,8 +21,12 @@ import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Effect, Layer, Schema } from "effect"
+import { Config } from "@/config/config"
+import { InstanceState } from "@/effect/instance-state"
+import { Cause, Clock, Deferred, Effect, Layer, Schema } from "effect"
+import { make } from "effect/testing/TestClock"
 import { testEffect } from "../lib/effect"
+import { snapshotMarkerTools } from "../fixture/snapshot-marker-tools"
 import { TestConfig } from "../fixture/config"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 
@@ -113,7 +122,7 @@ it.effect("preserves running tool start time across metadata updates", () =>
         time: { start: 100 },
       },
     }
-    const updates: number[] = []
+    const updates: { start: number; output: unknown }[] = []
     const processor = {
       message: {
         id: messageID,
@@ -133,7 +142,9 @@ it.effect("preserves running tool start time across metadata updates", () =>
         Effect.sync(() => {
           const next = update(state)
           state.state = next.state
-          if (state.state.status === "running") updates.push(state.state.time.start)
+          if (state.state.status === "running") {
+            updates.push({ start: state.state.time.start, output: state.state.metadata?.output })
+          }
           return state
         }),
       completeToolCall: () => Effect.void,
@@ -163,7 +174,11 @@ it.effect("preserves running tool start time across metadata updates", () =>
       ),
     )
 
-    expect(updates).toEqual([100, 100])
+    expect(updates.filter(({ start }) => start !== 100)).toEqual([])
+    expect(updates.flatMap(({ output }) => (output === undefined ? [] : [output]))).toEqual([
+      "first",
+      "second",
+    ])
     expect(state.state.status).toBe("running")
     if (state.state.status === "running") {
       expect(state.state.time.start).toBe(100)
@@ -206,7 +221,7 @@ function limitLayer(input: {
   )
 }
 
-const limitProcessor = {
+const processorDefaults = {
   message: {
     id: messageID,
     sessionID,
@@ -221,17 +236,262 @@ const limitProcessor = {
     providerID: ProviderV2.ID.make("test"),
     time: { created: 1 },
   } satisfies SessionV1.Assistant,
-  updateToolCall: () => Effect.die("unused"),
   completeToolCall: () => Effect.void,
   waitForSnapshots: Effect.void,
-} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
+} satisfies Pick<SessionProcessor.Handle, "message" | "completeToolCall" | "waitForSnapshots">
+
+function makeLimitProcessor() {
+  const parts = new Map<string, SessionV1.ToolPart>()
+  return {
+    ...processorDefaults,
+    updateToolCall: (callID, update, tool) =>
+      Effect.sync(() => {
+        const part: SessionV1.ToolPart | undefined =
+          parts.get(callID) ??
+          (tool === undefined
+            ? undefined
+            : {
+                id: PartID.ascending(),
+                sessionID,
+                messageID,
+                type: "tool",
+                tool,
+                callID,
+                state: { status: "pending", input: {}, raw: "" },
+              })
+        if (!part) return undefined
+        const next = update(part)
+        parts.set(callID, next)
+        return next
+      }),
+  } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
+}
+
+const markSnapshotEffect = (name: string) =>
+  InstanceState.directory.pipe(
+    Effect.flatMap((directory) => Effect.promise(() => Bun.write(path.join(directory, `snapshot-marker-${name}`), ""))),
+    Effect.asVoid,
+  )
+
+const snapshotPreflight = testEffect(
+  LayerNode.compile(
+    LayerNode.group([
+      ToolRegistry.node,
+      CrossSpawnSpawner.node,
+      Config.node,
+      Plugin.node,
+      MCP.node,
+      Permission.node,
+      Truncate.node,
+      RuntimeFlags.node,
+    ]),
+    [
+      [Config.node, TestConfig.layer()],
+      [RuntimeFlags.node, RuntimeFlags.layer()],
+      [MCP.node, Layer.succeed(MCP.Service, fakeMcp())],
+      [Truncate.node, Layer.succeed(Truncate.Service, fakeTruncate)],
+      [
+        Plugin.node,
+        Layer.succeed(Plugin.Service, {
+          ...fakePlugin,
+          list: () => Effect.succeed([{ tool: snapshotMarkerTools }]),
+          trigger: (name, _input, output) =>
+            name === "tool.execute.before" || name === "shell.env"
+              ? markSnapshotEffect(name).pipe(Effect.as(output))
+              : Effect.succeed(output),
+        } satisfies Plugin.Interface),
+      ],
+      [
+        Permission.node,
+        Layer.succeed(Permission.Service, {
+          ...fakePermission,
+          ask: () => markSnapshotEffect("permission"),
+        }),
+      ],
+    ],
+  ),
+)
+
+const checkSnapshotPreflight = (outcome: "timeout" | "abort") =>
+  Effect.gen(function* () {
+    const instance = yield* InstanceState.context
+    const clock = yield* make()
+    const startedAt = yield* Clock.currentTimeMillis
+    yield* clock.setTime(startedAt)
+    const release = yield* Deferred.make<void>()
+    const requests = {
+      snapshot_write_alpha: {},
+      snapshot_write_beta: {},
+      bash: { command: "echo ran >> snapshot-marker-bash", description: "Write the bash marker" },
+    }
+    const names = Object.keys(requests)
+    const parts = new Map<string, SessionV1.ToolPart>(
+      names.map((name) => [
+        name,
+        {
+          id: PartID.ascending(),
+          sessionID,
+          messageID,
+          type: "tool",
+          tool: name,
+          callID: name,
+          state: { status: "running", input: {}, time: { start: 1 } },
+        },
+      ]),
+    )
+    const waiting = Promise.withResolvers<void>()
+    let entered = 0
+    const interruptedWaits: boolean[] = []
+    const processor = {
+      ...processorDefaults,
+      message: { ...processorDefaults.message, path: { cwd: instance.directory, root: instance.worktree } },
+      updateToolCall: (id, update) =>
+        Effect.sync(() => {
+          const part = parts.get(id)
+          if (!part) throw new Error(`Unexpected tool call: ${id}`)
+          const updated = update(part)
+          parts.set(id, updated)
+          return updated
+        }),
+      waitForSnapshots: Effect.sync(() => {
+        if (++entered === names.length) waiting.resolve()
+      }).pipe(
+        Effect.andThen(Deferred.await(release)),
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            interruptedWaits.push(exit._tag === "Failure" && Cause.hasInterruptsOnly(exit.cause))
+          }),
+        ),
+      ),
+      skipSnapshot: (_signal, mark) => mark,
+    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots" | "skipSnapshot">
+    const tools = yield* SessionTools.resolve({
+      agent,
+      model,
+      session: {
+        id: sessionID,
+        slug: "test",
+        projectID: instance.project.id,
+        directory: instance.directory,
+        title: "Snapshot preflight",
+        version: "test",
+        time: { created: 1, updated: 1 },
+        permission: agent.permission,
+      },
+      processor,
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {
+        cancel: () => Effect.void,
+        resolvePromptParts: () => Effect.die("unexpected task tool"),
+        prompt: () => Effect.die("unexpected task tool"),
+      },
+    }).pipe(Effect.provideService(Clock.Clock, clock))
+
+    yield* Effect.promise(async () => {
+      const bounded = async <A>(operation: Promise<A>, label: string) => {
+        const deadline = Promise.withResolvers<never>()
+        const timer = setTimeout(() => deadline.reject(new Error(label)), 1500)
+        try {
+          return await Promise.race([operation, deadline.promise])
+        } finally {
+          clearTimeout(timer)
+        }
+      }
+      const markers = async () =>
+        (await readdir(instance.directory)).filter((file) => file.startsWith("snapshot-marker-"))
+      const written = () =>
+        Promise.all(
+          ["alpha", "beta", "bash"].map(async (name) =>
+            (await Bun.file(path.join(instance.directory, `snapshot-marker-${name}`)).text()).trim().split(/\r?\n/),
+          ),
+        )
+      const abort = new AbortController()
+      const executions = Object.entries(requests).map(([name, args]) => {
+        const execute = tools[name]?.execute
+        if (!execute) throw new Error(`Missing ${name} from the tool registry`)
+        return { name, args, execute }
+      })
+      const calls = Promise.allSettled(
+        executions.map(async ({ name, args, execute }) =>
+          execute(args, { toolCallId: name, abortSignal: abort.signal, messages: [] }),
+        ),
+      )
+      try {
+        await bounded(waiting.promise, "Not all three tools entered the snapshot wait")
+        for (const [name, part] of parts) {
+          expect({ name, state: part.state }).toMatchObject({
+            name,
+            state: {
+              status: "running",
+              metadata: { engine: { phase: "waiting-for-snapshot", snapshotWaitStartedAt: startedAt } },
+            },
+          })
+        }
+        expect(await markers()).toEqual([])
+
+        if (outcome === "abort") {
+          abort.abort()
+          const outcomes = await bounded(calls, "Aborted calls did not reject while the snapshot was held")
+          expect(outcomes.map(({ status }) => status)).toEqual(["rejected", "rejected", "rejected"])
+          expect(interruptedWaits).toEqual([true, true, true])
+          expect(Effect.runSync(Deferred.succeed(release, undefined))).toBe(true)
+          await setImmediate()
+          expect(await markers()).toEqual([])
+          return
+        }
+
+        const waitMs = 120_000
+        await bounded(Effect.runPromise(clock.adjust(waitMs)), "Could not advance the snapshot clock")
+        const outcomes = await bounded(calls, "Tool execution did not finish while the snapshot was held")
+        expect(outcomes.map(({ status }) => status)).toEqual(["fulfilled", "fulfilled", "fulfilled"])
+        expect(interruptedWaits).toEqual([true, true, true])
+        const expected = [["snapshot-marker-alpha"], ["snapshot-marker-beta"], ["ran"]]
+        expect(await written()).toEqual(expected)
+        for (const [name, part] of parts) {
+          expect({ name, state: part.state }).toMatchObject({
+            name,
+            state: {
+              status: "running",
+              time: { start: 1 },
+              metadata: {
+                engine: {
+                  phase: "running",
+                  snapshot: "skipped",
+                  snapshotWaitMs: waitMs,
+                  executionStartedAt: startedAt + waitMs,
+                },
+              },
+            },
+          })
+        }
+        expect(Effect.runSync(Deferred.succeed(release, undefined))).toBe(true)
+        await setImmediate()
+        expect(await written()).toEqual(expected)
+      } finally {
+        abort.abort()
+        Effect.runSync(Deferred.succeed(release, undefined))
+        await bounded(calls, "Tool execution did not drain after releasing the fixture snapshot")
+      }
+    })
+  })
+
+snapshotPreflight.instance("write-capable tools dispatch once when snapshot preflight times out", () =>
+  checkSnapshotPreflight("timeout"),
+  12_000,
+)
+
+snapshotPreflight.instance("aborted snapshot preflight never dispatches write-capable tools", () =>
+  checkSnapshotPreflight("abort"),
+  12_000,
+)
 
 const callTool = Effect.fn("test.callTool")(function* (name: string, args: Record<string, unknown> = {}) {
   const tools = yield* SessionTools.resolve({
     agent,
     model,
     session: { id: sessionID, permission: [] } as unknown as Session.Info,
-    processor: limitProcessor,
+    processor: makeLimitProcessor(),
     bypassAgentCheck: false,
     messages: [],
     promptOps: {} as never,
@@ -351,7 +611,7 @@ const resolveFor = Effect.fn("test.resolveFor")(function* (
     agent: override?.effective ?? agent,
     model: { ...model, api: { id: "test-model", npm } } as Provider.Model,
     session: { id: sessionID, permission: override?.sessionPermission ?? [] } as unknown as Session.Info,
-    processor: limitProcessor,
+    processor: makeLimitProcessor(),
     bypassAgentCheck: false,
     messages: [],
     promptOps: {} as never,

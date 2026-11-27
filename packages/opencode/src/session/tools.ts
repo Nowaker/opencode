@@ -1,5 +1,6 @@
 import { Agent } from "@/agent/agent"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { AppProcess } from "@opencode-ai/core/process"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -16,7 +17,7 @@ import { Config } from "@/config/config"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -34,6 +35,7 @@ const MCP_RESOURCE_TOOLS = {
   read: "read_mcp_resource",
 } as const
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
+const SNAPSHOT_WAIT_LIMIT = "2 minutes"
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -42,13 +44,21 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/webp",
 ])
 
+class SnapshotWaitTimeout extends Error {
+  override readonly name = "SnapshotWaitTimeout"
+
+  constructor() {
+    super(`Snapshot preflight timed out after ${SNAPSHOT_WAIT_LIMIT}; the tool was not started`)
+  }
+}
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   readonly autoSwitch?: import("@opencode-ai/plugin").AutoSwitchContext
   readonly sourcePermission?: PermissionV1.Ruleset
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "waitForSnapshots" | "skipSnapshot">
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -81,15 +91,71 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const limits = (yield* config.get()).tool_timeout
   const routeContext = input.autoSwitch ? { autoSwitch: input.autoSwitch } : {}
 
+  // Only the waiter races this deadline; the processor still owns the snapshot
+  // fibers. Snapshot wait time does not count toward the tool's execution limit.
+  const beforeWrite = Effect.fnUntraced(function* (tool: string, callID: string, call: ToolTimeout.Call) {
+    const snapshotWaitStartedAt = yield* Clock.currentTimeMillis
+    const ids = { sessionID: input.session.id, messageID: input.processor.message.id, callID, tool }
+    const phase = (engine: SessionProcessor.ToolEnginePhase) =>
+      input.processor.updateToolCall(
+        callID,
+        (part) => {
+          if (call.signal.aborted || (part.state.status !== "pending" && part.state.status !== "running")) return part
+          return { ...part, state: { ...part.state, metadata: { ...part.state.metadata, engine } } }
+        },
+        tool,
+      )
+    const waiting = phase({ phase: "waiting-for-snapshot", snapshotWaitStartedAt }).pipe(
+      Effect.andThen(input.processor.waitForSnapshots),
+      Effect.timeoutOrElse({ duration: SNAPSHOT_WAIT_LIMIT, orElse: () => Effect.succeed("timeout" as const) }),
+    )
+    yield* call.hold(
+      Effect.gen(function* () {
+        const outcome = yield* Effect.raceFirst(AppProcess.waitForAbort(call.signal), waiting)
+        if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
+        const executionStartedAt = yield* Clock.currentTimeMillis
+        const snapshotWaitMs = Math.max(0, executionStartedAt - snapshotWaitStartedAt)
+        if (outcome === "timeout" || outcome === "skipped") {
+          const engine = { phase: "running", snapshot: "skipped", snapshotWaitMs, executionStartedAt } as const
+          const mark = phase(engine).pipe(Effect.map((part) => part?.state.metadata?.engine === engine))
+          const skip = input.processor.skipSnapshot
+          const marked = skip ? yield* skip(call.signal, mark) : false
+          if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
+          if (!marked) return yield* Effect.fail(new SnapshotWaitTimeout())
+          yield* Effect.logWarning("tool snapshot skipped; file undo unavailable", { ...ids, duration_ms: snapshotWaitMs })
+          return
+        }
+        yield* phase({ phase: "running", snapshotWaitMs, executionStartedAt })
+        yield* Effect.logInfo("tool snapshot wait released", { ...ids, duration_ms: snapshotWaitMs })
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.gen(function* () {
+            const duration_ms = Math.max(0, (yield* Clock.currentTimeMillis) - snapshotWaitStartedAt)
+            if (call.signal.aborted) return yield* Effect.logInfo("tool snapshot wait aborted", { ...ids, duration_ms })
+            const outcome = error instanceof SnapshotWaitTimeout ? "timeout" : "snapshot-failed"
+            yield* Effect.logWarning("tool snapshot wait failed", { ...ids, duration_ms, outcome })
+          }),
+        ),
+      ),
+    )
+  })
+
   // Every tool call runs under a hard time limit; see ToolTimeout.resolve for
   // how a call's limit is chosen.
   const guard = <A, E>(
     options: ToolExecutionOptions,
-    limit: { tool: string; declared?: ToolTimeout.Limit; call?: number },
+    limit: { tool: string; declared?: ToolTimeout.Limit; call?: number; readOnly?: boolean },
     execute: (call: ToolTimeout.Call) => Effect.Effect<A, E>,
   ) =>
     ToolTimeout.run(ToolTimeout.resolve({ ...limit, config: limits }), options.abortSignal, (call) =>
-      run.fork(execute(call)),
+      run.fork(
+        Effect.gen(function* () {
+          if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
+          if (!limit.readOnly) yield* beforeWrite(limit.tool, options.toolCallId, call)
+          if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
+          return yield* execute(call)
+        }),
+      ),
     )
 
   const context = (
@@ -107,14 +173,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     messages: input.messages,
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
-        if (!["running", "pending"].includes(match.state.status)) return match
+        if (match.state.status !== "running" && match.state.status !== "pending") return match
+        const engine = match.state.metadata?.engine
         return {
           ...match,
           state: {
-            title: val.title,
-            metadata: val.metadata,
+            title: val.title ?? (match.state.status === "running" ? match.state.title : undefined),
+            metadata: { ...match.state.metadata, ...val.metadata, ...(engine !== undefined && { engine }) },
             status: "running",
-            input: args,
+            input: match.state.status === "running" ? match.state.input : args,
             time: match.state.status === "running" ? match.state.time : { start: Date.now() },
           },
         }
@@ -145,15 +212,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     },
   })
 
-  // Every tool that may modify the worktree waits here until the session's file snapshots are recorded, so
-  // its changes never leak into the step's "before" snapshot or the previous step's "after" snapshot. A
-  // tool released by an abort must not start writing after the turn has ended. The wait does not count
-  // against the tool's time limit.
-  const beforeWrite = Effect.fnUntraced(function* (options: ToolExecutionOptions, call: ToolTimeout.Call) {
-    yield* call.hold(input.processor.waitForSnapshots)
-    if (options.abortSignal?.aborted) yield* Effect.die(new DOMException("Aborted", "AbortError"))
-  })
-
   for (const item of yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
@@ -170,10 +228,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           tool: item.id,
           declared: item.timeout === undefined ? undefined : { ms: item.timeout, source: "tool default" },
           call: item.callTimeout?.(toRecord(args)),
+          readOnly: item.readOnly,
         }
         return guard(options, limit, (call) =>
           Effect.gen(function* () {
-            if (!item.readOnly) yield* beforeWrite(options, call)
             const ctx = context(args, options, call)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -227,7 +285,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.list }, (call) =>
           Effect.gen(function* () {
-            yield* beforeWrite(opts, call)
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -317,7 +374,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.listTemplates }, (call) =>
           Effect.gen(function* () {
-            yield* beforeWrite(opts, call)
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -416,7 +472,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return guard(opts, { tool: MCP_RESOURCE_TOOLS.read }, (call) =>
           Effect.gen(function* () {
-            yield* beforeWrite(opts, call)
             const parsed = parseReadMcpResourceArgs(args)
             const ctx = context(toRecord(args), opts, call)
             const clients = yield* mcp.clients()
@@ -507,7 +562,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       guard(opts, limit, (call) =>
         Effect.gen(function* () {
-          yield* beforeWrite(opts, call)
           const ctx = context(args, opts, call)
           yield* plugin.trigger(
             "tool.execute.before",

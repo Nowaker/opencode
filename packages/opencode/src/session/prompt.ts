@@ -1752,6 +1752,7 @@ const layer = Layer.effect(
       const completeNow = Effect.fnUntraced(function* (callID: string, output: ToolOutput) {
         const part = yield* findPart(callID)
         if (!part || part.state.status !== "running") return
+        const engine = part.state.metadata?.engine
         yield* sessions.updatePart({
           ...part,
           state: {
@@ -1759,7 +1760,11 @@ const layer = Layer.effect(
             input: part.state.input,
             output: output.output,
             title: output.title,
-            metadata: { ...output.metadata, deferred: part.state.metadata?.deferred },
+            metadata: {
+              ...output.metadata,
+              deferred: part.state.metadata?.deferred,
+              ...(engine !== undefined && { engine }),
+            },
             time: { start: part.state.time.start, end: Date.now() },
             attachments: output.attachments,
           },
@@ -1820,11 +1825,15 @@ const layer = Layer.effect(
             serial(
               Effect.gen(function* () {
                 const part = yield* findPart(callID)
-                return part ? yield* sessions.updatePart(update(part)) : undefined
+                if (!part) return undefined
+                const next = update(part)
+                return next === part ? part : yield* sessions.updatePart(next)
               }),
             ),
           completeToolCall: complete,
           waitForSnapshots: processor.settle(input.sessionID),
+          // Replay has no active step capture to revoke before allowing writes.
+          skipSnapshot: () => Effect.succeed(false),
         },
         bypassAgentCheck: false,
         messages: input.msgs,
