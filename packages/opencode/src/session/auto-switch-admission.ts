@@ -4,7 +4,7 @@ import type { SessionV1 } from "@opencode-ai/core/v1/session"
 const Receipt = Schema.Struct({ version: Schema.Literal(1), partIds: Schema.Array(Schema.String) })
 const Stamp = Schema.Struct({ acceptedAt: Schema.Int.check(Schema.isGreaterThan(0)) })
 
-export function ownsPart(part: SessionV1.Part | undefined) {
+export function ownsPart(part: typeof SessionV1.Part.Type | undefined) {
   return part?.type === "text" && (part.metadata?.vibetermInboxReceipt !== undefined ||
     part.metadata?.vibeterm?.acceptedAt !== undefined)
 }

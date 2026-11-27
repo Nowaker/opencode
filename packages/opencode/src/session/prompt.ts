@@ -85,6 +85,16 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
+const decodePromptOrigin = Schema.decodeUnknownOption(SessionV1.PromptOrigin)
+
+function routeHistory(messages: SessionV1.WithParts[]) {
+  return JSON.stringify(messages.map((msg) =>
+    msg.info.role === "user" && msg.info.promptOrigin !== undefined
+      ? { ...msg, info: { ...msg.info, promptOrigin: undefined } }
+      : msg,
+  ))
+}
+
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -830,6 +840,7 @@ const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
+      const promptOrigin = Option.getOrUndefined(decodePromptOrigin(input.promptOrigin))
       const agentName = input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
@@ -1202,7 +1213,11 @@ const layer = Layer.effect(
           : Effect.succeed(part),
       )
 
-      const parsed = decodeMessageInfo(info, { errors: "all", propertyOrder: "original" })
+      const admittedInfo = { ...info }
+      delete admittedInfo.promptOrigin
+      const message = { info: admittedInfo, parts }
+      if (promptOrigin && !MessageV2.isNotice(message)) admittedInfo.promptOrigin = promptOrigin
+      const parsed = decodeMessageInfo(admittedInfo, { errors: "all", propertyOrder: "original" })
       if (Exit.isFailure(parsed)) {
         yield* Effect.logError("invalid user message before save", {
           sessionID: input.sessionID,
@@ -1232,7 +1247,6 @@ const layer = Layer.effect(
           db,
           Effect.gen(function* () {
             const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-            const message = { info, parts }
             const pauseNotice =
               input.noReply === true &&
               MessageV2.isNotice(message) &&
@@ -1255,7 +1269,7 @@ const layer = Layer.effect(
                 time: info.time.created,
               })
             }
-            yield* sessions.createMessage(info)
+            yield* sessions.createMessage(admittedInfo)
             for (const part of parts) yield* sessions.updatePart(part)
             const held = input.noReply !== true && heldWhilePaused(input) && (yield* hold(input.sessionID, message))
             return { message, held }
@@ -1452,7 +1466,7 @@ const layer = Layer.effect(
         !sameRoute(user.model, selection.model) ||
         user.model.variant !== selection.model.variant
       )
-        yield* sessions.updateMessage({ ...user, ...selection })
+        yield* sessions.updateMessage({ ...user, ...selection, promptOrigin: MessageV2.storedPromptOrigin(user) })
       if (!updateSession) return
       const session = yield* sessions.get(user.sessionID).pipe(Effect.orDie)
       const model = {
@@ -2188,10 +2202,8 @@ const layer = Layer.effect(
             const result = yield* compaction.process({
               // Held prompts go to the compaction too, which keeps them verbatim behind the summary.
               messages: holding ? pickUp(sessionID, history) : msgs,
-              parentID: task.messageID,
+              part: task,
               sessionID,
-              auto: task.auto,
-              overflow: task.overflow,
               deferQueued: inflight,
               resume,
             })
@@ -2207,6 +2219,7 @@ const layer = Layer.effect(
             continue
           }
 
+          const promptOrigin = MessageV2.storedPromptOrigin(lastUser)
           let overflowDecision = false
           if (lastFinished && lastFinished.summary !== true) {
             const cfg = yield* config.get()
@@ -2271,7 +2284,13 @@ const layer = Layer.effect(
               })
               break
             }
-            yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+            yield* compaction.create({
+              sessionID,
+              agent: lastUser.agent,
+              model: lastUser.model,
+              auto: true,
+              continuationMessageID: promptOrigin ? lastUser.id : undefined,
+            })
             continue
           }
 
@@ -2415,14 +2434,14 @@ const layer = Layer.effect(
 
               const attemptMessages = input.projectHistory ? structuredClone(msgs) : msgs
               const beforeTransform =
-                !switched && plannedAlternate ? JSON.stringify(attemptMessages) : undefined
+                !switched && plannedAlternate ? routeHistory(attemptMessages) : undefined
               yield* plugin.trigger(
                 "experimental.chat.messages.transform",
                 routeContext ? { autoSwitch: routeContext } : {},
                 { messages: attemptMessages },
               )
               sourceRequestChanged =
-                beforeTransform !== undefined && beforeTransform !== JSON.stringify(attemptMessages)
+                beforeTransform !== undefined && beforeTransform !== routeHistory(attemptMessages)
 
               // An interrupted/aborted assistant turn (no finish reason, or an
               // error) can survive as the trailing history message and get
@@ -2472,6 +2491,7 @@ const layer = Layer.effect(
                 sessionID,
                 parentSessionID: session.parentID,
                 meridianPurpose: session.parentID ? "subagent" : "chat",
+                promptOrigin,
                 system,
                 messages: [
                   ...modelMsgs,
@@ -2550,6 +2570,7 @@ const layer = Layer.effect(
                   model: user.model,
                   auto: true,
                   overflow: !handle.message.finish,
+                  continuationMessageID: promptOrigin ? lastUser.id : undefined,
                 })
               }
               return "continue" as const
@@ -3192,6 +3213,9 @@ export const PromptInput = Schema.Struct({
       "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
   }),
   format: Schema.optional(SessionV1.Format),
+  promptOrigin: Schema.optionalKey(SessionV1.PromptOrigin).pipe(
+    Schema.catchDecoding(() => Effect.succeed(Option.none())),
+  ),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
   parts: Schema.Array(

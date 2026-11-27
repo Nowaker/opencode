@@ -196,29 +196,32 @@ function splitTurn(input: {
   })
 }
 
+type ProcessInput = {
+  readonly messages: SessionV1.WithParts[]
+  readonly sessionID: SessionID
+  /** The loop was already running a turn: prompts queued behind it are answered after the summary. */
+  readonly deferQueued?: boolean
+  /** That turn still had work to do: continue it after the summary even though the compaction was manual. */
+  readonly resume?: boolean
+} & (
+  | { readonly part: SessionV1.CompactionPart }
+  | { readonly part?: never; readonly parentID: MessageID; readonly auto: boolean; readonly overflow?: boolean }
+)
+
 export interface Interface {
   readonly isOverflow: (input: {
     tokens: SessionV1.Assistant["tokens"]
     model: Provider.Model
   }) => Effect.Effect<boolean>
   readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
-  readonly process: (input: {
-    parentID: MessageID
-    messages: SessionV1.WithParts[]
-    sessionID: SessionID
-    auto: boolean
-    overflow?: boolean
-    /** The loop was already running a turn: prompts queued behind it are answered after the summary. */
-    deferQueued?: boolean
-    /** That turn still had work to do: continue it after the summary even though the compaction was manual. */
-    resume?: boolean
-  }) => Effect.Effect<"continue" | "stop">
+  readonly process: (input: ProcessInput) => Effect.Effect<"continue" | "stop">
   readonly create: (input: {
     sessionID: SessionID
     agent: string
     model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
     auto: boolean
     overflow?: boolean
+    continuationMessageID?: MessageID
   }) => Effect.Effect<void>
 }
 
@@ -354,21 +357,16 @@ const layer = Layer.effect(
       }
     })
 
-    const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
-      parentID: MessageID
-      messages: SessionV1.WithParts[]
-      sessionID: SessionID
-      auto: boolean
-      overflow?: boolean
-      deferQueued?: boolean
-      resume?: boolean
-    }) {
-      const parent = input.messages.findLast((m) => m.info.id === input.parentID)
+    const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: ProcessInput) {
+      const parentID = input.part ? input.part.messageID : input.parentID
+      const { auto, overflow } = input.part ?? input
+      const parent = input.messages.findLast((m) => m.info.id === parentID)
       if (!parent || parent.info.role !== "user") {
-        throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
+        throw new Error(`Compaction parent must be a user message: ${parentID}`)
       }
       const userMessage = parent.info
-      const compactionPart = parent.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+      const compactionPart = input.part ?? MessageV2.ownedCompactionPart(parent.parts) ??
+        parent.parts.find((part) => part.type === "compaction")
 
       let messages = input.messages
       let replay:
@@ -377,8 +375,8 @@ const layer = Layer.effect(
             parts: SessionV1.Part[]
           }
         | undefined
-      if (input.overflow) {
-        const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+      if (overflow) {
+        const idx = input.messages.findIndex((m) => m.info.id === parentID)
         for (let i = idx - 1; i >= 0; i--) {
           const msg = input.messages[i]
           if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) {
@@ -400,10 +398,10 @@ const layer = Layer.effect(
         ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
-      const queued = input.deferQueued ? queuedPrompts(messages, input.parentID) : []
+      const queued = input.deferQueued ? queuedPrompts(messages, parentID) : []
       const deferred = new Set(queued.map((msg) => msg.info.id))
       const history = messages.filter(
-        (msg) => !deferred.has(msg.info.id) && !(compactionPart && msg.info.id === input.parentID),
+        (msg) => !deferred.has(msg.info.id) && !(compactionPart && msg.info.id === parentID),
       )
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
@@ -422,7 +420,7 @@ const layer = Layer.effect(
        */
       const retained = [
         ...(compactionPart && selected.tail_start_id ? visible.slice(selected.head.length) : []),
-        ...(replay && (input.auto || input.resume) ? [replay] : []),
+        ...(replay && (auto || input.resume) ? [replay] : []),
         ...queued,
       ].flatMap((msg) => {
         const text = serialize(msg)
@@ -439,7 +437,7 @@ const layer = Layer.effect(
       })
       // A manual compaction carries the TUI's model without its variant, so a turn it interrupted continues as
       // that turn's own prompt did.
-      const continueAs = input.auto
+      const continueAs = auto
         ? userMessage
         : (history
             .flatMap((msg) =>
@@ -449,6 +447,12 @@ const layer = Layer.effect(
               (newest, info) => (!newest || info.time.created >= newest.time.created ? info : newest),
               undefined,
             ) ?? userMessage)
+      const continuationID = compactionPart?.continuation_message_id ??
+        (!auto && input.resume ? MessageV2.latest(history).assistant?.parentID : undefined)
+      const continuationUser = continuationID
+        ? input.messages.find((msg) => msg.info.id === continuationID && !MessageV2.isNotice(msg))?.info
+        : undefined
+      const continuationOrigin = continuationUser?.role === "user" ? MessageV2.storedPromptOrigin(continuationUser) : undefined
       const conversationModel = yield* provider
         .getModel(continueAs.model.providerID, continueAs.model.modelID)
         .pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -482,7 +486,7 @@ const layer = Layer.effect(
       const msg: SessionV1.Assistant = {
         id: MessageID.ascending(),
         role: "assistant",
-        parentID: input.parentID,
+        parentID,
         sessionID: input.sessionID,
         mode: "compaction",
         agent: "compaction",
@@ -556,7 +560,7 @@ const layer = Layer.effect(
         })
       }
 
-      if (result === "continue" && (input.auto || input.resume)) {
+      if (result === "continue" && (auto || input.resume)) {
         if (replay) {
           const original = replay.info
           const replayID = MessageID.ascending()
@@ -571,6 +575,7 @@ const layer = Layer.effect(
             format: original.format,
             tools: original.tools,
             system: original.system,
+            promptOrigin: MessageV2.storedPromptOrigin(original),
           })
           for (const part of replay.parts) {
             if (part.type === "compaction") continue
@@ -604,7 +609,7 @@ const layer = Layer.effect(
                   options: info.options,
                 },
                 message: continueAs,
-                overflow: input.overflow === true,
+                overflow: overflow === true,
               },
               { enabled: true },
             )).enabled
@@ -616,9 +621,10 @@ const layer = Layer.effect(
               time: { created: Date.now() },
               agent: continueAs.agent,
               model: continueAs.model,
+              promptOrigin: continuationOrigin,
             })
             const text =
-              (input.overflow
+              (overflow
                 ? "The previous request exceeded the provider's size limit due to large media attachments. The conversation was compacted and media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files.\n\n"
                 : "") +
               "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
@@ -649,6 +655,7 @@ const layer = Layer.effect(
           const movedID = MessageID.ascending()
           const moved = yield* session.updateMessage({
             ...msg.info,
+            ...(msg.info.role === "user" && { promptOrigin: MessageV2.storedPromptOrigin(msg.info) }),
             id: movedID,
             vibeterm: MachineProvenance.copy(msg.info, movedID),
             time: { ...msg.info.time, created: Date.now() },
@@ -673,6 +680,7 @@ const layer = Layer.effect(
       model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
       auto: boolean
       overflow?: boolean
+      continuationMessageID?: MessageID
     }) {
       const msg = yield* session.createMessage({
         id: MessageID.ascending(),
@@ -689,6 +697,7 @@ const layer = Layer.effect(
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
+        ...(input.continuationMessageID && { continuation_message_id: input.continuationMessageID }),
       })
     })
 

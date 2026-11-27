@@ -26,6 +26,8 @@ export {
   Part,
   PartID,
   PatchPart,
+  PromptOrigin,
+  PromptOriginVersion,
   Range,
   ReasoningPart,
   ResourceSource,

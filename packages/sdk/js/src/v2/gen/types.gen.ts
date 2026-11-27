@@ -245,6 +245,12 @@ export type Session = {
   }
 }
 
+export type PromptOrigin = {
+  client: "oh-my-openagent"
+  version: string
+  purpose: "subagent" | "helper" | "review"
+}
+
 export type OutputFormatText = {
   type: "text"
 }
@@ -268,6 +274,7 @@ export type UserMessage = {
   id: string
   sessionID: string
   role: "user"
+  promptOrigin?: PromptOrigin
   time: {
     created: number
   }
@@ -659,6 +666,7 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  continuation_message_id?: string
 }
 
 export type Part =
@@ -10672,6 +10680,7 @@ export type SessionPromptData = {
       [key: string]: boolean
     }
     format?: OutputFormat
+    promptOrigin?: PromptOrigin
     system?: string
     variant?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
@@ -11055,6 +11064,7 @@ export type SessionPromptAsyncData = {
       [key: string]: boolean
     }
     format?: OutputFormat
+    promptOrigin?: PromptOrigin
     system?: string
     variant?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>

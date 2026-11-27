@@ -11,13 +11,14 @@ async function dispatch(input: {
   readonly proxy?: string
   readonly proxyEnv?: Record<string, string>
   readonly device?: string
+  readonly promptOrigin?: { readonly client: "oh-my-openagent"; readonly version: string; readonly purpose: "review" }
 }) {
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", `
     import { MeridianAttribution } from ${JSON.stringify(moduleURL)}
     const input = ${JSON.stringify(input)}
     const attribution = MeridianAttribution.request({
       purpose: "title", sessionID: input.sessionID, version: "1.19.5-vt-42-abc+fixture",
-    })
+    }, input.promptOrigin)
     const send = attribution ? MeridianAttribution.wrapFetch(fetch, attribution) : fetch
     const result = await send(new Request(input.target, { method: input.method ?? "POST", headers: input.headers }),
       input.proxy ? { proxy: input.proxy } : undefined)
@@ -34,6 +35,16 @@ async function dispatch(input: {
   const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
   return { code, stderr }
 }
+
+const promptOrigin = { client: "oh-my-openagent", version: "5.0.0-beta.2+fixture", purpose: "review" } as const
+
+test("attributes an approved inference request to its explicit origin", async () => {
+  await using target = receiver()
+  const endpoint = new URL("/mounted/v1/responses", target.server.url).href
+  expect(await dispatch({ target: endpoint, endpoints: JSON.stringify([endpoint]), sessionID: "ses_review", promptOrigin }))
+    .toEqual({ code: 0, stderr: "" })
+  expect(target.seen).toEqual([{ client: "oh-my-openagent/5.0.0-beta.2+fixture", purpose: "review", session: "ses_review" }])
+})
 
 function receiver(response: (request: Request) => Response = () => new Response(null, { status: 204 })) {
   const seen: { readonly client: string | null; readonly purpose: string | null; readonly session: string | null }[] = []
@@ -114,20 +125,21 @@ test.each([
   expect(seen).toEqual([sent])
 })
 
-test.each(["no opt-in", "wrong path", "different port", "GET", "IPv4 alias", "bad entry", "empty query"] as const)(
+test.each(["no opt-in", "wrong path", "different port", "GET", "IPv4 alias", "bad entry", "empty query", "request query"] as const)(
   "leaves a request unattributed for %s",
   async (scenario) => {
     await using target = receiver()
     await using other = receiver()
     const endpoint = new URL("/v1/messages", target.server.url).href
-    const actual = scenario === "wrong path" ? `${endpoint}-lookalike` : endpoint
+    const actual = scenario === "wrong path" ? `${endpoint}-lookalike` :
+      scenario === "request query" ? `${endpoint}?extra=1` : endpoint
     const trusted = scenario === "different port" ? new URL("/v1/messages", other.server.url).href : endpoint
     const endpoints = scenario === "no opt-in" ? undefined : JSON.stringify(
       scenario === "bad entry" ? [trusted, "http://meridian.example/v1/messages"] :
       scenario === "IPv4 alias" ? [trusted.replace("127.0.0.1", "127.1")] :
       scenario === "empty query" ? [`${trusted}?`] : [trusted],
     )
-    expect(await dispatch({ target: actual, endpoints, method: scenario === "GET" ? "GET" : "POST" })).toEqual({
+    expect(await dispatch({ target: actual, endpoints, method: scenario === "GET" ? "GET" : "POST", promptOrigin })).toEqual({
       code: 0,
       stderr: "",
     })
@@ -140,8 +152,8 @@ test.each([true, false])("redirects only with no attribution (opted in: %s)", as
   await using other = receiver()
   await using target = receiver(() => Response.redirect(new URL("/v1/messages", other.server.url), 307))
   const endpoint = new URL("/v1/messages", target.server.url).href
-  const result = await dispatch({ target: endpoint, endpoints: optedIn ? JSON.stringify([endpoint]) : undefined })
-  expect(target.seen.map((entry) => entry.purpose)).toEqual([optedIn ? "title" : null])
+  const result = await dispatch({ target: endpoint, endpoints: optedIn ? JSON.stringify([endpoint]) : undefined, promptOrigin })
+  expect(target.seen.map((entry) => entry.purpose)).toEqual([optedIn ? "review" : null])
   if (optedIn) {
     expect(result.code).toBe(1)
     expect(other.seen).toEqual([])

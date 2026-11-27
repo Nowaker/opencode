@@ -561,7 +561,7 @@ export interface Interface {
     messageID: MessageID
     partID: PartID
   }) => Effect.Effect<SessionV1.Part | undefined>
-  readonly updatePart: <T extends SessionV1.Part>(part: T) => Effect.Effect<T>
+  readonly updatePart: <T extends typeof SessionV1.Part.Type>(part: T) => Effect.Effect<T>
   readonly updatePartDelta: (input: {
     sessionID: SessionID
     messageID: MessageID
@@ -791,7 +791,7 @@ const layer: Layer.Layer<
         return Object.assign(msg, { vibeterm: stored?.data.vibeterm })
       }).pipe(Effect.withSpan("Session.createMessage"))
 
-    const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
+  const updatePart = <T extends typeof SessionV1.Part.Type>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         MessageV2.forgetPart(part.id)
         yield* events.publish(SessionV1.Event.PartUpdated, {
@@ -885,6 +885,7 @@ const layer: Layer.Layer<
         // The source session already counted this usage; a copy that kept it would be counted again.
         const cloned = yield* updateMessage({
           ...msg.info,
+          ...(msg.info.role === "user" && { promptOrigin: MessageV2.storedPromptOrigin(msg.info) }),
           ...(msg.info.role === "assistant" && { cost: 0, tokens: zeroTokens(msg.info.tokens) }),
           ...(settle && { time: { ...msg.info.time, completed: settledAt } }),
           sessionID: session.id,
@@ -900,8 +901,9 @@ const layer: Layer.Layer<
             messageID: cloned.id,
             sessionID: session.id,
           }
-          if (p.type === "compaction" && p.tail_start_id) {
-            p.tail_start_id = idMap.get(p.tail_start_id)
+          if (p.type === "compaction") {
+            if (p.tail_start_id) p.tail_start_id = idMap.get(p.tail_start_id)
+            if (p.continuation_message_id) p.continuation_message_id = idMap.get(p.continuation_message_id)
           }
           if (p.type === "step-finish") {
             p.cost = 0

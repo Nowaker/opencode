@@ -143,7 +143,11 @@ const layer = Layer.effect(
             if (Option.isNone(current) || current.value.info.role !== "user") return
             const info = current.value.info
             if (isDeepStrictEqual(info.summary?.diffs, msgDiffs)) return
-            yield* sessions.updateMessage({ ...info, summary: { ...info.summary, diffs: msgDiffs } })
+            yield* sessions.updateMessage({
+              ...info,
+              promptOrigin: MessageV2.storedPromptOrigin(info),
+              summary: { ...info.summary, diffs: msgDiffs },
+            })
           }),
         ),
       ).pipe(Effect.orDie)

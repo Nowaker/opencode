@@ -39,7 +39,7 @@ import { decodeDataUrl } from "@/util/data-url"
 import { heifPixelsUnavailable, isHeifMime, projectHeif } from "@/image/heif"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { SqlErrorMessage } from "./sql-error"
 import type { SessionAbort } from "./abort"
 
@@ -75,6 +75,7 @@ type Cursor = typeof Cursor.Type
 
 const decodeCursor = Schema.decodeUnknownSync(Cursor)
 const decodeMessageID = Schema.decodeUnknownSync(MessageID)
+const decodePromptOrigin = Schema.decodeUnknownOption(SessionV1.PromptOrigin)
 
 export const cursor = {
   encode(input: Cursor) {
@@ -110,6 +111,12 @@ const INFO_CACHE_MAX = 200_000
 const PART_CACHE_MAX = 400_000
 const infoCache = new Map<MessageID, { time_updated: number; info: Info }>()
 const partCache = new Map<PartID, { time_updated: number; part: Part }>()
+// Hooks receive mutable history; keep the admitted origin separate from the object they can edit.
+const promptOrigins = new WeakMap<User, SessionV1.PromptOrigin>()
+
+export function storedPromptOrigin(user: User): SessionV1.PromptOrigin | undefined {
+  return promptOrigins.get(user)
+}
 
 // time_updated has millisecond resolution, so a second write within the millisecond of a cached read would be
 // served stale. Every write from this process drops its row from the cache.
@@ -157,9 +164,11 @@ function buildAssistantInfo(row: typeof MessageTable.$inferSelect): Info {
 
 function buildUserInfo(row: typeof MessageTable.$inferSelect): Info {
   const d = row.data as Partial<User>
-  return {
-    role: "user",
+  const promptOrigin = d.promptOrigin === undefined ? undefined : Option.getOrUndefined(decodePromptOrigin(d.promptOrigin))
+  const user = {
+    role: "user" as const,
     vibeterm: d.vibeterm,
+    promptOrigin,
     time: d.time,
     format: d.format,
     summary: d.summary,
@@ -169,7 +178,9 @@ function buildUserInfo(row: typeof MessageTable.$inferSelect): Info {
     tools: d.tools,
     id: row.id,
     sessionID: row.session_id,
-  } as Info
+  } as User
+  if (promptOrigin) promptOrigins.set(user, Object.freeze({ ...promptOrigin }))
+  return user
 }
 
 const info = (row: typeof MessageTable.$inferSelect): Info => {
@@ -238,6 +249,7 @@ function buildPart(row: typeof PartTable.$inferSelect): Part {
         auto: d.auto,
         overflow: d.overflow,
         tail_start_id: d.tail_start_id,
+        continuation_message_id: d.continuation_message_id,
         id,
         sessionID,
         messageID,
@@ -837,6 +849,19 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
   }
 })
 
+export function ownedCompactionPart(parts: readonly Part[]) {
+  return parts.find((part): part is CompactionPart =>
+    part.type === "compaction" && part.continuation_message_id !== undefined,
+  )
+}
+
+function compactionTail(parts: readonly Part[]) {
+  const part = ownedCompactionPart(parts) ?? parts.find(
+    (item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined,
+  )
+  return part?.tail_start_id
+}
+
 export function filterCompacted(msgs: Iterable<WithParts>) {
   const result = [] as WithParts[]
   const completed = new Set<string>()
@@ -848,28 +873,22 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
       continue
     }
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
-      const part = msg.parts.find((item): item is CompactionPart => item.type === "compaction")
+      const part = ownedCompactionPart(msg.parts) ?? msg.parts.find((item) => item.type === "compaction")
       if (!part) continue
       if (!part.tail_start_id) break
       retain = part.tail_start_id
       if (msg.info.id === retain) break
       continue
     }
-    if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
-      break
     if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error)
       completed.add(msg.info.parentID)
   }
   result.reverse()
   const compactionIndex = result.findLastIndex(
-    (msg) =>
-      msg.info.role === "user" &&
-      msg.parts.some((item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined),
+    (msg) => msg.info.role === "user" && compactionTail(msg.parts) !== undefined,
   )
   const compaction = result[compactionIndex]
-  const part = compaction?.parts.find(
-    (item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined,
-  )
+  const tail = compaction && compactionTail(compaction.parts)
   const summaryIndex = compaction
     ? result.findIndex(
         (msg, index) =>
@@ -879,7 +898,7 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
           msg.info.parentID === compaction.info.id,
       )
     : -1
-  const tailIndex = part?.tail_start_id ? result.findIndex((msg) => msg.info.id === part.tail_start_id) : -1
+  const tailIndex = tail ? result.findIndex((msg) => msg.info.id === tail) : -1
   if (tailIndex >= 0 && tailIndex < compactionIndex && summaryIndex > compactionIndex) {
     return [
       ...result.slice(compactionIndex, summaryIndex + 1),
@@ -908,11 +927,13 @@ export function latest(msgs: WithParts[]) {
     if (info.role === "assistant" && isAfter(info, assistant)) assistant = info
     if (info.role === "assistant" && info.finish && isAfter(info, finished)) finished = info
   }
-  const tasks = msgs.flatMap((m) =>
-    finished && !isAfter(m.info, finished)
-      ? []
-      : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
-  )
+  const tasks = msgs.flatMap((m) => {
+    if (finished && !isAfter(m.info, finished)) return []
+    const owner = ownedCompactionPart(m.parts)
+    return m.parts.filter((p): p is CompactionPart | SubtaskPart =>
+      p.type === "subtask" || (p.type === "compaction" && (!owner || p === owner)),
+    )
+  })
   return { user, assistant, finished, tasks }
 }
 

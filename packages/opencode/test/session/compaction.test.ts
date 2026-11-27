@@ -90,7 +90,9 @@ function createModel(opts: {
 
 const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000 }) })
 
-function createUserMessage(sessionID: SessionID, text: string) {
+const origin = { client: "oh-my-openagent", version: "5.0.0+fixture", purpose: "helper" } as const
+
+function createUserMessage(sessionID: SessionID, text: string, promptOrigin?: SessionV1.PromptOrigin) {
   return Effect.gen(function* () {
     const ssn = yield* SessionNs.Service
     const msg = yield* ssn.updateMessage({
@@ -99,6 +101,7 @@ function createUserMessage(sessionID: SessionID, text: string) {
       sessionID,
       agent: "build",
       model: ref,
+      promptOrigin,
       time: { created: Date.now() },
     })
     yield* ssn.updatePart({
@@ -198,7 +201,7 @@ function createCompactionMarker(sessionID: SessionID) {
 function createMessageAt(
   sessionID: SessionID,
   created: number,
-  input: { text?: string; synthetic?: boolean; compaction?: boolean; variant?: string },
+  input: { text?: string; synthetic?: boolean; compaction?: boolean; variant?: string; promptOrigin?: SessionV1.PromptOrigin },
 ) {
   return SessionNs.Service.use((ssn) =>
     Effect.gen(function* () {
@@ -208,6 +211,7 @@ function createMessageAt(
         sessionID,
         agent: "build",
         model: { ...ref, variant: input.variant },
+        promptOrigin: input.promptOrigin,
         time: { created },
       })
       yield* ssn.updatePart(
@@ -1327,7 +1331,7 @@ describe("session.compaction.process", () => {
       const test = yield* TestInstance
       const ssn = yield* SessionNs.Service
       const session = yield* ssn.create({})
-      const turn = yield* createMessageAt(session.id, 1_000, { text: "working turn", variant: "high" })
+      const turn = yield* createMessageAt(session.id, 1_000, { text: "working turn", variant: "high", promptOrigin: origin })
       yield* createInterruptedStep(session.id, turn.id, test.directory, 2_000)
       const compact = yield* createMessageAt(session.id, 3_000, { compaction: true })
 
@@ -1343,6 +1347,7 @@ describe("session.compaction.process", () => {
       const last = (yield* ssn.messages({ sessionID: session.id })).at(-1)
       expect(result).toBe("continue")
       expect(last?.info.role === "user" ? last.info.model.variant : undefined).toBe("high")
+      expect(last?.info.role === "user" ? last.info.promptOrigin : undefined).toEqual(origin)
       expect(last?.parts[0]).toMatchObject({ type: "text", synthetic: true, metadata: { compaction_continue: true } })
     }).pipe(withCompaction()),
   )
@@ -1369,13 +1374,36 @@ describe("session.compaction.process", () => {
     }).pipe(withCompaction()),
   )
 
+  it.instance("automatically continues the referenced work without attributing the compaction marker", () =>
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const turn = yield* createUserMessage(session.id, "working turn", origin)
+      yield* createUserMessage(session.id, "other work", { ...origin, purpose: "review" })
+      yield* SessionCompaction.use.create({
+        sessionID: session.id,
+        agent: turn.agent,
+        model: turn.model,
+        auto: true,
+        continuationMessageID: turn.id,
+      })
+      const messages = yield* ssn.messages({ sessionID: session.id })
+      const marker = messages.at(-1)
+      if (!marker || marker.info.role !== "user") throw new Error("Expected compaction marker")
+      expect(marker.info.promptOrigin).toBeUndefined()
+      yield* SessionCompaction.use.process({ parentID: marker.info.id, messages, sessionID: session.id, auto: true })
+      const continued = (yield* ssn.messages({ sessionID: session.id })).at(-1)
+      expect(continued?.info.role === "user" ? continued.info.promptOrigin : undefined).toEqual(origin)
+    }),
+  )
+
   it.instance(
     "replays the prior user turn on overflow when earlier context exists",
     Effect.gen(function* () {
       const ssn = yield* SessionNs.Service
       const session = yield* ssn.create({})
       yield* createUserMessage(session.id, "root")
-      const replay = yield* createUserMessage(session.id, "image")
+      const replay = yield* createUserMessage(session.id, "image", origin)
       yield* ssn.updatePart({
         id: PartID.ascending(),
         messageID: replay.id,
@@ -1400,6 +1428,7 @@ describe("session.compaction.process", () => {
 
       expect(result).toBe("continue")
       expect(last?.info.role).toBe("user")
+      expect(last?.info.role === "user" ? last.info.promptOrigin : undefined).toEqual(origin)
       expect(last?.parts.some((part) => part.type === "file")).toBe(false)
       expect(
         last?.parts.some((part) => part.type === "text" && part.text.includes("Attached image/png: cat.png")),

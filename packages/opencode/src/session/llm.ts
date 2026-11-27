@@ -59,6 +59,7 @@ export type StreamInput = {
   retries?: number
   toolChoice?: "auto" | "required" | "none"
   readonly meridianPurpose?: MeridianAttribution.Purpose
+  readonly promptOrigin?: SessionV1.PromptOrigin
   readonly validateRequest?: (request: PreparedRequest) => Effect.Effect<boolean>
   readonly beforeDispatch?: () => Effect.Effect<boolean>
   readonly preferredReturn?: true
@@ -126,7 +127,10 @@ const live: Layer.Layer<
       }
       const source = beforeDispatch ? undefined : MeridianRouting.transportFor(trust, input.model)
       const attribution = input.meridianPurpose
-        ? MeridianAttribution.request({ purpose: input.meridianPurpose, sessionID: input.sessionID, version: InstallationVersion })
+        ? MeridianAttribution.request(
+            { purpose: input.meridianPurpose, sessionID: input.sessionID, version: InstallationVersion },
+            input.promptOrigin,
+          )
         : undefined
       const [standardLanguage, cfg, item, info] = yield* Effect.all(
         [

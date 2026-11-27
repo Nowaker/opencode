@@ -155,6 +155,7 @@ import type {
   ProjectUpdateErrors,
   ProjectUpdateResponses,
   PromptInput,
+  PromptOrigin,
   ProviderAuthErrors,
   ProviderAuthResponses,
   ProviderListErrors,
@@ -3998,6 +3999,7 @@ export class Session2 extends HeyApiClient {
         [key: string]: boolean
       }
       format?: OutputFormat
+      promptOrigin?: PromptOrigin
       system?: string
       variant?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
@@ -4020,6 +4022,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
+            { in: "body", key: "promptOrigin" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "parts" },
@@ -4369,6 +4372,7 @@ export class Session2 extends HeyApiClient {
         [key: string]: boolean
       }
       format?: OutputFormat
+      promptOrigin?: PromptOrigin
       system?: string
       variant?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
@@ -4391,6 +4395,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "unpause" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
+            { in: "body", key: "promptOrigin" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "parts" },

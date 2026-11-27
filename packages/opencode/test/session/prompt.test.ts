@@ -1994,6 +1994,48 @@ it.instance("/compact during a turn continues that turn after the summary", () =
   30_000,
 )
 
+for (const siblingOrder of ["before", "after"] as const) {
+  it.instance(`auto-compaction continues its owner with an unowned marker ${siblingOrder} it`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const sessions = yield* Session.Service
+      const prompt = yield* SessionPrompt.Service
+      const compaction = yield* SessionCompaction.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      const promptOrigin = { client: "oh-my-openagent", version: "5.0.0+owner", purpose: "helper" } as const
+      const owner = yield* prompt.prompt({
+        sessionID: chat.id, model: ref, noReply: true, promptOrigin, parts: [{ type: "text", text: "original work" }],
+      })
+      const earlierPartID = PartID.ascending()
+      yield* compaction.create({
+        sessionID: chat.id, agent: "build", model: ref, auto: true, continuationMessageID: owner.info.id,
+      })
+      const marker = (yield* sessions.messages({ sessionID: chat.id })).at(-1)
+      if (!marker || marker.info.role !== "user") throw new Error("Expected the compaction marker")
+      yield* sessions.updatePart({
+        id: siblingOrder === "before" ? earlierPartID : PartID.ascending(),
+        messageID: marker.info.id, sessionID: chat.id, type: "compaction", auto: false,
+      })
+      yield* llm.text("summary")
+      yield* llm.text("continued")
+
+      const continuation = yield* prompt.loop({ sessionID: chat.id })
+      const ordinary = yield* prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text: "ordinary follow-up" }] })
+      const history = yield* sessions.messages({ sessionID: chat.id })
+      const resumedReply = continuation.info
+      const ordinaryReply = ordinary.info
+      if (resumedReply.role !== "assistant" || ordinaryReply.role !== "assistant") throw new Error("Expected both responses")
+      const resumed = history.find(({ info }) => info.id === resumedReply.parentID)
+      const followUp = history.find(({ info }) => info.id === ordinaryReply.parentID)
+      expect(resumed?.parts[0]).toMatchObject({ type: "text", metadata: { compaction_continue: true } })
+      expect(resumed?.info.role === "user" ? resumed.info.promptOrigin : undefined).toEqual(promptOrigin)
+      expect(followUp?.parts[0]).toMatchObject({ type: "text", text: "ordinary follow-up" })
+      expect(followUp?.info.role === "user" ? followUp.info.promptOrigin : undefined).toBeUndefined()
+    }),
+    30_000,
+  )
+}
+
 const sameIDPrompt = (sessionID: SessionID, messageID: MessageID) => ({
   sessionID,
   messageID,

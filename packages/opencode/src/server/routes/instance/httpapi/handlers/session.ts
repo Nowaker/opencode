@@ -8,7 +8,6 @@ import { Permission } from "@/permission"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
-import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
 import { Provider } from "@/provider/provider"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
@@ -20,7 +19,7 @@ import { SessionPause } from "@/session/pause"
 import { SessionArchive } from "@/session/archive"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
-import { MessageID, PartID, SessionID } from "@/session/schema"
+import { MessageID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Deferred, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -55,12 +54,20 @@ import {
   SendNowRefusedError,
 } from "../errors"
 import * as SessionError from "./session-errors"
+import { makePartHandlers } from "./session-parts"
 
 const tryParseJson = (text: string) =>
   Effect.try({
     try: () => JSON.parse(text) as unknown,
     catch: () => new HttpApiError.BadRequest({}),
   })
+
+function projectHistory(message: SessionV1.WithParts): SessionV1.WithParts {
+  if (message.info.role !== "user") return message
+  const promptOrigin = MessageV2.storedPromptOrigin(message.info)
+  if (!promptOrigin && message.info.promptOrigin === undefined) return message
+  return { ...message, info: { ...message.info, promptOrigin } }
+}
 
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
@@ -78,6 +85,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
+    const { deletePart, updatePart } = yield* makePartHandlers
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       const directory = ctx.query.directory ? yield* InstanceState.directory : undefined
@@ -144,7 +152,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       yield* requireSession(ctx.params.sessionID)
       if (ctx.query.limit === undefined || ctx.query.limit === 0) {
-        return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+        return (yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID })))
+          .map(projectHistory)
       }
 
       const page = yield* SessionError.mapStorageNotFound(
@@ -170,7 +179,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
                 }),
           ),
         )
-        return page.items
+        return page.items.map(projectHistory)
       }
 
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -182,7 +191,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       url.searchParams.delete("order")
       url.searchParams.delete(direction === "after" ? "before" : "after")
       url.searchParams.set(direction, page.cursor)
-      return HttpServerResponse.jsonUnsafe(page.items, {
+      return HttpServerResponse.jsonUnsafe(page.items.map(projectHistory), {
         headers: {
           "Access-Control-Expose-Headers": "Link, X-Next-Cursor, X-Total-Count",
           Link: `<${url.toString()}>; rel="next"`,
@@ -197,7 +206,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       return yield* SessionError.mapStorageNotFound(
         MessageV2.get({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID }),
-      )
+      ).pipe(Effect.map(projectHistory))
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
@@ -564,32 +573,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapPauseChanged(
         SessionError.mapBusy(promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID })),
       )
-    })
-
-    const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      if (AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))) return yield* new HttpApiError.BadRequest({})
-      yield* session.removePart(ctx.params)
-      return true
-    })
-
-    const updatePart = Effect.fn("SessionHttpApi.updatePart")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
-      payload: typeof SessionV1.Part.Type
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      const payload = ctx.payload as SessionV1.Part
-      if (
-        payload.id !== ctx.params.partID ||
-        payload.messageID !== ctx.params.messageID ||
-        payload.sessionID !== ctx.params.sessionID || AutoSwitchAdmission.ownsPart(payload) ||
-        AutoSwitchAdmission.ownsPart(yield* session.getPart(ctx.params))
-      ) {
-        return yield* new HttpApiError.BadRequest({})
-      }
-      return yield* session.updatePart(payload)
     })
 
     return handlers

@@ -207,6 +207,7 @@ export const CompactionPart = Schema.Struct({
   auto: Schema.Boolean,
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
+  continuation_message_id: Schema.optional(MessageID),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 
@@ -341,9 +342,19 @@ const messageBase = {
   sessionID: partBase.sessionID,
 }
 
+export const PromptOriginVersion = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._+-]{1,64}$/))
+
+export interface PromptOrigin extends Schema.Schema.Type<typeof PromptOrigin> {}
+export const PromptOrigin = Schema.Struct({
+  client: Schema.Literal("oh-my-openagent"),
+  version: PromptOriginVersion,
+  purpose: Schema.Literals(["subagent", "helper", "review"]),
+}).annotate({ identifier: "PromptOrigin" })
+
 export const User = Schema.Struct({
   ...messageBase,
   role: Schema.Literal("user"),
+  promptOrigin: Schema.optional(PromptOrigin),
   time: Schema.Struct({
     created: Timestamp,
   }),

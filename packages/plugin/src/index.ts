@@ -62,6 +62,7 @@ export type WorkspaceAdapter = {
 }
 
 export type PluginInput = {
+  readonly promptOrigin?: 1
   readonly liveEvents?: LiveEvents
   readonly ownerQuiescence?: {
     readonly status: () => Readonly<OwnerQuiescenceStatus>
