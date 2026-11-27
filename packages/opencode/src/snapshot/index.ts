@@ -20,6 +20,12 @@ export type Patch = typeof Patch.Type
 export const FileDiff = Info
 export type FileDiff = typeof FileDiff.Type
 
+export class SnapshotDiffTimeout extends Schema.TaggedErrorClass<SnapshotDiffTimeout>()("SnapshotDiffTimeout", {
+  from: Schema.String,
+  to: Schema.String,
+}) {}
+
+const diffProcessOptions = { forceKillAfter: Duration.seconds(3) } as const
 const prune = "7.days"
 const limit = 2 * 1024 * 1024
 const interval = Duration.toMillis(Duration.hours(1))
@@ -42,6 +48,7 @@ interface GitResult {
   readonly text: string
   readonly stderr: string
 }
+type GitOptions = Pick<ChildProcess.CommandOptions, "cwd" | "env" | "forceKillAfter"> & { readonly stdin?: string }
 // Waits for an index.lock held by another process: 8 retries, doubling from 25 ms up to 800 ms, each halved by
 // jitter at most, about 1.6-3.2 s in total.
 const lockRetries = 8
@@ -61,7 +68,7 @@ export interface Interface {
   /** Returns the files it left as they are because the snapshot store no longer has their earlier content. */
   readonly revert: (patches: Patch[]) => Effect.Effect<string[]>
   readonly diff: (hash: string) => Effect.Effect<string>
-  readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[]>
+  readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[], SnapshotDiffTimeout>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Snapshot") {}
@@ -99,9 +106,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           encodeNulTerminatedPaths(files.map((file) => `:(top,literal)${file}`))
 
         const spawn = Effect.fnUntraced(
-          function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
+          function* (cmd: string[], opts?: GitOptions) {
             const result = yield* appProcess.run(
-              ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
+              ChildProcess.make("git", cmd, {
+                cwd: opts?.cwd,
+                env: opts?.env,
+                extendEnv: true,
+                forceKillAfter: opts?.forceKillAfter,
+              }),
               { stdin: opts?.stdin },
             )
             return {
@@ -121,10 +133,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
         // Another opencode process on the same worktree shares this store, and git fails at once when it finds
         // their index.lock. The lock is never removed here: it belongs to a live git of that process.
-        const git = Effect.fnUntraced(function* (
-          cmd: string[],
-          opts?: { cwd?: string; env?: Record<string, string>; stdin?: string },
-        ) {
+        const git = Effect.fnUntraced(function* (cmd: string[], opts?: GitOptions) {
           for (let attempt = 1; ; attempt++) {
             const result = yield* spawn(cmd, opts)
             if (!heldIndexLock(result)) return result
@@ -147,7 +156,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           }
         })
 
-        const ignore = Effect.fnUntraced(function* (files: string[]) {
+        const ignore = Effect.fnUntraced(function* (files: string[], opts?: Pick<GitOptions, "forceKillAfter">) {
           if (!files.length) return new Set<string>()
           // check-ignore treats a leading colon as pathspec magic but accepts and echoes a protective ./ prefix.
           const checkIgnorePaths = files.map((item) => (item.startsWith(":") ? `./${item}` : item))
@@ -166,6 +175,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
             {
               cwd: state.worktree,
               stdin: encodeNulTerminatedPaths(checkIgnorePaths),
+              ...opts,
             },
           )
           if (check.code !== 0 && check.code !== 1) return new Set<string>()
@@ -578,16 +588,17 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               const added = yield* add()
               const result = yield* git(args(["write-tree"]), { cwd: state.directory })
               const hash = result.text.trim()
+              const ok = added !== undefined && result.code === 0 && hash !== ""
               yield* Effect.logInfo("tracking", { hash, cwd: state.directory, git: state.gitdir })
               yield* report({
                 op: "track",
                 sessionID,
                 start,
                 added,
-                ok: added !== undefined && result.code === 0 && hash !== "",
+                ok,
               })
               yield* guard("track", sessionID, added)
-              return hash
+              return ok ? hash : ""
             }),
           )
         })
@@ -802,6 +813,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const diffFull = Effect.fnUntraced(function* (from: string, to: string) {
+          // Start the budget after taking the permit, and wait for scoped child cleanup before releasing it.
           return yield* locked(
             Effect.gen(function* () {
               type Row = {
@@ -823,12 +835,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 if (row.status === "added") {
                   return [
                     "",
-                    yield* git([...cfg, ...args(["show", `${to}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
+                    yield* git([...cfg, ...args(["show", `${to}:${row.file}`])], diffProcessOptions).pipe(
+                      Effect.map((item) => item.text),
+                    ),
                   ]
                 }
                 if (row.status === "deleted") {
                   return [
-                    yield* git([...cfg, ...args(["show", `${from}:${row.file}`])]).pipe(
+                    yield* git([...cfg, ...args(["show", `${from}:${row.file}`])], diffProcessOptions).pipe(
                       Effect.map((item) => item.text),
                     ),
                     "",
@@ -836,8 +850,12 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 }
                 return yield* Effect.all(
                   [
-                    git([...cfg, ...args(["show", `${from}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
-                    git([...cfg, ...args(["show", `${to}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
+                    git([...cfg, ...args(["show", `${from}:${row.file}`])], diffProcessOptions).pipe(
+                      Effect.map((item) => item.text),
+                    ),
+                    git([...cfg, ...args(["show", `${to}:${row.file}`])], diffProcessOptions).pipe(
+                      Effect.map((item) => item.text),
+                    ),
                   ],
                   { concurrency: 2 },
                 )
@@ -863,6 +881,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                     ChildProcess.make("git", [...cfg, ...args(["cat-file", "--batch"])], {
                       cwd: state.directory,
                       extendEnv: true,
+                      ...diffProcessOptions,
                     }),
                     { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
                   )
@@ -944,7 +963,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
               const statuses = yield* git(
                 [...quote, ...args(["diff", "--no-ext-diff", "--name-status", "--no-renames", from, to, "--", "."])],
-                { cwd: state.directory },
+                { cwd: state.directory, ...diffProcessOptions },
               )
 
               for (const line of statuses.text.trim().split("\n")) {
@@ -956,9 +975,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
               const numstat = yield* git(
                 [...quote, ...args(["diff", "--no-ext-diff", "--no-renames", "--numstat", from, to, "--", "."])],
-                {
-                  cwd: state.directory,
-                },
+                { cwd: state.directory, ...diffProcessOptions },
               )
 
               const rows = numstat.text
@@ -983,7 +1000,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 })
 
               // Hide ignored-file removals from the user-facing diff output.
-              const ignored = yield* ignore(rows.map((r) => r.file))
+              const ignored = yield* ignore(rows.map((r) => r.file), diffProcessOptions)
               if (ignored.size > 0) {
                 const filtered = rows.filter((r) => !ignored.has(r.file))
                 rows.length = 0
@@ -1012,7 +1029,12 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               }
 
               return result
-            }),
+            }).pipe(
+              Effect.timeoutOrElse({
+                duration: "30 seconds",
+                orElse: () => Effect.fail(new SnapshotDiffTimeout({ from, to })),
+              }),
+            ),
           )
         })
 
