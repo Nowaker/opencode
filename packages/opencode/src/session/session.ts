@@ -9,6 +9,7 @@ import { Decimal } from "decimal.js"
 import type { ProviderMetadata, Usage } from "@opencode-ai/llm"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Database } from "@opencode-ai/core/database/database"
+import { EventV2 } from "@opencode-ai/core/event"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@opencode-ai/core/session"
 import * as SessionExecutionLocal from "@opencode-ai/core/session/execution/local"
@@ -425,7 +426,11 @@ export interface Interface {
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
-  readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
+  readonly setTitle: (input: {
+    readonly sessionID: SessionID
+    readonly title: string
+    readonly onlyIfDefault?: true
+  }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly setAgentModel: (input: {
@@ -731,27 +736,50 @@ const layer: Layer.Layer<
       return session
     })
 
-    const patch = (sessionID: SessionID, info: Patch) =>
+    const snapshotChanged = Symbol("Session patch snapshot changed")
+    const patch = (sessionID: SessionID, info: Patch, onlyIfDefault = false) =>
       Effect.gen(function* () {
-        const current = yield* get(sessionID)
-        const next = {
-          ...current,
-          ...info,
-          time: info.time ? { ...current.time, ...info.time } : current.time,
-          share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
-          summary: info.summary === null ? undefined : (info.summary ?? current.summary),
-          revert: info.revert === null ? undefined : (info.revert ?? current.revert),
-          permission: info.permission === null ? undefined : (info.permission ?? current.permission),
-        } as Info
-        yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const expected = onlyIfDefault ? (yield* EventV2.latestSequence(db, sessionID)) + 1 : undefined
+          const current = yield* get(sessionID)
+          if (onlyIfDefault && !isDefaultTitle(current.title)) return
+          const next = {
+            ...current,
+            ...info,
+            time: info.time ? { ...current.time, ...info.time } : current.time,
+            share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
+            summary: info.summary === null ? undefined : (info.summary ?? current.summary),
+            revert: info.revert === null ? undefined : (info.revert ?? current.revert),
+            permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+          } as Info
+          if (expected === undefined) {
+            yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
+            return
+          }
+          // If a newer event changed the snapshot, the commit hook rolls back
+          // the projection before the generated title can be observed.
+          const committed = yield* events
+            .publish(
+              SessionV1.Event.Updated,
+              { sessionID, info: next },
+              {
+                commit: (sequence) => (sequence === expected ? Effect.void : Effect.die(snapshotChanged)),
+              },
+            )
+            .pipe(
+              Effect.as(true),
+              Effect.catchDefect((defect) => (defect === snapshotChanged ? Effect.succeed(false) : Effect.die(defect))),
+            )
+          if (committed) return
+        }
       })
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 
-    const setTitle = Effect.fn("Session.setTitle")(function* (input: { sessionID: SessionID; title: string }) {
-      yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
+    const setTitle: Interface["setTitle"] = Effect.fn("Session.setTitle")(function* (input) {
+      yield* patch(input.sessionID, { title: input.title }, input.onlyIfDefault).pipe(Effect.orDie)
     })
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
