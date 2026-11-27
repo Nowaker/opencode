@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Cause, Clock, Duration, Effect, Layer, Option, Random, Schedule, Schema, Semaphore, Context } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Option, Random, Schedule, Schema, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
@@ -10,6 +10,8 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Config } from "@/config/config"
 import { Global } from "@opencode-ai/core/global"
 import { Info } from "@opencode-ai/schema/file-diff"
+import { makeSnapshotStore, type CohortStats } from "./cohort"
+import { snapshotWriters } from "./writers"
 
 export const Patch = Schema.Struct({
   hash: Schema.String,
@@ -79,14 +81,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
     const fs = yield* FSUtil.Service
     const appProcess = yield* AppProcess.Service
     const config = yield* Config.Service
-    const locks = new Map<string, Semaphore.Semaphore>()
+    const stores = new Map<string, ReturnType<typeof makeSnapshotStore>>()
 
-    const lock = (key: string) => {
-      const hit = locks.get(key)
+    const snapshotStore = (key: string) => {
+      const hit = stores.get(key)
       if (hit) return hit
 
-      const next = Semaphore.makeUnsafe(1)
-      locks.set(key, next)
+      const next = makeSnapshotStore()
+      stores.set(key, next)
       return next
     }
 
@@ -98,6 +100,8 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           gitdir: path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree)),
           vcs: ctx.project.vcs,
         }
+        const scope = yield* Effect.scope
+        const queue = snapshotStore(state.gitdir)
 
         const args = (cmd: string[]) => ["--git-dir", state.gitdir, "--work-tree", state.worktree, ...cmd]
 
@@ -221,7 +225,11 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
         const read = (file: string) => fs.readFileString(file).pipe(Effect.catch(() => Effect.succeed("")))
         const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
-        const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
+        const locked = queue.locked
+        const writeLocked = <A, E, R>(
+          work: Effect.Effect<A, E, R>,
+          options?: { readonly unsafeOnInterrupt: boolean },
+        ) => locked(snapshotWriters.hold(state.worktree, work, options))
 
         // A nested repository is staged as a gitlink to its HEAD. git add cannot record one whose branch has no
         // commit yet and fails the whole batch with "does not have a commit checked out", so such a repository is
@@ -504,7 +512,11 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const store = path.relative(path.join(Global.Path.data, "snapshot"), state.gitdir).replaceAll("\\", "/")
 
         const timedLocked = <A, E, R>(
-          input: { readonly op: "track" | "patch" | "cleanup"; readonly sessionID?: string },
+          input: {
+            readonly op: "track" | "patch" | "cleanup"
+            readonly sessionID?: string
+            readonly track?: { readonly started: bigint; readonly stats: CohortStats }
+          },
           fx: Effect.Effect<
             {
               readonly value: A
@@ -515,15 +527,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           >,
         ) =>
           Effect.gen(function* () {
-            const started = yield* Clock.currentTimeNanos
-            const timed = yield* locked(
-              Effect.gen(function* () {
-                const acquired = yield* Clock.currentTimeNanos
-                const outcome = yield* fx
-                const finished = yield* Clock.currentTimeNanos
-                return { outcome, acquired, finished }
-              }),
-            )
+            const started = input.track?.started ?? (yield* Clock.currentTimeNanos)
+            const measure = Effect.gen(function* () {
+              const acquired = yield* Clock.currentTimeNanos
+              const outcome = yield* fx
+              const finished = yield* Clock.currentTimeNanos
+              return { outcome, acquired, finished }
+            })
+            const timed = yield* (input.track ? measure : locked(measure))
             const receipt = timed.outcome.receipt
             if (receipt) {
               // Round both boundaries relative to the start so the two parts add to the legacy total.
@@ -536,6 +547,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 duration_ms: duration,
                 queue_wait_ms: wait,
                 lock_hold_ms: duration - wait,
+                ...input.track?.stats,
                 files: receipt.added?.files ?? 0,
                 added_bytes: receipt.added?.bytes ?? 0,
                 store,
@@ -583,10 +595,9 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           )
         })
 
-        const track = Effect.fnUntraced(function* (sessionID?: string) {
-          if (!(yield* enabled())) return
-          return yield* timedLocked(
-            { op: "track", sessionID },
+        const capture = (sessionID: string | undefined, started: bigint, stats: CohortStats) =>
+          timedLocked(
+            { op: "track", sessionID, track: { started, stats } },
             Effect.gen(function* () {
               const existed = yield* exists(state.gitdir)
               yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
@@ -615,6 +626,16 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               return { value: ok ? hash : "", receipt: { added, ok } }
             }),
           )
+
+        const track = Effect.fnUntraced(function* (sessionID?: string) {
+          if (!(yield* enabled())) return
+          const started = yield* Clock.currentTimeNanos
+          return yield* queue.track({
+            scope,
+            directory: state.directory,
+            worktree: state.worktree,
+            capture: (stats) => capture(sessionID, started, stats),
+          })
         })
 
         const patch = Effect.fnUntraced(function* (hash: string, sessionID?: string) {
@@ -655,7 +676,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const restore = Effect.fnUntraced(function* (snapshot: string) {
-          return yield* locked(
+          return yield* writeLocked(
             Effect.gen(function* () {
               yield* Effect.logInfo("restore", { commit: snapshot })
               const result = yield* git([...core, ...args(["read-tree", snapshot])], { cwd: state.worktree })
@@ -681,7 +702,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const revert = Effect.fnUntraced(function* (patches: Patch[]) {
-          return yield* locked(
+          return yield* writeLocked(
             Effect.gen(function* () {
               const ops: { hash: string; file: string; rel: string }[] = []
               const seen = new Set<string>()
@@ -803,6 +824,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               }
               return kept
             }),
+            { unsafeOnInterrupt: true },
           )
         })
 

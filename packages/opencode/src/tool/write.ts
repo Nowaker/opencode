@@ -11,6 +11,7 @@ import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { Format } from "../format"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import { capDiff, trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FileFacts } from "./file-facts"
@@ -66,10 +67,16 @@ export const WriteTool = Tool.define(
             },
           })
 
-          yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
-          if (yield* format.file(filepath)) {
-            yield* Bom.syncFile(fs, filepath, desiredBom)
-          }
+          yield* snapshotWriters.hold(
+            snapshotWorktree(instance),
+            Effect.gen(function* () {
+              yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
+              if (yield* format.file(filepath)) {
+                yield* Bom.syncFile(fs, filepath, desiredBom)
+              }
+            }),
+            { unsafeOnInterrupt: true },
+          )
           yield* events.publish(FileSystem.Event.Edited, { file: filepath })
           yield* events.publish(Watcher.Event.Updated, {
             file: filepath,

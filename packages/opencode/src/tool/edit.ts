@@ -15,6 +15,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FileFacts } from "./file-facts"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -83,6 +84,16 @@ export const EditTool = Tool.define(
             : path.join(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filePath)
           const link = FileFacts.link(filePath, instance)
+          const write = (content: string, bom: boolean) =>
+            snapshotWriters.hold(
+              snapshotWorktree(instance),
+              Effect.gen(function* () {
+                yield* afs.writeWithDirs(filePath, Bom.join(content, bom))
+                if (yield* format.file(filePath)) return yield* Bom.syncFile(afs, filePath, bom)
+                return content
+              }),
+              { unsafeOnInterrupt: true },
+            )
 
           let diff = ""
           let stale = false
@@ -112,10 +123,7 @@ export const EditTool = Tool.define(
                     diff,
                   },
                 })
-                yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
-                if (yield* format.file(filePath)) {
-                  contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
-                }
+                contentNew = yield* write(contentNew, desiredBom)
                 yield* events.publish(FileSystem.Event.Edited, { file: filePath })
                 yield* events.publish(Watcher.Event.Updated, {
                   file: filePath,
@@ -165,10 +173,7 @@ export const EditTool = Tool.define(
                 },
               })
 
-              yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
-              if (yield* format.file(filePath)) {
-                contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
-              }
+              contentNew = yield* write(contentNew, desiredBom)
               yield* events.publish(FileSystem.Event.Edited, { file: filePath })
               yield* events.publish(Watcher.Event.Updated, {
                 file: filePath,

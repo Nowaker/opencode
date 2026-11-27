@@ -28,6 +28,7 @@ import { Identifier } from "@opencode-ai/core/id/id"
 import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
 import { ShellHandoff } from "./shell/handoff"
 import { ShellBackgroundOutput } from "./shell/background-output"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 
 export { Parameters } from "./shell/prompt"
 
@@ -674,6 +675,7 @@ export const ShellTool = Tool.define(
           return ""
         }),
       ).pipe(
+        (work) => snapshotWriters.hold(snapshotWorktree(instance), work),
         Effect.onExit((exit) => {
           handoff?.close()
           return publishExited(exit)

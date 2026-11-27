@@ -76,6 +76,7 @@ import { NotFoundError } from "@/storage/storage"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { OwnerQuiescence } from "@/owner/quiescence"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import { Question } from "@/question"
 import { isRecord } from "@/util/record"
 import { errorMessage } from "@/util/error"
@@ -659,7 +660,7 @@ const layer = Layer.effect(
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const markReady = ready ? ready.open.pipe(Effect.asVoid) : Effect.void
-          const { msg, part, cwd } = yield* Effect.gen(function* () {
+          const { msg, part, cwd, worktree } = yield* Effect.gen(function* () {
             const ctx = yield* InstanceState.context
             const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
             if (session.revert) {
@@ -723,7 +724,7 @@ const layer = Layer.effect(
               },
             }
             yield* sessions.updatePart(part)
-            return { msg, part, cwd: ctx.directory }
+            return { msg, part, cwd: ctx.directory, worktree: snapshotWorktree(ctx) }
           }).pipe(Effect.ensuring(markReady))
 
           const cfg = yield* config.get()
@@ -781,7 +782,7 @@ const layer = Layer.effect(
                 }),
               )
               yield* handle.exitCode
-            }).pipe(Effect.scoped, Effect.orDie),
+            }).pipe(Effect.scoped, (work) => snapshotWriters.hold(worktree, work), Effect.orDie),
           ).pipe(Effect.exit)
 
           if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause) && !Cause.hasDies(exit.cause)) {

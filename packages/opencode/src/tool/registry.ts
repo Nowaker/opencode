@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { OwnerQuiescence } from "@/owner/quiescence"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
@@ -155,7 +156,11 @@ const layer = Layer.effect(
                   directory: ctx.directory,
                   worktree: ctx.worktree,
                 }
-                const result = yield* OwnerQuiescence.promise(() => def.execute(args as any, pluginCtx))
+                const execute = () => def.execute(args as any, pluginCtx)
+                const worktree = snapshotWorktree(ctx)
+                const result = yield* OwnerQuiescence.promise(
+                  worktree === undefined ? execute : () => snapshotWriters.runPromise(worktree, execute),
+                )
                 const output = typeof result === "string" ? result : result.output
                 const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
                 const attachments = typeof result === "string" ? undefined : result.attachments

@@ -7,6 +7,7 @@ import { Git } from "@/git"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { VcsEvent } from "@opencode-ai/schema/vcs-event"
+import { snapshotWriters } from "@/snapshot/writers"
 
 const PATCH_CONTEXT_LINES = 2_147_483_647
 const MAX_PATCH_BYTES = 10_000_000
@@ -405,7 +406,7 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
             reason: "non-git",
           })
         }
-        const applied = yield* git.applyPatch(ctx.directory, input.patch)
+        const applied = yield* snapshotWriters.hold(ctx.worktree, git.applyPatch(ctx.directory, input.patch))
         if (applied.exitCode !== 0) {
           return yield* new PatchApplyError({
             message: "Patch can't be applied",

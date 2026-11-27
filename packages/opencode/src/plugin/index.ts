@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { OwnerQuiescence } from "@/owner/quiescence"
+import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import type {
   Hooks,
   PluginInput,
@@ -322,10 +323,17 @@ const layer = Layer.effect(
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
       const s = yield* InstanceState.get(state)
+      const worktree =
+        name === "tool.execute.before" || name === "tool.execute.after" || name === "shell.env"
+          ? snapshotWorktree(yield* InstanceState.context)
+          : undefined
       for (const hook of s.hooks) {
         const fn = hook[name] as any
         if (!fn) continue
-        yield* OwnerQuiescence.promise(async () => fn(input, output))
+        const invoke = async () => fn(input, output)
+        yield* OwnerQuiescence.promise(
+          worktree === undefined ? invoke : () => snapshotWriters.runPromise(worktree, invoke),
+        )
       }
       return output
     })
