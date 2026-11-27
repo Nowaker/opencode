@@ -1118,6 +1118,10 @@ The cleanups run before the wraps and the quote, so a wrap goes around the clean
 
 Undo right after a paste takes it back and opens the dialog again with the same text and options, without reading the clipboard again, which may hold something else by then. A click on a placeholder from the dialog opens it with the options it was pasted with.
 
+### Lists and code blocks in the prompt
+
+The prompt's newline keys (`input_newline`, such as <kbd>shift+enter</kbd>) continue Markdown. On a numbered item such as `1. ` or `9) ` the new line starts with the next number, and on a bullet (`- `, `* `, `+ `) with the same bullet; a task item (`- [x] `) continues as an unchecked one. The indent is kept, and text after the caret moves into the new item. On an item with nothing after its marker, the marker is removed instead, which ends the list. At the end of a line that opens a code fence (```` ``` ````, with or without a language), an empty line and the closing fence are added below it, unless an odd number of fence lines follows the caret, in which case one of them already closes the block. Inside a code block, a newline is a plain newline.
+
 ### Undo in the prompt
 
 `input_undo` and `input_redo`, <kbd>ctrl+z</kbd> and <kbd>ctrl+shift+z</kbd> by default (see [Undo with ctrl+z](/docs/keybinds#undo-with-ctrlz)), step back and forward through what you did in the prompt:
