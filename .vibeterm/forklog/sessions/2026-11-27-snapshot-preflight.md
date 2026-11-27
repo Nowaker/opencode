@@ -5,7 +5,7 @@
 - Workday: 2026-11-27
 - Session: [`ses_de3bc20f4ffef42eT1d1dK6NI0`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_de3bc20f4ffef42eT1d1dK6NI0) (desktop)
 - Reviewer and deploy owner: [`ses_ef8235798ffejGr4sa22eXmVNv`](https://portal.vibeterm.desktop.ts.nowaker.net/session/ses_ef8235798ffejGr4sa22eXmVNv)
-- Branches: `fix/snapshot-stdout-drain`, `dev-nowaker`; upstream candidate `snapshot-diff-deadline` from `c618499abc` (`v1.19.6`).
+- Branches: `fix/snapshot-stdout-drain`, `snapshot-track-cohorts`, `dev-nowaker`; upstream deadline candidate `snapshot-diff-deadline` from `c618499abc` (`v1.19.6`).
 
 ## Request and result
 
@@ -27,9 +27,17 @@ The coordinator's final policy was to dispatch a streamed tool after 120 seconds
 - Red controls: a compiled baseline left Bash queued behind the blocked batch at 45 seconds; targeted tests reproduced stalled batch and fallback, stale track hash, rejected tools under the prior timeout policy, unsafe revert across a gap, and missing split timing fields.
 - The upstream v1 deadline port [`7b6c5da05f`](https://github.com/Nowaker/opencode/commit/7b6c5da05f) had 3 targeted failures on its unmodified base and then passed 66 tests with 1 skip and 0 failures; `tsgo --noEmit` exited 0. It occupies [queue entry 17](../pr-queue/17-snapshot-diff-deadline.md); no PR was opened.
 
+## Follow-up: share adjacent queued track captures
+
+- Reviewed source `5bb04a7ecf` shares one Git capture for adjacent requests still waiting for the same store, scan directory and clean process-local writer generation. It seals the cohort before reading the working tree, preserves restore order, and leaves sibling waits intact when the first caller cancels. An invalidated cohort retries the individual captures before any later restore. No completed tree is cached.
+- Registered local Git, file tool, shell and plugin lifetimes inform eligibility. A native write interrupted before its callback can be confirmed disables sharing for that worktree in that process. External editors, other processes, remote RPCs and escaped child processes are not covered.
+- The original fixtures measured three captures instead of one for adjacent callers and four instead of two across a restore. The five focused tests then passed: they count real `git write-tree` executions and check tree bytes, including a late request and a write invalidating an in-flight capture. The real Bash handoff test proves the writer stays registered beyond the foreground tool result.
+- Merge `fc3e285f4` retains `dev-nowaker` at `5531fa1869` as a parent and carries the coordinator review trailer. The merged snapshot, tool, and session suites on m2pro passed 281 tests with 1 skip and 0 failures across 14 files. The package typecheck exited 0 (`$ tsgo --noEmit`).
+- This is not a standalone port to `github/v1`: that base has synchronous session snapshots and lacks the fork's concurrent preflight paths, writer coverage, and timing receipt. An upstream version would need separate integration and verification; no queue entry was created.
+
 ## Features and boundaries
 
 - [Async snapshots](../features/2026-11-01-async-snapshots.md): separate dispatch budget and explicit file undo gap.
 - [Snapshot operation timing](../features/2026-10-27-snapshot-housekeeping.md): legacy total plus queue and lock-hold durations.
-- The skip fence is per session, not a filesystem write fence across other sessions. Coalescing is separate work, not part of these commits.
+- The skip fence is per session, not a filesystem write fence across other sessions. Coalescing is a separate reviewed source change and does not establish quiescence for writers outside the current process.
 - No install or restart by this session. This record's introducing commit is the forklog commit.

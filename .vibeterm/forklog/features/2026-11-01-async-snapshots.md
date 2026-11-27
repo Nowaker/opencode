@@ -26,7 +26,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, which recorded the user
 ## Non-goals
 
 - No config switch. Upstream would not want a second code path for behavior that is observably identical.
-- No change to the snapshot store itself.
+- No reuse of completed snapshots as a cache.
 
 ## Rationale and constraints
 
@@ -36,6 +36,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, which recorded the user
 - `step-start`, `step-finish` and `patch` parts are written when their event arrives and get their hash when the snapshot finishes; the patch part ID is allocated at step end so part order is unchanged. The summary runs after both hashes exist.
 - `SessionPrompt.loop` settles captures whose publication remains authorized. Revoked work cannot attach a hash or patch later, and its process cleanup need not hold the turn. A write-capable tool released after an abort does not start.
 - Fork-only adaptation in the merge: the fork's `ToolTimeout.guard` would count the snapshot wait against a tool's time limit, so the wait runs inside `call.hold`. Snapshot calls pass `sessionID` for snapshot housekeeping.
+- Adjacent `track` calls still queued for the same store and scan directory can share one capture when the process-local writer generation is clean. A non-track operation separates cohorts, and a capture stops accepting callers before it reads files. Each caller can cancel independently. A conflicting tracked writer forces separate captures without jumping a later revert in the queue.
 
 ## Changes
 
@@ -47,6 +48,7 @@ Relayed by coordinator `ses_ef8235798ffejGr4sa22eXmVNv`, which recorded the user
 | `5890ad1411` | 2026-11-01 | Loop settles snapshots | `SessionPrompt.loop`, end of `runLoop` |
 | `5890ad1411` | 2026-11-01 | Tests | `test/session/async-snapshot.test.ts`, registry test `marks only read-only built-in tools as not waiting for snapshots` |
 | `6977deacde` | 2026-11-01 | Fork merge: `call.hold` around the wait, `sessionID` on snapshot calls | `beforeWrite(options, call)`, `snapshot.track(sessionID)` / `snapshot.patch(hash, sessionID)` in `processor.ts` |
+| `5bb04a7ecf` | 2026-11-27 | Share adjacent queued tracks with ordered fallback and independent cancellation | `snapshot/cohort.ts`, `snapshot/writers.ts`, `test/snapshot/track-cohorts.test.ts` |
 
 ## Verification
 
@@ -55,6 +57,7 @@ See [the session record](../sessions/2026-11-01-async-snapshots.md#verification)
 ## Timeline
 
 - 2026-11-27 [snapshot preflight verification](../sessions/2026-11-27-snapshot-preflight.md) - bound tool snapshot wait and refuse file undo across an explicit gap (`0518402385`, integration `fb97c606d4`).
+- 2026-11-27 [track coalescing verification](../sessions/2026-11-27-snapshot-preflight.md#follow-up-share-adjacent-queued-track-captures) - measured duplicate captures and verified sharing, restore order and independent cancellation (`5bb04a7ecf`).
 - 2026-11-01 [`ses_e6649eb52ffeWA5U81qVUQP5Td`](../sessions/2026-11-01-async-snapshots.md) - initial build on `github/v1`, merge into `dev-nowaker`, install on desktop and m4max. Evidence: `5890ad1411`, `6977deacde`.
 - 2026-11-05 [`ses_e552a0970ffenpqGnyRp4OwJE1`](../sessions/2026-11-05-async-snapshot-reliability.md) - 3-day reliability check on desktop and m4max, read-only: no regression in the async code, no source change. See [Reliability check 2026-11-05](#reliability-check-2026-11-05).
 - 2026-11-10 [`ses_e3b674d77ffe6z70yBg7vCW6nj`](../sessions/2026-11-10-snapshot-index-lock.md) - follow-up, no change to this feature: the hashless steps traced to cross-process `index.lock` collisions are addressed by [Wait for an index.lock another process holds in the snapshot store](./2026-11-10-snapshot-index-lock.md). Evidence: `29e7545775`, merge `3b0f177f0b`.
