@@ -50,10 +50,10 @@ The user's comment, as relayed verbatim to the Vibeterm-side session:
 
 Log contract parsed by Vibeterm (logfmt from `packages/core/src/observability/logging.ts`; values with spaces, `=`, `"` or `\` are JSON-quoted):
 
-- `message="snapshot op" op=track|patch|cleanup [sessionID=<id>] duration_ms=<int> files=<int> added_bytes=<int> store=<project-id>/<worktree-hash> ok=true|false [result=collected|scheduled|busy|failed]`
+- `message="snapshot op" op=track|patch|cleanup [sessionID=<id>] duration_ms=<int> queue_wait_ms=<int> lock_hold_ms=<int> files=<int> added_bytes=<int> store=<project-id>/<worktree-hash> ok=true|false [result=collected|scheduled|busy|failed]`
 - `level=WARN message="snapshot oversized" op=track|patch [sessionID=<id>] store=<...> files=<int> added_bytes=<int> threshold_bytes=<int> top=<path:bytes,...>` (at most 10, worktree-relative, largest first)
 - `sessionID` is absent for cleanup and for callers that pass none (`opencode debug snapshot`). `result` is cleanup-only. No line is logged when snapshots are disabled or the store does not exist.
-- `duration_ms` includes the wait for the per-store lock. `files`/`added_bytes` are the paths that call staged and their on-disk size, not compressed object bytes.
+- `duration_ms` is the sum of queue wait and lock hold. `files`/`added_bytes` are the paths that call staged and their on-disk size, not compressed object bytes.
 
 ## Verification
 
@@ -63,6 +63,7 @@ Log contract parsed by Vibeterm (logfmt from `packages/core/src/observability/lo
 
 ## Timeline
 
+- 2026-11-27 [snapshot preflight verification](../sessions/2026-11-27-snapshot-preflight.md) - bound the locked diff and fallback and split elapsed time into queue and lock hold (`ee5d3e7f44`, `fa76609068`, integration `fb97c606d4`).
 - 2026-10-27 [`ses_e8079207bfferzKUfQEvpgORlL`](../sessions/2026-10-27-snapshot-housekeeping.md) - initial build. Evidence: `593d18abc2`, `72f013ccac`; vt-376 on desktop and m4max.
 - 2026-11-01 [`ses_e6683c468ffewy5J1dk7eU3NGi`](../sessions/2026-11-01-upstream-1.19.5.md) -
   merged with upstream `v1.19.5` without conflict. Evidence: `test/snapshot` pass.
