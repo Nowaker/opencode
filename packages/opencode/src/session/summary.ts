@@ -66,7 +66,7 @@ function unquoteGitPath(input: string) {
 export interface Interface {
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
   readonly diff: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly computeDiff: (input: { messages: SessionV1.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[]>
+  readonly computeDiff: (input: { messages: SessionV1.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[] | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionSummary") {}
@@ -95,33 +95,38 @@ const layer = Layer.effect(
           if (part.type === "step-finish" && part.snapshot) to = part.snapshot
         }
       }
-      if (from && to) return yield* snapshot.diffFull(from, to)
-      return []
+      if (!from || !to) return []
+      return yield* snapshot
+        .diffFull(from, to)
+        .pipe(Effect.catchTag("SnapshotDiffTimeout", () => Effect.succeed(undefined)))
     })
 
     const summarize = Effect.fn("SessionSummary.summarize")(function* (input: {
       sessionID: SessionID
       messageID: MessageID
     }) {
-      yield* sessions.setSummary({
-        sessionID: input.sessionID,
-        summary: {
-          additions: 0,
-          deletions: 0,
-          files: 0,
-        },
+      const resetSessionDiff = Effect.gen(function* () {
+        yield* sessions.setSummary({
+          sessionID: input.sessionID,
+          summary: {
+            additions: 0,
+            deletions: 0,
+            files: 0,
+          },
+        })
+        yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: [] })
       })
-      yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: [] })
-      if ((yield* config.get()).snapshot === false) return
+      if ((yield* config.get()).snapshot === false) return yield* resetSessionDiff
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      if (!all.length) return
 
       const messages = all.filter(
         (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
       )
       const target = messages.find((m) => m.info.id === input.messageID)
-      if (!target || target.info.role !== "user") return
+      if (!target || target.info.role !== "user") return yield* resetSessionDiff
       const msgDiffs = yield* computeDiff({ messages })
+      if (msgDiffs === undefined) return
+      yield* resetSessionDiff
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)
     })
