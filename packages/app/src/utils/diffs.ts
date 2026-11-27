@@ -7,7 +7,8 @@ type Diff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 function diff(value: unknown): value is Diff {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   if (!("file" in value) || typeof value.file !== "string") return false
-  if (!("patch" in value) || typeof value.patch !== "string") return false
+  // Message lists may carry only file metadata; the patch is fetched per turn when a view needs it.
+  if ("patch" in value && typeof value.patch !== "string") return false
   if (!("additions" in value) || typeof value.additions !== "number") return false
   if (!("deletions" in value) || typeof value.deletions !== "number") return false
   if (!("status" in value) || value.status === undefined) return true
