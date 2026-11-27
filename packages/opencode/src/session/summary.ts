@@ -1,6 +1,8 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Database } from "@opencode-ai/core/database/database"
 import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
+import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { and, eq, inArray, or, sql } from "drizzle-orm"
 import { Effect, Layer, Context, Option, Schema } from "effect"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -11,6 +13,7 @@ import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
 import { skippedSnapshot } from "./snapshot-gap"
 import { Config } from "@/config/config"
+import { NotFoundError } from "@/storage/storage"
 import { isDeepStrictEqual } from "node:util"
 
 function unquoteGitPath(input: string) {
@@ -87,6 +90,36 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const live = yield* LiveEvents.Service
 
+    const messageRole = sql<string>`json_extract(${MessageTable.data}, '$.role')`
+    const readUserDiffs = Effect.fnUntraced(function* (input: { sessionID: SessionID; messageID: MessageID }) {
+      const row = yield* database.db
+        .select({ data: MessageTable.data })
+        .from(MessageTable)
+        .where(
+          and(eq(MessageTable.session_id, input.sessionID), eq(MessageTable.id, input.messageID), eq(messageRole, "user")),
+        )
+        .get()
+        .pipe(Effect.orDie)
+      if (row) return { diffs: typeof row.data.summary === "object" ? row.data.summary?.diffs : undefined }
+
+      const session = yield* database.db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, input.sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!session) return yield* Effect.die(new NotFoundError({ message: `Session not found: ${input.sessionID}` }))
+    })
+
+    const diffSnapshots = Effect.fnUntraced(function* (from: string | null | undefined, to: string | null | undefined) {
+      if (!from || !to) return []
+      return yield* snapshot.diffFull(from, to).pipe(
+        Effect.catchTag("SnapshotDiffTimeout", (error) =>
+          Effect.logWarning("snapshot diff timed out", { from: error.from, to: error.to }).pipe(Effect.as(undefined)),
+        ),
+      )
+    })
+
     const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: { messages: SessionV1.WithParts[] }) {
       let from: string | undefined
       let to: string | undefined
@@ -97,12 +130,7 @@ const layer = Layer.effect(
           if (part.type === "step-finish" && part.snapshot) to = part.snapshot
         }
       }
-      if (!from || !to) return []
-      return yield* snapshot.diffFull(from, to).pipe(
-        Effect.catchTag("SnapshotDiffTimeout", (error) =>
-          Effect.logWarning("snapshot diff timed out", { from: error.from, to: error.to }).pipe(Effect.as(undefined)),
-        ),
-      )
+      return yield* diffSnapshots(from, to)
     })
 
     const summarize = Effect.fn("SessionSummary.summarize")(function* (input: {
@@ -121,17 +149,37 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: [] })
       })
       if ((yield* config.get()).snapshot === false) return yield* resetSessionDiff
-      const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+      const target = yield* readUserDiffs(input)
+      if (!target) return yield* resetSessionDiff
 
-      const messages = all.filter(
-        (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
-      )
-      const target = messages.find((m) => m.info.id === input.messageID)
-      if (!target || target.info.role !== "user") return yield* resetSessionDiff
-      const msgDiffs = yield* computeDiff({ messages })
+      const partType = sql<string>`json_extract(${PartTable.data}, '$.type')`
+      const skipped = eq(sql`json_extract(${PartTable.data}, '$.state.metadata.engine.snapshot')`, "skipped")
+      const parts = yield* database.db
+        .select({ type: partType, snapshot: sql<string | null>`json_extract(${PartTable.data}, '$.snapshot')` })
+        .from(MessageTable)
+        .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
+        .where(
+          and(
+            eq(MessageTable.session_id, input.sessionID),
+            or(
+              eq(MessageTable.id, input.messageID),
+              and(eq(messageRole, "assistant"), eq(sql`json_extract(${MessageTable.data}, '$.parentID')`, input.messageID)),
+            ),
+            or(inArray(partType, ["step-start", "step-finish"]), and(eq(partType, "tool"), skipped)),
+          ),
+        )
+        .orderBy(MessageTable.time_created, MessageTable.id, PartTable.id)
+        .all()
+        .pipe(Effect.orDie)
+      const msgDiffs = parts.some((part) => part.type === "tool")
+        ? []
+        : yield* diffSnapshots(
+            parts.find((part) => part.type === "step-start" && part.snapshot)?.snapshot,
+            parts.findLast((part) => part.type === "step-finish" && part.snapshot)?.snapshot,
+          )
       if (msgDiffs === undefined) return
       yield* resetSessionDiff
-      if (isDeepStrictEqual(target.info.summary?.diffs, msgDiffs)) return
+      if (isDeepStrictEqual(target.diffs, msgDiffs)) return
       yield* live.guard(
         input.sessionID,
         DatabaseTransaction.batch(
@@ -157,11 +205,8 @@ const layer = Layer.effect(
 
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
       if (!input.messageID) return []
-      const message = (yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
-        (item) => item.info.id === input.messageID,
-      )
-      if (!message || message.info.role !== "user") return []
-      const diffs = message.info.summary?.diffs ?? []
+      const target = yield* readUserDiffs({ sessionID: input.sessionID, messageID: input.messageID })
+      const diffs = target?.diffs ?? []
       return diffs.map((item) => {
         if (item.file === undefined) return item
         const file = unquoteGitPath(item.file)
