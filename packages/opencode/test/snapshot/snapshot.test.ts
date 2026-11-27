@@ -3,10 +3,14 @@ import { $ } from "bun"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AppProcess } from "@opencode-ai/core/process"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Fiber, Layer, Logger } from "effect"
+import { Clock, Deferred, Effect, Fiber, Layer, Logger } from "effect"
+import { TestClock } from "effect/testing"
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { Config } from "../../src/config/config"
 import { Snapshot } from "../../src/snapshot"
 import { Global } from "@opencode-ai/core/global"
 import { Hash } from "@opencode-ai/core/util/hash"
@@ -18,7 +22,7 @@ import {
   TestInstance,
   tmpdirScoped,
 } from "../fixture/fixture"
-import { pollWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 
 const it = testEffect(
   Layer.mergeAll(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])), testInstanceStoreLayer),
@@ -459,7 +463,7 @@ it.instance(
       yield* write(`${tmp.path}/b.txt`, "123")
       const patched = yield* captureLogs(snapshot.patch(before, "ses_patch"))
       expect(patched.named("snapshot op").map((line) => line.fields)).toEqual([
-        {
+        expect.objectContaining({
           op: "patch",
           sessionID: "ses_patch",
           duration_ms: expect.any(Number),
@@ -467,11 +471,79 @@ it.instance(
           added_bytes: 3,
           store,
           ok: true,
-        },
+        }),
       ])
       expect(patched.value.files).toHaveLength(3)
     }),
   ),
+  { git: true },
+)
+
+it.instance(
+  "snapshot op logs count a queued patch's wait separately from its lock hold",
+  () =>
+    Effect.gen(function* () {
+      const real = yield* ChildProcessSpawner.ChildProcessSpawner
+      const holderStarted = yield* Deferred.make<void>()
+      const releaseHolder = yield* Deferred.make<void>()
+      const patchStarted = yield* Deferred.make<void>()
+      const releasePatch = yield* Deferred.make<void>()
+      const spawner = ChildProcessSpawner.make(
+        Effect.fnUntraced(function* (command) {
+          if (ChildProcess.isStandardCommand(command) && command.command === "git" && command.args.includes("--cached")) {
+            if (command.args.includes("--name-only")) {
+              yield* Deferred.succeed(patchStarted, undefined)
+              yield* Deferred.await(releasePatch)
+            } else {
+              yield* Deferred.succeed(holderStarted, undefined)
+              yield* Deferred.await(releaseHolder)
+            }
+          }
+          return yield* real.spawn(command)
+        }),
+      )
+      const realAppProcess = AppProcess.node.implementation as Layer.Layer<
+        AppProcess.Service,
+        never,
+        ChildProcessSpawner.ChildProcessSpawner
+      >
+      const realSnapshot = Snapshot.node.implementation as Layer.Layer<
+        Snapshot.Service,
+        never,
+        FSUtil.Service | AppProcess.Service | Config.Service
+      >
+      // The fixture also uses the default process layer, so the gated spawner needs its own instance.
+      const processLayer = Layer.fresh(realAppProcess).pipe(
+        Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)),
+      )
+      const snapshotLayer = Layer.fresh(realSnapshot).pipe(
+        Layer.provide([LayerNode.compile(FSUtil.node), processLayer, LayerNode.compile(Config.node)]),
+      )
+
+      yield* withTrackedSnapshot(({ snapshot, before }) =>
+        Effect.gen(function* () {
+          const clock = yield* TestClock.make()
+          const holder = yield* snapshot.diff(before).pipe(Effect.forkScoped)
+          yield* awaitWithTimeout(Deferred.await(holderStarted), "diff did not take the store lock")
+
+          const patch = yield* captureLogs(snapshot.patch(before)).pipe(
+            Effect.provideService(Clock.Clock, clock),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+          yield* clock.adjust("230 millis")
+          yield* Deferred.succeed(releaseHolder, undefined)
+          yield* awaitWithTimeout(Deferred.await(patchStarted), "patch did not acquire the released store lock")
+          yield* clock.adjust("70 millis")
+          yield* Deferred.succeed(releasePatch, undefined)
+
+          const receipt = yield* awaitWithTimeout(Fiber.join(patch), "patch did not finish")
+          yield* awaitWithTimeout(Fiber.join(holder), "diff did not finish")
+          expect(receipt.named("snapshot op").map((line) => line.fields)).toEqual([
+            expect.objectContaining({ op: "patch", duration_ms: 300, queue_wait_ms: 230, lock_hold_ms: 70 }),
+          ])
+        }),
+      ).pipe(Effect.provide(snapshotLayer))
+    }).pipe(Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
   { git: true },
 )
 

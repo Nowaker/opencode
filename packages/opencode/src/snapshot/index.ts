@@ -503,27 +503,48 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
         const store = path.relative(path.join(Global.Path.data, "snapshot"), state.gitdir).replaceAll("\\", "/")
 
-        // One "snapshot op" line per track, patch and cleanup on an enabled store; Vibeterm parses these fields.
-        // duration_ms includes the wait for the store lock, since the caller's step waits for it too.
-        const report = Effect.fnUntraced(function* (input: {
-          op: "track" | "patch" | "cleanup"
-          sessionID?: string
-          start: number
-          added: Added | undefined
-          ok: boolean
-          result?: string
-        }) {
-          yield* Effect.logInfo("snapshot op", {
-            op: input.op,
-            ...(input.sessionID ? { sessionID: input.sessionID } : {}),
-            duration_ms: Math.round((yield* Clock.currentTimeMillis) - input.start),
-            files: input.added?.files ?? 0,
-            added_bytes: input.added?.bytes ?? 0,
-            store,
-            ok: input.ok,
-            ...(input.result ? { result: input.result } : {}),
+        const timedLocked = <A, E, R>(
+          input: { readonly op: "track" | "patch" | "cleanup"; readonly sessionID?: string },
+          fx: Effect.Effect<
+            {
+              readonly value: A
+              readonly receipt?: { readonly added?: Added; readonly ok: boolean; readonly result?: string }
+            },
+            E,
+            R
+          >,
+        ) =>
+          Effect.gen(function* () {
+            const started = yield* Clock.currentTimeNanos
+            const timed = yield* locked(
+              Effect.gen(function* () {
+                const acquired = yield* Clock.currentTimeNanos
+                const outcome = yield* fx
+                const finished = yield* Clock.currentTimeNanos
+                return { outcome, acquired, finished }
+              }),
+            )
+            const receipt = timed.outcome.receipt
+            if (receipt) {
+              // Round both boundaries relative to the start so the two parts add to the legacy total.
+              const elapsedMs = (time: bigint) => Math.round(Duration.toMillis(Duration.nanos(time - started)))
+              const duration = elapsedMs(timed.finished)
+              const wait = elapsedMs(timed.acquired)
+              yield* Effect.logInfo("snapshot op", {
+                op: input.op,
+                ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+                duration_ms: duration,
+                queue_wait_ms: wait,
+                lock_hold_ms: duration - wait,
+                files: receipt.added?.files ?? 0,
+                added_bytes: receipt.added?.bytes ?? 0,
+                store,
+                ok: receipt.ok,
+                ...(receipt.result ? { result: receipt.result } : {}),
+              })
+            }
+            return timed.outcome.value
           })
-        })
 
         // Content is still recorded when it is oversized: skipping it would make undo and revert silently miss
         // those files, and the warning is enough for a person or agent to fix .gitignore.
@@ -551,22 +572,22 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const cleanup = Effect.fnUntraced(function* () {
-          const start = yield* Clock.currentTimeMillis
-          return yield* locked(
+          return yield* timedLocked(
+            { op: "cleanup" },
             Effect.gen(function* () {
-              if (!(yield* enabled())) return
-              if (!(yield* exists(state.gitdir))) return
+              if (!(yield* enabled())) return { value: undefined }
+              if (!(yield* exists(state.gitdir))) return { value: undefined }
               const result = yield* collect()
-              yield* report({ op: "cleanup", start, added: nothingAdded, ok: result !== "failed", result })
+              return { value: undefined, receipt: { ok: result !== "failed", result } }
             }),
           )
         })
 
         const track = Effect.fnUntraced(function* (sessionID?: string) {
-          const start = yield* Clock.currentTimeMillis
-          return yield* locked(
+          if (!(yield* enabled())) return
+          return yield* timedLocked(
+            { op: "track", sessionID },
             Effect.gen(function* () {
-              if (!(yield* enabled())) return
               const existed = yield* exists(state.gitdir)
               yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
               if (!existed) {
@@ -590,22 +611,15 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               const hash = result.text.trim()
               const ok = added !== undefined && result.code === 0 && hash !== ""
               yield* Effect.logInfo("tracking", { hash, cwd: state.directory, git: state.gitdir })
-              yield* report({
-                op: "track",
-                sessionID,
-                start,
-                added,
-                ok,
-              })
               yield* guard("track", sessionID, added)
-              return ok ? hash : ""
+              return { value: ok ? hash : "", receipt: { added, ok } }
             }),
           )
         })
 
         const patch = Effect.fnUntraced(function* (hash: string, sessionID?: string) {
-          const start = yield* Clock.currentTimeMillis
-          return yield* locked(
+          return yield* timedLocked(
+            { op: "patch", sessionID },
             Effect.gen(function* () {
               const added = yield* add()
               yield* guard("patch", sessionID, added)
@@ -617,8 +631,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               )
               if (result.code !== 0) {
                 yield* Effect.logWarning("failed to get diff", { hash, exitCode: result.code })
-                yield* report({ op: "patch", sessionID, start, added, ok: false })
-                return { hash, files: [] }
+                return { value: { hash, files: [] }, receipt: { added, ok: false } }
               }
               const files = result.text
                 .trim()
@@ -628,13 +641,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
               // Hide ignored-file removals from the user-facing patch output.
               const ignored = yield* ignore(files)
-              yield* report({ op: "patch", sessionID, start, added, ok: added !== undefined })
-
               return {
-                hash,
-                files: files
-                  .filter((item) => !ignored.has(item))
-                  .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
+                value: {
+                  hash,
+                  files: files
+                    .filter((item) => !ignored.has(item))
+                    .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
+                },
+                receipt: { added, ok: added !== undefined },
               }
             }),
           )
