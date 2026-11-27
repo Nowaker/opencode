@@ -1,5 +1,10 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { Locale } from "../../src/util/locale"
+import { setViewerTimeZone } from "../../src/util/viewer-time-zone"
+
+afterEach(() => {
+  setViewerTimeZone(undefined)
+})
 
 test("todayTimeOrDateFirst shows only the time for today", () => {
   const now = Date.now()
@@ -40,6 +45,30 @@ test("an unset datetime_format part keeps the locale output", () => {
     new Date(yesterday).toLocaleTimeString(undefined, { timeStyle: "short" }),
   )
   expect(Locale.date(yesterday, { time: "HH" })).toBe(new Date(yesterday).toLocaleDateString())
+})
+
+test("a viewer zone writes the date and time tokens in that zone", () => {
+  // 2026-10-11 22:01:28 UTC is 2026-10-12 03:46:28 in Kathmandu (+05:45).
+  const input = Date.UTC(2026, 9, 11, 22, 1, 28)
+  setViewerTimeZone("Asia/Kathmandu")
+  expect(Locale.time(input, { time: "HH:mm:ss" })).toBe("03:46:28")
+  expect(Locale.time(input, { time: "h:m:s a" })).toBe("3:46:28 am")
+  expect(Locale.time(input, { time: "hh[h]mm A" })).toBe("03h46 AM")
+  expect(Locale.date(input, { date: "YYYY-MM-DD" })).toBe("2026-10-12")
+  expect(Locale.date(input, { date: "D.M.YY" })).toBe("12.10.26")
+  setViewerTimeZone("America/Los_Angeles")
+  expect(Locale.datetime(input, { date: "YYYY-MM-DD", time: "HH:mm A" })).toBe("15:01 PM · 2026-10-11")
+  setViewerTimeZone("UTC")
+  expect(Locale.time(Date.UTC(2026, 9, 7, 0, 30), { time: "h:mm A" })).toBe("12:30 AM")
+})
+
+test("a viewer zone keeps the locale output for unset datetime_format parts", () => {
+  const input = Date.UTC(2026, 9, 11, 22, 1, 28)
+  setViewerTimeZone("Asia/Tokyo")
+  expect(Locale.time(input)).toBe(
+    new Date(input).toLocaleTimeString(undefined, { timeStyle: "short", timeZone: "Asia/Tokyo" }),
+  )
+  expect(Locale.date(input)).toBe(new Date(input).toLocaleDateString(undefined, { timeZone: "Asia/Tokyo" }))
 })
 
 test("a stopwatch shows whole seconds while running", () => {
