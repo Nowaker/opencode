@@ -87,8 +87,8 @@ export const cursor = {
 }
 
 // Shape-stable row -> info/part constructors. session.prompt.runLoop calls
-// MessageV2.filterCompactedEffect on every iteration, which hydrates the
-// session's full message history; for sessions with thousands of messages
+// MessageV2.filterCompactedEffect on every iteration, which can hydrate the
+// session's full message history if it has no completed compaction; for long sessions
 // the pre-existing spread-based `{...row.data, id, sessionID}` produced
 // objects whose hidden-class (JSC `Structure`) varied based on which
 // optional keys row.data happened to contain. With dozens of optional
@@ -798,27 +798,34 @@ function resolveAnchor(db: Database.Interface["db"], sessionID: SessionID, value
 }
 
 export function stream(sessionID: SessionID) {
-  const size = 50
-  return Effect.gen(function* () {
-    const result = [] as WithParts[]
-    let before: string | undefined
-    while (true) {
-      const next = yield* page({ sessionID, limit: size, before }).pipe(
-        Effect.catchIf(NotFoundError.isInstance, () =>
-          Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
-        ),
-      )
-      if (next.items.length === 0) break
-      for (let i = next.items.length - 1; i >= 0; i--) {
-        const item = next.items[i]
-        if (item) result.push(item)
-      }
-      if (!next.more || !next.cursor) break
-      before = next.cursor
-    }
-    return result
-  })
+  return scanNewest(sessionID)
 }
+
+const scanNewest = Effect.fnUntraced(function* (sessionID: SessionID, stop?: (msg: WithParts) => boolean) {
+  const { db } = yield* Database.Service
+  const size = 50
+  const session = eq(MessageTable.session_id, sessionID)
+  const result: WithParts[] = []
+  let before: Cursor | undefined
+  while (true) {
+    const rows = yield* db
+      .select()
+      .from(MessageTable)
+      .where(before ? and(session, older(before)) : session)
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(size)
+      .all()
+      .pipe(Effect.orDie)
+    const tail = rows.at(-1)
+    if (!tail) return result
+    for (const msg of yield* hydrate(db, rows)) {
+      result.push(msg)
+      if (stop?.(msg)) return result
+    }
+    if (rows.length < size) return result
+    before = { id: tail.id, time: tail.time_created }
+  }
+})
 
 export function parts(messageID: MessageID) {
   return Effect.gen(function* () {
@@ -863,26 +870,37 @@ function compactionTail(parts: readonly Part[]) {
 }
 
 export function filterCompacted(msgs: Iterable<WithParts>) {
-  const result = [] as WithParts[]
-  const completed = new Set<string>()
-  let retain: MessageID | undefined
+  const stop = compactionCut()
+  const result: WithParts[] = []
   for (const msg of msgs) {
     result.push(msg)
-    if (retain) {
-      if (msg.info.id === retain) break
-      continue
-    }
+    if (stop(msg)) break
+  }
+  return orderCompacted(result)
+}
+
+export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
+  return orderCompacted(yield* scanNewest(sessionID, compactionCut()))
+})
+
+function compactionCut() {
+  const completed = new Set<MessageID>()
+  let retain: MessageID | undefined
+  return (msg: WithParts) => {
+    if (retain) return msg.info.id === retain
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
       const part = ownedCompactionPart(msg.parts) ?? msg.parts.find((item) => item.type === "compaction")
-      if (!part) continue
-      if (!part.tail_start_id) break
+      if (!part) return false
       retain = part.tail_start_id
-      if (msg.info.id === retain) break
-      continue
+      return !retain || msg.info.id === retain
     }
     if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error)
       completed.add(msg.info.parentID)
+    return false
   }
+}
+
+function orderCompacted(result: WithParts[]) {
   result.reverse()
   const compactionIndex = result.findLastIndex(
     (msg) => msg.info.role === "user" && compactionTail(msg.parts) !== undefined,
@@ -908,10 +926,6 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
   }
   return result
 }
-
-export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
-  return filterCompacted(yield* stream(sessionID))
-})
 
 // filterCompacted reorders messages for model consumption
 // ([compaction-user, summary, ...retained tail..., continue-user]), so array

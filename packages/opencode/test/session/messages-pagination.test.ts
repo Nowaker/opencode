@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Database } from "@opencode-ai/core/database/database"
+import { MessageTable } from "@opencode-ai/core/session/sql"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { eq, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -645,6 +648,48 @@ describe("Session.findMessage", () => {
 })
 
 describe("MessageV2.filterCompacted", () => {
+  it.instance("does not acquire the first excluded SQLite payload after a retained tail spans pages", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") }
+        const old = MessageID.make("msg_000_imported")
+        const tail = MessageID.make("msg_zzz_imported")
+        for (const id of [old, tail]) {
+          yield* session.updateMessage({ id, sessionID, role: "user", agent: "test", model, time: { created: 2 } })
+        }
+        const middle = yield* fill(sessionID, 96, () => 3)
+        const marker = yield* addUser(sessionID)
+        yield* addCompactionPart(sessionID, marker, tail)
+        const summary = yield* addAssistant(sessionID, marker, { summary: true, finish: "end_turn" })
+        const diffs = [{ file: "current.ts", patch: "+current", additions: 1, deletions: 0 }]
+        const current = yield* session.updateMessage({
+          id: MessageID.ascending(),
+          sessionID,
+          role: "user",
+          agent: "test",
+          model,
+          time: { created: Date.now() },
+          summary: { diffs },
+        })
+
+        // The excluded row is also the lookahead of a full second page. If
+        // its data crosses the SQLite boundary, the JSON column mapper fails.
+        yield* database.db
+          .update(MessageTable)
+          .set({ data: sql`${"pre-cut message payload must not be decoded"}` })
+          .where(eq(MessageTable.id, old))
+          .run()
+          .pipe(Effect.orDie)
+
+        const result = yield* MessageV2.filterCompactedEffect(sessionID)
+
+        expect(result.map((item) => item.info.id)).toEqual([marker, summary, tail, ...middle, current.id])
+        expect(result.at(-1)?.info).toMatchObject({ summary: { diffs } })
+      }),
+    ),
+  )
+
   it.instance("returns all messages when no compaction", () =>
     withSession(({ sessionID }) =>
       Effect.gen(function* () {
@@ -732,18 +777,33 @@ describe("MessageV2.filterCompacted", () => {
     ),
   )
 
-  it.instance("skips assistant without finish even if marked as summary", () =>
+  it.instance("keeps older history when the assistant summary has no finish", () =>
     withSession(({ sessionID }) =>
       Effect.gen(function* () {
+        const older = yield* addUser(sessionID, "older")
         const u1 = yield* addUser(sessionID, "hello")
         yield* addCompactionPart(sessionID, u1)
 
-        // summary=true but no finish
-        yield* addAssistant(sessionID, u1, { summary: true })
-        yield* addUser(sessionID, "next")
+        const summary = yield* addAssistant(sessionID, u1, { summary: true })
+        const next = yield* addUser(sessionID, "next")
 
-        const result = MessageV2.filterCompacted(yield* MessageV2.stream(sessionID))
-        expect(result).toHaveLength(3)
+        const result = yield* MessageV2.filterCompactedEffect(sessionID)
+        expect(result.map((msg) => msg.info.id)).toEqual([older, u1, summary, next])
+      }),
+    ),
+  )
+
+  it.instance("keeps older history in chronological order when the stored tail is missing", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const older = yield* fill(sessionID, 55, () => 1)
+        const marker = yield* addUser(sessionID)
+        yield* addCompactionPart(sessionID, marker, MessageID.make("msg_missing_tail"))
+        const summary = yield* addAssistant(sessionID, marker, { summary: true, finish: "end_turn" })
+        const next = yield* addUser(sessionID, "next")
+
+        const result = yield* MessageV2.filterCompactedEffect(sessionID)
+        expect(result.map((msg) => msg.info.id)).toEqual([...older, marker, summary, next])
       }),
     ),
   )
