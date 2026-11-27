@@ -3,12 +3,13 @@ import { mkdir } from "fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer, Schema } from "effect"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { MCP } from "../../src/mcp"
 import { McpBrowser } from "../../src/mcp/browser"
 import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
 import { oauthMcp } from "../fixture/oauth-mcp"
-import { testEffect } from "../lib/effect"
+import { awaitWithTimeout, testEffect } from "../lib/effect"
 
 // Every opencode process (TUI tab, server, `opencode mcp auth`) signs in through the same redirect
 // URI, so the browser's callback reaches whichever process holds that port, not necessarily the one
@@ -20,7 +21,7 @@ const browser = {
 }
 
 const it = testEffect(
-  LayerNode.compile(MCP.node, [
+  LayerNode.compile(LayerNode.group([MCP.node, EventV2Bridge.node]), [
     [
       McpBrowser.node,
       Layer.succeed(
@@ -169,7 +170,45 @@ it.instance("authenticate leaves no callback listener when the server needs no s
   }),
 )
 
-it.instance("starting a sign-in whose callback nobody awaits leaves no callback listener", () =>
+it.instance(
+  "a sign-in started for pasting a code finishes when the browser returns to this machine",
+  () =>
+    Effect.gen(function* () {
+      yield* reset
+      const server = yield* oauthMcp()
+      const redirectUri = yield* freeRedirectUri
+      const mcp = yield* MCP.Service
+      const events = yield* EventV2Bridge.Service
+      const name = crypto.randomUUID()
+      yield* mcp.add(name, { type: "remote", url: server.url, enabled: false, oauth: { redirectUri } })
+      const connected = yield* Deferred.make<void>()
+      const unsubscribe = yield* events.listen((event) => {
+        if (
+          event.type === MCP.ToolsChanged.type &&
+          Schema.is(Schema.Struct({ server: Schema.Literal(name) }))(event.data)
+        )
+          Deferred.doneUnsafe(connected, Effect.void)
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      const started = yield* mcp.startAuth(name)
+      const page = yield* Effect.promise(() => fetch(started.authorizationUrl))
+
+      expect(page.status).toBe(200)
+      yield* awaitWithTimeout(
+        Deferred.await(connected),
+        "the browser callback never finished the sign-in",
+        "10 seconds",
+      )
+      expect((yield* mcp.status())[name]).toEqual({ status: "connected" })
+      expect(server.exchanges).toHaveLength(1)
+      expect(McpOAuthCallback.isRunning()).toBe(false)
+    }),
+  20_000,
+)
+
+it.instance("pasting the code stops the sign-in's callback listener", () =>
   Effect.gen(function* () {
     yield* reset
     const server = yield* oauthMcp()
@@ -179,8 +218,30 @@ it.instance("starting a sign-in whose callback nobody awaits leaves no callback 
     yield* mcp.add(name, { type: "remote", url: server.url, enabled: false, oauth: { redirectUri } })
 
     const started = yield* mcp.startAuth(name)
-    expect(started.authorizationUrl).not.toBe("")
+    expect(McpOAuthCallback.isRunning()).toBe(true)
+    const callback = yield* Effect.promise(() => server.authorize(started.authorizationUrl))
+
+    expect((yield* mcp.finishAuth(name, callback.code)).status).toBe("connected")
     expect(McpOAuthCallback.isRunning()).toBe(false)
+    expect(server.exchanges).toHaveLength(1)
+  }),
+)
+
+it.instance("a connect while a sign-in waits keeps that sign-in's client and verifier", () =>
+  Effect.gen(function* () {
+    yield* reset
+    const server = yield* oauthMcp()
+    const redirectUri = yield* freeRedirectUri
+    const mcp = yield* MCP.Service
+    const name = crypto.randomUUID()
+    yield* mcp.add(name, { type: "remote", url: server.url, enabled: false, oauth: { redirectUri } })
+
+    const started = yield* mcp.startAuth(name)
+    yield* mcp.connect(name)
+    expect((yield* mcp.status())[name]).toEqual({ status: "needs_auth" })
+    const callback = yield* Effect.promise(() => server.authorize(started.authorizationUrl))
+
+    expect((yield* mcp.finishAuth(name, callback.code)).status).toBe("connected")
   }),
 )
 

@@ -80,6 +80,29 @@ it.instance("external start does not bind or disturb the desktop listener", () =
   }),
 )
 
+it.instance("external start replaces an unfinished sign-in started for pasting a code", () =>
+  Effect.gen(function* () {
+    const server = yield* oauthMcp()
+    const mcp = yield* MCP.Service
+    const name = crypto.randomUUID()
+    const peer = yield* Effect.acquireRelease(
+      Effect.sync(() => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("old-peer") })),
+      (http) => Effect.promise(() => http.stop(true)),
+    )
+    yield* mcp.add(name, { type: "remote", url: server.url, enabled: false, oauth: { redirectUri: peer.url.href } })
+    yield* mcp.startAuth(name)
+    expect(McpOAuthCallback.isRunning()).toBe(true)
+
+    const start = yield* mcp.startAuth(name, external)
+
+    expect(start.callbackMode).toBe("external")
+    expect(McpOAuthCallback.isRunning()).toBe(false)
+    const callback = yield* Effect.promise(() => server.authorize(start.authorizationUrl))
+    expect((yield* mcp.finishAuth(name, callback.code, callback)).status).toBe("connected")
+    expect(yield* mcp.finishAuth(name, "unused").pipe(Effect.flip)).toMatchObject({ _tag: "MCP.AuthFlowError" })
+  }),
+)
+
 it.instance("different-name external flows cannot complete each other's state", () =>
   Effect.gen(function* () {
     const mcp = yield* MCP.Service

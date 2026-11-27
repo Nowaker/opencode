@@ -336,7 +336,10 @@ const layer = Layer.effect(
                   })
                   .pipe(Effect.ignore, Effect.as(undefined))
               } else {
-                if (!externalAuth.active(key)) pendingOAuthTransports.set(key, { directory, transport })
+                // A sign-in in progress keeps its own transport and PKCE verifier; a connect only records one
+                // for pasting a code when no sign-in has been started.
+                if (!externalAuth.active(key) && !pendingOAuthTransports.get(key)?.provider)
+                  pendingOAuthTransports.set(key, { directory, transport })
                 lastStatus = { status: "needs_auth" as const }
                 return events
                   .publish(TuiEvent.ToastShow, {
@@ -860,19 +863,20 @@ const layer = Layer.effect(
         }
         const directory = yield* InstanceState.directory
         const previous = pendingOAuthTransports.get(mcpName)
-        if (options && previous && (previous.provider || previous.directory !== directory))
-          return yield* new AuthFlowError({ message: "OAuth flow already pending" })
         const flow = options ? yield* externalAuth.reserve(mcpName, directory, options.redirectUri) : undefined
+        // Nothing expires a sign-in started without callbackMode, so an external one replaces it rather than
+        // waiting on a flow its user may have abandoned; only another external flow blocks it, above.
         if (flow) {
           pendingOAuthTransports.delete(mcpName)
+          McpOAuthCallback.cancelPending(mcpName)
           if (previous) yield* Effect.tryPromise(() => previous.transport.close()).pipe(Effect.ignore)
         }
 
         // OAuth config is optional - if not provided, we'll use auto-discovery
         const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
 
-        // A desktop flow's callback listener starts in authenticate, which waits for it; a caller that
-        // only starts the flow completes it with the code itself, and must not leave a listener behind.
+        // A desktop flow's callback listener starts in authenticate or startManualAuth, each waiting for its
+        // own state; starting a flow binds nothing, so no listener outlives the flows that wait on it.
         const effectiveRedirectUri = flow?.redirectUri ?? configuredRedirectUri(mcpConfig)
 
         const oauthState =
@@ -935,6 +939,7 @@ const layer = Layer.effect(
                   }),
                 )
               }
+              McpOAuthCallback.cancelPending(mcpName)
               pendingOAuthTransports.set(mcpName, { directory, transport, provider: authProvider })
               return Effect.succeed({ authorizationUrl: capturedUrl.toString(), oauthState } satisfies AuthResult)
             }
@@ -1030,6 +1035,43 @@ const layer = Layer.effect(
       return yield* finishAuth(mcpName, code)
     })
 
+    // A sign-in started without callbackMode (Portal's manual flow, Vibeterm's MCP screen) also waits on the
+    // desktop redirect for its own state, so a browser on this machine finishes it as authenticate's does,
+    // while a browser elsewhere still pastes the code. The wait ends with the flow: its callback, a pasted
+    // code, a newer start, removeAuth, or the callback timeout.
+    const startManualAuth = Effect.fn("MCP.startManualAuth")(function* (mcpName: string, options?: AuthStartOptions) {
+      const result = yield* startAuth(mcpName, options)
+      if (options || !result.authorizationUrl) return result
+      const mcpConfig = yield* requireMcpConfig(mcpName)
+      const { code } = yield* Effect.promise(() =>
+        McpOAuthCallback.listenFor(result.oauthState, mcpName, configuredRedirectUri(mcpConfig)),
+      )
+      // Settled here, not in the fiber: a newer start can end the wait before that fiber first runs.
+      const callback = code.then(
+        (authorizationCode) => ({ authorizationCode }),
+        (error: unknown) => ({ error }),
+      )
+      yield* Effect.promise(() => callback).pipe(
+        Effect.flatMap((outcome) =>
+          "error" in outcome
+            ? Effect.logDebug("MCP sign-in stopped waiting for its browser callback", { mcpName, error: outcome.error })
+            : finishAuth(mcpName, outcome.authorizationCode).pipe(
+                Effect.flatMap((status) =>
+                  status.status === "connected"
+                    ? events.publish(ToolsChanged, { server: mcpName })
+                    : Effect.logWarning("MCP sign-in from the browser callback did not connect", { mcpName, status }),
+                ),
+              ),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("MCP sign-in from the browser callback failed", { mcpName, cause }),
+        ),
+        InstanceActivity.activity,
+        Effect.forkDetach,
+      )
+      return result
+    })
+
     const finishAuth = Effect.fn("MCP.finishAuth")(function* (
       mcpName: string,
       authorizationCode: string | undefined,
@@ -1078,6 +1120,9 @@ const layer = Layer.effect(
           )
           if (error) return error
           await pending.provider?.commit()
+          // The sign-in is over once committed, even when this request was interrupted meanwhile, so it stops
+          // waiting for a browser callback - unless a newer start has replaced it.
+          if (pendingOAuthTransports.get(mcpName) === pending) McpOAuthCallback.cancelPending(mcpName)
           return undefined
         }),
       )
@@ -1134,7 +1179,7 @@ const layer = Layer.effect(
       disconnect: (...args) => InstanceActivity.activity(disconnect(...args)),
       getPrompt: (...args) => InstanceActivity.activity(getPrompt(...args)),
       readResource: (...args) => InstanceActivity.activity(readResource(...args)),
-      startAuth: (...args) => InstanceActivity.activity(startAuth(...args)),
+      startAuth: (...args) => InstanceActivity.activity(startManualAuth(...args)),
       authenticate: (...args) => InstanceActivity.activity(authenticate(...args)),
       finishAuth: (...args) => InstanceActivity.activity(finishAuth(...args)),
       removeAuth: (...args) => InstanceActivity.activity(removeAuth(...args)),
