@@ -662,7 +662,8 @@ describe("MessageV2.filterCompacted", () => {
         const marker = yield* addUser(sessionID)
         yield* addCompactionPart(sessionID, marker, tail)
         const summary = yield* addAssistant(sessionID, marker, { summary: true, finish: "end_turn" })
-        const diffs = [{ file: "current.ts", patch: "+current", additions: 1, deletions: 0 }]
+        const metadata = { file: "current.ts", additions: 1, deletions: 0 }
+        const diffs = [{ ...metadata, patch: "+current" }]
         const current = yield* session.updateMessage({
           id: MessageID.ascending(),
           sessionID,
@@ -683,9 +684,12 @@ describe("MessageV2.filterCompacted", () => {
           .pipe(Effect.orDie)
 
         const result = yield* MessageV2.filterCompactedEffect(sessionID)
+        const info = result.at(-1)?.info
+        const exact = yield* MessageV2.get({ sessionID, messageID: current.id })
 
         expect(result.map((item) => item.info.id)).toEqual([marker, summary, tail, ...middle, current.id])
-        expect(result.at(-1)?.info).toMatchObject({ summary: { diffs } })
+        expect(info?.role === "user" && info.summary?.diffs).toEqual([metadata])
+        expect(exact.info.role === "user" && exact.info.summary?.diffs).toEqual(diffs)
       }),
     ),
   )

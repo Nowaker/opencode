@@ -552,7 +552,11 @@ export interface Interface {
   readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
+  readonly messages: (input: {
+    sessionID: SessionID
+    limit?: number
+    includeDiffBodies?: boolean
+  }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
@@ -869,7 +873,7 @@ const layer: Layer.Layer<
         metadata: original.metadata,
         forkedFrom: input.sessionID,
       })
-      const msgs = yield* messages({ sessionID: input.sessionID })
+      const msgs = yield* messages({ sessionID: input.sessionID, includeDiffBodies: true })
       const idMap = new Map<string, MessageID>()
       const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
       const settledAt = Date.now()
@@ -1083,7 +1087,7 @@ const layer: Layer.Layer<
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
-        return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).pipe(
+        return (yield* MessageV2.page({ ...input, limit: input.limit }).pipe(
           Effect.provideService(Database.Service, database),
         )).items
       }
@@ -1092,7 +1096,7 @@ const layer: Layer.Layer<
       const result = [] as SessionV1.WithParts[]
       let before: string | undefined
       while (true) {
-        const page = yield* MessageV2.page({ sessionID: input.sessionID, limit: size, before }).pipe(
+        const page = yield* MessageV2.page({ ...input, limit: size, before }).pipe(
           Effect.provideService(Database.Service, database),
         )
         if (page.items.length === 0) break

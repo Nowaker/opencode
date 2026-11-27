@@ -7,7 +7,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { Effect } from "effect"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
 import { MessageID, PartID } from "@/session/schema"
@@ -41,7 +41,9 @@ for (const role of ["user", "assistant"] as const) {
               tokens,
             }
       const optional =
-        role === "user" ? { system: "system", tools: { bash: true } } : { finish: "stop", variant: "high" }
+        role === "user"
+          ? { system: "system", tools: { bash: true }, summary: { diffs: [] } }
+          : { finish: "stop", variant: "high", summary: false }
       const rows = [data, { ...optional, ...data, id: MessageID.ascending() }]
       yield* database.db
         .insert(MessageTable)
@@ -57,10 +59,14 @@ for (const role of ["user", "assistant"] as const) {
         .run()
         .pipe(Effect.orDie)
 
-      const hydrated = yield* Effect.all(rows.map((row) => MessageV2.get({ sessionID: session.id, messageID: row.id })))
+      const projected = (yield* MessageV2.page({ sessionID: session.id, limit: 2 })).items
+      const exact = yield* Effect.all(rows.map((row) => MessageV2.get({ sessionID: session.id, messageID: row.id })))
 
-      expect(Object.keys(hydrated[0]?.info ?? {})).toEqual(Object.keys(hydrated[1]?.info ?? {}))
-      expect(hydrated[1]?.info).toMatchObject({ ...optional, ...data, id: rows[1]?.id })
+      for (const hydrated of [projected, exact]) {
+        expect(Object.keys(hydrated[0]?.info ?? {})).toEqual(Object.keys(hydrated[1]?.info ?? {}))
+        expect(hydrated[0]?.info.summary).toBeUndefined()
+        expect(hydrated[1]?.info).toMatchObject({ ...optional, ...data, id: rows[1]?.id })
+      }
     }),
   )
 }
@@ -204,5 +210,101 @@ it.instance("refreshes hydrated info and parts when row timestamps change", () =
     expect(changed.parts[0]).not.toBe(fixture.first.parts[0])
     expect(changed.info).toMatchObject({ system: "changed" })
     expect(changed.parts[0]).toMatchObject({ text: "after" })
+  }),
+)
+
+const historyWithDiff = Effect.fnUntraced(function* () {
+  const sessions = yield* Session.Service
+  const database = yield* Database.Service
+  const session = yield* sessions.create({})
+  const modified = { file: 'src/"one".ts', status: "modified" as const, additions: 3, deletions: 2 }
+  const deleted = { file: "two.ts", status: "deleted" as const, additions: 0, deletions: 1 }
+  const title = { title: "Changes", body: "Two files" }
+  const full = {
+    ...title,
+    diffs: [{ ...modified, patch: "@@ -1 +1 @@\n-old\n+new", before: "old", after: "new" }, deleted],
+  }
+  const message = {
+    id: MessageID.ascending(),
+    sessionID: session.id,
+    role: "user",
+    agent: "build",
+    model,
+    time: { created: 1 },
+    system: "fixture instructions",
+    promptOrigin: { client: "oh-my-openagent", version: "1.2.3", purpose: "subagent" },
+    summary: full,
+  } satisfies SessionV1.User
+  yield* database.db
+    .insert(MessageTable)
+    .values({ id: message.id, session_id: session.id, time_created: 1, time_updated: 1, data: message })
+    .run()
+    .pipe(Effect.orDie)
+  return { message, database, metadata: { ...title, diffs: [modified, deleted] } }
+})
+
+for (const firstRead of ["metadata", "exact"] as const) {
+  it.instance(`keeps full and projected diff reads separate when ${firstRead} is read first`, () =>
+    Effect.gen(function* () {
+      const fixture = yield* historyWithDiff()
+      const message = fixture.message
+      const input = { sessionID: message.sessionID, limit: 1 }
+      const metadata = MessageV2.page(input)
+      const exactPage = MessageV2.page({ ...input, includeDiffBodies: true })
+      const exactGet = MessageV2.get({ sessionID: message.sessionID, messageID: message.id })
+
+      const initial = firstRead === "exact" ? (yield* exactGet).info : (yield* metadata).items[0]?.info
+      const exact = (yield* exactPage).items[0]?.info
+      const exactAgain = (yield* exactGet).info
+      const thin = (yield* metadata).items[0]?.info
+
+      expect(initial?.role === "user" && initial.summary).toEqual(
+        firstRead === "exact" ? message.summary : fixture.metadata,
+      )
+      expect(exact?.role === "user" && exact.summary).toEqual(message.summary)
+      expect(exactAgain.role === "user" && exactAgain.summary).toEqual(message.summary)
+      expect(exactAgain).not.toBe(exact)
+      expect(thin?.role === "user" && thin.summary).toEqual(fixture.metadata)
+      expect(thin).toMatchObject({ id: message.id, system: message.system, model })
+      for (const info of [exact, exactAgain, thin]) {
+        expect(info?.role === "user" && MessageV2.storedPromptOrigin(info)).toEqual(message.promptOrigin)
+      }
+    }),
+  )
+}
+
+for (const read of [MessageV2.stream, MessageV2.filterCompactedEffect]) {
+  it.instance(`projects stored diff bodies in ${read === MessageV2.stream ? "stream" : "compacted history"}`, () =>
+    Effect.gen(function* () {
+      const fixture = yield* historyWithDiff()
+
+      const [message] = yield* read(fixture.message.sessionID)
+
+      expect(message?.info.role === "user" && message.info.summary).toEqual(fixture.metadata)
+    }),
+  )
+}
+
+it.instance("projects only object entries in a legacy diff array without coercing other values", () =>
+  Effect.gen(function* () {
+    const fixture = yield* historyWithDiff()
+    const legacyEntries = [null, true, false, '["text"]', 12, ["nested"]]
+    const data = {
+      ...fixture.message,
+      summary: { diffs: [...legacyEntries, { file: "old.ts", before: "before", after: "after", legacy: "hint" }] },
+    }
+    yield* fixture.database.db
+      .update(MessageTable)
+      .set({ data: sql`${JSON.stringify(data)}` })
+      .where(eq(MessageTable.id, data.id))
+      .run()
+      .pipe(Effect.orDie)
+
+    const page = yield* MessageV2.page({ sessionID: data.sessionID, limit: 1 })
+    const info = page.items[0]?.info
+
+    expect<unknown>(info?.role === "user" && info.summary).toEqual({
+      diffs: [...legacyEntries, { file: "old.ts", legacy: "hint" }],
+    })
   }),
 )

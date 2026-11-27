@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Database } from "@opencode-ai/core/database/database"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
@@ -14,7 +15,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, usable } from "./overflow"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -240,6 +241,7 @@ const layer = Layer.effect(
     const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const database = yield* Database.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: SessionV1.Assistant["tokens"]
@@ -652,13 +654,19 @@ const layer = Layer.effect(
       // new one; the loop then answers it as the next turn.
       if (result === "continue" && !processor.message.error) {
         for (const msg of queued) {
+          const exact = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.info.id }).pipe(
+            Effect.provideService(Database.Service, database),
+            Effect.option,
+          )
+          if (Option.isNone(exact) || exact.value.info.role !== "user") continue
+          const user = exact.value.info
           const movedID = MessageID.ascending()
           const moved = yield* session.updateMessage({
-            ...msg.info,
-            ...(msg.info.role === "user" && { promptOrigin: MessageV2.storedPromptOrigin(msg.info) }),
+            ...user,
+            promptOrigin: MessageV2.storedPromptOrigin(user),
             id: movedID,
-            vibeterm: MachineProvenance.copy(msg.info, movedID),
-            time: { ...msg.info.time, created: Date.now() },
+            vibeterm: MachineProvenance.copy(user, movedID),
+            time: { ...user.time, created: Date.now() },
           })
           for (const part of msg.parts) {
             yield* session.updatePart({ ...part, id: PartID.ascending(), messageID: moved.id })
@@ -714,6 +722,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    Database.node,
     Config.node,
     Session.node,
     Agent.node,

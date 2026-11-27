@@ -94,4 +94,60 @@ describe("session diff with missing patch (#26574)", () => {
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
+
+  it.instance(
+    "message lists retain turn diff metadata and the diff route returns the stored patch",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* withSession({ title: "turn-diff-history" })
+        const older = {
+          id: MessageID.ascending(),
+          sessionID: session.id,
+          role: "user",
+          time: { created: 1 },
+          agent: "build",
+          model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("model") },
+        } satisfies SessionV1.User
+        yield* Session.use.updateMessage(older)
+        const changes = {
+          file: "turn.ts",
+          additions: 2,
+          deletions: 1,
+          status: "modified",
+        } satisfies NonNullable<SessionV1.User["summary"]>["diffs"][number]
+        const patch = "@@ -1 +1,2 @@\n-old\n+new\n+second\n"
+        const summary = { title: "Turn title", body: "Turn summary", diffs: [changes] }
+        const user = yield* Session.use.updateMessage({
+          ...older,
+          id: MessageID.ascending(),
+          time: { created: 2 },
+          summary: { ...summary, diffs: [{ ...changes, patch }] },
+        })
+
+        const params = { sessionID: session.id }
+        const listPath = pathFor(SessionPaths.messages, params)
+        const diffPath = pathFor(SessionPaths.diff, params)
+        const listItem = (id: MessageID) => expect.objectContaining({ info: expect.objectContaining({ id }) })
+        const projected = expect.objectContaining({ info: expect.objectContaining({ id: user.id, summary }) })
+        for (const { path, expected, cursor } of [
+          { path: listPath, expected: [listItem(older.id), projected], cursor: false },
+          { path: `${listPath}?limit=1`, expected: [projected], cursor: true },
+          { path: `${listPath}?limit=2`, expected: [listItem(older.id), projected], cursor: false },
+        ]) {
+          const response = yield* requestInDirectory(path, test.directory)
+          expect(response.status).toBe(200)
+          expect(response.headers["x-next-cursor"] !== undefined).toBe(cursor)
+          expect(yield* response.json).toEqual(expected)
+        }
+
+        const diff = yield* requestInDirectory(
+          `${diffPath}?${new URLSearchParams({ messageID: user.id })}`,
+          test.directory,
+        )
+        expect(diff.status).toBe(200)
+        expect(yield* diff.json).toEqual([{ ...changes, patch }])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
 })
