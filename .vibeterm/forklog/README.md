@@ -175,6 +175,7 @@ carries every feature forward unchanged. That commit includes the full
 
 ## Session records
 
+- [2026-11-27 MCP manual sign-ins finished by the browser callback](./sessions/2026-11-27-mcp-oauth-manual-callback.md) - dh-panel-context still failed from Portal: its manual flow's callback reached no waiter and an unfinished manual flow refused later Portal starts; `93993bfd5d` makes a manual start wait for its own browser callback, lets an external start replace it, and keeps a sign-in's transport across connects; vt-634 on this Mac.
 - [2026-11-26 W1 Bash job controls and cancellation receipts](./sessions/2026-11-26-bash-job-controls.md) - native TUI same-process handoff, bounded readiness and line notices, and compiled paired cancellation inbox-admission proof; landed as `564dd3cc30`, desktop vt-625.
 - [2026-11-26 native installs](./sessions/2026-11-26-native-install.md) - m4max v1 vt-617 with the retry patch preserved; desktop and m4max v2 vt-58 with 13/13 pre-swap and installed-path probes on each host.
 - [2026-11-25 MCP OAuth callbacks shared by every process](./sessions/2026-11-25-mcp-oauth-shared-callback.md) - a Vibeterm warm spare held `127.0.0.1:19876` and refused other tabs' sign-ins; `74e6e381562` adds a per-machine callback registry so the port holder forwards, lingers and hands over, and stops `startAuth` binding the port; opencode-tools `ba272b4ee` joins vibeterm-api; vt-614 on this Mac with an installed two-process check.
@@ -980,6 +981,9 @@ Linux runtime proof, from `packages/opencode`: `bun script/serve-idle-proof.ts <
   50 passed, 174 assertions; package typecheck passed. Fixtures validate exact
   client registration, redirect URI and S256 PKCE, including external login
   followed by desktop reauthentication.
+- `93993bfd5d` (2026-11-27): an external start replaces a manual flow left
+  unfinished in the same process instead of refusing it, since nothing
+  expires a manual flow; only another external flow still blocks it.
 - Candidate `1.19.0-vt-371-dfb56f76c7` passed the canonical database-safety
   gate and an isolated compiled-server test: connected, one token exchange,
   replay rejected, legacy listener unaffected and owned listeners stopped.
