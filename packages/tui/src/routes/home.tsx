@@ -5,7 +5,7 @@ import { logo } from "../logo"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
-import { useRouteData } from "../context/route"
+import { useRoute, useRouteData } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { usePluginRuntime } from "../plugin/runtime"
@@ -23,6 +23,7 @@ let once = false
 export function Home() {
   const pluginRuntime = usePluginRuntime()
   const sync = useSync()
+  const router = useRoute()
   const route = useRouteData("home")
   const promptRef = usePromptRef()
   const [ref, setRef] = createSignal<PromptRef | undefined>()
@@ -87,6 +88,7 @@ export function Home() {
     </box>
   )
   let sent = false
+  let startupPrompt: PromptRef | undefined
 
   onMount(() => {
     editor.clearSelection()
@@ -103,6 +105,7 @@ export function Home() {
     }
     if (!args.prompt) return
     r.set({ input: args.prompt, parts: [] })
+    startupPrompt = r
     once = true
   }
 
@@ -115,7 +118,8 @@ export function Home() {
     if (!args.prompt) return
     if (r.current.input !== args.prompt) return
     sent = true
-    r.submit()
+    const title = router.initial && r === startupPrompt ? args.initialSessionTitle : undefined
+    r.submit(title === undefined ? undefined : { input: args.prompt, title })
   })
 
   return (

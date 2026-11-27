@@ -31,9 +31,16 @@ export const { use: useRoute, provider: RouteProvider } = createSimpleContext({
     const [store, setStore] = createStore<Route>(
       props.initialRoute ?? initialRoute(startup.initialRoute) ?? { type: "home" },
     )
-    const go = (route: Route) => setStore(reconcile(route))
+    let initial = true
+    const go = (route: Route) => {
+      initial = false
+      setStore(reconcile(route))
+    }
 
     return {
+      get initial() {
+        return initial
+      },
       get data() {
         return store
       },

@@ -137,7 +137,14 @@ export type PromptRef = {
   reset(): void
   blur(): void
   focus(): void
-  submit(): void
+  submit(startup?: { readonly input: string; readonly title: string }): void
+}
+
+type ExpectedPrompt = { readonly input: string; readonly parts: number }
+type PromptSubmission = {
+  readonly expected?: ExpectedPrompt
+  readonly unarchive?: boolean
+  readonly initialSessionTitle?: string
 }
 
 const money = new Intl.NumberFormat("en-US", {
@@ -1010,7 +1017,7 @@ export function Prompt(props: PromptProps) {
           move.creating() ||
           admission.entries().length > 0 ||
           startupNotice()?.type === "queued",
-        submit(expected: { input: string; parts: number }) { void submit(expected) },
+        submit(expected: ExpectedPrompt) { void submit({ expected }) },
         caret: readCaret,
         place: placeCaret,
       }
@@ -1049,8 +1056,11 @@ export function Prompt(props: PromptProps) {
         setStore("extmarkToPartIndex", new Map())
       })
     },
-    submit() {
-      whileOpen(() => void submit())
+    submit(startup) {
+      whileOpen(() => void submit(startup && {
+        expected: { input: startup.input, parts: 0 },
+        initialSessionTitle: startup.title,
+      }))
     },
   }
 
@@ -1640,7 +1650,7 @@ export function Prompt(props: PromptProps) {
   })
 
   let submitting = false
-  async function submit(expected?: { input: string; parts: number }, unarchive = false) {
+  async function submit(options: PromptSubmission = {}) {
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -1651,13 +1661,13 @@ export function Prompt(props: PromptProps) {
     submitting = true
     const timeMs = Date.now()
     try {
-      return await submitInner(expected, unarchive, timeMs)
+      return await submitInner(options, timeMs)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner(expected: { input: string; parts: number } | undefined, unarchive: boolean, timeMs: number) {
+  async function submitInner({ expected, unarchive = false, initialSessionTitle }: PromptSubmission, timeMs: number) {
     workspace.clearNotice()
     if (startupNotice()?.type === "changed") setStartupNotice(undefined)
 
@@ -1690,7 +1700,7 @@ export function Prompt(props: PromptProps) {
     const archive = archived()
     if (archive && !unarchive) {
       const expected = { input: store.prompt.input, parts: store.prompt.parts.length }
-      showArchived(archive, () => void submit(expected, true))
+      showArchived(archive, () => void submit({ expected, unarchive: true }))
       return false
     }
     const workspaceID = workspaceSession?.workspaceID
@@ -1721,6 +1731,7 @@ export function Prompt(props: PromptProps) {
       const res = await sdk.client.session.create({
         directory,
         workspace: workspaceID,
+        title: initialSessionTitle,
         agent: agent.name,
         model: {
           providerID: selectedModel.providerID,

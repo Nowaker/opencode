@@ -245,6 +245,8 @@ export const TuiThreadCommand = cmd({
         return
       }
       const cwd = Filesystem.resolve(process.cwd())
+      const initialSessionTitle = process.env.VIBETERM_INITIAL_SESSION_TITLE
+      delete process.env.VIBETERM_INITIAL_SESSION_TITLE
 
       const worker = new Worker(file, {
         env: Object.fromEntries(
@@ -335,6 +337,10 @@ export const TuiThreadCommand = cmd({
             agent: args.agent,
             model: args.model,
             prompt,
+            initialSessionTitle:
+              args.prompt && !args.continue && !args.session && initialSessionTitle?.trim()
+                ? initialSessionTitle
+                : undefined,
             fork: args.fork,
             auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
           },
