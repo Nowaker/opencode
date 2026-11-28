@@ -779,6 +779,8 @@ The `/timestamps`, `/turn-times` and `/turn-durations` commands flip prompt time
 
 This shows `14:20:07` for today and `2026-10-07 14:20:07` for an older entry. At midnight, entries already on screen switch to the date-and-time form on their own; a closed laptop or a clock change is caught within the hour.
 
+With a supported Vibeterm attachment, these timestamps and the "today" cutoff use the viewing device's timezone, even when OpenCode runs on another host. A timezone change updates entries already on screen without restarting OpenCode. When several devices show the same tmux window, they see one frame in the most recently active viewer's timezone. Without a viewer timezone, the TUI uses its existing local timezone. The format, stored timestamps, and elapsed durations are unchanged.
+
 | Part   | Token  | Writes                    |
 | ------ | ------ | ------------------------- |
 | `date` | `YYYY` | Year, `2026`              |

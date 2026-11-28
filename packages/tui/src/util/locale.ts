@@ -1,4 +1,5 @@
 import { localDay } from "./day"
+import { viewerTimeZone, wallClock, zoneFormat, type WallClock } from "./viewer-time-zone"
 
 export function titlecase(str: string) {
   return str.replace(/\b\w/g, (c) => c.toUpperCase())
@@ -7,14 +8,20 @@ export function titlecase(str: string) {
 // Patterns from tui.json `datetime_format`. Unset parts keep the runtime locale's output.
 export type DateTimeFormat = { date?: string; time?: string }
 
+// Times and dates show on the viewer's clock (`viewerTimeZone`), else the process zone, and a
+// computation that formats one re-runs when the viewer zone changes.
 export function time(input: number, format?: DateTimeFormat): string {
-  if (format?.time) return pattern(input, format.time)
+  const zone = viewerTimeZone()
+  if (format?.time) return pattern(wallClock(input, zone), format.time)
+  if (zone) return zoneFormat(zone).time.format(input)
   const date = new Date(input)
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
 }
 
 export function date(input: number, format?: DateTimeFormat): string {
-  if (format?.date) return pattern(input, format.date)
+  const zone = viewerTimeZone()
+  if (format?.date) return pattern(wallClock(input, zone), format.date)
+  if (zone) return zoneFormat(zone).date.format(input)
   return new Date(input).toLocaleDateString()
 }
 
@@ -38,40 +45,38 @@ export function todayTimeOrDateFirst(input: number, format?: DateTimeFormat): st
 // Day.js tokens: MM is the month and mm the minute; text in [brackets] is printed as is.
 const PATTERN_TOKENS = /\[([^\]]*)\]|YYYY|YY|MM|M|DD|D|HH|H|hh|h|mm|m|ss|s|A|a/g
 
-function pattern(input: number, format: string) {
-  const date = new Date(input)
+function pattern(clock: WallClock, format: string) {
   const pad = (value: number) => String(value).padStart(2, "0")
-  const hour12 = date.getHours() % 12 || 12
-  const meridiem = date.getHours() < 12 ? "AM" : "PM"
+  const hour12 = clock.hour % 12 || 12
+  const meridiem = clock.hour < 12 ? "AM" : "PM"
   const values: Record<string, string> = {
-    YYYY: String(date.getFullYear()),
-    YY: pad(date.getFullYear() % 100),
-    MM: pad(date.getMonth() + 1),
-    M: String(date.getMonth() + 1),
-    DD: pad(date.getDate()),
-    D: String(date.getDate()),
-    HH: pad(date.getHours()),
-    H: String(date.getHours()),
+    YYYY: String(clock.year),
+    YY: pad(clock.year % 100),
+    MM: pad(clock.month),
+    M: String(clock.month),
+    DD: pad(clock.day),
+    D: String(clock.day),
+    HH: pad(clock.hour),
+    H: String(clock.hour),
     hh: pad(hour12),
     h: String(hour12),
-    mm: pad(date.getMinutes()),
-    m: String(date.getMinutes()),
-    ss: pad(date.getSeconds()),
-    s: String(date.getSeconds()),
+    mm: pad(clock.minute),
+    m: String(clock.minute),
+    ss: pad(clock.second),
+    s: String(clock.second),
     A: meridiem,
     a: meridiem.toLowerCase(),
   }
   return format.replace(PATTERN_TOKENS, (token, literal: string | undefined) => literal ?? values[token])
 }
 
-// Subscribes the calling computation to the local day, so it re-runs at midnight.
+// Subscribes the calling computation to the viewer's day, so it re-runs at the viewer's midnight.
 function isToday(input: number) {
   localDay.read()
-  const date = new Date(input)
-  const now = new Date()
-  return (
-    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
-  )
+  const zone = viewerTimeZone()
+  const date = wallClock(input, zone)
+  const now = wallClock(Date.now(), zone)
+  return date.year === now.year && date.month === now.month && date.day === now.day
 }
 
 export function number(num: number): string {

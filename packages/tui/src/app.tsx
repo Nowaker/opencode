@@ -96,6 +96,7 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
+import { startViewerTimeZoneReceiver } from "./util/viewer-time-zone-receiver"
 
 registerOpencodeSpinner()
 
@@ -267,6 +268,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         if (renderer.isDestroyed) return
 
         await render(() => {
+          const stopViewerTimeZone = startViewerTimeZoneReceiver()
+          if (stopViewerTimeZone) onCleanup(stopViewerTimeZone)
           const composerSeal = createComposerSeal(renderer)
           return (
             <ExitProvider
