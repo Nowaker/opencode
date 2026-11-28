@@ -17,7 +17,7 @@ import { Config } from "@/config/config"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Clock, Effect } from "effect"
+import { Clock, Duration, Effect } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -36,6 +36,7 @@ const MCP_RESOURCE_TOOLS = {
 } as const
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SNAPSHOT_WAIT_LIMIT = "2 minutes"
+const SNAPSHOT_WAIT_LIMIT_MS = Duration.toMillis(SNAPSHOT_WAIT_LIMIT)
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -94,6 +95,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // Only the waiter races this deadline; the processor still owns the snapshot
   // fibers. Snapshot wait time does not count toward the tool's execution limit.
   const beforeWrite = Effect.fnUntraced(function* (tool: string, callID: string, call: ToolTimeout.Call) {
+    const started = yield* Clock.currentTimeNanos
     const snapshotWaitStartedAt = yield* Clock.currentTimeMillis
     const ids = { sessionID: input.session.id, messageID: input.processor.message.id, callID, tool }
     const phase = (engine: SessionProcessor.ToolEnginePhase) =>
@@ -105,28 +107,69 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         },
         tool,
       )
-    const waiting = phase({ phase: "waiting-for-snapshot", snapshotWaitStartedAt }).pipe(
-      Effect.andThen(input.processor.waitForSnapshots),
-      Effect.timeoutOrElse({ duration: SNAPSHOT_WAIT_LIMIT, orElse: () => Effect.succeed("timeout" as const) }),
-    )
+    const source = input.processor.waitForSnapshots
+    const snapshots =
+      typeof source === "function" ? source(call.signal) : { wait: source, failed: undefined, confirm: Effect.void }
+    const waitingEngine = { phase: "waiting-for-snapshot", snapshotWaitStartedAt } as const
+    const wait = snapshots.wait.pipe(Effect.catch((failure) => Effect.succeed(failure)))
     yield* call.hold(
       Effect.gen(function* () {
-        const outcome = yield* Effect.raceFirst(AppProcess.waitForAbort(call.signal), waiting)
-        if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
-        const executionStartedAt = yield* Clock.currentTimeMillis
-        const snapshotWaitMs = Math.max(0, executionStartedAt - snapshotWaitStartedAt)
-        if (outcome === "timeout" || outcome === "skipped") {
-          const engine = { phase: "running", snapshot: "skipped", snapshotWaitMs, executionStartedAt } as const
-          const mark = phase(engine).pipe(Effect.map((part) => part?.state.metadata?.engine === engine))
-          const skip = input.processor.skipSnapshot
-          const marked = skip ? yield* skip(call.signal, mark) : false
+        let waiting = phase(waitingEngine).pipe(Effect.andThen(wait))
+        while (true) {
+          const elapsed = Duration.toMillis(Duration.nanos((yield* Clock.currentTimeNanos) - started))
+          const outcome = yield* Effect.raceFirst(
+            AppProcess.waitForAbort(call.signal),
+            Effect.gen(function* () {
+              const waited = yield* waiting.pipe(
+                Effect.timeoutOrElse({
+                  duration: Math.max(0, SNAPSHOT_WAIT_LIMIT_MS - elapsed),
+                  orElse: () => Effect.succeed("timeout" as const),
+                }),
+              )
+              return waited === undefined ? yield* snapshots.confirm : waited
+            }),
+          )
+          waiting = wait
           if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
-          if (!marked) return yield* Effect.fail(new SnapshotWaitTimeout())
-          yield* Effect.logWarning("tool snapshot skipped; file undo unavailable", { ...ids, duration_ms: snapshotWaitMs })
+          if (outcome === "retry") continue
+          const executionStartedAt = yield* Clock.currentTimeMillis
+          const snapshotWaitMs = Math.max(0, executionStartedAt - snapshotWaitStartedAt)
+          const failure = typeof outcome === "object" ? outcome : undefined
+          if (failure || outcome === "timeout" || outcome === "skipped") {
+            const engine = { phase: "running", snapshot: "skipped", snapshotWaitMs, executionStartedAt } as const
+            const mark = phase(engine).pipe(Effect.map((part) => part?.state.metadata?.engine === engine))
+            const unmark = input.processor
+              .updateToolCall(callID, (part) => {
+                const metadata = part.state.metadata
+                const current: unknown = metadata?.engine
+                if (
+                  !isRecord(current) ||
+                  current.phase !== engine.phase ||
+                  current.snapshot !== engine.snapshot ||
+                  current.executionStartedAt !== engine.executionStartedAt ||
+                  current.snapshotWaitMs !== engine.snapshotWaitMs
+                ) return part
+                return { ...part, state: { ...part.state, metadata: { ...metadata, engine: waitingEngine } } }
+              })
+              .pipe(Effect.asVoid)
+            const skip = input.processor.skipSnapshot
+            const marked = skip
+              ? yield* skip(call.signal, mark, {
+                  failed: () => snapshots.failed?.() ?? !!failure,
+                  retryIfRecovered: !!failure,
+                  unmark,
+                })
+              : false
+            if (call.signal.aborted) return yield* Effect.fail(AppProcess.abortError(call.signal))
+            if (marked === "retry") continue
+            if (!marked) return yield* Effect.fail(failure ?? new SnapshotWaitTimeout())
+            yield* Effect.logWarning("tool snapshot skipped; file undo unavailable", { ...ids, duration_ms: snapshotWaitMs })
+            return
+          }
+          yield* phase({ phase: "running", snapshotWaitMs, executionStartedAt })
+          yield* Effect.logInfo("tool snapshot wait released", { ...ids, duration_ms: snapshotWaitMs })
           return
         }
-        yield* phase({ phase: "running", snapshotWaitMs, executionStartedAt })
-        yield* Effect.logInfo("tool snapshot wait released", { ...ids, duration_ms: snapshotWaitMs })
       }).pipe(
         Effect.tapError((error) =>
           Effect.gen(function* () {
