@@ -1,11 +1,16 @@
 import { expect } from "bun:test"
 import { strict } from "node:assert"
+import { Database } from "@opencode-ai/core/database/database"
 import type { ApprovedActionReceipt } from "@opencode-ai/plugin"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { LiveEvents } from "@/session/live-events"
+import { MessageHistory } from "@/session/message-history"
 import { SessionPause } from "@/session/pause"
 import { SessionPrompt } from "@/session/prompt"
 import { MessageID, type SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
 import { awaitWithTimeout } from "../lib/effect"
 import { reply } from "../lib/llm-server"
 import { admitHuman, FinalReadGate, human, it, observedOrder, ownerIdle, withSession } from "./approved-action-fixture"
@@ -120,16 +125,26 @@ it.live("refuses a new receipt without clearing a protected history cut", () =>
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const humanPrompt = yield* prompt.prompt({ ...human(sessionID, "hidden fixture prompt"), noReply: true })
-    const cut = {
+    const database = yield* Database.Service
+    const history = MessageHistory.make({
+      db: database.db,
+      events: yield* EventV2Bridge.Service,
+      live: yield* LiveEvents.Service,
+      status: yield* SessionStatus.Service,
+      signal: new AbortController().signal,
+    })
+    const isHuman = (message: Readonly<Record<string, unknown>>) => message.id === humanPrompt.info.id
+    const ready = yield* history({ version: 1, operation: "read", sessionID }, isHuman)
+    strict.equal(ready.status, "ready")
+    const applied = yield* history({
       version: 1,
+      operation: "mutate",
       sessionID,
-      revision: 1,
-      generation: crypto.randomUUID(),
-      boundaryMessageID: humanPrompt.info.id,
-      boundaryCreatedAt: humanPrompt.info.time.created,
-      historyFingerprint: "fixture fingerprint",
-    }
-    yield* sessions.setMetadata({ sessionID, metadata: { messageHistory: cut } })
+      mutation: { action: "undo", expectedRevision: ready.revision },
+    }, isHuman)
+    strict.equal(applied.status, "applied")
+    expect(applied.state.boundaryMessageID).toBe(humanPrompt.info.id)
+    const cut = (yield* sessions.get(sessionID)).metadata?.messageHistory
 
     const input = receipt(sessionID)
     expect(yield* prompt.settleApprovedAction(input)).toEqual({ kind: "refused", reason: "armed-revert" })

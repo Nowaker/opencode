@@ -1,15 +1,19 @@
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { Context, Deferred, Effect, Layer } from "effect"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { OwnerQuiescence } from "@/owner/quiescence"
+import { LiveEvents } from "@/session/live-events"
 import { SessionPause } from "@/session/pause"
 import { SessionProcessor } from "@/session/processor"
 import { SessionPrompt } from "@/session/prompt"
 import { MessageID, type SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
 import { provideTmpdirServer } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { TestLLMServer } from "../lib/llm-server"
@@ -44,9 +48,13 @@ const processorWithFinalReadGate = Layer.effect(
 export const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
+      Database.node,
+      EventV2Bridge.node,
+      LiveEvents.node,
       SessionPrompt.node,
       Session.node,
       SessionPause.node,
+      SessionStatus.node,
       SessionProjector.node,
       CrossSpawnSpawner.node,
       LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] }),
