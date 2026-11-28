@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Database } from "@opencode-ai/core/database/database"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import type {
@@ -36,6 +37,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { LiveEvents } from "@/session/live-events"
+import { MessageHistory } from "@/session/message-history"
 import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { realpathSync } from "node:fs"
@@ -139,6 +141,7 @@ const layer = Layer.effect(
     const sessions = yield* Session.Service
     const live = yield* LiveEvents.Service
     const status = yield* SessionStatus.Service
+    const { db } = yield* Database.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
@@ -163,9 +166,14 @@ const layer = Layer.effect(
           ...(serverUrl ? {} : { fetch: async (...args) => Server.Default().app.fetch(...args) }),
         })
         const cfg = yield* config.get()
+        const executeHistory = MessageHistory.make({ db, events, live, status, signal: lifetime.signal })
         const input: PluginInput = {
           promptOrigin: 1,
           ownerQuiescence: OwnerQuiescence.control,
+          messageHistory: {
+            version: 1,
+            execute: (request, isHumanTurn) => bridge.promise(executeHistory(request, isHumanTurn)),
+          },
           liveEvents: {
             open: ({ sessionID, signal }) =>
               bridge.promise(
@@ -354,7 +362,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node, Database.node],
 })
 
 export * as Plugin from "."

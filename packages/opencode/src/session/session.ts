@@ -17,6 +17,8 @@ import * as SessionExecutionLocal from "@opencode-ai/core/session/execution/loca
 import { locationServiceMapLayer } from "@opencode-ai/core/location-services"
 
 import { NotFoundError } from "@/storage/storage"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { MessageHistoryState } from "@/session/message-history-state"
 import { eq } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
@@ -518,7 +520,7 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
-  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound | MessageHistoryState.Error>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: {
@@ -632,7 +634,8 @@ const layer: Layer.Layer<
     }) {
       const ctx = yield* InstanceState.context
       const id = SessionID.descending(input.id)
-      const metadata = withoutRoutingJournals(input.metadata)
+      const { messageHistory, ...incoming } = input.metadata ?? {}
+      const metadata = withoutRoutingJournals(input.metadata && incoming)
       const result: Info = {
         id,
         slug: Slug.create(),
@@ -874,6 +877,8 @@ const layer: Layer.Layer<
     const fork = Effect.fn("Session.fork")(function* (input: ForkInput) {
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
+      // Native forks copy raw messages, not the visible history projection.
+      yield* MessageHistoryState.assertWritable(original)
       if (input.id && Option.isSome(yield* get(input.id).pipe(Effect.option)))
         return yield* Effect.die(new Error(`Session already exists: ${input.id}`))
       const title = input.title ?? getForkedTitle(original.title)
@@ -936,7 +941,7 @@ const layer: Layer.Layer<
         }
       }
       return session
-    })
+    }, OwnerQuiescence.activity)
 
     const patch = (sessionID: SessionID, info: Patch, when?: (current: Info) => boolean) =>
       DatabaseTransaction.immediate(db, () =>
@@ -985,25 +990,28 @@ const layer: Layer.Layer<
         Effect.gen(function* () {
           // Generic metadata writers cannot replace the owner journals or roll back their revisions.
           const current = yield* get(input.sessionID)
+          const { messageHistory: ignoredHistory, ...incoming } = input.metadata
           const { autoSwitch, autoSwitchEpisode, cybersecPreservation } = current.metadata?.vibeterm ?? {}
           const {
             autoSwitch: ignoredPreference,
             autoSwitchEpisode: ignoredEpisode,
             cybersecPreservation: ignoredPreservation,
             ...vibeterm
-          } = input.metadata?.vibeterm ?? {}
-          const metadata =
-            autoSwitch || autoSwitchEpisode || cybersecPreservation !== undefined || input.metadata?.vibeterm
-              ? {
-                  ...input.metadata,
-                  vibeterm: {
-                    ...vibeterm,
-                    autoSwitch,
-                    autoSwitchEpisode,
-                    ...(cybersecPreservation !== undefined && { cybersecPreservation }),
-                  },
-                }
-              : input.metadata
+          } = incoming.vibeterm ?? {}
+          const metadata = {
+            ...incoming,
+            ...(current.metadata && Object.hasOwn(current.metadata, "messageHistory") && {
+              messageHistory: current.metadata.messageHistory,
+            }),
+            ...((autoSwitch || autoSwitchEpisode || cybersecPreservation !== undefined || incoming.vibeterm) && {
+              vibeterm: {
+                ...vibeterm,
+                autoSwitch,
+                autoSwitchEpisode,
+                ...(cybersecPreservation !== undefined && { cybersecPreservation }),
+              },
+            }),
+          }
           yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
           yield* patch(input.sessionID, { metadata, time: { updated: Date.now() } })
         }),

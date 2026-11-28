@@ -17,6 +17,16 @@ export class SessionArchivedError extends Schema.ErrorClass<SessionArchivedError
   { httpApiStatus: 409 },
 ) {}
 
+export class ProtectedMessageHistoryError extends Schema.ErrorClass<ProtectedMessageHistoryError>(
+  "ProtectedMessageHistoryError",
+)(
+  {
+    name: Schema.Literal("ProtectedMessageHistoryError"),
+    data: Schema.Struct({ code: Schema.Literal("protected-message-history"), message: Schema.String }),
+  },
+  { httpApiStatus: 409 },
+) {}
+
 export class PromptAdmissionError extends Schema.ErrorClass<PromptAdmissionError>("PromptAdmissionError")(
   {
     name: Schema.Literal("PromptAdmissionError"),

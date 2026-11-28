@@ -1,12 +1,14 @@
+import { OwnerQuiescence } from "@/owner/quiescence"
 import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
 import { LiveEvents } from "@/session/live-events"
+import { MessageHistoryState } from "@/session/message-history-state"
 import type { MessageID, PartID, SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
-import { PartTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
-import { eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
 import * as SessionError from "./session-errors"
@@ -20,17 +22,31 @@ export const makePartHandlers = Effect.gen(function* () {
 
   const edit = <A>(params: PartPath, write: (part: SessionV1.Part | undefined) => Effect.Effect<A, HttpApiError.BadRequest>) =>
     live.guard(params.sessionID, DatabaseTransaction.batch(db, Effect.gen(function* () {
-      yield* SessionError.mapStorageNotFound(session.get(params.sessionID))
+      const current = yield* SessionError.mapStorageNotFound(session.get(params.sessionID))
+      yield* MessageHistoryState.assertWritable(current)
       // The projector upserts on the globally unique part id, not the enclosing route ids.
       const row = yield* db.select({ sessionID: PartTable.session_id, messageID: PartTable.message_id })
         .from(PartTable).where(eq(PartTable.id, params.partID)).get().pipe(Effect.orDie)
       if (row && (row.sessionID !== params.sessionID || row.messageID !== params.messageID)) {
         return yield* new HttpApiError.BadRequest({})
       }
+      const messageOwner = yield* db
+        .select({ id: SessionTable.id, metadata: SessionTable.metadata })
+        .from(MessageTable)
+        .innerJoin(SessionTable, eq(SessionTable.id, MessageTable.session_id))
+        .where(and(eq(MessageTable.id, params.messageID), ne(MessageTable.session_id, params.sessionID)))
+        .get()
+        .pipe(Effect.orDie)
+      if (messageOwner) {
+        yield* MessageHistoryState.assertWritable({ id: messageOwner.id, metadata: messageOwner.metadata ?? undefined })
+      }
       const part = row ? yield* session.getPart(params) : undefined
       if (AutoSwitchAdmission.ownsPart(part)) return yield* new HttpApiError.BadRequest({})
       return yield* write(part)
-    })).pipe(Effect.catchTag("SqlError", Effect.die)))
+    })).pipe(Effect.catchTag("SqlError", Effect.die))).pipe(
+      OwnerQuiescence.activity,
+      SessionError.mapProtectedHistory,
+    )
 
   const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: { readonly params: PartPath }) {
     return yield* edit(ctx.params, (part) => {

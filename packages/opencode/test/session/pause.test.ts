@@ -186,7 +186,7 @@ const flakyPlugin = LayerNode.make({
       })
     }),
   ).pipe(Layer.provide(realPlugin)),
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Session.node, LiveEvents.node, SessionStatus.node, Database.node],
 })
 
 const BeforeTouch = Context.Reference("test/BeforeTouch", {
@@ -781,7 +781,7 @@ it.instance(
       expect(held.info.role).toBe("user")
       expect(yield* ctx.llm.calls).toBe(1)
       const refused = yield* ctx.prompt.sendNow(ctx.chat.id).pipe(Effect.flip)
-      expect(refused.reason).toBe("paused")
+      expect(refused).toMatchObject({ _tag: "SessionSendNowRefusedError", reason: "paused" })
       expect((yield* ctx.pauses.get(ctx.chat.id))?.held).toEqual([
         { messageID: held.info.id, at: held.info.time.created, delivery },
       ])
@@ -1141,7 +1141,8 @@ it.instance("a cleared pause stays cleared when a peer's stale copy is merged in
       .pipe(Effect.orDie)
     expect(yield* ctx.pauses.get(ctx.chat.id)).toBeUndefined()
     expect((yield* ctx.pauses.list()).has(ctx.chat.id)).toBe(false)
-    expect((yield* ctx.prompt.sendNow(ctx.chat.id).pipe(Effect.flip)).reason).toBe("empty")
+    const refused = yield* ctx.prompt.sendNow(ctx.chat.id).pipe(Effect.flip)
+    expect(refused).toMatchObject({ _tag: "SessionSendNowRefusedError", reason: "empty" })
   }),
 )
 

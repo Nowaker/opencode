@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { Effect, Schema, Scope } from "effect"
+import { Effect, Latch, Schema, Scope } from "effect"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { InstanceActivity } from "@/project/instance-activity"
 
@@ -27,6 +27,7 @@ const ownerID = randomUUID()
 const active = new Set<object>()
 let generation = 0
 let held: Capability | undefined
+let exclusive: Latch.Latch | undefined
 let committed = false
 const deferred: (() => void)[] = []
 
@@ -73,6 +74,30 @@ export function lease() {
   }
 }
 
+export function tryExclusive():
+  | { readonly status: "acquired"; readonly lease: Disposable }
+  | { readonly status: "busy" | "sealed" } {
+  if (held) return { status: "sealed" }
+  if (active.size) return { status: "busy" }
+  const instance = InstanceActivity.enter()
+  const admission = Latch.makeUnsafe()
+  exclusive = admission
+  active.add(admission)
+  return {
+    status: "acquired",
+    lease: {
+      [Symbol.dispose]() {
+        if (exclusive !== admission) return
+        exclusive = undefined
+        active.delete(admission)
+        instance[Symbol.dispose]()
+        admission.openUnsafe()
+        for (const start of deferred.splice(0)) start()
+      },
+    },
+  }
+}
+
 export const control = {
   status,
   commit(capability) {
@@ -111,15 +136,22 @@ function enter(cleanup = false) {
   }
 }
 
+function afterExclusive<A, E, R>(work: () => Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+  return Effect.suspend(() =>
+    exclusive ? Effect.andThen(Effect.interruptible(exclusive.await), afterExclusive(work)) : work(),
+  )
+}
+
 export function cleanup<A, E, R>(work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
   return Effect.acquireUseRelease(
-    Effect.sync(() => enter(true)),
+    afterExclusive(() => Effect.succeed(enter(true))),
     () => work,
     (admission) => Effect.sync(() => admission[Symbol.dispose]()),
   )
 }
 
 export function cleanupPromise<A>(work: () => PromiseLike<A>): Promise<A> {
+  if (exclusive) return defer(() => cleanupPromise(work))
   const admission = enter(true)
   try {
     return Promise.resolve(work()).finally(() => admission[Symbol.dispose]())
@@ -131,13 +163,14 @@ export function cleanupPromise<A>(work: () => PromiseLike<A>): Promise<A> {
 
 export function activity<A, E, R>(work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
   return Effect.acquireUseRelease(
-    Effect.sync(enter),
+    afterExclusive(() => Effect.succeed(enter())),
     () => work,
     (admission) => Effect.sync(() => admission[Symbol.dispose]()),
   )
 }
 
 export function runPromise<A>(work: () => PromiseLike<A>): Promise<A> {
+  if (exclusive) return defer(() => runPromise(work))
   const admission = enter()
   try {
     return Promise.resolve(work()).finally(() => admission[Symbol.dispose]())
@@ -148,16 +181,23 @@ export function runPromise<A>(work: () => PromiseLike<A>): Promise<A> {
 }
 
 export function promise<A>(work: () => PromiseLike<A>): Effect.Effect<A> {
-  return Effect.promise(() => runPromise(work))
+  return afterExclusive(() => {
+    const running = runPromise(work)
+    return Effect.promise(() => running)
+  })
 }
 
 export function whenReleased<A>(work: () => PromiseLike<A>): Promise<A> {
   if (committed) return new Promise<A>(() => {})
   if (!held) return runPromise(work)
+  return defer(() => runPromise(work))
+}
+
+function defer<A>(work: () => PromiseLike<A>): Promise<A> {
   return new Promise<A>((resolve, reject) => {
     deferred.push(() => {
       try {
-        resolve(runPromise(work))
+        resolve(work())
       } catch (error) {
         reject(error)
       }
@@ -168,7 +208,7 @@ export function whenReleased<A>(work: () => PromiseLike<A>): Promise<A> {
 export function fork<A, E, R>(work: Effect.Effect<A, E, R>, scope?: Scope.Scope, startImmediately = false) {
   return Effect.uninterruptible(
     Effect.gen(function* () {
-      const admission = yield* Effect.sync(enter)
+      const admission = yield* afterExclusive(() => Effect.succeed(enter()))
       const fiber = yield* work.pipe(
         (work) => (scope ? Effect.forkIn(work, scope, { startImmediately }) : Effect.forkChild(work)),
         Effect.onError(() => Effect.sync(() => admission[Symbol.dispose]())),
