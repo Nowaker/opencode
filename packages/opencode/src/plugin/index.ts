@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Database } from "@opencode-ai/core/database/database"
+import { WorkerApprovedAction } from "@/owner/approved-action-worker"
 import { OwnerQuiescence } from "@/owner/quiescence"
 import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import type {
@@ -167,9 +168,11 @@ const layer = Layer.effect(
         })
         const cfg = yield* config.get()
         const executeHistory = MessageHistory.make({ db, events, live, status, signal: lifetime.signal })
+        const approvedAction = WorkerApprovedAction.forPlugin({ ctx, bridge, signal: lifetime.signal, sessions, status })
         const input: PluginInput = {
           promptOrigin: 1,
           ownerQuiescence: OwnerQuiescence.control,
+          ...(approvedAction && { approvedAction }),
           messageHistory: {
             version: 1,
             execute: (request, isHumanTurn) => bridge.promise(executeHistory(request, isHumanTurn)),
@@ -319,6 +322,7 @@ const layer = Layer.effect(
             { discard: true },
           ),
         )
+        if (approvedAction) yield* Effect.addFinalizer(() => Effect.sync(() => lifetime.abort()))
 
         return { hooks }
       }),
