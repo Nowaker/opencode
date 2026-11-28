@@ -39,6 +39,7 @@ const topLimit = 10
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
+const ignoreSubmodules = "--ignore-submodules=all"
 interface Added {
   readonly files: number
   readonly bytes: number
@@ -47,10 +48,13 @@ interface Added {
 const nothingAdded: Added = { files: 0, bytes: 0, sizes: [] }
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
+  readonly stdout: Uint8Array
   readonly text: string
   readonly stderr: string
 }
-type GitOptions = Pick<ChildProcess.CommandOptions, "cwd" | "env" | "forceKillAfter"> & { readonly stdin?: string }
+type GitOptions = Pick<ChildProcess.CommandOptions, "cwd" | "env" | "forceKillAfter"> & {
+  readonly stdin?: string | Uint8Array
+}
 // Waits for an index.lock held by another process: 8 retries, doubling from 25 ms up to 800 ms, each halved by
 // jitter at most, about 1.6-3.2 s in total.
 const lockRetries = 8
@@ -122,13 +126,17 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
             )
             return {
               code: ChildProcessSpawner.ExitCode(result.exitCode),
-              text: result.stdout.toString("utf8"),
+              stdout: result.stdout,
+              get text() {
+                return result.stdout.toString("utf8")
+              },
               stderr: result.stderr.toString("utf8"),
             } satisfies GitResult
           },
           Effect.catch((err) =>
             Effect.succeed({
               code: ChildProcessSpawner.ExitCode(1),
+              stdout: new Uint8Array(),
               text: "",
               stderr: err instanceof Error ? err.message : String(err),
             }),
@@ -191,24 +199,14 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           )
         })
 
-        const drop = Effect.fnUntraced(function* (files: string[]) {
-          if (!files.length) return
-          yield* git(
-            [
-              ...cfg,
-              ...args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
-            ],
-            {
-              cwd: state.worktree,
-              stdin: encodeTopLevelLiteralPathspecs(files),
-            },
-          )
-        })
-
-        const stage = Effect.fnUntraced(function* (files: string[]) {
+        const stage = Effect.fnUntraced(function* (files: string[], excludeConfig: string[]) {
           if (!files.length) return true
           const result = yield* git(
-            [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
+            [
+              ...cfg,
+              ...excludeConfig,
+              ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"]),
+            ],
             {
               cwd: state.worktree,
               stdin: encodeTopLevelLiteralPathspecs(files),
@@ -231,10 +229,9 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           options?: { readonly unsafeOnInterrupt: boolean },
         ) => locked(snapshotWriters.hold(state.worktree, work, options))
 
-        // A nested repository is staged as a gitlink to its HEAD. git add cannot record one whose branch has no
-        // commit yet and fails the whole batch with "does not have a commit checked out", so such a repository is
-        // left out until its first commit; a gitlink would hold none of its files anyway.
-        const unborn = Effect.fnUntraced(function* (dirs: string[]) {
+        // A nested repository needs a readable HEAD to be staged as a gitlink. Otherwise git add can fail
+        // the entire batch, even for paths outside that repository.
+        const unreadableNested = Effect.fnUntraced(function* (dirs: string[]) {
           const found = yield* Effect.forEach(
             dirs,
             Effect.fnUntraced(function* (dir) {
@@ -253,27 +250,13 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           return (yield* config.get()).snapshot !== false
         })
 
-        const excludes = Effect.fnUntraced(function* () {
-          const result = yield* git(["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], {
-            cwd: state.worktree,
-          })
-          const file = result.text.trim()
-          if (!file) return
-          if (!(yield* exists(file))) return
-          return file
-        })
-
-        const sync = Effect.fnUntraced(function* (list: string[] = []) {
-          const file = yield* excludes()
+        const sync = Effect.fnUntraced(function* (exclude: string, list: string[] = []) {
           const target = path.join(state.gitdir, "info", "exclude")
-          const text = [
-            file ? (yield* read(file)).trimEnd() : "",
-            ...list.map((item) => `/${item.replaceAll("\\", "/")}`),
-          ]
-            .filter(Boolean)
-            .join("\n")
+          const text = exclude && !exclude.endsWith("\n") ? `${exclude}\n` : exclude
           yield* fs.ensureDir(path.join(state.gitdir, "info")).pipe(Effect.orDie)
-          yield* fs.writeFileString(target, text ? `${text}\n` : "").pipe(Effect.orDie)
+          yield* fs.writeFileString(target, text + list.map((item) => `/${item.replaceAll("\\", "/")}\n`).join("")).pipe(
+            Effect.orDie,
+          )
         })
 
         // Reuse the hashes for the git storage between the original repo and snapshot
@@ -317,15 +300,102 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         })
 
         const add = Effect.fnUntraced(function* () {
-          yield* sync()
+          const root = { cwd: state.worktree }
+          const [excludePath, excludeFile] = yield* Effect.all(
+            [
+              git(["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], root),
+              git(["config", "--null", "--path", "--get", "core.excludesFile"], root),
+            ],
+            { concurrency: 2 },
+          )
+          if (excludePath.code !== 0 || (excludeFile.code !== 0 && (excludeFile.code !== 1 || excludeFile.stderr))) {
+            yield* Effect.logWarning("failed to read source snapshot excludes", {
+              pathCode: excludePath.code,
+              pathStderr: excludePath.stderr,
+              configCode: excludeFile.code,
+              configStderr: excludeFile.stderr,
+            })
+            return
+          }
+          const exclude = yield* fs.readFileString(excludePath.text.trim()).pipe(
+            Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("")),
+            Effect.orDie,
+          )
+          const configured = excludeFile.text.replace(/\0$/, "")
+          const excludeConfig = excludeFile.code === 0
+            ? ["-c", `core.excludesFile=${configured && path.resolve(state.worktree, configured)}`]
+            : []
+          yield* sync(exclude)
+
+          const [ignored, indexed] = yield* Effect.all(
+            [
+              git([...quote, ...excludeConfig, ...args(["ls-files", "-ci", "--exclude-standard", "-z"])], root),
+              git([...quote, ...args(["ls-files", "--stage", "--full-name", "-z", "--", "."])], {
+                cwd: state.directory,
+              }),
+            ],
+            { concurrency: 2 },
+          )
+          if (ignored.code !== 0 || indexed.code !== 0) {
+            yield* Effect.logWarning("failed to inspect snapshot index", {
+              ignoredCode: ignored.code,
+              ignoredStderr: ignored.stderr,
+              indexCode: indexed.code,
+              indexStderr: indexed.stderr,
+            })
+            return
+          }
+          // An indexed gitlink hides its ordinary replacement from both Git listings below.
+          const gitlinks = Array.from(indexed.text.matchAll(/(?:^|(?<=\0))160000 [\da-f]+ 0\t([^\0]+)/g), (m) => m[1])
+          const replaced = (yield* Effect.forEach(
+            gitlinks,
+            Effect.fnUntraced(function* (file) {
+              const target = path.join(state.worktree, file)
+              const kind = yield* fs.stat(target).pipe(
+                Effect.map((info) => info.type),
+                Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("missing" as const)),
+                Effect.orElseSucceed(() => "unknown" as const),
+              )
+              if (kind === "unknown") return
+              if (
+                kind === "Directory" && (yield* fs.exists(path.join(target, ".git")).pipe(Effect.orElseSucceed(() => true)))
+              ) return
+              return file
+            }),
+            { concurrency: 8 },
+          )).filter((file) => file !== undefined)
+          if (ignored.stdout.length || replaced.length) {
+            const dropped = yield* git([...cfg, ...args(["update-index", "--force-remove", "-z", "--stdin"])], {
+              ...root,
+              stdin: replaced.length
+                ? Buffer.concat([ignored.stdout, Buffer.from(encodeNulTerminatedPaths(replaced))])
+                : ignored.stdout,
+            })
+            if (dropped.code !== 0) {
+              yield* Effect.logWarning("failed to remove stale snapshot entries", {
+                exitCode: dropped.code,
+                stderr: dropped.stderr,
+              })
+              return
+            }
+            let count = 0
+            for (const byte of ignored.stdout) if (byte === 0) count++
+            yield* Effect.logInfo("removed stale snapshot entries", { ignored: count, replacedGitlinks: replaced.length })
+          }
+
           const [diff, other] = yield* Effect.all(
             [
-              git([...quote, ...args(["diff-files", "--name-only", "-z", "--", "."])], {
+              git([...quote, ...args(["diff-files", ignoreSubmodules, "--name-only", "-z", "--", "."])], {
                 cwd: state.directory,
               }),
-              git([...quote, ...args(["ls-files", "--full-name", "--others", "--exclude-standard", "-z", "--", "."])], {
-                cwd: state.directory,
-              }),
+              git(
+                [
+                  ...quote,
+                  ...excludeConfig,
+                  ...args(["ls-files", "--full-name", "--others", "--exclude-standard", "-z", "--", "."]),
+                ],
+                { cwd: state.directory },
+              ),
             ],
             { concurrency: 2 },
           )
@@ -341,25 +411,11 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
           const tracked = diff.text.split("\0").filter(Boolean)
           const untracked = other.text.split("\0").filter(Boolean)
-          const all = Array.from(new Set([...tracked, ...untracked]))
-          if (!all.length) return nothingAdded
-
-          // Resolve source-repo ignore rules against the exact candidate set.
-          // --no-index keeps this pattern-based even when a path is already tracked.
-          const ignored = yield* ignore(all)
-
-          // Remove newly-ignored files from snapshot index to prevent re-adding
-          if (ignored.size > 0) {
-            const ignoredFiles = Array.from(ignored)
-            yield* Effect.logInfo("removing gitignored files from snapshot", { count: ignoredFiles.length })
-            yield* drop(ignoredFiles)
-          }
-
-          const allow = all.filter((item) => !ignored.has(item))
-          if (!allow.length) return nothingAdded
+          const candidates = Array.from(new Set([...tracked, ...untracked]))
+          if (!candidates.length) return nothingAdded
 
           const stats = yield* Effect.all(
-            allow.map((item) =>
+            candidates.map((item) =>
               fs
                 .stat(path.join(state.worktree, item))
                 .pipe(Effect.catch(() => Effect.void))
@@ -374,15 +430,15 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           )
           const sizes = new Map(stats.map((item) => [item[0], item[1]] as const))
           const untrackedSet = new Set(untracked)
-          const block = new Set(allow.filter((item) => untrackedSet.has(item) && (sizes.get(item) ?? 0) > limit))
-          yield* sync(Array.from(block))
-          const skip = yield* unborn(stats.filter((item) => item[2]).map((item) => item[0]))
+          const block = new Set(candidates.filter((item) => untrackedSet.has(item) && (sizes.get(item) ?? 0) > limit))
+          if (block.size) yield* sync(exclude, Array.from(block))
+          const skip = yield* unreadableNested(stats.filter((item) => item[2]).map((item) => item[0]))
           if (skip.size) {
-            yield* Effect.logInfo("skipping nested repositories without a commit", { repos: Array.from(skip) })
+            yield* Effect.logInfo("skipping nested repositories without a readable HEAD", { repos: Array.from(skip) })
           }
           // Stage only the allowed candidate paths so snapshot updates stay scoped.
-          const staged = allow.filter((item) => !block.has(item) && !skip.has(item))
-          if (!(yield* stage(staged))) return
+          const staged = candidates.filter((item) => !block.has(item) && !skip.has(item))
+          if (!(yield* stage(staged, excludeConfig))) return
           const stagedSizes = staged.map((item) => [item, sizes.get(item) ?? 0] as const)
           return {
             files: staged.length,
@@ -618,9 +674,10 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 yield* Effect.logInfo("initialized")
               }
               const added = yield* add()
+              if (!added) return { value: "", receipt: { ok: false } }
               const result = yield* git(args(["write-tree"]), { cwd: state.directory })
               const hash = result.text.trim()
-              const ok = added !== undefined && result.code === 0 && hash !== ""
+              const ok = result.code === 0 && hash !== ""
               yield* Effect.logInfo("tracking", { hash, cwd: state.directory, git: state.gitdir })
               yield* guard("track", sessionID, added)
               return { value: ok ? hash : "", receipt: { added, ok } }
@@ -638,29 +695,74 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           })
         })
 
+        const rawDiffPaths = (text: string) => {
+          const fields = text.split("\0")
+          return fields.flatMap((header, index) => {
+            const file = fields[index + 1]
+            if (index % 2 !== 0 || !file) return []
+            const [before, after] = header.slice(1).split(" ", 2)
+            return [{ file, gitlink: before === "160000" || after === "160000" }]
+          })
+        }
+
+        // Git's submodule ignore flag can still emit type changes where only one side is a gitlink.
+        const gitlinkTypeChanges = Effect.fnUntraced(function* (revisions: string[], opts: GitOptions) {
+          const result = yield* git(
+            [
+              ...quote,
+              ...args([
+                "diff", ...revisions, "--no-ext-diff", ignoreSubmodules, "--no-renames", "--raw", "--diff-filter=T",
+                "-z", "--", ".",
+              ]),
+            ],
+            opts,
+          )
+          if (result.code !== 0) {
+            yield* Effect.logWarning("failed to identify snapshot gitlink type changes", {
+              exitCode: result.code,
+              stderr: result.stderr,
+            })
+            return
+          }
+          return rawDiffPaths(result.text)
+            .filter((entry) => entry.gitlink)
+            .map((entry) => entry.file)
+        })
+
         const patch = Effect.fnUntraced(function* (hash: string, sessionID?: string) {
           return yield* timedLocked(
             { op: "patch", sessionID },
             Effect.gen(function* () {
               const added = yield* add()
+              const empty = { value: { hash, files: [] }, receipt: { added, ok: false } }
+              if (!added) return empty
               yield* guard("patch", sessionID, added)
               const result = yield* git(
-                [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
-                {
-                  cwd: state.directory,
-                },
+                [
+                  ...quote,
+                  ...args([
+                    "diff",
+                    "--cached",
+                    "--no-ext-diff",
+                    ignoreSubmodules,
+                    "--no-renames",
+                    "--raw",
+                    "-z",
+                    hash,
+                    "--",
+                    ".",
+                  ]),
+                ],
+                { cwd: state.directory },
               )
               if (result.code !== 0) {
-                yield* Effect.logWarning("failed to get diff", { hash, exitCode: result.code })
-                return { value: { hash, files: [] }, receipt: { added, ok: false } }
+                yield* Effect.logWarning("failed to get diff", { hash, exitCode: result.code, stderr: result.stderr })
+                return empty
               }
-              const files = result.text
-                .trim()
-                .split("\n")
-                .map((x) => x.trim())
-                .filter(Boolean)
-
               // Hide ignored-file removals from the user-facing patch output.
+              const files = rawDiffPaths(result.text)
+                .filter((entry) => !entry.gitlink)
+                .map((entry) => entry.file)
               const ignored = yield* ignore(files)
               return {
                 value: {
@@ -669,7 +771,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                     .filter((item) => !ignored.has(item))
                     .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
                 },
-                receipt: { added, ok: added !== undefined },
+                receipt: { added, ok: true },
               }
             }),
           )
@@ -831,10 +933,15 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const diff = Effect.fnUntraced(function* (hash: string) {
           return yield* locked(
             Effect.gen(function* () {
-              yield* add()
-              const result = yield* git([...quote, ...args(["diff", "--cached", "--no-ext-diff", hash, "--", "."])], {
-                cwd: state.worktree,
-              })
+              if (!(yield* add())) return ""
+              const opts = { cwd: state.worktree }
+              const gitlinks = yield* gitlinkTypeChanges(["--cached", hash], opts)
+              if (!gitlinks) return ""
+              const excluded = gitlinks.map((file) => `:(top,exclude,literal)${file}`)
+              const result = yield* git(
+                [...quote, ...args(["diff", "--cached", "--no-ext-diff", ignoreSubmodules, hash, "--", ".", ...excluded])],
+                opts,
+              )
               if (result.code !== 0) {
                 yield* Effect.logWarning("failed to get diff", {
                   hash,
@@ -996,11 +1103,22 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 
               const result: FileDiff[] = []
               const status = new Map<string, "added" | "deleted" | "modified">()
+              const opts = { cwd: state.directory, ...diffProcessOptions }
 
               const statuses = yield* git(
-                [...quote, ...args(["diff", "--no-ext-diff", "--name-status", "--no-renames", from, to, "--", "."])],
-                { cwd: state.directory, ...diffProcessOptions },
+                [
+                  ...quote,
+                  ...args(["diff", "--no-ext-diff", ignoreSubmodules, "--name-status", "--no-renames", from, to, "--", "."]),
+                ],
+                opts,
               )
+              if (statuses.code !== 0) {
+                yield* Effect.logWarning("failed to list snapshot diff statuses", {
+                  exitCode: statuses.code,
+                  stderr: statuses.stderr,
+                })
+                return []
+              }
 
               for (const line of statuses.text.trim().split("\n")) {
                 if (!line) continue
@@ -1009,10 +1127,25 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 status.set(file, code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified")
               }
 
+              const gitlinks = /^T\t/m.test(statuses.text) ? yield* gitlinkTypeChanges([from, to], opts) : []
+              if (!gitlinks) return []
+              const excluded = gitlinks.map((file) => `:(top,exclude,literal)${file}`)
               const numstat = yield* git(
-                [...quote, ...args(["diff", "--no-ext-diff", "--no-renames", "--numstat", from, to, "--", "."])],
-                { cwd: state.directory, ...diffProcessOptions },
+                [
+                  ...quote,
+                  ...args([
+                    "diff", "--no-ext-diff", ignoreSubmodules, "--no-renames", "--numstat", from, to, "--", ".", ...excluded,
+                  ]),
+                ],
+                opts,
               )
+              if (numstat.code !== 0) {
+                yield* Effect.logWarning("failed to count snapshot diff lines", {
+                  exitCode: numstat.code,
+                  stderr: numstat.stderr,
+                })
+                return []
+              }
 
               const rows = numstat.text
                 .trim()
