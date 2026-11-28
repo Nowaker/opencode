@@ -36,8 +36,10 @@ export interface DialogSelectProps<T> {
   renderFilter?: boolean
   locked?: boolean
   preserveSelection?: boolean
-  // Filter text the dialog opens with, e.g. when returning to it; with `current`, that row stays selected.
+  // Filter text and cursor row the dialog opens with, e.g. when returning to it. `current` still marks the
+  // active value; the cursor is only where the user had browsed to.
   initialFilter?: string
+  initialCursor?: T
   actions?: DialogSelectAction<T>[]
   footerHints?: {
     title: string
@@ -104,7 +106,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   let selection: { value: T; category?: string } | undefined
   let resetSelection = false
   let visibilityGeneration = 0
-  let restoringFilter = Boolean(props.initialFilter)
+  let restoringCursor = props.initialCursor !== undefined
 
   createEffect(
     on(
@@ -283,12 +285,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   createEffect(
     on([() => store.filter, () => props.current], ([filter, current]) => {
       if (filter.length > 0) resetSelection = true
-      // A restored filter keeps the restored row on its first pass instead of jumping to the first match.
-      const keepCurrent = restoringFilter
-      restoringFilter = false
+      // A restored cursor wins its first pass over the first match and over `current`.
+      const cursor = restoringCursor ? props.initialCursor : undefined
+      restoringCursor = false
       setTimeout(() => {
+        const cursorIndex = cursor === undefined ? -1 : flat().findIndex((opt) => isDeepEqual(opt.value, cursor))
+        if (cursorIndex >= 0) return moveTo(cursorIndex, true)
+        if (filter.length > 0) return moveTo(0, true, false)
         const currentIndex = current ? flat().findIndex((opt) => isDeepEqual(opt.value, current)) : -1
-        if (filter.length > 0 && !(keepCurrent && currentIndex >= 0)) return moveTo(0, true, false)
         if (currentIndex >= 0) moveTo(currentIndex, true)
       }, 0)
     }),

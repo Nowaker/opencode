@@ -15,12 +15,13 @@ import { createCybersecPreservation, cybersecTransport, startCybersecSave, type 
 import { DialogCybersec } from "./dialog-cybersec"
 
 // `current` puts the cursor on another model than the selected one, e.g. the
-// model a past turn ran on. `filter` and `current` together bring back the dialog as it was left;
-// `cybersecSave` is a save the cybersec choice made before returning here.
+// model a past turn ran on. `filter` and `cursor` bring back the dialog as it was left without moving
+// the active-model marker; `cybersecSave` is a save the cybersec choice made before returning here.
 export function DialogModel(props: {
   providerID?: string
   current?: { providerID: string; modelID: string }
   filter?: string
+  cursor?: { providerID: string; modelID: string }
   cybersecSave?: CybersecSave
 }) {
   const local = useLocal()
@@ -216,7 +217,7 @@ export function DialogModel(props: {
             const value = option?.value
             const left = {
               filter: query(),
-              current: value && typeof value === "object" && "modelID" in value ? value : props.current,
+              cursor: value && typeof value === "object" && "modelID" in value ? value : undefined,
             }
             dialog.replace(() => (
               <DialogCybersec
@@ -233,6 +234,7 @@ export function DialogModel(props: {
       ]}
       onFilter={setQuery}
       initialFilter={props.filter}
+      initialCursor={props.cursor}
       flat={true}
       skipFilter={true}
       title={title()}

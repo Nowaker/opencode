@@ -142,6 +142,36 @@ test("returning from the quota choice keeps the model filter and the selected mo
   })
 })
 
+// The ● marker beside a row is the active model; the cursor is only where the user browsed to.
+const markedRows = (rig: Rig, title: string) =>
+  rig.frame().split("\n").filter((line) => line.includes("●") && line.includes(title)).length
+
+test("returning from the quota choice keeps the browsed row under the cursor and the marker on the active model", async () => {
+  await withApp({ width: 120, choices: true, cybersecPreservation: () => status("inherit", 0) }, async (rig) => {
+    await rig.ready("second answer")
+    await openModels(rig)
+    await rig.until("the control", () => rig.frame().includes("Cybersec: inherit"))
+    await rig.until("the model filter", () => rig.filterFocused())
+    // Matches both models, which sort by title: "Model" first, then "Other".
+    await rig.press("oe")
+    await rig.until("both models", () => rig.frame().includes("Other") && markedRows(rig, "Model") === 1)
+    rig.api.keymap.dispatchCommand("dialog.select.next")
+    await rig.press(CTRL_O)
+    await rig.until("the quota choices", () => rig.frame().includes("Follow this machine's default"))
+    await rig.until("the choice filter", () => rig.filterFocused())
+    await rig.press("On")
+    await rig.press(ENTER)
+    await rig.until("the restored list", () => rig.frame().includes("Select model") && rig.frame().includes("Other"))
+    expect(markedRows(rig, "Model")).toBe(1)
+    expect(markedRows(rig, "Other")).toBe(0)
+    // Enter picks the row under the cursor: only "Other" has variants, so its variant choice opens.
+    await rig.until("the model filter", () => rig.filterFocused())
+    await rig.press(ENTER)
+    await rig.until("the variant choice for the browsed model", () => rig.frame().includes("Select variant"))
+    expect(writes(rig)).toEqual([{ preference: "on" }])
+  })
+})
+
 test("an unbound owner shows unavailable, never inherit, and refuses the change", async () => {
   await withApp({ width: 120, cybersecPreservation: () => json({ message: "owner unavailable" }, { status: 503 }) }, async (rig) => {
     await rig.ready("second answer")
