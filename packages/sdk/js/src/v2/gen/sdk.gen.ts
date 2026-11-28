@@ -202,6 +202,10 @@ import type {
   SessionCommandResponses,
   SessionCreateErrors,
   SessionCreateResponses,
+  SessionCybersecPreservationStatusErrors,
+  SessionCybersecPreservationStatusResponses,
+  SessionCybersecPreservationUpdateErrors,
+  SessionCybersecPreservationUpdateResponses,
   SessionDeleteErrors,
   SessionDeleteMessageErrors,
   SessionDeleteMessageResponses,
@@ -3593,6 +3597,83 @@ export class AutoSwitch extends HeyApiClient {
   }
 }
 
+export class CybersecPreservation extends HeyApiClient {
+  /**
+   * Get session cybersec preservation preference
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionCybersecPreservationStatusResponses,
+      SessionCybersecPreservationStatusErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/cybersec-preservation",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Set session cybersec preservation preference
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      preference?: "inherit" | "on" | "off"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "preference" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<
+      SessionCybersecPreservationUpdateResponses,
+      SessionCybersecPreservationUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/cybersec-preservation",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -4847,6 +4928,11 @@ export class Session2 extends HeyApiClient {
   private _autoSwitch?: AutoSwitch
   get autoSwitch(): AutoSwitch {
     return (this._autoSwitch ??= new AutoSwitch({ client: this.client }))
+  }
+
+  private _cybersecPreservation?: CybersecPreservation
+  get cybersecPreservation(): CybersecPreservation {
+    return (this._cybersecPreservation ??= new CybersecPreservation({ client: this.client }))
   }
 }
 

@@ -1,6 +1,7 @@
 export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
+import { CybersecPreservationEvent } from "./cybersec-preservation-event"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
@@ -83,6 +84,7 @@ export const Definitions = Event.inventory(
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
   ...ShellBackgroundEvent.Definitions,
+  CybersecPreservationEvent.Updated,
 )
 export const Latest = Event.latest(Definitions)
 export { Durable }

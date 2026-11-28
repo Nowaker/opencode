@@ -98,6 +98,7 @@ export type Event =
   | EventShellBackgroundStarted
   | EventShellBackgroundLines
   | EventShellBackgroundExited
+  | EventVibetermSessionCybersecPreservationUpdated
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -1755,6 +1756,15 @@ export type GlobalEvent = {
           }
         }
       }
+    | {
+        id: string
+        type: "vibeterm.session.cybersec_preservation.updated"
+        properties: {
+          version: 1
+          sessionID: string
+          revision: number
+        }
+      }
     | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
@@ -2893,6 +2903,17 @@ export type AutoSwitchUnavailable = {
   next?: AutoSwitchRoute | null
 }
 
+export type CybersecPreservationStatus = {
+  preference: "inherit" | "on" | "off"
+  revision: number
+}
+
+export type ServiceUnavailableError = {
+  _tag: "ServiceUnavailableError"
+  message: string
+  service?: string
+}
+
 export type OwnerSealed = {
   _tag: "OwnerSealed"
   generation: number
@@ -3127,12 +3148,6 @@ export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type ServiceUnavailableError = {
-  _tag: "ServiceUnavailableError"
-  message: string
-  service?: string
 }
 
 export type MessageNotFoundError = {
@@ -7667,6 +7682,16 @@ export type EventShellBackgroundExited = {
   }
 }
 
+export type EventVibetermSessionCybersecPreservationUpdated = {
+  id: string
+  type: "vibeterm.session.cybersec_preservation.updated"
+  properties: {
+    version: 1
+    sessionID: string
+    revision: number
+  }
+}
+
 export type CredentialOAuth = {
   type: "oauth"
   methodID: string
@@ -7946,6 +7971,7 @@ export type GlobalHealthResponses = {
     version: string
     sessionUnpauseSelection: true
     autoSwitch?: 1
+    cybersecPreservation?: 1
   }
 }
 
@@ -10531,6 +10557,88 @@ export type SessionAutoSwitchUpdateResponses = {
 }
 
 export type SessionAutoSwitchUpdateResponse = SessionAutoSwitchUpdateResponses[keyof SessionAutoSwitchUpdateResponses]
+
+export type SessionCybersecPreservationStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/cybersec-preservation"
+}
+
+export type SessionCybersecPreservationStatusErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type SessionCybersecPreservationStatusError =
+  SessionCybersecPreservationStatusErrors[keyof SessionCybersecPreservationStatusErrors]
+
+export type SessionCybersecPreservationStatusResponses = {
+  /**
+   * CybersecPreservationStatus
+   */
+  200: CybersecPreservationStatus
+}
+
+export type SessionCybersecPreservationStatusResponse =
+  SessionCybersecPreservationStatusResponses[keyof SessionCybersecPreservationStatusResponses]
+
+export type SessionCybersecPreservationUpdateData = {
+  body: {
+    preference: "inherit" | "on" | "off"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/cybersec-preservation"
+}
+
+export type SessionCybersecPreservationUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type SessionCybersecPreservationUpdateError =
+  SessionCybersecPreservationUpdateErrors[keyof SessionCybersecPreservationUpdateErrors]
+
+export type SessionCybersecPreservationUpdateResponses = {
+  /**
+   * CybersecPreservationStatus
+   */
+  200: CybersecPreservationStatus
+}
+
+export type SessionCybersecPreservationUpdateResponse =
+  SessionCybersecPreservationUpdateResponses[keyof SessionCybersecPreservationUpdateResponses]
 
 export type SessionChildrenData = {
   body?: never

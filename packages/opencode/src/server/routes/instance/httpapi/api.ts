@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
 import { EventV2 } from "@opencode-ai/core/event"
 import { EventManifest } from "@/event-manifest"
+import { CybersecPreservationEvent } from "@opencode-ai/schema/cybersec-preservation-event"
 import { Credential } from "@opencode-ai/core/credential"
 import { Integration } from "@opencode-ai/core/integration"
 import { SkillV2 } from "@opencode-ai/core/skill"
@@ -46,7 +47,9 @@ const EventSchema = Schema.Union([
 ]).annotate({ identifier: "Event" })
 
 export const ServerApi = makeApi({
-  definitions: EventManifest.Latest.values().toArray(),
+  definitions: EventManifest.Latest.values()
+    .filter((definition) => definition !== CybersecPreservationEvent.Updated)
+    .toArray(),
   locationMiddleware: LocationMiddleware,
   sessionLocationMiddleware: SessionLocationMiddleware,
 })

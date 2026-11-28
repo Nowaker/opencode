@@ -56,6 +56,7 @@ import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { EventV2 } from "@opencode-ai/core/event"
+import { CybersecPreservationEvent } from "@opencode-ai/schema/cybersec-preservation-event"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Npm } from "@opencode-ai/core/npm"
 import { PermissionSaved } from "@opencode-ai/core/permission/saved"
@@ -175,8 +176,21 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
 const instanceRoutes = instanceApiRoutes.pipe(
   Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
+
+const serverEventListener = Layer.effect(
+  EventV2.Service,
+  Effect.map(EventV2.Service, (events) =>
+    EventV2.Service.of({
+      ...events,
+      listen: (listener) =>
+        events.listen((event) =>
+          event.type === CybersecPreservationEvent.Updated.type ? Effect.void : listener(event),
+        ),
+    }),
+  ),
+)
 const serverRoutes = HttpApiBuilder.layer(Api).pipe(
-  Layer.provide(handlers),
+  Layer.provide(handlers.pipe(Layer.provide(serverEventListener))),
   Layer.provide(PluginPtyEnvironment.layer),
   Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
 )

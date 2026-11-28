@@ -8,6 +8,8 @@ import { Permission } from "@/permission"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
+import { CybersecPreservation } from "@/session/cybersec-preservation"
+import { CybersecPreservationEvent } from "@opencode-ai/schema/cybersec-preservation-event"
 import { Provider } from "@/provider/provider"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
@@ -52,6 +54,7 @@ import {
   PromptAdmissionError,
   PromptNotQueuedError,
   SendNowRefusedError,
+  ServiceUnavailableError,
 } from "../errors"
 import * as SessionError from "./session-errors"
 import { makePartHandlers } from "./session-parts"
@@ -61,6 +64,9 @@ const tryParseJson = (text: string) =>
     try: () => JSON.parse(text) as unknown,
     catch: () => new HttpApiError.BadRequest({}),
   })
+
+const preservationUnavailable = () =>
+  new ServiceUnavailableError({ message: "Session cybersec preservation owner unavailable" })
 
 function projectHistory(message: SessionV1.WithParts): SessionV1.WithParts {
   if (message.info.role !== "user") return message
@@ -595,6 +601,36 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           if (result.statusCode === 503) return yield* new AutoSwitchUnavailable(result.status)
           return result.status
         }),
+      )
+      .handle("cybersecPreservationStatus", (ctx) =>
+        Effect.gen(function* () {
+          const current = yield* requireSession(ctx.params.sessionID)
+          if (!(yield* AutoSwitch.inScope(session, current))) return yield* preservationUnavailable()
+          return CybersecPreservation.stored(current)
+        }),
+      )
+      .handle("cybersecPreservationUpdate", (ctx) =>
+        AutoSwitch.withOwnerDispatch(
+          Effect.gen(function* () {
+            const sessionID = ctx.params.sessionID
+            const result = yield* SessionError.mapStorageNotFound(
+              session.setCybersecPreservation({
+                sessionID,
+                preference: ctx.payload.preference,
+                current: (row) => AutoSwitch.inScope(session, row),
+              }),
+            )
+            if (!result) return yield* preservationUnavailable()
+            if (result.changed) {
+              yield* events.publish(CybersecPreservationEvent.Updated, {
+                version: 1,
+                sessionID,
+                revision: result.status.revision,
+              })
+            }
+            return result.status
+          }).pipe(Effect.uninterruptible),
+        ),
       )
       .handle("children", children)
       .handle("todo", todo)

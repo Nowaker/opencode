@@ -1219,6 +1219,24 @@ const scenarios: Scenario[] = [
     }))
     .json(503),
   http.protected
+    .get("/session/{sessionID}/cybersec-preservation", "session.cybersecPreservation.status")
+    .seeded((ctx) => ctx.session({ title: "Preservation status without a worker owner" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/cybersec-preservation", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(503),
+  http.protected
+    .put("/session/{sessionID}/cybersec-preservation", "session.cybersecPreservation.update")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Preservation update without a worker owner" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/cybersec-preservation", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { preference: "on" },
+    }))
+    .json(503),
+  http.protected
     .patch("/session/{sessionID}", "session.update")
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Before rename" }))
