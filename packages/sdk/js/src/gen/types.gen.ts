@@ -36,12 +36,10 @@ export type EventLspUpdated = {
   }
 }
 
-export type FileDiff = {
+export type FileDiff = import("../v2/gen/types.gen.js").SnapshotFileDiff & {
   file: string
-  before: string
-  after: string
-  additions: number
-  deletions: number
+  before?: string
+  after?: string
 }
 
 export type UserMessage = {

@@ -70,7 +70,13 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
-import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
+import {
+  createOpenReviewFile,
+  createSessionTabs,
+  createSizing,
+  SESSION_OPEN_FILE_TAB,
+  shouldShowFileTree,
+} from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -88,7 +94,13 @@ import { SessionReviewEmptyNoGitV2 } from "@opencode-ai/session-ui/v2/session-re
 import { SessionReviewV2SidebarToggle } from "@opencode-ai/session-ui/v2/session-review-v2"
 import { ReviewPanelV2 } from "@/pages/session/v2/review-panel-v2"
 import { createReviewPanelV2State } from "@/pages/session/v2/review-panel-v2-state"
-import { reviewDiffDirectory, reviewDiffNeedsLoad, reviewRootDirectory } from "@/pages/session/v2/review-diff-kinds"
+import {
+  filterRenderableDiff,
+  reviewDiffDirectory,
+  reviewDiffNeedsLoad,
+  reviewRootDirectory,
+} from "@/pages/session/v2/review-diff-kinds"
+import { turnDiffQuery, turnPatchMissing, withTurnPatches } from "@/pages/session/timeline/summary-diffs"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { TerminalPanelV2 } from "@/pages/session/terminal-panel-v2"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
@@ -666,11 +678,14 @@ export default function Page() {
     return list
   })
   const mobileChanges = createMemo(() => !isDesktop() && store.mobileTab === "changes")
-  const wantsReview = createMemo(() =>
-    isDesktop()
-      ? desktopFileTreeOpen() ||
-        (desktopReviewOpen() && (activeTab() === "review" || (newSessionDesign() && !!activeFileTab())))
-      : store.mobileTab === "changes",
+  const desktopReviewSelected = () => desktopReviewOpen() && activeTab() === "review"
+  const reviewShown = () =>
+    mobileChanges() || (desktopReviewSelected() && !(newSessionDesign() && tabs().active() === SESSION_OPEN_FILE_TAB))
+  const wantsReview = createMemo(
+    () =>
+      mobileChanges() ||
+      desktopReviewSelected() ||
+      (isDesktop() && (desktopFileTreeOpen() || (desktopReviewOpen() && newSessionDesign() && !!activeFileTab()))),
   )
   const vcsMode = createMemo<VcsMode | undefined>(() => {
     const mode = reviewMode()
@@ -700,11 +715,29 @@ export default function Page() {
     }
   })
   const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 100)
+  const turnFileDiffs = createMemo(() => turnDiffs().filter(filterRenderableDiff))
+  const turnPatchQuery = createQuery(
+    () =>
+      turnDiffQuery(
+        serverSDK().scope,
+        sdk().directory,
+        params.id ?? "",
+        reviewShown() && reviewMode() === "turn" && turnFileDiffs().some(turnPatchMissing)
+          ? lastUserMessage()?.id
+          : undefined,
+        sdk().client,
+      ),
+    () => serverSync().turnDiffQueryClient,
+  )
+  const turnReviewDiffs = createMemo(() =>
+    // avoids suspense
+    withTurnPatches(turnFileDiffs(), turnPatchQuery.isSuccess ? turnPatchQuery.data : undefined),
+  )
   const reviewDiffs = () => {
     if (reviewMode() === "git" || reviewMode() === "branch")
       // avoids suspense
       return vcsQuery.isFetched ? (vcsQuery.data ?? []) : []
-    return turnDiffs()
+    return turnReviewDiffs()
   }
   const activeReviewFile = () => {
     const diffs = reviewDiffs()
@@ -716,7 +749,7 @@ export default function Page() {
   const hasReview = () => reviewCount() > 0
   const reviewReady = () => {
     if (reviewMode() === "git" || reviewMode() === "branch") return !vcsQuery.isPending
-    return true
+    return !turnPatchQuery.isLoading
   }
   const loadReviewDiff = async (file: string, version?: number): Promise<VcsFileDiff | undefined> => {
     const mode = vcsMode()

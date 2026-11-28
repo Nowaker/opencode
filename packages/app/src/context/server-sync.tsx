@@ -27,6 +27,7 @@ import {
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
+import { turnDiffKey } from "@/utils/diffs"
 import { estimateRootSessionTotal, loadRootSessions, loadRootSessionsV1 } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
 import type { ProjectMeta } from "./global-sync/types"
@@ -224,8 +225,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return sdk
   }
 
+  const queryClient = useQueryClient()
   const session = createServerSession(serverSDK.client, serverSDK.api.session, serverSDK.api.message, {
     protocol: serverSDK.protocol,
+    invalidateTurnDiff: (sessionID, messageID) => {
+      void queryClient.resetQueries({ queryKey: turnDiffKey(serverSDK.scope, sessionID, messageID) })
+    },
   })
   const queryOptionsApi = makeQueryOptionsApi(
     serverSDK.scope,
@@ -288,7 +293,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     },
   })
 
-  const queryClient = useQueryClient()
   const homeSessions = createHomeSessionIndexCache(queryClient, ServerConnection.key(serverSDK.server))
   const refreshProviders = () =>
     queryClient.refetchQueries({
@@ -683,6 +687,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     peek: children.peek,
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
+    turnDiffQueryClient: queryClient,
     refreshProviders,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,

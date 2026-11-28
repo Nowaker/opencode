@@ -1,13 +1,20 @@
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { ServerScope } from "@/utils/server-scope"
 
 type Diff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
+
+export function turnDiffKey(scope: ServerScope, sessionID: string, messageID?: string) {
+  const session = [scope, "session-turn-diff", sessionID] as const
+  return messageID === undefined ? session : [...session, messageID] as const
+}
 
 function diff(value: unknown): value is Diff {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   if (!("file" in value) || typeof value.file !== "string") return false
-  if (!("patch" in value) || typeof value.patch !== "string") return false
+  // Message lists may carry only file metadata; the patch is fetched per turn when a view needs it.
+  if ("patch" in value && typeof value.patch !== "string") return false
   if (!("additions" in value) || typeof value.additions !== "number") return false
   if (!("deletions" in value) || typeof value.deletions !== "number") return false
   if (!("status" in value) || value.status === undefined) return true

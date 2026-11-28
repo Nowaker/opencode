@@ -29,10 +29,15 @@ describe("diffs", () => {
     expect(
       diffs([
         item,
-        { file: "src/bad.ts", additions: 1, deletions: 1 },
+        { file: "src/bad.ts", patch: 1, additions: 1, deletions: 1 },
         { patch: item.patch, additions: 1, deletions: 1 },
       ]),
     ).toEqual([item])
+  })
+
+  test("keeps file metadata whose patch body was left out of the message list", () => {
+    const metadata = { file: "src/app.ts", additions: 1, deletions: 1, status: "modified" as const }
+    expect(diffs([metadata])).toEqual([metadata])
   })
 })
 
@@ -57,6 +62,21 @@ describe("message", () => {
         diffs: [item],
       },
     })
+  })
+
+  test("keeps stripped summary diffs so historical turns still count their files", () => {
+    const metadata = { file: "src/app.ts", additions: 1, deletions: 1 }
+    const input = {
+      id: "msg_1",
+      sessionID: "ses_1",
+      role: "user",
+      time: { created: 1 },
+      agent: "build",
+      model: { providerID: "openai", modelID: "gpt-5" },
+      summary: { diffs: [metadata] },
+    } as unknown as Message
+
+    expect(message(input)).toMatchObject({ summary: { diffs: [metadata] } })
   })
 
   test("drops invalid user summaries", () => {

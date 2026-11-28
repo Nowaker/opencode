@@ -112,6 +112,29 @@ if (sseTypesPatched === sseTypesSource) {
 }
 await Bun.write(sseTypesPath, sseTypesPatched)
 
+// The root SDK is frozen; update only its snapshot diff contract.
+const rootTypesFile = Bun.file("./src/gen/types.gen.ts")
+const rootTypes = await rootTypesFile.text()
+const rootFileDiff = `export type FileDiff = import("../v2/gen/types.gen.js").SnapshotFileDiff & {
+  file: string
+  before?: string
+  after?: string
+}`
+const rootTypesPatched = rootTypes.replace(
+  `export type FileDiff = {
+  file: string
+  before: string
+  after: string
+  additions: number
+  deletions: number
+}`,
+  rootFileDiff,
+)
+if (!rootTypesPatched.includes(rootFileDiff)) {
+  throw new Error("Frozen root SDK FileDiff patch did not apply")
+}
+if (rootTypesPatched !== rootTypes) await Bun.write(rootTypesFile, rootTypesPatched)
+
 await $`bun prettier --write src/gen`
 await $`bun prettier --write src/v2`
 await $`rm -rf dist`

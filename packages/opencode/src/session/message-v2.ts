@@ -29,7 +29,9 @@ import { lt } from "drizzle-orm"
 import { gt } from "drizzle-orm"
 import { asc } from "drizzle-orm"
 import { count } from "drizzle-orm"
+import { getColumns } from "drizzle-orm"
 import { or } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
@@ -87,8 +89,8 @@ export const cursor = {
 }
 
 // Shape-stable row -> info/part constructors. session.prompt.runLoop calls
-// MessageV2.filterCompactedEffect on every iteration, which hydrates the
-// session's full message history; for sessions with thousands of messages
+// MessageV2.filterCompactedEffect on every iteration, which can hydrate the
+// session's full message history if it has no completed compaction; for long sessions
 // the pre-existing spread-based `{...row.data, id, sessionID}` produced
 // objects whose hidden-class (JSC `Structure`) varied based on which
 // optional keys row.data happened to contain. With dozens of optional
@@ -183,10 +185,12 @@ function buildUserInfo(row: typeof MessageTable.$inferSelect): Info {
   return user
 }
 
-const info = (row: typeof MessageTable.$inferSelect): Info => {
+const info = (row: typeof MessageTable.$inferSelect, includeDiffBodies: boolean): Info => {
+  const role = row.data.role
+  // Exact summaries must neither consume projected cache entries nor retain diff bodies globally.
+  if (includeDiffBodies && role !== "assistant" && row.data.summary !== undefined) return buildUserInfo(row)
   const cached = infoCache.get(row.id)
   if (cached && cached.time_updated === row.time_updated) return cached.info
-  const role = (row.data as { role?: string }).role
   const fresh = role === "assistant" ? buildAssistantInfo(row) : buildUserInfo(row)
   infoCache.set(row.id, { time_updated: row.time_updated, info: fresh })
   evictOldest(infoCache, INFO_CACHE_MAX)
@@ -346,7 +350,29 @@ const older = (row: Cursor) =>
 const newer = (row: Cursor) =>
   or(gt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), gt(MessageTable.id, row.id)))
 
-function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$inferSelect)[]) {
+const messageColumns = getColumns(MessageTable)
+// Strip bodies before Drizzle decodes the JSON, preserving non-diff fields and legacy array entries.
+const projectedMessageColumns = {
+  ...messageColumns,
+  data: sql`case
+    when not json_valid(${MessageTable.data}) then ${MessageTable.data}
+    when json_extract(${MessageTable.data}, '$.role') = 'user'
+      and json_type(${MessageTable.data}, '$.summary.diffs') = 'array'
+    then json_set(${MessageTable.data}, '$.summary.diffs', (
+      select json_group_array(json(entry.value)) from (
+        select case when diff.type = 'object'
+          then json_remove(diff.value, '$.patch', '$.before', '$.after')
+          else (${MessageTable.data} -> '$.summary.diffs') -> diff.key
+        end as value
+        from json_each(${MessageTable.data}, '$.summary.diffs') as diff
+        order by diff.key
+      ) as entry
+    ))
+    else ${MessageTable.data}
+  end`.mapWith(MessageTable.data),
+}
+
+function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$inferSelect)[], includeDiffBodies = false) {
   const ids = rows.map((row) => row.id)
   const partByMessage = new Map<string, Part[]>()
   return Effect.gen(function* () {
@@ -367,7 +393,7 @@ function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$infer
     }
 
     return rows.map((row) => ({
-      info: info(row),
+      info: info(row, includeDiffBodies),
       parts: partByMessage.get(row.id) ?? [],
     }))
   })
@@ -731,6 +757,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   before?: string
   after?: string
   order?: "asc" | "desc"
+  includeDiffBodies?: boolean
 }) {
   const { db } = yield* Database.Service
   const ascending = input.after !== undefined || input.order === "asc"
@@ -738,7 +765,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   const anchor = anchorValue ? yield* resolveAnchor(db, input.sessionID, anchorValue) : undefined
   const session = eq(MessageTable.session_id, input.sessionID)
   const rows = yield* db
-    .select()
+    .select(input.includeDiffBodies ? messageColumns : projectedMessageColumns)
     .from(MessageTable)
     .where(anchor ? and(session, ascending ? newer(anchor) : older(anchor)) : session)
     .orderBy(
@@ -761,7 +788,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
 
   const more = rows.length > input.limit
   const slice = more ? rows.slice(0, input.limit) : rows
-  const items = yield* hydrate(db, slice)
+  const items = yield* hydrate(db, slice, input.includeDiffBodies)
   if (!ascending) items.reverse()
   const tail = slice.at(-1)
   return {
@@ -798,27 +825,34 @@ function resolveAnchor(db: Database.Interface["db"], sessionID: SessionID, value
 }
 
 export function stream(sessionID: SessionID) {
-  const size = 50
-  return Effect.gen(function* () {
-    const result = [] as WithParts[]
-    let before: string | undefined
-    while (true) {
-      const next = yield* page({ sessionID, limit: size, before }).pipe(
-        Effect.catchIf(NotFoundError.isInstance, () =>
-          Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
-        ),
-      )
-      if (next.items.length === 0) break
-      for (let i = next.items.length - 1; i >= 0; i--) {
-        const item = next.items[i]
-        if (item) result.push(item)
-      }
-      if (!next.more || !next.cursor) break
-      before = next.cursor
-    }
-    return result
-  })
+  return scanNewest(sessionID)
 }
+
+const scanNewest = Effect.fnUntraced(function* (sessionID: SessionID, stop?: (msg: WithParts) => boolean) {
+  const { db } = yield* Database.Service
+  const size = 50
+  const session = eq(MessageTable.session_id, sessionID)
+  const result: WithParts[] = []
+  let before: Cursor | undefined
+  while (true) {
+    const rows = yield* db
+      .select(projectedMessageColumns)
+      .from(MessageTable)
+      .where(before ? and(session, older(before)) : session)
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(size)
+      .all()
+      .pipe(Effect.orDie)
+    const tail = rows.at(-1)
+    if (!tail) return result
+    for (const msg of yield* hydrate(db, rows)) {
+      result.push(msg)
+      if (stop?.(msg)) return result
+    }
+    if (rows.length < size) return result
+    before = { id: tail.id, time: tail.time_created }
+  }
+})
 
 export function parts(messageID: MessageID) {
   return Effect.gen(function* () {
@@ -844,7 +878,7 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
     .pipe(Effect.orDie)
   if (!row) return yield* new NotFoundError({ message: `Message not found: ${input.messageID}` })
   return {
-    info: info(row),
+    info: info(row, true),
     parts: yield* parts(input.messageID),
   }
 })
@@ -863,26 +897,37 @@ function compactionTail(parts: readonly Part[]) {
 }
 
 export function filterCompacted(msgs: Iterable<WithParts>) {
-  const result = [] as WithParts[]
-  const completed = new Set<string>()
-  let retain: MessageID | undefined
+  const stop = compactionCut()
+  const result: WithParts[] = []
   for (const msg of msgs) {
     result.push(msg)
-    if (retain) {
-      if (msg.info.id === retain) break
-      continue
-    }
+    if (stop(msg)) break
+  }
+  return orderCompacted(result)
+}
+
+export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
+  return orderCompacted(yield* scanNewest(sessionID, compactionCut()))
+})
+
+function compactionCut() {
+  const completed = new Set<MessageID>()
+  let retain: MessageID | undefined
+  return (msg: WithParts) => {
+    if (retain) return msg.info.id === retain
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
       const part = ownedCompactionPart(msg.parts) ?? msg.parts.find((item) => item.type === "compaction")
-      if (!part) continue
-      if (!part.tail_start_id) break
+      if (!part) return false
       retain = part.tail_start_id
-      if (msg.info.id === retain) break
-      continue
+      return !retain || msg.info.id === retain
     }
     if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error)
       completed.add(msg.info.parentID)
+    return false
   }
+}
+
+function orderCompacted(result: WithParts[]) {
   result.reverse()
   const compactionIndex = result.findLastIndex(
     (msg) => msg.info.role === "user" && compactionTail(msg.parts) !== undefined,
@@ -908,10 +953,6 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
   }
   return result
 }
-
-export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
-  return filterCompacted(yield* stream(sessionID))
-})
 
 // filterCompacted reorders messages for model consumption
 // ([compaction-user, summary, ...retained tail..., continue-user]), so array

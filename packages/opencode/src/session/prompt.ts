@@ -1512,7 +1512,14 @@ const layer = Layer.effect(
               history.some((msg) => msg.parts.some(isDeferredToolPart))
             ) {
               const turn = turnAt(holding ? answerAfterTurn(holdForTurnEnd(history)) : history)
-              if (!turn.finished && turn.latest.user) yield* applyResumeSelection(turn.latest.user, selection, true)
+              if (!turn.finished && turn.latest.user) {
+                const exactTarget = yield* MessageV2.get({ sessionID: input.sessionID, messageID: turn.latest.user.id }).pipe(
+                  Effect.provideService(Database.Service, database),
+                  Effect.option,
+                )
+                if (Option.isSome(exactTarget) && exactTarget.value.info.role === "user")
+                  yield* applyResumeSelection(exactTarget.value.info, selection, true)
+              }
             }
           }
           const inherited = (yield* Effect.forEach(yield* descendants(input.sessionID), (child) =>
@@ -2002,7 +2009,11 @@ const layer = Layer.effect(
       const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
       if (Option.isSome(match)) return match.value
       const msgs = yield* sessions.messages({ sessionID, limit: 1 }).pipe(Effect.orDie)
-      if (msgs.length > 0) return msgs[0]
+      if (msgs[0])
+        return yield* MessageV2.get({ sessionID, messageID: msgs[0].info.id }).pipe(
+          Effect.provideService(Database.Service, database),
+          Effect.orDie,
+        )
       throw new Error("Impossible")
     })
 

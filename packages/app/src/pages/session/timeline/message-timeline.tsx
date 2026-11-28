@@ -14,7 +14,7 @@ import {
 import { createStore, produce } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
-import { useMutation } from "@tanstack/solid-query"
+import { createQuery, useMutation } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
@@ -76,6 +76,8 @@ import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
+import { turnDiffQuery, turnPatchMissing, withTurnPatches } from "./summary-diffs"
+import { useServerSync } from "@/context/server-sync"
 import { filterVirtualIndexes } from "./virtual-items"
 
 const emptyMessages: MessageType[] = []
@@ -142,7 +144,7 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   )
 }
 
-function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
+function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; sessionID: string; userMessageID: string }) {
   const language = useLanguage()
   const maxFiles = 10
   const [state, setState] = createStore({
@@ -206,7 +208,13 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
                   </StickyAccordionHeader>
                   <Accordion.Content>
                     <Show when={opened()}>
-                      <TimelineDiffView diff={diff} />
+                      <Show when={turnPatchMissing(diff)} fallback={<TimelineDiffView diff={diff} />}>
+                        <TimelineTurnDiffView
+                          diff={diff}
+                          sessionID={props.sessionID}
+                          userMessageID={props.userMessageID}
+                        />
+                      </Show>
                     </Show>
                   </Accordion.Content>
                 </Accordion.Item>
@@ -224,13 +232,44 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
   )
 }
 
+// Mounted only while an opened file lacks its patch, so a closed card holds no observer on the turn payload.
+function TimelineTurnDiffView(props: { diff: SummaryDiff; sessionID: string; userMessageID: string }) {
+  const language = useLanguage()
+  const serverSDK = useServerSDK()
+  const serverSync = useServerSync()
+  const sdk = useSDK()
+  const turnQuery = createQuery(
+    () => turnDiffQuery(serverSDK().scope, sdk().directory, props.sessionID, props.userMessageID, sdk().client),
+    () => serverSync().turnDiffQueryClient,
+  )
+  // Reading data before success suspends, which would remount the row and collapse the opened file.
+  const loaded = createMemo(
+    () => withTurnPatches([props.diff], turnQuery.isSuccess ? turnQuery.data : undefined)[0] ?? props.diff,
+  )
+
+  return (
+    <Show
+      when={!turnPatchMissing(loaded())}
+      fallback={
+        <div class="px-2 py-2 text-12-regular text-text-weak">
+          {turnQuery.isPending
+            ? `${language.t("common.loading")}${language.t("common.loading.ellipsis")}`
+            : language.t("toast.file.loadFailed.title")}
+        </div>
+      }
+    >
+      <TimelineDiffView diff={loaded()} />
+    </Show>
+  )
+}
+
 function TimelineDiffView(props: { diff: SummaryDiff }) {
   const fileComponent = useFileComponent()
-  const view = normalize(props.diff)
+  const view = createMemo(() => normalize(props.diff))
 
   return (
     <div data-slot="session-turn-diff-view" data-scrollable>
-      <Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view.fileDiff} />
+      <Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view().fileDiff} />
     </div>
   )
 }
@@ -1207,7 +1246,11 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={diffSummaryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <TimelineDiffSummaryRow diffs={diffSummaryRow().diffs} />
+              <TimelineDiffSummaryRow
+                diffs={diffSummaryRow().diffs}
+                sessionID={sessionID() ?? ""}
+                userMessageID={diffSummaryRow().userMessageID}
+              />
             </div>
           </TimelineRowFrame>
         )

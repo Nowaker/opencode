@@ -69,7 +69,7 @@ export function unquoteGitPath(input: string) {
     i++
   }
 
-  return new TextDecoder().decode(new Uint8Array(bytes))
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(bytes))
 }
 
 export function decodeFilePath(input: string) {
