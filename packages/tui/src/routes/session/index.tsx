@@ -23,6 +23,8 @@ import { useProject } from "../../context/project"
 import { useSync, type HiddenEdge } from "../../context/sync"
 import { HiddenMessagesDivider, loadAllNote } from "./hidden-divider"
 import { BashBackgroundAction } from "./bash-background-action"
+import type { ApprovedActionActivity } from "@opencode-ai/plugin"
+import { activityShown, approvedPreviewLines, describeActivity, isReceipt } from "./approved-action"
 import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -1536,6 +1538,42 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
     return messages().findIndex((message) => message.id === messageID)
   })
 
+  // The owner admits an approved action only for the session on screen, so the view follows the route.
+  createEffect(
+    on(
+      () => route.sessionID,
+      (sessionID) => {
+        sdk.approvedAction?.view(sessionID)
+        sdk.approvedAction?.refresh(sessionID)
+      },
+    ),
+  )
+  onCleanup(() => sdk.approvedAction?.view())
+  const approvedActivity = createMemo(() => {
+    const activity = sdk.approvedAction?.get(route.sessionID)
+    if (!activity) return
+    const state = deliveries().get(activity.messageID)?.state
+    const receipt = { parts: sync.data.part[activity.messageID], held: state === "queued" || state === "paused" }
+    if (activityShown(activity, receipt)) return activity
+  })
+  // The row goes just before the first prompt a person is still waiting on, so it reads as running ahead of them.
+  const approvedAnchor = createMemo(() => {
+    if (!approvedActivity()) return -1
+    const revertIndex = revertMessageIndex()
+    return messages().findIndex((message, index) => {
+      const state = deliveries().get(message.id)?.state
+      const parts = sync.data.part[message.id] ?? []
+      return (
+        (state === "queued" || state === "paused") &&
+        (revertIndex === -1 || index < revertIndex) &&
+        filter().prompts.shown &&
+        TranscriptFilter.userKind(parts) === "prompts" &&
+        !parts.some(isReceipt) &&
+        parts.some((part) => part.type === "text" && !part.synthetic && part.text.trim())
+      )
+    })
+  })
+
   const revertDiffFiles = createMemo(() => getRevertDiffFiles(revertInfo()?.diff ?? ""))
 
   const revertRevertedMessages = createMemo(() => {
@@ -1641,6 +1679,9 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
                             onLoad={loadHidden}
                           />
                         )}
+                      </Show>
+                      <Show when={index() === approvedAnchor() ? approvedActivity() : undefined}>
+                        {(activity) => <ApprovedActionRow activity={activity()} />}
                       </Show>
                       <Switch>
                         <Match when={message.id === revert()?.messageID}>
@@ -1769,6 +1810,11 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
                               if (renderer.getSelection()?.getSelectedText()) return
                               if (idUnder(renderer.currentRenderBuffer, event)) return
                               const views = messageProvenance(sync.data.part[message.id] ?? [])
+                              // A stored approved-action outcome is the owner's record, never a prompt to unqueue or resend.
+                              const humanPrompt = () => {
+                                const parts = sync.data.part[message.id] ?? []
+                                return TranscriptFilter.userKind(parts) === "prompts" && !parts.some(isReceipt)
+                              }
                               dialog.replace(() => (
                                 <DialogMessage
                                   messageID={message.id}
@@ -1787,13 +1833,13 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
                                     (deliveries().get(message.id)?.state === "queued" ||
                                       (deliveries().get(message.id)?.state === "paused" &&
                                         (sync.data.session_status?.[route.sessionID]?.type ?? "idle") !== "idle")) &&
-                                    TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
+                                    humanPrompt()
                                   }
                                   sendable={
                                     (sync.data.session_status?.[route.sessionID]?.type ?? "idle") === "idle" &&
                                     messages().findLastIndex((x) => x.role === "assistant") <
                                       messages().findIndex((x) => x.id === message.id) &&
-                                    TranscriptFilter.userKind(sync.data.part[message.id] ?? []) === "prompts"
+                                    humanPrompt()
                                   }
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
                                   restorePrompt={restorePrompt}
@@ -1821,6 +1867,9 @@ export function Session(props: { textClicks: { readonly active: boolean; readonl
                     selection={filter()}
                     onOpen={() => dialog.replace(() => <DialogTranscriptFilter sessionID={route.sessionID} />)}
                   />
+                </Show>
+                <Show when={approvedAnchor() === -1 ? approvedActivity() : undefined}>
+                  {(activity) => <ApprovedActionRow activity={activity()} />}
                 </Show>
               </scrollbox>
               <box flexShrink={0}>
@@ -1906,6 +1955,35 @@ function FilteredNotice(props: { selection: TranscriptFilter.Selection; onOpen: 
         Everything here is hidden by the transcript filter ({hidden()}).{" "}
         <span style={{ fg: theme.text }}>{shortcut() || "/filter"}</span> changes it
       </text>
+    </box>
+  )
+}
+
+// An approved action the owner runs for the person, never a model tool call: no part, no controls, plain state.
+function ApprovedActionRow(props: { activity: ApprovedActionActivity }) {
+  const { theme } = useTheme()
+  const view = createMemo(() => describeActivity(props.activity))
+  const color = createMemo(() => (view().warning ? theme.warning : theme.textMuted))
+  return (
+    <box marginTop={1} flexShrink={0} ref={(el: BoxRenderable) => alwaysSeparate.add(el)}>
+      <InlineToolRow
+        icon={view().warning ? "!" : "$"}
+        color={color()}
+        complete={!view().running}
+        pending={view().text}
+        spinner={view().running}
+      >
+        {view().text}
+      </InlineToolRow>
+      <box paddingLeft={3 + INLINE_TOOL_ICON_WIDTH}>
+        <For each={approvedPreviewLines(props.activity)}>
+          {(line) => (
+            <text fg={theme.textMuted} wrapMode="none">
+              {line}
+            </text>
+          )}
+        </For>
+      </box>
     </box>
   )
 }

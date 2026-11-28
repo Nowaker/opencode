@@ -469,6 +469,9 @@ export function Prompt(props: PromptProps) {
   }
 
   const paused = createMemo(() => status().paused)
+  const approvedRunning = createMemo(
+    () => !!props.sessionID && sdk.approvedAction?.get(props.sessionID)?.phase === "running",
+  )
   const [archiveRefusal, setArchiveRefusal] = createSignal<SessionArchive.Details>()
   const archived = createMemo(() => {
     const session = props.sessionID ? sync.session.get(props.sessionID) : undefined
@@ -2752,6 +2755,14 @@ export function Prompt(props: PromptProps) {
                       <span style={{ fg: paused()?.error ? theme.error : theme.textMuted }}> · {reason()}</span>
                     )}
                   </Show>
+                </text>
+              </box>
+            </Match>
+            <Match when={approvedRunning()}>
+              {/* No "esc interrupt": the model is idle, and this line only says the owner is running an action. */}
+              <box paddingLeft={3} paddingRight={TuiLayout.Prompt.statusGap} flexGrow={1} flexShrink={1}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  approved action running
                 </text>
               </box>
             </Match>

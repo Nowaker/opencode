@@ -5,6 +5,7 @@ import { InputRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect } from "effect"
 import { Global } from "@opencode-ai/core/global"
+import type { ApprovedActivitySource } from "../../src/routes/session/approved-action"
 import { tmpdir } from "./fixture"
 import { createTuiResolvedConfig } from "./tui-runtime"
 import { createEventSource, createFetch, directory, json } from "./tui-sdk"
@@ -80,6 +81,8 @@ export async function withApp(
     autoSwitch?: () => Response
     /** Answers `GET /session/{id}/cybersec-preservation`; without it the engine does not advertise it. */
     cybersecPreservation?: () => Response
+    /** The embedded owner's approved action activity; without it the TUI runs with no owner capability. */
+    approvedAction?: ApprovedActivitySource
   },
   body: (rig: Rig) => Promise<void>,
 ) {
@@ -178,6 +181,7 @@ export async function withApp(
         config: createTuiResolvedConfig({ plugin_enabled: {} }),
         fetch,
         events: events.source,
+        approvedAction: options.approvedAction,
         args: { continue: true },
         pluginHost: {
           async start(input) {

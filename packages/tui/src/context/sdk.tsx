@@ -4,6 +4,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
 import type { BashBackgroundOwner } from "../routes/session/bash-background-action"
+import { createApprovedActivity, type ApprovedActivitySource } from "../routes/session/approved-action"
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -105,8 +106,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     events?: EventSource
     bashBackground?: BashBackgroundOwner
     bindSessionOwner?: BindSessionOwner
+    approvedAction?: ApprovedActivitySource
   }) => {
     const abort = new AbortController()
+    const approvedAction = props.approvedAction && createApprovedActivity(props.approvedAction)
     let sse: AbortController | undefined
 
     function createSDK() {
@@ -208,6 +211,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     })
 
     return {
+      approvedAction,
       bashBackground: props.bashBackground,
       bindSessionOwner: props.bindSessionOwner,
       get client() {

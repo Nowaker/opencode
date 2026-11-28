@@ -35,6 +35,7 @@ import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { SDKProvider, useSDK, type BindSessionOwner, type EventSource } from "./context/sdk"
 import type { BashBackgroundOwner } from "./routes/session/bash-background-action"
+import type { ApprovedActivitySource } from "./routes/session/approved-action"
 import { StartupLoading } from "./component/startup-loading"
 import { mountInstantScreen } from "./component/instant-screen"
 import { InstantPrompt } from "./instant"
@@ -160,6 +161,7 @@ export type TuiInput = {
   events?: EventSource
   bashBackground?: BashBackgroundOwner
   bindSessionOwner?: BindSessionOwner
+  approvedAction?: ApprovedActivitySource
   pluginHost: TuiPluginHost
   updater?: UpdateSource
 }
@@ -327,6 +329,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           <SDKProvider
                                             bashBackground={input.bashBackground}
                                             bindSessionOwner={input.bindSessionOwner}
+                                            approvedAction={input.approvedAction}
                                             url={input.url}
                                             directory={input.directory}
                                             fetch={input.fetch}
