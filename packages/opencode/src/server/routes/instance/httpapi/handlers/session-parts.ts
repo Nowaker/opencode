@@ -1,7 +1,9 @@
 import { OwnerQuiescence } from "@/owner/quiescence"
+import { ApprovedActionReceiptPart } from "@/session/approved-action-receipt"
 import { AutoSwitchAdmission } from "@/session/auto-switch-admission"
 import { LiveEvents } from "@/session/live-events"
 import { MessageHistoryState } from "@/session/message-history-state"
+import { MessageV2 } from "@/session/message-v2"
 import type { MessageID, PartID, SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { Database } from "@opencode-ai/core/database/database"
@@ -17,7 +19,8 @@ type PartPath = { readonly sessionID: SessionID; readonly messageID: MessageID; 
 
 export const makePartHandlers = Effect.gen(function* () {
   const session = yield* Session.Service
-  const { db } = yield* Database.Service
+  const database = yield* Database.Service
+  const { db } = database
   const live = yield* LiveEvents.Service
 
   const edit = <A>(params: PartPath, write: (part: SessionV1.Part | undefined) => Effect.Effect<A, HttpApiError.BadRequest>) =>
@@ -41,7 +44,13 @@ export const makePartHandlers = Effect.gen(function* () {
         yield* MessageHistoryState.assertWritable({ id: messageOwner.id, metadata: messageOwner.metadata ?? undefined })
       }
       const part = row ? yield* session.getPart(params) : undefined
-      if (AutoSwitchAdmission.ownsPart(part)) return yield* new HttpApiError.BadRequest({})
+      if (AutoSwitchAdmission.ownsPart(part) || ApprovedActionReceiptPart.ownsPart(part)) {
+        return yield* new HttpApiError.BadRequest({})
+      }
+      if (!row) {
+        const siblings = yield* MessageV2.parts(params.messageID).pipe(Effect.provideService(Database.Service, database))
+        if (siblings.some(ApprovedActionReceiptPart.ownsPart)) return yield* new HttpApiError.BadRequest({})
+      }
       return yield* write(part)
     })).pipe(Effect.catchTag("SqlError", Effect.die))).pipe(
       OwnerQuiescence.activity,
@@ -64,7 +73,8 @@ export const makePartHandlers = Effect.gen(function* () {
     const { params, payload } = ctx
     return yield* edit<typeof SessionV1.Part.Type>(params, (part) => {
       if (payload.id !== params.partID || payload.messageID !== params.messageID ||
-          payload.sessionID !== params.sessionID || AutoSwitchAdmission.ownsPart(payload)) {
+          payload.sessionID !== params.sessionID || AutoSwitchAdmission.ownsPart(payload) ||
+          ApprovedActionReceiptPart.ownsPart(payload)) {
         return Effect.fail(new HttpApiError.BadRequest({}))
       }
       const owner = part?.type === "compaction" ? part.continuation_message_id : undefined

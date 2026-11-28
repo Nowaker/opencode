@@ -71,13 +71,15 @@ import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { LiveEvents } from "./live-events"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, inArray, ne, or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { NotFoundError } from "@/storage/storage"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { OwnerQuiescence } from "@/owner/quiescence"
+import type { ApprovedAction, ApprovedActionReceipt } from "@opencode-ai/plugin"
+import { ApprovedActionReceiptPart } from "./approved-action-receipt"
 import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 import { Question } from "@/question"
 import { isRecord } from "@/util/record"
@@ -272,6 +274,8 @@ export interface Interface {
     input: PromptInput,
     admission?: Deferred.Deferred<void, AdmissionError>,
   ) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error | MessageHistoryState.Error>
+  readonly settleApprovedAction: (input: ApprovedActionReceipt) => Effect.Effect<Awaited<ReturnType<ApprovedAction["settle"]>>>
+  readonly receiptApprovedAction: (input: ApprovedActionReceipt) => Effect.Effect<Awaited<ReturnType<ApprovedAction["receipt"]>>>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts, MessageHistoryState.Error>
   readonly shell: (
     input: ShellInput,
@@ -462,11 +466,12 @@ const layer = Layer.effect(
 
       const real = (m: SessionV1.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
-      const idx = input.history.findIndex(real)
+      const history = input.history.filter((message) => !message.parts.some(ApprovedActionReceiptPart.ownsPart))
+      const idx = history.findIndex(real)
       if (idx === -1) return
-      if (input.history.filter(real).length !== 1) return
+      if (history.filter(real).length !== 1) return
 
-      const context = input.history.slice(0, idx + 1)
+      const context = history.slice(0, idx + 1)
       const firstUser = context[idx]
       if (!firstUser || firstUser.info.role !== "user") return
       const firstInfo = firstUser.info
@@ -714,7 +719,8 @@ const layer = Layer.effect(
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const markReady = ready ? ready.open.pipe(Effect.asVoid) : Effect.void
-          const { msg, part, cwd, worktree } = yield* Effect.gen(function* () {
+          const prepare = Effect.gen(function* () {
+            if (input.messageID) yield* rejectReceiptOverwrite(input.messageID)
             const ctx = yield* InstanceState.context
             const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
             if (session.revert) {
@@ -780,7 +786,12 @@ const layer = Layer.effect(
             }
             yield* sessions.updatePart(part)
             return { msg, part, cwd: ctx.directory, worktree: snapshotWorktree(ctx) }
-          }).pipe(Effect.ensuring(markReady))
+          })
+          const { msg, part, cwd, worktree } = yield* (
+            input.messageID
+              ? live.guard(input.sessionID, DatabaseTransaction.batch(db, prepare).pipe(Effect.orDie))
+              : prepare
+          ).pipe(Effect.ensuring(markReady))
 
           const cfg = yield* config.get()
           const sh = Shell.preferred(cfg.shell)
@@ -893,6 +904,19 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
       return yield* provider.defaultModel().pipe(Effect.orDie)
+    })
+
+    const rejectReceiptOverwrite = Effect.fnUntraced(function* (messageID: MessageID, partIDs: readonly PartID[] = []) {
+      const message = eq(PartTable.message_id, messageID)
+      const rows = yield* db
+        .select({ data: PartTable.data })
+        .from(PartTable)
+        .where(partIDs.length ? or(message, inArray(PartTable.id, partIDs)) : message)
+        .all()
+        .pipe(Effect.orDie)
+      if (rows.some((row) => ApprovedActionReceiptPart.ownsPart(row.data))) {
+        return yield* Effect.die(new AdmissionRejected({ message: "Prompt conflicts with an approved action receipt" }))
+      }
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
@@ -1267,7 +1291,7 @@ const layer = Layer.effect(
               ),
             )
           : Effect.succeed(part),
-      )
+      ).pipe(Effect.map((parts) => parts.map(ApprovedActionReceiptPart.stripWireStamp)))
 
       const admittedInfo = { ...info }
       delete admittedInfo.promptOrigin
@@ -1302,6 +1326,7 @@ const layer = Layer.effect(
         DatabaseTransaction.batch(
           db,
           Effect.gen(function* () {
+            yield* rejectReceiptOverwrite(info.id, parts.map((part) => part.id))
             const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
             yield* MessageHistoryState.assertWritable(current)
             // A chat.message hook can replace IDs before the row and parts reach the projector.
@@ -1399,7 +1424,10 @@ const layer = Layer.effect(
     }) {
       const message = yield* MessageV2.get(input).pipe(Effect.provideService(Database.Service, database))
       const run = runs.get(input.sessionID)
-      if (!run || message.info.role !== "user" || message.info.time.created < run.started)
+      if (
+        !run || message.info.role !== "user" || message.info.time.created < run.started ||
+        message.parts.some(ApprovedActionReceiptPart.ownsPart)
+      )
         return yield* new NotQueuedError({ ...input, reason: "idle" })
       if (run.seen.has(input.messageID)) return yield* new NotQueuedError({ ...input, reason: "started" })
       run.withdrawn.add(input.messageID)
@@ -1683,7 +1711,11 @@ const layer = Layer.effect(
     const hold = Effect.fnUntraced(function* (sessionID: SessionID, message: SessionV1.WithParts) {
       const current = yield* pauses.get(sessionID)
       if (!current) return false
-      if (message.info.role === "user" && liftedByRoute(current, message.info)) return false
+      if (
+        message.info.role === "user" &&
+        liftedByRoute(current, message.info) &&
+        !message.parts.some(ApprovedActionReceiptPart.ownsPart)
+      ) return false
       const text = message.parts.find((part) => part.type === "text")
       const delivery = text?.type === "text" ? text.metadata?.vibeterm : undefined
       yield* pauses.write(sessionID, {
@@ -2000,6 +2032,7 @@ const layer = Layer.effect(
           messageIDs: input.messageID ? [input.messageID] : [],
           parts: input.parts,
         })
+        if (input.messageID) yield* rejectReceiptOverwrite(messageID)
         const replied = input.messageID ? yield* reply(input.sessionID, messageID) : Option.none<SessionV1.WithParts>()
         if (Option.isSome(replied)) {
           yield* Deferred.succeed(accepted, undefined)
@@ -2015,7 +2048,7 @@ const layer = Layer.effect(
               return
             }
             const error = Cause.squash(exit.cause)
-            if (error instanceof MessageHistoryState.Error) {
+            if (error instanceof MessageHistoryState.Error || error instanceof AdmissionRejected) {
               yield* Deferred.fail(accepted, error)
               return
             }
@@ -3046,9 +3079,69 @@ const layer = Layer.effect(
       return () => !joined || (!joined.seen.has(messageID) && !joined.withdrawn.has(messageID))
     }
 
+    const receiptApprovedAction: Interface["receiptApprovedAction"] = Effect.fn("SessionPrompt.receiptApprovedAction")(
+      function* (receipt: ApprovedActionReceipt) {
+        const input = ApprovedActionReceiptPart.canonical(receipt)
+        if (!input) return ApprovedActionReceiptPart.refuse("invalid-binding")
+        return yield* live.guard(
+          input.sessionID,
+          DatabaseTransaction.batch(
+            db,
+            ApprovedActionReceiptPart.lookup(input).pipe(Effect.provideService(Database.Service, database)),
+          ).pipe(Effect.orDie),
+        )
+      },
+    )
+
+    const settleApprovedAction: Interface["settleApprovedAction"] = Effect.fn("SessionPrompt.settleApprovedAction")(
+      function* (receipt: ApprovedActionReceipt) {
+        const input = ApprovedActionReceiptPart.canonical(receipt)
+        if (!input) return ApprovedActionReceiptPart.refuse("invalid-binding")
+        const { sessionID, messageID } = input
+        const settled = yield* live.guard(
+          sessionID,
+          DatabaseTransaction.batch(
+            db,
+            Effect.gen(function* () {
+              const prior = yield* ApprovedActionReceiptPart.lookup(input)
+              if (prior.kind !== "missing") return { result: prior, wake: false }
+              const session = yield* sessions.get(sessionID).pipe(
+                Effect.catchIf(NotFoundError.isInstance, () => Effect.void),
+              )
+              if (!session) return { result: ApprovedActionReceiptPart.refuse("session-not-found"), wake: false }
+              if (session.time.archived !== undefined)
+                return { result: ApprovedActionReceiptPart.refuse("archived"), wake: false }
+              const writable = yield* MessageHistoryState.assertWritable(session).pipe(Effect.option)
+              if (session.revert || Option.isNone(writable))
+                return { result: ApprovedActionReceiptPart.refuse("armed-revert"), wake: false }
+
+              const info = yield* sessions.createMessage({
+                id: messageID,
+                sessionID,
+                role: "user",
+                agent: session.agent ?? (yield* agents.defaultInfo()).name,
+                model: yield* currentModel(sessionID),
+                time: { created: Date.now() },
+              })
+              const partID = PartID.ascending()
+              const part = yield* sessions.updatePart({ ...input.part, id: partID, sessionID, messageID })
+              const held = yield* hold(sessionID, { info, parts: [part] })
+              return { result: { kind: "stored", messageID, partID } as const, wake: !held }
+            }).pipe(Effect.provideService(Database.Service, database)),
+          ).pipe(Effect.orDie),
+        )
+
+        if (settled.wake) yield* OwnerQuiescence.fork(drive(sessionID, messageID).pipe(Effect.interruptible), scope)
+        return settled.result
+      },
+      Effect.uninterruptible,
+    )
+
     const shell = Effect.fn("SessionPrompt.shell")(function* (input: ShellInput) {
-      if (input.messageID)
+      if (input.messageID) {
         yield* assertReferencedHistoryWritable({ sessionID: input.sessionID, messageIDs: [input.messageID] })
+        yield* rejectReceiptOverwrite(input.messageID)
+      }
       yield* SessionArchive.admit(sessions, input)
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
@@ -3313,6 +3406,8 @@ const layer = Layer.effect(
     return Service.of({
       cancel,
       prompt,
+      settleApprovedAction: (input) => OwnerQuiescence.activity(settleApprovedAction(input)),
+      receiptApprovedAction,
       loop: (input) => withWritableHistory(input.sessionID, loop(input)),
       shell: (input) => withWritableHistory(input.sessionID, shell(input)),
       command: (input) => withWritableHistory(input.sessionID, command(input)),
