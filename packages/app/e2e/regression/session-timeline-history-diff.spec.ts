@@ -17,6 +17,7 @@ const nextFile = "src/next-c.ts"
 
 test("expands stripped historical and last-turn diffs on demand without fetching collapsed turns", async ({ page }) => {
   const diffRequests: string[] = []
+  let nextPatch = full(nextFile, "next")
   const isTurnDiff = (request: Request) => new URL(request.url()).pathname === `/session/${sessionID}/diff`
   page.on("request", (request) => {
     if (isTurnDiff(request)) diffRequests.push(new URL(request.url()).searchParams.get("messageID") ?? "")
@@ -43,7 +44,7 @@ test("expands stripped historical and last-turn diffs on demand without fetching
       const messageID = new URL(route.request().url()).searchParams.get("messageID")
       const body = messageID === historyID ? [full(historyFile, "history")]
         : messageID === lastID ? [full(lastFile, "last")]
-        : messageID === nextID ? [full(nextFile, "next")]
+        : messageID === nextID ? [nextPatch]
         : []
       return route.fulfill({
         status: 200,
@@ -106,6 +107,20 @@ test("expands stripped historical and last-turn diffs on demand without fetching
   await nextResponse
   await expect(panel.getByText("export const next = 2")).toBeVisible()
   expect(diffRequests).toEqual([historyID, lastID, nextID])
+
+  await panel.getByRole("tab", { name: "normal.ts" }).click()
+  await expect(panel.getByText("normal file contents")).toBeVisible()
+  nextPatch = full("src/revised-c.ts", "revised")
+  await fixture.send(event("message.updated", {
+    sessionID,
+    info: { ...nextTurn.info, summary: { diffs: [stripped(nextPatch.file)] } },
+  }))
+  await expect(page.locator('[data-timeline-row="DiffSummary"]', { hasText: "revised-c.ts" })).toBeVisible()
+  expect(diffRequests).toEqual([historyID, lastID, nextID])
+
+  await panel.locator("#session-side-panel-review-tab").click()
+  await expect.poll(() => diffRequests).toEqual([historyID, lastID, nextID, nextID])
+  await expect(panel.getByText("export const revised = 2")).toBeVisible()
 })
 
 function stripped(file: string) {

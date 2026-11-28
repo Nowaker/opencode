@@ -77,6 +77,7 @@ import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 import { turnDiffQuery, turnPatchMissing, withTurnPatches } from "./summary-diffs"
+import { useServerSync } from "@/context/server-sync"
 import { filterVirtualIndexes } from "./virtual-items"
 
 const emptyMessages: MessageType[] = []
@@ -235,9 +236,11 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; sessionID: string
 function TimelineTurnDiffView(props: { diff: SummaryDiff; sessionID: string; userMessageID: string }) {
   const language = useLanguage()
   const serverSDK = useServerSDK()
+  const serverSync = useServerSync()
   const sdk = useSDK()
-  const turnQuery = createQuery(() =>
-    turnDiffQuery(serverSDK().scope, sdk().directory, props.sessionID, props.userMessageID, sdk().client),
+  const turnQuery = createQuery(
+    () => turnDiffQuery(serverSDK().scope, sdk().directory, props.sessionID, props.userMessageID, sdk().client),
+    () => serverSync().turnDiffQueryClient,
   )
   // Reading data before success suspends, which would remount the row and collapse the opened file.
   const loaded = createMemo(

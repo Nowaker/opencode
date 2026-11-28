@@ -1,6 +1,7 @@
 import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import { queryOptions, skipToken } from "@tanstack/solid-query"
 import { unquoteGitPath } from "@/context/file/path"
+import { turnDiffKey } from "@/utils/diffs"
 import type { ServerScope } from "@/utils/server-scope"
 import type { SummaryDiff } from "./timeline-row"
 
@@ -40,7 +41,7 @@ export const turnDiffQuery = (
   },
 ) =>
   queryOptions({
-    queryKey: [scope, directory, "session-turn-diff", sessionID, messageID ?? ""] as const,
+    queryKey: [...turnDiffKey(scope, sessionID, messageID ?? ""), directory] as const,
     queryFn: messageID
       ? ({ signal }) =>
           client.session.diff({ sessionID, messageID }, { throwOnError: true, signal }).then((result) => result.data)

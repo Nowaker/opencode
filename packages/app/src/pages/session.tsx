@@ -716,16 +716,18 @@ export default function Page() {
   })
   const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 100)
   const turnFileDiffs = createMemo(() => turnDiffs().filter(filterRenderableDiff))
-  const turnPatchQuery = createQuery(() =>
-    turnDiffQuery(
-      serverSDK().scope,
-      sdk().directory,
-      params.id ?? "",
-      reviewShown() && reviewMode() === "turn" && turnFileDiffs().some(turnPatchMissing)
-        ? lastUserMessage()?.id
-        : undefined,
-      sdk().client,
-    ),
+  const turnPatchQuery = createQuery(
+    () =>
+      turnDiffQuery(
+        serverSDK().scope,
+        sdk().directory,
+        params.id ?? "",
+        reviewShown() && reviewMode() === "turn" && turnFileDiffs().some(turnPatchMissing)
+          ? lastUserMessage()?.id
+          : undefined,
+        sdk().client,
+      ),
+    () => serverSync().turnDiffQueryClient,
   )
   const turnReviewDiffs = createMemo(() =>
     // avoids suspense

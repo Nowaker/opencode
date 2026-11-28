@@ -183,7 +183,11 @@ function reconcileFetched<T extends { id: string }>(
   return options.compare ? items.sort(options.compare) : items
 }
 
-type ServerSessionOptions = { retry?: typeof retry; protocol?: Promise<"v1" | "v2"> }
+type ServerSessionOptions = {
+  retry?: typeof retry
+  protocol?: Promise<"v1" | "v2">
+  invalidateTurnDiff?: (sessionID: string, messageID?: string) => void
+}
 
 export function createServerSession(
   client: OpencodeClient,
@@ -818,6 +822,7 @@ export function createServerSession(
         preserveUnfetched,
         mode !== "prepend",
       )
+      if (mode !== "prepend" && !result.source) options?.invalidateTurnDiff?.(sessionID)
       applied = true
     } finally {
       if (!applied && generations.get(sessionID) === active && messageLoads.get(sessionID) === load) {
@@ -1029,6 +1034,7 @@ export function createServerSession(
       }
       case "message.updated": {
         const info = cleanMessage((event.properties as { info: Message }).info)
+        if (info.role === "user") options?.invalidateTurnDiff?.(info.sessionID, info.id)
         indexLegacyMessage(info)
         const load = messageLoads.get(info.sessionID)
         load?.touchedMessages.add(info.id)
