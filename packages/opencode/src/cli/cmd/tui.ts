@@ -274,6 +274,8 @@ export const TuiThreadCommand = cmd({
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
+      // The worker refuses this once any request has gone through it, so it runs before the session check.
+      const approvedActions = !external && (await client.call("enableApprovedActions", { directory: cwd }))
 
       const headers = external ? ServerAuth.headers() : undefined
 
@@ -333,6 +335,13 @@ export const TuiThreadCommand = cmd({
             available: async (target) => await client.call("bashBackgroundAvailable", target),
             move: async (target) => await client.call("bashBackgroundMove", target),
           },
+          approvedAction: approvedActions
+            ? {
+                view: async (sessionID) => await client.call("approvedActionView", sessionID ? { sessionID } : {}),
+                activity: async (sessionID) => await client.call("approvedActionActivity", { sessionID }),
+                subscribe: (handler) => client.on("approved-action.activity", handler),
+              }
+            : undefined,
           updater,
           args: {
             continue: args.continue,
