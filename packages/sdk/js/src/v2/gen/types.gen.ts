@@ -12512,6 +12512,10 @@ export type ExperimentalWorkspaceRemoveErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type ExperimentalWorkspaceRemoveError =

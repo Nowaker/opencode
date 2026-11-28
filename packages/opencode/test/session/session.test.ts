@@ -2,8 +2,10 @@ import { describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2 } from "@opencode-ai/core/event"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { Deferred, Effect, Exit, Layer } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, Option } from "effect"
 import { Session as SessionNs } from "@/session/session"
+import { LiveEvents } from "@/session/live-events"
+import type { MessageHistoryState } from "@/session/message-history-state"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -20,7 +22,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 
 const root = LayerNode.group([
   SessionNs.node,
@@ -35,6 +37,25 @@ const replacements = [
   [InstanceBootstrap.node, Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))],
 ] as const
 const it = testEffect(AppNodeBuilder.build(root, replacements))
+const BeforeRemovalGuard = Context.Reference<Effect.Effect<void> | undefined>("test/BeforeRemovalGuard", {
+  defaultValue: () => undefined,
+})
+const deletion = testEffect(AppNodeBuilder.build(root, [
+  ...replacements,
+  [LiveEvents.node, LayerNode.make({
+    service: LiveEvents.Service,
+    layer: Layer.effect(LiveEvents.Service, Effect.gen(function* () {
+      const live = yield* LiveEvents.Service
+      const guard: LiveEvents.Interface["guard"] = (id, work) => live.guard(id, Effect.gen(function* () {
+        const before = yield* BeforeRemovalGuard
+        if (!before) return yield* work
+        return yield* Effect.andThen(before, work).pipe(Effect.provideService(BeforeRemovalGuard, undefined))
+      }))
+      return LiveEvents.Service.of({ ...live, guard })
+    })).pipe(Layer.provide(LiveEvents.layer)),
+    deps: [],
+  })],
+]))
 const concurrent = testEffect(
   AppNodeBuilder.build(root, [
     ...replacements,
@@ -237,6 +258,62 @@ describe("Session", () => {
       expect(Exit.isFailure(getExit)).toBe(true)
     }),
   )
+
+  for (const timing of ["before preflight", "after preflight"] as const) {
+    deletion.instance(`remove refuses the entire tree when a descendant becomes protected ${timing}`, () =>
+      Effect.gen(function* () {
+        const session = yield* SessionNs.Service
+        const { db } = yield* Database.Service
+        const parent = yield* session.create({})
+        const sibling = yield* session.create({ parentID: parent.id })
+        const child = yield* session.create({ parentID: parent.id })
+        const leaf = yield* session.create({ parentID: child.id })
+        const boundary = yield* session.createMessage({
+          id: MessageID.ascending(),
+          sessionID: leaf.id,
+          role: "user",
+          time: { created: 1 },
+          agent: "build",
+          model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
+        })
+        const marker = { version: 1, sessionID: leaf.id, generation: crypto.randomUUID() } as const
+        const setMarker = (messageHistory: MessageHistoryState.Stored) =>
+          db.update(SessionTable).set({ metadata: { messageHistory } }).where(eq(SessionTable.id, leaf.id)).run()
+        const protect = Effect.gen(function* () {
+          expect(Option.isNone(yield* Effect.serviceOption(db.$client.transactionService))).toBe(true)
+          yield* setMarker({
+            ...marker,
+            revision: 1,
+            boundaryMessageID: boundary.id,
+            boundaryCreatedAt: boundary.time.created,
+            historyFingerprint: "test-history",
+          }).pipe(Effect.orDie)
+        })
+        const ids = [parent.id, sibling.id, child.id, leaf.id]
+        const remaining = db.select({ id: SessionTable.id }).from(SessionTable).where(inArray(SessionTable.id, ids)).all()
+
+        if (timing === "before preflight") yield* protect
+        const refused = yield* session.remove(parent.id).pipe(
+          Effect.provideService(BeforeRemovalGuard, timing === "after preflight" ? protect : undefined),
+          Effect.flip,
+        )
+
+        expect(refused).toMatchObject({ _tag: "ProtectedMessageHistoryError", sessionID: leaf.id })
+        expect(new Set((yield* remaining).map((row) => row.id))).toEqual(new Set(ids))
+        expect((yield* session.messages({ sessionID: leaf.id })).map((message) => message.info.id)).toEqual([boundary.id])
+
+        yield* setMarker({
+          ...marker,
+          revision: 2,
+          boundaryMessageID: null,
+          boundaryCreatedAt: null,
+          historyFingerprint: null,
+        })
+        yield* session.remove(parent.id)
+        expect(yield* remaining).toEqual([])
+      }),
+    )
+  }
 
   it.instance("persists metadata and copies it on fork by default", () =>
     Effect.gen(function* () {
