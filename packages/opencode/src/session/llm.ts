@@ -7,7 +7,7 @@ import { MeridianAttribution } from "@/provider/meridian-attribution"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
@@ -25,6 +25,8 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Wildcard } from "@/util/wildcard"
 import { SessionID } from "@/session/schema"
+import { Session } from "@/session/session"
+import { CybersecPreservation } from "@/session/cybersec-preservation"
 import { Auth } from "@/auth"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -35,6 +37,7 @@ import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+const isSessionID = Schema.is(SessionID)
 
 export type PreparedRequest = {
   readonly model: Provider.Model
@@ -89,6 +92,7 @@ const live: Layer.Layer<
   | EventV2Bridge.Service
   | LLMClientService
   | RuntimeFlags.Service
+  | Session.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -100,6 +104,7 @@ const live: Layer.Layer<
     const events = yield* EventV2Bridge.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
+    const sessions = yield* Session.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       yield* Effect.logInfo("stream", {
@@ -132,9 +137,22 @@ const live: Layer.Layer<
             input.promptOrigin,
           )
         : undefined
+      // Both adapters can check transport eligibility before reading the same session snapshot.
+      const sessionID = input.sessionID
+      const cybersecPreservation =
+        input.model.providerID === "anthropic" && input.model.api.npm === "@ai-sdk/anthropic" && isSessionID(sessionID)
+          ? yield* Effect.cached(
+              Effect.suspend(() => sessions.get(sessionID)).pipe(
+                Effect.map((session) => CybersecPreservation.stored(session).preference),
+                Effect.catchTag("NotFoundError", () => Effect.succeed("inherit" as const)),
+              ),
+            )
+          : undefined
       const [standardLanguage, cfg, item, info] = yield* Effect.all(
         [
-          beforeDispatch ? Effect.void : provider.getLanguage(input.model, { transport: source, attribution }),
+          beforeDispatch
+            ? Effect.void
+            : provider.getLanguage(input.model, { transport: source, attribution, cybersecPreservation }),
           config.get(),
           provider.getProvider(input.model.providerID),
           auth.get(input.model.providerID),
@@ -181,7 +199,9 @@ const live: Layer.Layer<
         }
         return MeridianRouting.transportFor(trust, input.model, fence)
       })()
-      const language = fenced ? yield* provider.getLanguage(input.model, { transport: fenced, attribution }) : standardLanguage
+      const language = fenced
+        ? yield* provider.getLanguage(input.model, { transport: fenced, attribution, cybersecPreservation })
+        : standardLanguage
       if (!language || (beforeDispatch && !fenced) || (!fenced && validateRequest && !(yield* validate()))) {
         return yield* Effect.fail(new MeridianRouting.DispatchBlocked())
       }
@@ -307,6 +327,7 @@ const live: Layer.Layer<
           maxOutputTokens: prepared.params.maxOutputTokens,
           providerOptions: prepared.params.options,
           attribution,
+          cybersecPreservation,
           headers: prepared.headers,
           abort: input.abort,
         })
@@ -469,6 +490,7 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
     llmClient,
     RuntimeFlags.node,
+    Session.node,
   ],
 })
 

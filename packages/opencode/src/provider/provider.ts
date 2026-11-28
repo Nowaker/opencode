@@ -93,17 +93,22 @@ function timeoutController(ms: number) {
   }
 }
 
-type LanguageOptions = {
+type LanguageOptions<Preference = Effect.Effect<MeridianAttribution.PreservationPreference>> = {
   readonly transport?: MeridianRouting.Transport
   readonly attribution?: MeridianAttribution.RequestAttribution
+  readonly cybersecPreservation?: Preference
 }
+
+type ResolvedLanguageOptions = LanguageOptions<MeridianAttribution.PreservationPreference>
 
 // Applies the `headerTimeout`, `chunkTimeout` (SSE idle) and `timeout` provider options at the
 // fetch layer, on top of `options.fetch` when a custom fetch is configured.
-function timeoutFetch(options: Record<string, any>, request?: LanguageOptions) {
+function timeoutFetch(options: Record<string, any>, request?: ResolvedLanguageOptions) {
   const customFetch = options["fetch"]
   const transport = request?.transport
-  const nativeFetch = request?.attribution ? MeridianAttribution.wrapFetch(fetch, request.attribution) : fetch
+  const nativeFetch = request?.attribution || request?.cybersecPreservation
+    ? MeridianAttribution.wrapFetch(fetch, request.attribution, request.cybersecPreservation)
+    : fetch
   const fetchFn = customFetch ?? (transport ? MeridianRouting.wrapFetch(nativeFetch, transport) : nativeFetch)
   const chunkTimeout = options["chunkTimeout"] ?? 300_000
   const headerTimeout = options["headerTimeout"] ?? 300_000
@@ -1969,7 +1974,7 @@ const layer = Layer.effect(
 
     async function resolveSDK(model: Model, s: State, input: {
       readonly envs: Record<string, string | undefined>
-      readonly request?: LanguageOptions
+      readonly request?: ResolvedLanguageOptions
     }) {
       try {
         const provider = s.providers[model.providerID]
@@ -2012,7 +2017,7 @@ const layer = Layer.effect(
             options,
           }),
         )
-        const scoped = input.request?.transport || input.request?.attribution
+        const scoped = input.request?.transport || input.request?.attribution || input.request?.cybersecPreservation
         const existing = scoped ? undefined : s.sdk.get(key)
         if (existing) return existing
 
@@ -2090,8 +2095,8 @@ const layer = Layer.effect(
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       const provider = s.providers[model.providerID]
-      const attribution =
-        request?.attribution && provider.options.fetch == null &&
+      const hints =
+        (request?.attribution || request?.cybersecPreservation) && provider.options.fetch == null &&
         MeridianAttribution.matchesBase(
           resolveBaseURL({ model, options: provider.options, varsLoader: s.varsLoaders[model.providerID], envs }),
           model.api.npm,
@@ -2100,15 +2105,22 @@ const layer = Layer.effect(
           onFailure: () => false,
           onSuccess: (info) => info?.type !== "oauth",
         })))
-          ? request.attribution
+          ? request
           : undefined
-      const scoped = request?.transport || attribution
+      const attribution = hints?.attribution
+      const cybersecPreservation = hints?.cybersecPreservation
+        ? yield* hints.cybersecPreservation
+        : undefined
+      const scoped = request?.transport || attribution || cybersecPreservation
       const cached = scoped ? undefined : s.models.get(key)
       if (cached) return cached
 
       return yield* EffectPromise.refineRejection(
         async () => {
-          const sdk = await resolveSDK(model, s, { envs, request: { transport: request?.transport, attribution } })
+          const sdk = await resolveSDK(model, s, {
+            envs,
+            request: { transport: request?.transport, attribution, cybersecPreservation },
+          })
           const language = s.modelLoaders[model.providerID]
             ? await s.modelLoaders[model.providerID](
                 sdk,

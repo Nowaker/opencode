@@ -1,5 +1,6 @@
 import { SessionV1 } from "@opencode-ai/schema/session-v1"
 import { Schema } from "effect"
+import type { CybersecPreservation } from "@/session/cybersec-preservation"
 
 export type Purpose = "chat" | "title" | "compaction" | "summary" | "subagent" | "review" | "helper" | "test"
 
@@ -12,6 +13,7 @@ type EngineAttribution = {
 }
 
 export type RequestAttribution = EngineAttribution & { readonly client: "opencode" | SessionV1.PromptOrigin["client"] }
+export type PreservationPreference = CybersecPreservation.Preference
 
 // @ai-sdk/anthropic posts to `${baseURL}/messages`, so a base without /v1 yields a bare /messages path.
 const modelPath = /\/(?:v1\/(?:messages|chat\/completions|responses)|messages)$/
@@ -66,25 +68,44 @@ export function matchesBase(base: string | undefined, sdk: string) {
   }
 }
 
-export function wrapFetch(fetch: Fetch, attribution: RequestAttribution): Fetch {
+export function allowsInference(url: URL, init?: RequestInit): boolean {
+  return endpoints.has(url.href) && (url.protocol !== "http:" || directCleartext(url, init))
+}
+
+export function wrapFetch(
+  fetch: Fetch,
+  attribution: RequestAttribution | undefined,
+  preservation?: PreservationPreference,
+): Fetch {
   return (input, init) => {
     const request = input instanceof Request ? input : undefined
     const method = init?.method ?? request?.method
     const url = URL.parse(typeof input === "string" || input instanceof URL ? input : input.url)
-    if (method !== "POST" || !url || !endpoints.has(url.href)) return fetch(input, init)
-    if (url.protocol === "http:" && !directCleartext(url, init)) return fetch(input, init)
+    if (method !== "POST" || !url || !allowsInference(url, init)) return fetch(input, init)
 
     const headers = new Headers(init?.headers ?? request?.headers)
-    headers.set("x-meridian-client", `${attribution.client}/${attribution.version}`)
-    headers.set("x-meridian-purpose", attribution.purpose)
-    headers.delete("x-meridian-session")
-    headers.delete("x-meridian-device")
-    if (device) headers.set("x-meridian-device", device)
-    const affinity = headers.get("x-opencode-session") ?? headers.get("x-session-affinity")
-    const openAIAffinity = !url.pathname.endsWith("/messages") && headers.get("x-session-id")?.trim()
-    if (!affinity && !openAIAffinity && attribution.sessionID && /^[A-Za-z0-9._:-]{1,128}$/.test(attribution.sessionID)) {
-      headers.set("x-meridian-session", attribution.sessionID)
+    const claude = url.pathname.endsWith("/messages")
+    const applyPreservation = preservation !== undefined && claude &&
+      !headers.has("x-meridian-profile") && !headers.has("x-meridian-require")
+    if (!attribution && !applyPreservation) return fetch(input, init)
+    if (applyPreservation) {
+      const header = "x-meridian-cybersec-preservation"
+      if (preservation === "inherit") headers.delete(header)
+      else headers.set(header, preservation)
     }
+    if (attribution) {
+      headers.set("x-meridian-client", `${attribution.client}/${attribution.version}`)
+      headers.set("x-meridian-purpose", attribution.purpose)
+      headers.delete("x-meridian-session")
+      headers.delete("x-meridian-device")
+      if (device) headers.set("x-meridian-device", device)
+      const affinity = headers.get("x-opencode-session") ?? headers.get("x-session-affinity")
+      const openAIAffinity = !claude && headers.get("x-session-id")?.trim()
+      if (!affinity && !openAIAffinity && attribution.sessionID && /^[A-Za-z0-9._:-]{1,128}$/.test(attribution.sessionID)) {
+        headers.set("x-meridian-session", attribution.sessionID)
+      }
+    }
+    if (!attribution && preservation === "inherit") return fetch(input, { ...init, headers })
 
     // Let the existing Meridian dispatch fence inspect redirects itself.
     const redirect = (init?.redirect ?? request?.redirect) === "manual" ? "manual" : "error"
