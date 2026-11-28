@@ -6,6 +6,7 @@ import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
+import { MessageHistoryState } from "@/session/message-history-state"
 import { MessageV2 } from "./message-v2"
 import { SessionRevert } from "./revert"
 import { Session } from "./session"
@@ -69,8 +70,8 @@ import { DatabaseTransaction } from "@opencode-ai/core/database/transaction"
 import { LiveEvents } from "./live-events"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { and, eq } from "drizzle-orm"
-import { MessageTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { and, eq, inArray, ne } from "drizzle-orm"
+import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { NotFoundError } from "@/storage/storage"
 import { SessionTools } from "./tools"
@@ -269,19 +270,25 @@ export interface Interface {
   readonly prompt: (
     input: PromptInput,
     admission?: Deferred.Deferred<void, AdmissionError>,
-  ) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error>
-  readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
-  readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError | SessionArchive.Error>
-  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error>
+  ) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error | MessageHistoryState.Error>
+  readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts, MessageHistoryState.Error>
+  readonly shell: (
+    input: ShellInput,
+  ) => Effect.Effect<SessionV1.WithParts, Session.BusyError | SessionArchive.Error | MessageHistoryState.Error>
+  readonly command: (
+    input: CommandInput,
+  ) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionArchive.Error | MessageHistoryState.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
   readonly unqueue: (input: {
     sessionID: SessionID
     messageID: MessageID
-  }) => Effect.Effect<SessionV1.WithParts, NotQueuedError | NotFoundError>
-  readonly sendNow: (sessionID: SessionID) => Effect.Effect<MessageID[], SendNowRefusedError>
-  readonly pause: (input: PauseInput) => Effect.Effect<PauseResult>
-  readonly unpause: (input: UnpauseInput) => Effect.Effect<UnpauseResult, SessionPause.ChangedError>
-  readonly discard: (input: DiscardInput) => Effect.Effect<DiscardResult, Session.BusyError | SessionPause.ChangedError>
+  }) => Effect.Effect<SessionV1.WithParts, NotQueuedError | NotFoundError | MessageHistoryState.Error>
+  readonly sendNow: (sessionID: SessionID) => Effect.Effect<MessageID[], SendNowRefusedError | MessageHistoryState.Error>
+  readonly pause: (input: PauseInput) => Effect.Effect<PauseResult, MessageHistoryState.Error>
+  readonly unpause: (input: UnpauseInput) => Effect.Effect<UnpauseResult, SessionPause.ChangedError | MessageHistoryState.Error>
+  readonly discard: (
+    input: DiscardInput,
+  ) => Effect.Effect<DiscardResult, Session.BusyError | SessionPause.ChangedError | MessageHistoryState.Error>
 }
 
 /**
@@ -309,7 +316,7 @@ export class AdmissionRejected extends Schema.TaggedErrorClass<AdmissionRejected
   message: Schema.String,
 }) {}
 
-export type AdmissionError = AdmissionRejected | SessionArchive.Error
+export type AdmissionError = AdmissionRejected | SessionArchive.Error | MessageHistoryState.Error
 
 const layer = Layer.effect(
   Service,
@@ -345,6 +352,52 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const { db } = database
+
+    const assertHistoryWritable = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const row = yield* db
+        .select({ metadata: SessionTable.metadata })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      yield* MessageHistoryState.assertWritable({ id: sessionID, metadata: row?.metadata ?? undefined })
+    })
+    const withWritableHistory = <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) =>
+      OwnerQuiescence.activity(assertHistoryWritable(sessionID).pipe(Effect.andThen(work)))
+
+    // The v1 projector upserts globally unique IDs without changing their stored owner.
+    const assertReferencedHistoryWritable = Effect.fnUntraced(function* (input: {
+      readonly sessionID: SessionID
+      readonly messageIDs: readonly MessageID[]
+      readonly parts?: readonly { readonly id?: PartID }[]
+    }) {
+      const partIDs = input.parts?.flatMap((part) => part.id === undefined ? [] : [part.id]) ?? []
+      const owners = new Set<SessionID>()
+      if (input.messageIDs.length) {
+        const rows = yield* db
+          .selectDistinct({ id: MessageTable.session_id })
+          .from(MessageTable)
+          .where(and(inArray(MessageTable.id, input.messageIDs), ne(MessageTable.session_id, input.sessionID)))
+          .all()
+          .pipe(Effect.orDie)
+        for (const row of rows) owners.add(row.id)
+      }
+      if (partIDs.length) {
+        const rows = yield* db
+          .selectDistinct({ sessionID: PartTable.session_id, messageOwner: MessageTable.session_id })
+          .from(PartTable)
+          .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+          .where(inArray(PartTable.id, partIDs))
+          .all()
+          .pipe(Effect.orDie)
+        for (const row of rows) {
+          if (row.sessionID !== input.sessionID) owners.add(row.sessionID)
+          if (row.messageOwner !== input.sessionID) owners.add(row.messageOwner)
+        }
+      }
+      yield* Effect.forEach(owners, assertHistoryWritable, { discard: true })
+    })
+
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -664,7 +717,8 @@ const layer = Layer.effect(
             const ctx = yield* InstanceState.context
             const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
             if (session.revert) {
-              yield* revert.cleanup(session)
+              // The shell caller already checked this session inside its owner activity.
+              yield* revert.cleanup(session).pipe(Effect.orDie)
             }
             const agent = yield* agents.get(input.agent)
             if (!agent) {
@@ -1248,6 +1302,16 @@ const layer = Layer.effect(
           db,
           Effect.gen(function* () {
             const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+            yield* MessageHistoryState.assertWritable(current)
+            // A chat.message hook can replace IDs before the row and parts reach the projector.
+            yield* assertReferencedHistoryWritable({
+              sessionID: input.sessionID,
+              messageIDs: [admittedInfo.id, ...parts.map((part) => part.messageID)],
+              parts,
+            })
+            const destinations = new Set([admittedInfo.sessionID, ...parts.map((part) => part.sessionID)])
+            destinations.delete(input.sessionID)
+            yield* Effect.forEach(destinations, assertHistoryWritable, { discard: true })
             const pauseNotice =
               input.noReply === true &&
               MessageV2.isNotice(message) &&
@@ -1275,7 +1339,7 @@ const layer = Layer.effect(
             const held = input.noReply !== true && heldWhilePaused(input) && (yield* hold(input.sessionID, message))
             return { message, held }
           }),
-        ).pipe(Effect.orDie),
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
       )
     }, Effect.scoped)
 
@@ -1418,6 +1482,12 @@ const layer = Layer.effect(
         return [...children, ...nested.flat()]
       })
 
+    const canInheritPauseChange = (child: Session.Info) =>
+      MessageHistoryState.assertWritable(child).pipe(
+        Effect.as(true),
+        Effect.catchTag("ProtectedMessageHistoryError", () => Effect.succeed(false)),
+      )
+
     const deferredParts = Effect.fnUntraced(function* (sessionID: SessionID) {
       const history = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
         Effect.provideService(Database.Service, database),
@@ -1441,6 +1511,7 @@ const layer = Layer.effect(
       yield* pauses.write(input.sessionID, next)
       for (const child of yield* descendants(input.sessionID)) {
         if (yield* pauses.get(child.id)) continue
+        if (!(yield* canInheritPauseChange(child))) continue
         const { error: _, ...inherited } = next
         yield* pauses.write(child.id, {
           ...inherited,
@@ -1523,10 +1594,12 @@ const layer = Layer.effect(
             }
           }
           const inherited = (yield* Effect.forEach(yield* descendants(input.sessionID), (child) =>
-            pauses.get(child.id).pipe(Effect.map((pause) => ({ sessionID: child.id, pause }))),
-          )).filter(
-            (item): item is { sessionID: SessionID; pause: SessionPause.Info } => item.pause?.root === input.sessionID,
-          )
+            Effect.gen(function* () {
+              const pause = yield* pauses.get(child.id)
+              if (pause?.root !== input.sessionID || !(yield* canInheritPauseChange(child))) return
+              return { sessionID: child.id, pause }
+            }),
+          )).filter((item) => item !== undefined)
           const cleared = [{ sessionID: input.sessionID, pause: current }, ...inherited]
           for (const item of cleared) yield* pauses.write(item.sessionID, undefined)
           return cleared
@@ -1906,7 +1979,11 @@ const layer = Layer.effect(
         if (admission) {
           const outcome = yield* Effect.exit(Deferred.await(pending.admission))
           yield* Deferred.done(admission, outcome)
-          if (Exit.isFailure(outcome)) return yield* Effect.die(Cause.squash(outcome.cause))
+          if (Exit.isFailure(outcome)) {
+            const error = Cause.squash(outcome.cause)
+            if (error instanceof MessageHistoryState.Error) return yield* error
+            return yield* Effect.die(error)
+          }
         }
         yield* pending.done.await
         return yield* prompt(input, admission)
@@ -1915,6 +1992,13 @@ const layer = Layer.effect(
       const accepted = admission ?? (yield* Deferred.make<void, AdmissionError>())
       admitting.set(key, { done, admission: accepted })
       return yield* Effect.gen(function* () {
+        // A stored exact-ID reply does not count as acceptance while history is protected.
+        yield* assertHistoryWritable(input.sessionID)
+        yield* assertReferencedHistoryWritable({
+          sessionID: input.sessionID,
+          messageIDs: input.messageID ? [input.messageID] : [],
+          parts: input.parts,
+        })
         const replied = input.messageID ? yield* reply(input.sessionID, messageID) : Option.none<SessionV1.WithParts>()
         if (Option.isSome(replied)) {
           yield* Deferred.succeed(accepted, undefined)
@@ -1927,6 +2011,11 @@ const layer = Layer.effect(
             if (yield* Deferred.isDone(accepted)) return
             if (Exit.isSuccess(exit)) {
               yield* Deferred.succeed(accepted, undefined)
+              return
+            }
+            const error = Cause.squash(exit.cause)
+            if (error instanceof MessageHistoryState.Error) {
+              yield* Deferred.fail(accepted, error)
               return
             }
             // Event projection can commit before publication/readback fails. Only a confirmed absence is rejection.
@@ -1944,7 +2033,6 @@ const layer = Layer.effect(
               yield* Deferred.succeed(accepted, undefined)
               return
             }
-            const error = Cause.squash(exit.cause)
             if (error instanceof SessionArchive.Error) {
               yield* Deferred.fail(accepted, error)
               return
@@ -1962,7 +2050,7 @@ const layer = Layer.effect(
           }),
         ),
       )
-    })
+    }, OwnerQuiescence.activity)
 
     const reply = Effect.fnUntraced(function* (sessionID: SessionID, messageID: MessageID) {
       const stored = yield* MessageV2.get({ sessionID, messageID }).pipe(
@@ -2940,13 +3028,20 @@ const layer = Layer.effect(
       return () => !joined || (!joined.seen.has(messageID) && !joined.withdrawn.has(messageID))
     }
 
-    const shell: Interface["shell"] = Effect.fn("SessionPrompt.shell")(function* (input: ShellInput) {
+    const shell = Effect.fn("SessionPrompt.shell")(function* (input: ShellInput) {
+      if (input.messageID)
+        yield* assertReferencedHistoryWritable({ sessionID: input.sessionID, messageIDs: [input.messageID] })
       yield* SessionArchive.admit(sessions, input)
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      yield* assertReferencedHistoryWritable({
+        sessionID: input.sessionID,
+        messageIDs: input.messageID ? [input.messageID] : [],
+        parts: input.parts,
+      })
       yield* SessionArchive.admit(sessions, input)
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
@@ -3199,16 +3294,16 @@ const layer = Layer.effect(
 
     return Service.of({
       cancel,
-      prompt: (input, admission) => OwnerQuiescence.activity(prompt(input, admission)),
-      loop: (input) => OwnerQuiescence.activity(loop(input)),
-      shell: (input) => OwnerQuiescence.activity(shell(input)),
-      command: (input) => OwnerQuiescence.activity(command(input)),
+      prompt,
+      loop: (input) => withWritableHistory(input.sessionID, loop(input)),
+      shell: (input) => withWritableHistory(input.sessionID, shell(input)),
+      command: (input) => withWritableHistory(input.sessionID, command(input)),
       resolvePromptParts,
-      unqueue,
-      sendNow: (sessionID) => OwnerQuiescence.activity(sendNow(sessionID)),
-      pause: (input) => OwnerQuiescence.activity(pause(input)),
-      unpause: (input) => OwnerQuiescence.activity(unpause(input)),
-      discard: (input) => OwnerQuiescence.activity(discard(input)),
+      unqueue: (input) => withWritableHistory(input.sessionID, unqueue(input)),
+      sendNow: (sessionID) => withWritableHistory(sessionID, sendNow(sessionID)),
+      pause: (input) => withWritableHistory(input.sessionID, pause(input)),
+      unpause: (input) => withWritableHistory(input.sessionID, unpause(input)),
+      discard: (input) => withWritableHistory(input.sessionID, discard(input)),
     })
   }),
 )

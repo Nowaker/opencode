@@ -26,6 +26,7 @@ import {
   AutoSwitchConflict,
   AutoSwitchUnavailable,
   PermissionNotFoundError,
+  ProtectedMessageHistoryError,
   PromptAdmissionError,
   PromptNotQueuedError,
   SendNowRefusedError,
@@ -279,7 +280,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           success: described(Schema.Boolean, "Successfully deleted session"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.delete",
@@ -305,7 +306,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, ForkPayload],
           success: described(Session.Info, "200"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.fork",
@@ -330,7 +331,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: InitPayload,
           success: described(Schema.Boolean, "200"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.init",
@@ -368,7 +369,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: SummarizePayload,
           success: described(Schema.Boolean, "Summarized session"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.summarize",
@@ -381,7 +382,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: PromptPayload,
           success: described(SessionV1.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.prompt",
@@ -394,7 +395,14 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: PromptPayload,
           success: described(HttpApiSchema.NoContent, "Prompt accepted"),
-          error: [HttpApiError.BadRequest, PromptAdmissionError, ApiNotFoundError, OwnerSealedError, SessionArchivedError],
+          error: [
+            HttpApiError.BadRequest,
+            PromptAdmissionError,
+            ApiNotFoundError,
+            OwnerSealedError,
+            SessionArchivedError,
+            ProtectedMessageHistoryError,
+          ],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.prompt_async",
@@ -408,7 +416,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: CommandPayload,
           success: described(SessionV1.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, SessionArchivedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.command",
@@ -421,7 +429,14 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: ShellPayload,
           success: described(SessionV1.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, OwnerSealedError, SessionArchivedError],
+          error: [
+            HttpApiError.BadRequest,
+            ApiNotFoundError,
+            SessionBusyError,
+            OwnerSealedError,
+            SessionArchivedError,
+            ProtectedMessageHistoryError,
+          ],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.shell",
@@ -434,7 +449,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: RevertPayload,
           success: described(Session.Info, "Updated session"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.revert",
@@ -447,7 +462,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           success: described(Session.Info, "Updated session"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.applyRevert",
@@ -460,7 +475,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           success: described(Session.Info, "Updated session"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.unrevert",
@@ -486,7 +501,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID, messageID: MessageID },
           query: WorkspaceRoutingQuery,
           success: described(Schema.Boolean, "Successfully deleted message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.deleteMessage",
@@ -499,7 +514,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID, messageID: MessageID },
           query: WorkspaceRoutingQuery,
           success: described(SessionV1.WithParts, "The removed prompt"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, PromptNotQueuedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, PromptNotQueuedError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.unqueue",
@@ -515,7 +530,7 @@ export const SessionApi = HttpApi.make("session")
             Schema.Struct({ sessionID: SessionID, messageIDs: Schema.Array(MessageID) }),
             "The queued messages the new turn reads, oldest first",
           ),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SendNowRefusedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SendNowRefusedError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.sendNow",
@@ -529,7 +544,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, PausePayload],
           success: described(SessionPrompt.PauseResult, "The session's pause"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.pause",
@@ -543,7 +558,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, UnpausePayload],
           success: described(SessionPrompt.UnpauseResult, "Unpaused"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, PauseChangedError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, PauseChangedError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.unpause",
@@ -557,7 +572,14 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, DiscardPayload],
           success: described(SessionPrompt.DiscardResult, "Discarded deferred tool calls"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, PauseChangedError],
+          error: [
+            HttpApiError.BadRequest,
+            ApiNotFoundError,
+            SessionBusyError,
+            PauseChangedError,
+            OwnerSealedError,
+            ProtectedMessageHistoryError,
+          ],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.discard",
@@ -570,7 +592,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID, messageID: MessageID, partID: PartID },
           query: WorkspaceRoutingQuery,
           success: described(Schema.Boolean, "Successfully deleted part"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "part.delete",
@@ -582,7 +604,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: SessionV1.Part,
           success: described(SessionV1.Part, "Successfully updated part"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, OwnerSealedError, ProtectedMessageHistoryError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "part.update",

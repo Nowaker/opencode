@@ -2898,6 +2898,14 @@ export type OwnerSealed = {
   generation: number
 }
 
+export type ProtectedMessageHistoryError = {
+  name: "ProtectedMessageHistoryError"
+  data: {
+    code: "protected-message-history"
+    message: string
+  }
+}
+
 export type SessionArchiveActor = {
   kind: "tui" | "tool" | "api" | "system"
   sessionID?: string
@@ -10366,6 +10374,10 @@ export type SessionDeleteErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionDeleteError = SessionDeleteErrors[keyof SessionDeleteErrors]
@@ -10712,9 +10724,9 @@ export type SessionPromptErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed | SessionArchivedError
+   * OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
    */
-  409: OwnerSealed | SessionArchivedError
+  409: OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
 }
 
 export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
@@ -10754,9 +10766,9 @@ export type SessionDeleteMessageErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SessionBusyError
+  409: SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionDeleteMessageError = SessionDeleteMessageErrors[keyof SessionDeleteMessageErrors]
@@ -10852,6 +10864,10 @@ export type SessionForkErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionForkError = SessionForkErrors[keyof SessionForkErrors]
@@ -10922,9 +10938,9 @@ export type SessionInitErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed | SessionArchivedError
+   * OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
    */
-  409: OwnerSealed | SessionArchivedError
+  409: OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
 }
 
 export type SessionInitError = SessionInitErrors[keyof SessionInitErrors]
@@ -11040,9 +11056,9 @@ export type SessionSummarizeErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed
+   * OwnerSealed | ProtectedMessageHistoryError
    */
-  409: OwnerSealed
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionSummarizeError = SessionSummarizeErrors[keyof SessionSummarizeErrors]
@@ -11096,9 +11112,9 @@ export type SessionPromptAsyncErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed | SessionArchivedError
+   * OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
    */
-  409: OwnerSealed | SessionArchivedError
+  409: OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
 }
 
 export type SessionPromptAsyncError = SessionPromptAsyncErrors[keyof SessionPromptAsyncErrors]
@@ -11151,9 +11167,9 @@ export type SessionCommandErrors = {
    */
   404: NotFoundError
   /**
-   * OwnerSealed | SessionArchivedError
+   * OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
    */
-  409: OwnerSealed | SessionArchivedError
+  409: OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
 }
 
 export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]
@@ -11201,9 +11217,9 @@ export type SessionShellErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError | OwnerSealed | SessionArchivedError
+   * SessionBusyError | OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
    */
-  409: SessionBusyError | OwnerSealed | SessionArchivedError
+  409: SessionBusyError | OwnerSealed | SessionArchivedError | ProtectedMessageHistoryError
 }
 
 export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]
@@ -11246,9 +11262,9 @@ export type SessionRevertErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SessionBusyError
+  409: SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionRevertError = SessionRevertErrors[keyof SessionRevertErrors]
@@ -11284,9 +11300,9 @@ export type SessionApplyRevertErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SessionBusyError
+  409: SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionApplyRevertError = SessionApplyRevertErrors[keyof SessionApplyRevertErrors]
@@ -11322,9 +11338,9 @@ export type SessionUnrevertErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError
+   * SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SessionBusyError
+  409: SessionBusyError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionUnrevertError = SessionUnrevertErrors[keyof SessionUnrevertErrors]
@@ -11401,9 +11417,9 @@ export type SessionUnqueueErrors = {
    */
   404: NotFoundError
   /**
-   * PromptNotQueuedError
+   * PromptNotQueuedError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: PromptNotQueuedError
+  409: PromptNotQueuedError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionUnqueueError = SessionUnqueueErrors[keyof SessionUnqueueErrors]
@@ -11442,9 +11458,9 @@ export type SessionSendNowErrors = {
    */
   404: NotFoundError
   /**
-   * SendNowRefusedError
+   * SendNowRefusedError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SendNowRefusedError
+  409: SendNowRefusedError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionSendNowError = SessionSendNowErrors[keyof SessionSendNowErrors]
@@ -11489,6 +11505,10 @@ export type SessionPauseErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionPauseError = SessionPauseErrors[keyof SessionPauseErrors]
@@ -11543,9 +11563,9 @@ export type SessionUnpauseErrors = {
    */
   404: NotFoundError
   /**
-   * PauseChangedError
+   * PauseChangedError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: PauseChangedError
+  409: PauseChangedError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionUnpauseError = SessionUnpauseErrors[keyof SessionUnpauseErrors]
@@ -11589,9 +11609,9 @@ export type SessionDiscardErrors = {
    */
   404: NotFoundError
   /**
-   * SessionBusyError | PauseChangedError
+   * SessionBusyError | PauseChangedError | OwnerSealed | ProtectedMessageHistoryError
    */
-  409: SessionBusyError | PauseChangedError
+  409: SessionBusyError | PauseChangedError | OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type SessionDiscardError = SessionDiscardErrors[keyof SessionDiscardErrors]
@@ -11628,6 +11648,10 @@ export type PartDeleteErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type PartDeleteError = PartDeleteErrors[keyof PartDeleteErrors]
@@ -11664,6 +11688,10 @@ export type PartUpdateErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * OwnerSealed | ProtectedMessageHistoryError
+   */
+  409: OwnerSealed | ProtectedMessageHistoryError
 }
 
 export type PartUpdateError = PartUpdateErrors[keyof PartUpdateErrors]

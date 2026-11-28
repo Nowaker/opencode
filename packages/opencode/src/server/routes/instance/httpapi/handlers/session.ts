@@ -10,6 +10,7 @@ import { Session } from "@/session/session"
 import { AutoSwitch } from "@/session/auto-switch"
 import { Provider } from "@/provider/provider"
 import { SessionCompaction } from "@/session/compaction"
+import { MessageHistoryState } from "@/session/message-history-state"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -232,10 +233,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* create({ payload })
     })
 
-    const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
-      yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
-      return true
-    })
+    const assertDeletable = (current: Session.Info): Effect.Effect<void, MessageHistoryState.Error> =>
+      Effect.gen(function* () {
+        yield* MessageHistoryState.assertWritable(current)
+        yield* Effect.forEach(yield* session.children(current.id), assertDeletable, { discard: true })
+      })
+
+    const remove = Effect.fn("SessionHttpApi.remove")(
+      function* (ctx: { params: { sessionID: SessionID } }) {
+        yield* assertDeletable(yield* requireSession(ctx.params.sessionID))
+        yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
+        return true
+      },
+      OwnerQuiescence.activity,
+      SessionError.mapProtectedHistory,
+    )
 
     const update = Effect.fn("SessionHttpApi.update")(function* (ctx: {
       params: { sessionID: SessionID }
@@ -277,17 +289,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
-      return yield* SessionError.mapStorageNotFound(
-        session.fork({
-          sessionID: ctx.params.sessionID,
-          messageID: ctx.payload?.messageID,
-          id: ctx.payload?.id,
-          unsettled: ctx.payload?.unsettled,
-          history: ctx.payload?.history,
-          parentID: ctx.payload?.parentID,
-          title: ctx.payload?.title,
-          permission: ctx.payload?.permission,
-        }),
+      return yield* session.fork({
+        sessionID: ctx.params.sessionID,
+        messageID: ctx.payload?.messageID,
+        id: ctx.payload?.id,
+        unsettled: ctx.payload?.unsettled,
+        history: ctx.payload?.history,
+        parentID: ctx.payload?.parentID,
+        title: ctx.payload?.title,
+        permission: ctx.payload?.permission,
+      }).pipe(
+        Effect.catchTag("NotFoundError", (error) => Effect.fail(notFound(error.message))),
+        SessionError.mapProtectedHistory,
       )
     })
 
@@ -326,10 +339,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           command: Command.Default.INIT,
           arguments: "",
         })
-        .pipe(
-          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
-          SessionError.mapArchive,
-        )
+        .pipe(SessionError.mapPromptRequest)
       return true
     })
 
@@ -384,10 +394,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(
-          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
-          SessionError.mapArchive,
-        )
+        .pipe(SessionError.mapPromptRequest)
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })
@@ -402,6 +409,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const client = yield* SessionError.archiveClient
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }, admission).pipe(
         Effect.provideService(SessionArchive.Client, client),
+        Effect.catchTag("ProtectedMessageHistoryError", (error) => Deferred.fail(admission, error)),
         Effect.onError((cause) => Deferred.failCause(admission, Cause.die(Cause.squash(cause)))),
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -423,6 +431,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           })),
         ),
         SessionError.mapArchive,
+        SessionError.mapProtectedHistory,
       )
       return HttpApiSchema.NoContent.make()
     })
@@ -434,10 +443,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* requireSession(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
-        .pipe(
-          Effect.mapError((error) => error instanceof SessionArchive.Error ? error : new HttpApiError.BadRequest({})),
-          SessionError.mapArchive,
-        )
+        .pipe(SessionError.mapPromptRequest)
     })
 
     const shell = Effect.fn("SessionHttpApi.shell")(function* (ctx: {
@@ -445,7 +451,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ShellPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(SessionError.mapBusy, SessionError.mapArchive)
+      return yield* promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+        SessionError.mapBusy,
+        SessionError.mapArchive,
+        SessionError.mapProtectedHistory,
+      )
     })
 
     const revert = Effect.fn("SessionHttpApi.revert")(function* (ctx: {
@@ -456,17 +466,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }).pipe(
         SessionError.mapBusy,
         Effect.catchTag("NoUndoSnapshot", () => Effect.fail(new HttpApiError.BadRequest({}))),
+        SessionError.mapProtectedHistory,
       )
     })
 
     const applyRevert = Effect.fn("SessionHttpApi.applyRevert")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(revertSvc.apply(ctx.params))
+      return yield* revertSvc.apply(ctx.params).pipe(SessionError.mapBusy, SessionError.mapProtectedHistory)
     })
 
     const unrevert = Effect.fn("SessionHttpApi.unrevert")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(revertSvc.unrevert({ sessionID: ctx.params.sessionID }))
+      return yield* revertSvc.unrevert(ctx.params).pipe(SessionError.mapBusy, SessionError.mapProtectedHistory)
     })
 
     const permissionRespond = Effect.fn("SessionHttpApi.permissionRespond")(function* (ctx: {
@@ -487,14 +498,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    const deleteMessage = Effect.fn("SessionHttpApi.deleteMessage")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID }
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
-      yield* session.removeMessage(ctx.params)
-      return true
-    })
+    const deleteMessage = Effect.fn("SessionHttpApi.deleteMessage")(
+      function* (ctx: { params: { sessionID: SessionID; messageID: MessageID } }) {
+        yield* MessageHistoryState.assertWritable(yield* requireSession(ctx.params.sessionID))
+        yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+        yield* session.removeMessage(ctx.params)
+        return true
+      },
+      OwnerQuiescence.activity,
+      SessionError.mapProtectedHistory,
+    )
 
     const unqueue = Effect.fn("SessionHttpApi.unqueue")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID }
@@ -515,6 +528,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             }),
           ),
         ),
+        SessionError.mapProtectedHistory,
       )
     })
 
@@ -534,6 +548,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             }),
           ),
         ),
+        SessionError.mapProtectedHistory,
       )
       return { sessionID: ctx.params.sessionID, messageIDs }
     })
@@ -555,7 +570,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const payload = yield* pauseBody(ctx.request)
       yield* requireSession(ctx.params.sessionID)
-      return yield* promptSvc.pause({ ...payload, sessionID: ctx.params.sessionID })
+      return yield* promptSvc.pause({ ...payload, sessionID: ctx.params.sessionID }).pipe(SessionError.mapProtectedHistory)
     })
 
     const unpause = Effect.fn("SessionHttpApi.unpause")(function* (ctx: {
@@ -564,7 +579,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const payload = yield* unpauseBody(ctx.request)
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapPauseChanged(promptSvc.unpause({ ...payload, sessionID: ctx.params.sessionID }))
+      return yield* promptSvc.unpause({ ...payload, sessionID: ctx.params.sessionID }).pipe(
+        SessionError.mapPauseChanged,
+        SessionError.mapProtectedHistory,
+      )
     })
 
     const discard = Effect.fn("SessionHttpApi.discard")(function* (ctx: {
@@ -573,8 +591,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const payload = yield* unpauseBody(ctx.request)
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapPauseChanged(
-        SessionError.mapBusy(promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID })),
+      return yield* promptSvc.discard({ ...payload, sessionID: ctx.params.sessionID }).pipe(
+        SessionError.mapBusy,
+        SessionError.mapPauseChanged,
+        SessionError.mapProtectedHistory,
       )
     })
 
@@ -609,7 +629,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("init", init)
       .handle("share", share)
       .handle("unshare", unshare)
-      .handle("summarize", (ctx) => OwnerQuiescence.activity(summarize(ctx)))
+      .handle("summarize", (ctx) => OwnerQuiescence.activity(summarize(ctx)).pipe(SessionError.mapProtectedHistory))
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
       .handle("command", command)
