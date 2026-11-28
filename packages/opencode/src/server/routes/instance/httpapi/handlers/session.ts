@@ -233,21 +233,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* create({ payload })
     })
 
-    const assertDeletable = (current: Session.Info): Effect.Effect<void, MessageHistoryState.Error> =>
-      Effect.gen(function* () {
-        yield* MessageHistoryState.assertWritable(current)
-        yield* Effect.forEach(yield* session.children(current.id), assertDeletable, { discard: true })
-      })
-
-    const remove = Effect.fn("SessionHttpApi.remove")(
-      function* (ctx: { params: { sessionID: SessionID } }) {
-        yield* assertDeletable(yield* requireSession(ctx.params.sessionID))
-        yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
-        return true
-      },
-      OwnerQuiescence.activity,
-      SessionError.mapProtectedHistory,
-    )
+    const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* session.remove(ctx.params.sessionID).pipe(
+        Effect.catchTag("NotFoundError", (error) => Effect.fail(notFound(error.message))),
+        SessionError.mapProtectedHistory,
+      )
+      return true
+    })
 
     const update = Effect.fn("SessionHttpApi.update")(function* (ctx: {
       params: { sessionID: SessionID }

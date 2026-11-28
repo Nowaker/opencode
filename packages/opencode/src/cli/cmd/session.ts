@@ -9,7 +9,6 @@ import { Locale } from "@/util/locale"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
-import { NotFoundError } from "@/storage/storage"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@opencode-ai/core/util/which"
@@ -62,7 +61,12 @@ export const SessionDeleteCommand = effectCmd({
     const sessionID = SessionID.make(args.sessionID)
     yield* svc
       .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
+      .pipe(
+        Effect.catchTags({
+          NotFoundError: () => fail(`Session not found: ${args.sessionID}`),
+          ProtectedMessageHistoryError: (error) => fail(`${error.sessionID}: ${error.message}`),
+        }),
+      )
     UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
   }),
 })

@@ -22,10 +22,10 @@ import { getAdapter, registeredAdapters } from "./adapters"
 import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema } from "./types"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { Session } from "@/session/session"
+import type { MessageHistoryState } from "@/session/message-history-state"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { NotFoundError } from "@/storage/storage"
 import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
@@ -134,7 +134,7 @@ export interface Interface {
   readonly list: (project: Project.Info) => Effect.Effect<Info[]>
   readonly syncList: (project: Project.Info) => Effect.Effect<void>
   readonly get: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
-  readonly remove: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
+  readonly remove: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined, MessageHistoryState.Error>
   readonly status: () => Effect.Effect<ConnectionStatus[]>
   readonly isSyncing: (workspaceID: WorkspaceV2.ID) => Effect.Effect<boolean>
   readonly waitForSync: (
@@ -791,12 +791,9 @@ const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       const sessionIDs = new Set(sessions.map((sessionInfo) => sessionInfo.id))
-      yield* Effect.forEach(
-        sessions.filter((sessionInfo) => !sessionInfo.parentID || !sessionIDs.has(sessionInfo.parentID)),
-        (sessionInfo) =>
-          session.remove(sessionInfo.id).pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.void)),
-        { discard: true },
-      )
+      yield* session.removeMany(sessions.flatMap((info) =>
+        !info.parentID || !sessionIDs.has(info.parentID) ? [info.id] : [],
+      ))
 
       const row = yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, id)).get().pipe(Effect.orDie)
       if (!row) return
