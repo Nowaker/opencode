@@ -175,6 +175,34 @@ Compact the current session. _Alias_: `/summarize`
 
 ---
 
+### cybersec
+
+Choose whether this session keeps its Claude requests off the accounts Meridian holds back for Cyber Verification (CVP) work. The setting only decides which accounts carry the session's quota. The same choice is offered in the model dialog (`/models`).
+
+```bash frame="none"
+/cybersec on
+/cybersec off
+/cybersec inherit
+```
+
+- **on** keeps the session's Claude requests off the held-back CVP accounts, so their quota stays free for security work.
+- **off** lets the session use those accounts like any other.
+- **inherit** follows this machine's default, which you set with [`/cybersec-preservation`](#cybersec-preservation). A change to the machine default applies to inherit sessions right away. New sessions start as inherit.
+
+A subagent or other child session copies its parent's `on` or `off` when it is created; a parent on `inherit` gives its children `inherit`. Changing the parent later does not change children that already exist.
+
+It applies only to plain Claude models (`anthropic/*`) served through Meridian. Sessions on `anthropic-cybersec` or `anthropic-restricted` route exactly as before. What happens when every non-CVP account is busy is still the machine's fallback policy, not a per-session setting. A Meridian too old to know this setting ignores it, and the session follows the machine default.
+
+#### cybersec-preservation
+
+Vibeterm's command for the machine default. One picker sets both the value every session on `inherit` follows and the machine-wide fallback policy. It is a separate command from `/cybersec`, which sets one session.
+
+```bash frame="none"
+/cybersec-preservation
+```
+
+---
+
 ### details
 
 Show or hide tool calls: the **Tool calls** row of the [transcript filter](#transcript-filter).
