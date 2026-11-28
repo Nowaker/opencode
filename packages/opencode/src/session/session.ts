@@ -17,6 +17,8 @@ import * as SessionExecutionLocal from "@opencode-ai/core/session/execution/loca
 import { locationServiceMapLayer } from "@opencode-ai/core/location-services"
 
 import { NotFoundError } from "@/storage/storage"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { MessageHistoryState } from "@/session/message-history-state"
 import { eq } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
@@ -518,7 +520,7 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
-  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound | MessageHistoryState.Error>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: {
@@ -565,7 +567,8 @@ export interface Interface {
     includeDiffBodies?: boolean
   }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
-  readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
+  readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound | MessageHistoryState.Error>
+  readonly removeMany: (sessionIDs: readonly SessionID[]) => Effect.Effect<void, MessageHistoryState.Error>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
   readonly createMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
   readonly recordExecution: (sessionID: SessionID) => Effect.Effect<void>
@@ -597,7 +600,7 @@ export const use = serviceUse(Service)
 
 export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" | "permission"> & {
   time?: Partial<Info["time"]>
-  share?: Partial<NonNullable<Info["share"]>> | null
+  share?: Info["share"] | null
   summary?: Info["summary"] | null
   revert?: Info["revert"] | null
   permission?: Info["permission"] | null
@@ -632,7 +635,8 @@ const layer: Layer.Layer<
     }) {
       const ctx = yield* InstanceState.context
       const id = SessionID.descending(input.id)
-      const metadata = withoutRoutingJournals(input.metadata)
+      const { messageHistory, ...incoming } = input.metadata ?? {}
+      const metadata = withoutRoutingJournals(input.metadata && incoming)
       const result: Info = {
         id,
         slug: Slug.create(),
@@ -775,28 +779,56 @@ const layer: Layer.Layer<
       return rows.map(fromRow)
     })
 
-    const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const session = yield* get(sessionID)
-      try {
-        // `remove` needs to work in all cases, such as broken sessions that
-        // run cleanup without instance state.
-        const hasInstance = yield* InstanceState.directory.pipe(
-          Effect.as(true),
-          Effect.catchCause(() => Effect.succeed(false)),
-        )
+    const planRemoval = (roots: readonly Info[], covered?: ReadonlySet<SessionID>) =>
+      Effect.gen(function* () {
+        const ids = new Set<SessionID>()
+        const postorder: Info[] = []
+        const visit = (info: Info): Effect.Effect<void, MessageHistoryState.Error> =>
+          Effect.gen(function* () {
+            if (ids.has(info.id)) return
+            yield* MessageHistoryState.assertWritable(info)
+            if (covered && !covered.has(info.id)) {
+              return yield* new MessageHistoryState.Error({
+                sessionID: info.id,
+                code: "protected-message-history",
+                message: "The session tree changed during removal; retry the deletion.",
+              })
+            }
+            ids.add(info.id)
+            yield* Effect.forEach(yield* children(info.id), visit, { discard: true })
+            postorder.push(info)
+          })
+        yield* Effect.forEach(roots, visit, { discard: true })
+        return { ids, postorder }
+      })
 
-        if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
-        const kids = yield* children(sessionID)
-        for (const child of kids) {
-          yield* remove(child.id)
-        }
+    const removeSessions = <E>(loadRoots: Effect.Effect<readonly Info[], E>) =>
+      OwnerQuiescence.activity(Effect.gen(function* () {
+        const { ids } = yield* planRemoval(yield* loadRoots)
+        // A broken session can be removed without instance state; job cancellation must precede the SQL write lock.
+        const hasInstance = yield* InstanceState.directory.pipe(Effect.as(true), Effect.catchCause(() => Effect.succeed(false)))
+        if (hasInstance) yield* Effect.forEach(ids, (id) => cancelBackgroundJobs(background, id), { discard: true })
 
-        yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
-        yield* events.remove(sessionID)
-      } catch (error) {
-        yield* Effect.logError("failed to remove session", { sessionID, error })
-      }
-    })
+        // Acquire the publication guards before SQLite. The bridge reuses them for every deletion event.
+        const batch = DatabaseTransaction.batch(db, Effect.gen(function* () {
+          const { postorder } = yield* planRemoval(yield* loadRoots, ids)
+          for (const info of postorder) {
+            yield* events.publish(SessionV1.Event.Deleted, { sessionID: info.id, info })
+            yield* events.remove(info.id)
+          }
+        })).pipe(Effect.catchTag("SqlError", Effect.die))
+        yield* [...ids].sort().reduceRight((work, id) => live.guard(id, work), batch)
+      }))
+
+    const remove = Effect.fn("Session.remove")((sessionID: SessionID) =>
+      removeSessions(get(sessionID).pipe(Effect.map((info) => [info]))),
+    )
+
+    const removeMany = Effect.fn("Session.removeMany")((sessionIDs: readonly SessionID[]) =>
+      removeSessions(Effect.forEach(sessionIDs, (id) => Effect.option(get(id))).pipe(
+        Effect.map((roots) => roots.flatMap(Option.toArray)),
+      )),
+    )
 
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
@@ -874,6 +906,8 @@ const layer: Layer.Layer<
     const fork = Effect.fn("Session.fork")(function* (input: ForkInput) {
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
+      // Native forks copy raw messages, not the visible history projection.
+      yield* MessageHistoryState.assertWritable(original)
       if (input.id && Option.isSome(yield* get(input.id).pipe(Effect.option)))
         return yield* Effect.die(new Error(`Session already exists: ${input.id}`))
       const title = input.title ?? getForkedTitle(original.title)
@@ -936,26 +970,30 @@ const layer: Layer.Layer<
         }
       }
       return session
-    })
+    }, OwnerQuiescence.activity)
+
+    const writeSession = <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) =>
+      live.guard(sessionID, DatabaseTransaction.batch(db, work)).pipe(Effect.orDie)
+
+    const publishPatch = (sessionID: SessionID, info: Patch, when?: (current: Info) => boolean) =>
+      Effect.gen(function* () {
+        // The full-row projector must use a snapshot read under the same write lock.
+        const current = yield* get(sessionID)
+        if (when && !when(current)) return
+        const next: Info = {
+          ...current,
+          ...info,
+          time: info.time ? { ...current.time, ...info.time } : current.time,
+          share: info.share === null ? undefined : (info.share ?? current.share),
+          summary: info.summary === null ? undefined : (info.summary ?? current.summary),
+          revert: info.revert === null ? undefined : (info.revert ?? current.revert),
+          permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+        }
+        yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
+      })
 
     const patch = (sessionID: SessionID, info: Patch, when?: (current: Info) => boolean) =>
-      DatabaseTransaction.immediate(db, () =>
-        Effect.gen(function* () {
-          // The full-row projector must use a snapshot read under the same write lock.
-          const current = yield* get(sessionID)
-          if (when && !when(current)) return
-          const next = {
-            ...current,
-            ...info,
-            time: info.time ? { ...current.time, ...info.time } : current.time,
-            share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
-            summary: info.summary === null ? undefined : (info.summary ?? current.summary),
-            revert: info.revert === null ? undefined : (info.revert ?? current.revert),
-            permission: info.permission === null ? undefined : (info.permission ?? current.permission),
-          } as Info
-          yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
-        }),
-      ).pipe(Effect.orDie)
+      writeSession(sessionID, publishPatch(sessionID, info, when))
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
@@ -981,33 +1019,37 @@ const layer: Layer.Layer<
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
-      yield* DatabaseTransaction.immediate(db, () =>
+      yield* writeSession(
+        input.sessionID,
         Effect.gen(function* () {
           // Generic metadata writers cannot replace the owner journals or roll back their revisions.
           const current = yield* get(input.sessionID)
+          const { messageHistory: ignoredHistory, ...incoming } = input.metadata
           const { autoSwitch, autoSwitchEpisode, cybersecPreservation } = current.metadata?.vibeterm ?? {}
           const {
             autoSwitch: ignoredPreference,
             autoSwitchEpisode: ignoredEpisode,
             cybersecPreservation: ignoredPreservation,
             ...vibeterm
-          } = input.metadata?.vibeterm ?? {}
-          const metadata =
-            autoSwitch || autoSwitchEpisode || cybersecPreservation !== undefined || input.metadata?.vibeterm
-              ? {
-                  ...input.metadata,
-                  vibeterm: {
-                    ...vibeterm,
-                    autoSwitch,
-                    autoSwitchEpisode,
-                    ...(cybersecPreservation !== undefined && { cybersecPreservation }),
-                  },
-                }
-              : input.metadata
+          } = incoming.vibeterm ?? {}
+          const metadata = {
+            ...incoming,
+            ...(current.metadata && Object.hasOwn(current.metadata, "messageHistory") && {
+              messageHistory: current.metadata.messageHistory,
+            }),
+            ...((autoSwitch || autoSwitchEpisode || cybersecPreservation !== undefined || incoming.vibeterm) && {
+              vibeterm: {
+                ...vibeterm,
+                autoSwitch,
+                autoSwitchEpisode,
+                ...(cybersecPreservation !== undefined && { cybersecPreservation }),
+              },
+            }),
+          }
           yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
-          yield* patch(input.sessionID, { metadata, time: { updated: Date.now() } })
+          yield* publishPatch(input.sessionID, { metadata, time: { updated: Date.now() } })
         }),
-      ).pipe(Effect.orDie)
+      )
     })
 
     const setCybersecPreservation: Interface["setCybersecPreservation"] = (input) =>
@@ -1043,7 +1085,8 @@ const layer: Layer.Layer<
       ).pipe(Effect.catchTag("SqlError", Effect.die))
 
     const updateAutoSwitch: Interface["updateAutoSwitch"] = (input) =>
-      DatabaseTransaction.immediate(db, () =>
+      writeSession(
+        input.sessionID,
         Effect.gen(function* () {
           const current = yield* get(input.sessionID)
           const decoded = Schema.decodeUnknownOption(AutoSwitchSchema.StoredPreference)(
@@ -1063,10 +1106,10 @@ const layer: Layer.Layer<
             },
           }
           yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
-          yield* patch(input.sessionID, { metadata })
+          yield* publishPatch(input.sessionID, { metadata })
           return true
         }),
-      ).pipe(Effect.orDie)
+      )
 
     const recordExecution = Effect.fn("Session.recordExecution")(function* (sessionID: SessionID) {
       const stamp = MachineProvenance.execution(sessionID)
@@ -1243,6 +1286,7 @@ const layer: Layer.Layer<
       messages,
       children,
       remove,
+      removeMany,
       updateMessage,
       createMessage,
       recordExecution,

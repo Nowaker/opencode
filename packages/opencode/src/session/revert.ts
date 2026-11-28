@@ -1,8 +1,12 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect, Layer, Context, Option, Schema } from "effect"
 import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { OwnerQuiescence } from "@/owner/quiescence"
+import { MessageHistoryState } from "@/session/message-history-state"
 import { Snapshot } from "../snapshot"
 import { Storage } from "@/storage/storage"
 import { Session } from "./session"
@@ -31,10 +35,12 @@ export class NoUndoSnapshot extends Schema.TaggedErrorClass<NoUndoSnapshot>()("N
 }) {}
 
 export interface Interface {
-  readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError | NoUndoSnapshot>
-  readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
-  readonly apply: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
-  readonly cleanup: (session: Session.Info) => Effect.Effect<void>
+  readonly revert: (
+    input: RevertInput,
+  ) => Effect.Effect<Session.Info, Session.BusyError | NoUndoSnapshot | MessageHistoryState.Error>
+  readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError | MessageHistoryState.Error>
+  readonly apply: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError | MessageHistoryState.Error>
+  readonly cleanup: (session: Session.Info) => Effect.Effect<void, MessageHistoryState.Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRevert") {}
@@ -49,6 +55,19 @@ const layer = Layer.effect(
     const summary = yield* SessionSummary.Service
     const state = yield* SessionRunState.Service
     const database = yield* Database.Service
+
+    const withWritableHistory = <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) =>
+      OwnerQuiescence.activity(Effect.gen(function* () {
+        // Cleanup may have been given a stale Session.Info. Leave its native revert semantics intact.
+        const row = yield* database.db
+          .select({ metadata: SessionTable.metadata })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        yield* MessageHistoryState.assertWritable({ id: sessionID, metadata: row?.metadata ?? undefined })
+        return yield* work
+      }))
 
     // Messages only: nothing is snapshotted, diffed or written. A revert that already put files back keeps its
     // snapshot, because those files are still put back and unrevert is the only way to restore them.
@@ -202,7 +221,12 @@ const layer = Layer.effect(
       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     })
 
-    return Service.of({ revert, unrevert, apply, cleanup })
+    return Service.of({
+      revert: (input) => withWritableHistory(input.sessionID, revert(input)),
+      unrevert: (input) => withWritableHistory(input.sessionID, unrevert(input)),
+      apply: (input) => withWritableHistory(input.sessionID, apply(input)),
+      cleanup: (session) => withWritableHistory(session.id, cleanup(session)),
+    })
   }),
 )
 
