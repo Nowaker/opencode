@@ -15,10 +15,12 @@ import { createCybersecPreservation, cybersecTransport, startCybersecSave, type 
 import { DialogCybersec } from "./dialog-cybersec"
 
 // `current` puts the cursor on another model than the selected one, e.g. the
-// model a past turn ran on. `cybersecSave` is a save the cybersec choice made before returning here.
+// model a past turn ran on. `filter` and `current` together bring back the dialog as it was left;
+// `cybersecSave` is a save the cybersec choice made before returning here.
 export function DialogModel(props: {
   providerID?: string
   current?: { providerID: string; modelID: string }
+  filter?: string
   cybersecSave?: CybersecSave
 }) {
   const local = useLocal()
@@ -27,7 +29,7 @@ export function DialogModel(props: {
   const route = useRoute()
   const sdk = useSDK()
   const toast = useToast()
-  const [query, setQuery] = createSignal("")
+  const [query, setQuery] = createSignal(props.filter ?? "")
   const sessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const request = cybersecTransport(sdk)
   const cybersec = createCybersecPreservation({
@@ -205,18 +207,24 @@ export function DialogModel(props: {
           title: cybersec.view(),
           side: "right",
           hidden: !sessionID(),
-          onTrigger() {
+          scope: "dialog",
+          onTrigger(option) {
             const id = sessionID()
             if (!id) return
             const refusal = cybersec.refusal()
             if (refusal) return toast.show({ message: refusal, variant: "info", duration: 3000 })
+            const value = option?.value
+            const left = {
+              filter: query(),
+              current: value && typeof value === "object" && "modelID" in value ? value : props.current,
+            }
             dialog.replace(() => (
               <DialogCybersec
                 current={cybersec.status?.preference}
                 onChoose={(preference) => {
                   // Sent once here: the dialog factory below can run more than once.
                   const save = startCybersecSave(request, id, preference)
-                  dialog.replace(() => <DialogModel {...props} cybersecSave={save} />)
+                  dialog.replace(() => <DialogModel {...props} {...left} cybersecSave={save} />)
                 }}
               />
             ))
@@ -224,6 +232,7 @@ export function DialogModel(props: {
         },
       ]}
       onFilter={setQuery}
+      initialFilter={props.filter}
       flat={true}
       skipFilter={true}
       title={title()}

@@ -97,6 +97,51 @@ test("the model dialog sets the session's preference from the keyboard and adds 
   })
 })
 
+const CTRL_O = "\x0f"
+
+test("ctrl+o opens the quota choice even when the model filter matches nothing, and the filter survives", async () => {
+  await withApp({ width: 120, cybersecPreservation: () => status("inherit", 0) }, async (rig) => {
+    await rig.ready("second answer")
+    await openModels(rig)
+    await rig.until("the control", () => rig.frame().includes("Cybersec: inherit"))
+    await rig.until("the model filter", () => rig.filterFocused())
+    await rig.press("qqqzzz")
+    await rig.until("no matching models", () => rig.frame().includes("No results found"))
+    await rig.press(CTRL_O)
+    await rig.until("the quota choices", () => rig.frame().includes("Follow this machine's default"))
+    await rig.until("the choice filter", () => rig.filterFocused())
+    await rig.press("Off")
+    await rig.press(ENTER)
+    await rig.until("the save", () => writes(rig).length === 1)
+    await rig.until("the model dialog to return", () => rig.frame().includes("Select model"))
+    await rig.until("the restored filter", () => rig.frame().includes("qqqzzz") && rig.frame().includes("No results found"))
+    expect(writes(rig)).toEqual([{ preference: "off" }])
+  })
+})
+
+test("returning from the quota choice keeps the model filter and the selected model", async () => {
+  await withApp({ width: 120, choices: true, cybersecPreservation: () => status("inherit", 0) }, async (rig) => {
+    await rig.ready("second answer")
+    await openModels(rig)
+    await rig.until("the control", () => rig.frame().includes("Cybersec: inherit"))
+    await rig.until("the model filter", () => rig.filterFocused())
+    await rig.press("Other")
+    await rig.until("the matching model", () => rig.frame().includes("Other"))
+    await rig.press(CTRL_O)
+    await rig.until("the quota choices", () => rig.frame().includes("Follow this machine's default"))
+    await rig.until("the choice filter", () => rig.filterFocused())
+    await rig.press("On")
+    await rig.press(ENTER)
+    await rig.until("the restored filter", () => rig.frame().includes("Select model") && rig.frame().includes("Other"))
+    // Enter picks the restored row. Only "Other" has variants, so its variant choice opening proves both the
+    // filter and the selection came back; a reset dialog would select the current "Model" and just close.
+    await rig.until("the model filter", () => rig.filterFocused())
+    await rig.press(ENTER)
+    await rig.until("the variant choice for the restored model", () => rig.frame().includes("Select variant"))
+    expect(writes(rig)).toEqual([{ preference: "on" }])
+  })
+})
+
 test("an unbound owner shows unavailable, never inherit, and refuses the change", async () => {
   await withApp({ width: 120, cybersecPreservation: () => json({ message: "owner unavailable" }, { status: 503 }) }, async (rig) => {
     await rig.ready("second answer")

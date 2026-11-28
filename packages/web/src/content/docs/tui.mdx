@@ -187,7 +187,7 @@ Choose whether this session keeps its Claude requests off the accounts Meridian 
 
 - **on** keeps the session's Claude requests off the held-back CVP accounts, so their quota stays free for security work.
 - **off** lets the session use those accounts like any other.
-- **inherit** follows this machine's default, which you set with [`/cybersec-preservation`](#cybersec-preservation). A change to the machine default applies to inherit sessions right away. New sessions start as inherit.
+- **inherit** follows this machine's default, which you set with [`/cybersec-preservation`](#cybersec-preservation). A change to the machine default applies to inherit sessions right away. New root sessions start as inherit.
 
 A subagent or other child session copies its parent's `on` or `off` when it is created; a parent on `inherit` gives its children `inherit`. Changing the parent later does not change children that already exist.
 
