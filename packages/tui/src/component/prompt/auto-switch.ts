@@ -141,7 +141,7 @@ export function autoSwitchTransport(sdk: { client: OpencodeClient }) {
 }
 
 // A generated call's result, with a thrown failure (network, interceptor) as one that has no response.
-function settle<T extends { data?: unknown; error?: unknown }>(call: Promise<T>) {
+export function settle<T extends { data?: unknown; error?: unknown }>(call: Promise<T>) {
   return call.then(
     (result) => result as T & { response?: Response },
     (error: unknown) => ({ error, data: undefined, response: undefined }) as Partial<T> & { response?: Response },
@@ -460,7 +460,7 @@ function statusKey(status: AutoSwitchStatus) {
   return `${status.ownerEpoch}:${status.revision}`
 }
 
-function bodyMessage(body: unknown) {
+export function bodyMessage(body: unknown) {
   if (!isRecord(body)) return
   if (isRecord(body.data) && typeof body.data.message === "string") return body.data.message
   if (typeof body.message === "string") return body.message

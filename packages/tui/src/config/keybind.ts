@@ -136,6 +136,7 @@ export const CommandMap = {
   stash_delete: "stash.delete",
   model_provider_list: "model.dialog.provider",
   model_favorite_toggle: "model.dialog.favorite",
+  model_cybersec: "model.dialog.cybersec",
   model_list: "model.list",
   model_cycle_recent: "model.cycle_recent",
   model_cycle_recent_reverse: "model.cycle_recent_reverse",
