@@ -139,6 +139,24 @@ it.instance(
 )
 
 it.instance(
+  "patch and revert preserve both paths of an ordinary rename",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const from = fwd(tmp.path, "a.txt")
+      const to = fwd(tmp.path, "renamed.txt")
+      yield* Effect.promise(() => fs.rename(from, to))
+
+      const patch = yield* snapshot.patch(before)
+      expect(patch.files.toSorted()).toEqual([from, to])
+      expect(yield* snapshot.revert([patch])).toEqual([])
+      expect(yield* readText(from)).toBe(tmp.extra.aContent)
+      expect(yield* exists(to)).toBe(false)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
   "revert in subdirectory",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
@@ -490,14 +508,23 @@ it.instance(
       const releasePatch = yield* Deferred.make<void>()
       const spawner = ChildProcessSpawner.make(
         Effect.fnUntraced(function* (command) {
-          if (ChildProcess.isStandardCommand(command) && command.command === "git" && command.args.includes("--cached")) {
-            if (command.args.includes("--name-only")) {
-              yield* Deferred.succeed(patchStarted, undefined)
-              yield* Deferred.await(releasePatch)
-            } else {
-              yield* Deferred.succeed(holderStarted, undefined)
-              yield* Deferred.await(releaseHolder)
-            }
+          if (!ChildProcess.isStandardCommand(command) || command.command !== "git") return yield* real.spawn(command)
+          const worktree = command.args.indexOf("--work-tree")
+          if (
+            worktree < 0 ||
+            command.args[worktree + 2] !== "diff" ||
+            command.args[worktree + 3] !== "--cached" ||
+            command.args.includes("--diff-filter=T")
+          ) {
+            return yield* real.spawn(command)
+          }
+
+          if (command.args.includes("--raw")) {
+            yield* Deferred.succeed(patchStarted, undefined)
+            yield* Deferred.await(releasePatch)
+          } else {
+            yield* Deferred.succeed(holderStarted, undefined)
+            yield* Deferred.await(releaseHolder)
           }
           return yield* real.spawn(command)
         }),

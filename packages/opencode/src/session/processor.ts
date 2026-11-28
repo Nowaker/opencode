@@ -34,6 +34,8 @@ import { textStop } from "./text-stop"
 import { LiveEvents } from "./live-events"
 
 const DOOM_LOOP_THRESHOLD = 3
+const SNAPSHOT_FAILURE_THRESHOLD = 3
+const MAX_SNAPSHOT_FAILURE_SESSIONS = 1024
 export type Result = "compact" | "stop" | "continue"
 
 export type ToolEnginePhase =
@@ -51,6 +53,19 @@ class SnapshotPreflightFailed extends Error {
   constructor() {
     super("Snapshot preflight failed; the tool was not started")
   }
+}
+
+type SnapshotWaitEffect = Effect.Effect<void | "skipped", SnapshotPreflightFailed>
+type SnapshotWait = {
+  readonly wait: SnapshotWaitEffect
+  readonly failed: () => boolean
+  readonly confirm: Effect.Effect<"skipped" | "retry" | void>
+}
+
+type SnapshotSkip = {
+  readonly failed: () => boolean
+  readonly retryIfRecovered: boolean
+  readonly unmark: Effect.Effect<void>
 }
 
 export interface Handle {
@@ -83,11 +98,12 @@ export interface Handle {
    * this before executing, so their changes always land after the step's "before" snapshot and after the
    * previous step's "after" snapshot.
    */
-  readonly waitForSnapshots: Effect.Effect<void | "skipped", SnapshotPreflightFailed>
+  readonly waitForSnapshots: SnapshotWaitEffect | ((signal: AbortSignal) => SnapshotWait)
   readonly skipSnapshot?: (
     signal: AbortSignal,
     mark: Effect.Effect<boolean>,
-  ) => Effect.Effect<boolean, SnapshotPreflightFailed>
+    attempt: SnapshotSkip,
+  ) => Effect.Effect<boolean | "retry", SnapshotPreflightFailed>
 }
 
 type Input = {
@@ -157,16 +173,18 @@ const layer = Layer.effect(
     // Snapshots run in the background so they never delay the model request. Track each one until it
     // finishes publishing or the tool preflight revokes its right to publish.
     const pending = new Map<SessionID, Set<SnapshotWork<unknown>>>()
+    const replacements = new WeakMap<SnapshotWork<unknown>, SnapshotWork<unknown>>()
     const publications = KeyedMutex.makeUnsafe<SessionID>()
+    const snapshotFailures = new Map<SessionID, number>()
 
     const background = <A>(
       sessionID: SessionID,
-      enabled: () => boolean,
+      options: { readonly enabled: () => boolean; readonly replaces?: SnapshotWork<unknown> },
       work: (publication: SnapshotPublication) => Effect.Effect<A>,
     ) =>
       publications.withLock(sessionID)(
         Effect.gen(function* () {
-          if (!enabled()) return undefined
+          if (!options.enabled()) return undefined
           const publication: SnapshotPublication = { allowed: true, revoked: Latch.makeUnsafe() }
           const fiber = yield* work(publication).pipe(
             Effect.tapCause((cause) =>
@@ -177,6 +195,7 @@ const layer = Layer.effect(
             Effect.forkIn(scope),
           )
           const entry = { publication, fiber }
+          if (options.replaces) replacements.set(options.replaces, entry)
           const entries = pending.get(sessionID) ?? new Set<SnapshotWork<unknown>>()
           pending.set(sessionID, entries)
           entries.add(entry)
@@ -219,15 +238,15 @@ const layer = Layer.effect(
       // write wait for it through waitForSnapshots; the model request and read-only tools do not.
       let snapshotSkipped = false
       const snapshotAllowed = () => !snapshotSkipped
+      const publish = { enabled: snapshotAllowed }
       const snapshotLock = publications.withLock(input.sessionID)
-      const initialSnapshot = yield* background(input.sessionID, snapshotAllowed, () => snapshot.track(input.sessionID))
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
         model: input.model,
         toolcalls: {},
         shouldBreak: false,
-        snapshot: initialSnapshot,
+        snapshot: yield* background(input.sessionID, publish, () => snapshot.track(input.sessionID)),
         blocked: false,
         needsCompaction: false,
         currentText: undefined,
@@ -244,35 +263,76 @@ const layer = Layer.effect(
       const settledTools = new Set<string>()
       const earlyResults = new Map<string, EarlyToolResult>()
       let acceptingToolCalls = true
-      const snapshotWork = () => {
-        const entries = new Set(pending.get(ctx.sessionID))
-        const start = ctx.snapshot ?? initialSnapshot
-        if (start) entries.add(start)
-        return [...entries]
+      const snapshotWork = (watched: readonly SnapshotWork<unknown>[] = []) => {
+        const entries = [...watched, ...(pending.get(ctx.sessionID) ?? [])]
+        if (ctx.snapshot) entries.push(ctx.snapshot)
+        return [...new Set(
+          entries.map((entry) => {
+            let current = entry
+            while (true) {
+              const next = replacements.get(current)
+              if (!next) return current
+              current = next
+            }
+          }),
+        )]
       }
       const snapshotFailed = (exit: Exit.Exit<unknown> | undefined) =>
         exit !== undefined && (Exit.isFailure(exit) || exit.value === "")
-      const waitForSnapshots = Effect.gen(function* () {
-        if (snapshotSkipped) return "skipped" as const
-        yield* Effect.forEach(
-          snapshotWork(),
-          (entry) => awaitSnapshot(entry).pipe(
-            Effect.flatMap((exit) =>
-              !snapshotSkipped && snapshotFailed(exit) ? Effect.fail(new SnapshotPreflightFailed()) : Effect.void,
-            ),
+      const failedWork = (entry: SnapshotWork<unknown>) =>
+        entry.publication.allowed && snapshotFailed(entry.fiber.pollUnsafe())
+      const waitForSnapshots = (signal: AbortSignal): SnapshotWait => {
+        // Completed work leaves the pending set. Keep this call's entries so
+        // the timeout path can still see a failure from the work it raced.
+        let watched: SnapshotWork<unknown>[] = []
+        return {
+          wait: Effect.gen(function* () {
+            if (snapshotSkipped) return "skipped" as const
+            watched = snapshotWork(watched)
+            yield* Effect.forEach(
+              watched,
+              (entry) => awaitSnapshot(entry).pipe(
+                Effect.flatMap((exit) =>
+                  !snapshotSkipped && !replacements.has(entry) && entry.publication.allowed && snapshotFailed(exit)
+                    ? Effect.fail(new SnapshotPreflightFailed())
+                    : Effect.void,
+                ),
+              ),
+              { concurrency: "unbounded", discard: true },
+            )
+          }),
+          failed: () => snapshotWork(watched).some(failedWork),
+          confirm: snapshotLock(
+            Effect.sync(() => {
+              const work = snapshotWork(watched)
+              if (snapshotSkipped || work.some(({ publication }) => !publication.allowed)) return "skipped" as const
+              if (work.some((entry) => failedWork(entry) || !entry.fiber.pollUnsafe())) return "retry" as const
+              if (!signal.aborted && acceptingToolCalls) snapshotFailures.delete(ctx.sessionID)
+            }),
           ),
-          { concurrency: "unbounded", discard: true },
-        )
-        if (snapshotSkipped) return "skipped" as const
-      })
-      const skipSnapshot: NonNullable<Handle["skipSnapshot"]> = (signal, mark) =>
+        }
+      }
+      const skipSnapshot: NonNullable<Handle["skipSnapshot"]> = (signal, mark, attempt) =>
         snapshotLock(
           Effect.uninterruptible(Effect.gen(function* () {
             if (signal.aborted || !acceptingToolCalls) return false
-            if (!snapshotSkipped && snapshotWork().some(({ fiber }) => snapshotFailed(fiber.pollUnsafe()))) {
-              return yield* Effect.fail(new SnapshotPreflightFailed())
+            const failure = !snapshotSkipped && attempt.failed()
+            if (!failure && !snapshotSkipped && attempt.retryIfRecovered) return "retry" as const
+            if (failure) {
+              const count = Math.min(SNAPSHOT_FAILURE_THRESHOLD, (snapshotFailures.get(ctx.sessionID) ?? 0) + 1)
+              snapshotFailures.delete(ctx.sessionID)
+              snapshotFailures.set(ctx.sessionID, count)
+              if (snapshotFailures.size > MAX_SNAPSHOT_FAILURE_SESSIONS) {
+                const oldest = snapshotFailures.keys().next()
+                if (!oldest.done) snapshotFailures.delete(oldest.value)
+              }
+              if (count < SNAPSHOT_FAILURE_THRESHOLD) return yield* Effect.fail(new SnapshotPreflightFailed())
             }
             if (!(yield* mark)) return false
+            if (signal.aborted || !acceptingToolCalls) {
+              yield* attempt.unmark
+              return false
+            }
             if (snapshotSkipped) return true
             snapshotSkipped = true
             const entries = [...(pending.get(ctx.sessionID) ?? [])]
@@ -283,6 +343,17 @@ const layer = Layer.effect(
             pending.delete(ctx.sessionID)
             // Revocation is complete before requesting interruption; Git cleanup may still hold its store lock.
             for (const { fiber } of entries) fiber.interruptUnsafe()
+            if (failure) {
+              yield* session.updatePart({
+                id: PartID.ascending(),
+                messageID: ctx.assistantMessage.id,
+                sessionID: ctx.sessionID,
+                type: "text",
+                synthetic: true,
+                metadata: { opencode: { snapshotWarning: true } },
+                text: "Snapshot warning: file undo is unavailable for this step because snapshot capture failed.",
+              })
+            }
             return true
           })),
         )
@@ -763,7 +834,11 @@ const layer = Layer.effect(
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
             )
-            const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
+            const recentParts = parts
+              .filter(
+                (part) => !(part.type === "text" && part.synthetic && part.metadata?.opencode?.snapshotWarning === true),
+              )
+              .slice(-DOOM_LOOP_THRESHOLD)
 
             if (
               recentParts.length !== DOOM_LOOP_THRESHOLD ||
@@ -866,7 +941,7 @@ const layer = Layer.effect(
             yield* session.updatePart(part)
             ctx.snapshot = yield* background(
               ctx.sessionID,
-              snapshotAllowed,
+              { ...publish, ...(prior && { replaces: prior }) },
               (publication) => Effect.gen(function* () {
                 const previous = prior ? yield* hashOf(prior) : undefined
                 if (!publication.allowed) return
@@ -920,7 +995,7 @@ const layer = Layer.effect(
             // tools wait for them, and the summary is computed only once both hashes are recorded.
             yield* background(
               ctx.sessionID,
-              snapshotAllowed,
+              publish,
               (publication) => Effect.gen(function* () {
                 if (start) yield* awaitSnapshot(start)
                 if (!publication.allowed) return
@@ -979,7 +1054,7 @@ const layer = Layer.effect(
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
         if (ctx.snapshot) {
-          yield* background(ctx.sessionID, snapshotAllowed, recordPatch(ctx.snapshot))
+          yield* background(ctx.sessionID, publish, recordPatch(ctx.snapshot))
           ctx.snapshot = undefined
         }
 
