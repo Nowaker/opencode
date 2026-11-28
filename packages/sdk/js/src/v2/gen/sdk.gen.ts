@@ -920,13 +920,14 @@ export class Background extends HeyApiClient {
   /**
    * Cancel a background job
    *
-   * Stop a running background job, such as a bash command started with run_in_background or a background subagent. Returns false when no job with this ID is running.
+   * Stop a running background job. An optional toolResultForSessionID scopes the stop to a running background Bash job of that session and marks a winning stop as reported by background_cancel. Returns true only when this request stopped the job.
    */
   public cancel<ThrowOnError extends boolean = false>(
     parameters: {
       jobID: string
       directory?: string
       workspace?: string
+      toolResultForSessionID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -938,6 +939,7 @@ export class Background extends HeyApiClient {
             { in: "path", key: "jobID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "toolResultForSessionID" },
           ],
         },
       ],
