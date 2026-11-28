@@ -1720,6 +1720,7 @@ export type GlobalEvent = {
           outputPath: string
           reason: "requested" | "timeout" | "user"
           timeoutMs: number
+          cancelToolReceipt?: 1
         }
       }
     | {
@@ -1742,6 +1743,7 @@ export type GlobalEvent = {
           id: string
           command: string
           status: "completed" | "failed" | "timeout" | "cancelled"
+          reportedBy?: "background_cancel"
           exitCode?: number
           durationMs: number
           outputPath: string
@@ -6591,6 +6593,7 @@ export type ShellBackgroundStarted = {
     outputPath: string
     reason: "requested" | "timeout" | "user"
     timeoutMs: number
+    cancelToolReceipt?: 1
   }
 }
 
@@ -6633,6 +6636,7 @@ export type ShellBackgroundExited = {
     id: string
     command: string
     status: "completed" | "failed" | "timeout" | "cancelled"
+    reportedBy?: "background_cancel"
     exitCode?: number
     durationMs: number
     outputPath: string
@@ -7625,6 +7629,7 @@ export type EventShellBackgroundStarted = {
     outputPath: string
     reason: "requested" | "timeout" | "user"
     timeoutMs: number
+    cancelToolReceipt?: 1
   }
 }
 
@@ -7649,6 +7654,7 @@ export type EventShellBackgroundExited = {
     id: string
     command: string
     status: "completed" | "failed" | "timeout" | "cancelled"
+    reportedBy?: "background_cancel"
     exitCode?: number
     durationMs: number
     outputPath: string
@@ -8612,6 +8618,7 @@ export type ExperimentalBackgroundCancelData = {
   query?: {
     directory?: string
     workspace?: string
+    toolResultForSessionID?: string
   }
   url: "/experimental/background/{jobID}/cancel"
 }
