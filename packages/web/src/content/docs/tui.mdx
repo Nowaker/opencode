@@ -405,6 +405,10 @@ Undo last message in the conversation. Removes the most recent user message and 
 `/undo-messages` always keeps the files and `/undo-files` always reverts them, whatever `revert.files` says.
 :::
 
+:::note
+Portal's undo and redo are a separate, fork-only protected message history, not this `/undo` and `/redo`. Each Portal undo hides one human turn and each Portal redo shows one again, through the live v1 engine that owns the session. They never touch files, never delete messages, and do not use the native revert state or `revert.files`. While any turn is still hidden, the session refuses to continue, from Portal or from this terminal, until Portal redo has restored every hidden turn. The terminal `/undo` and `/redo` cannot restore them, so redo in Portal before you prompt here. Older fork versions do not see the protected state as a native revert, so do not use them to continue a protected session.
+:::
+
 Internally, this uses Git to manage the file changes. So your project **needs to
 be a Git repository**.
 
