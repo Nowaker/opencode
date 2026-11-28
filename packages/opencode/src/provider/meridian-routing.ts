@@ -2,6 +2,7 @@ import { APICallError } from "ai"
 import { Clock, Context, Effect, Option, Schema } from "effect"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import type { CybersecPreservation } from "@/session/cybersec-preservation"
 import type { Provider } from "./provider"
 import { MeridianRefusal } from "./meridian-refusal"
 
@@ -86,7 +87,10 @@ const availabilityBody = Schema.fromJsonString(Schema.Struct({
   observed_at: Schema.Int,
 }))
 
-export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Omit<Target, "provider"> & { readonly provider?: RouteProvider }) {
+export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Omit<Target, "provider"> & {
+  readonly provider?: RouteProvider
+  readonly cybersecPreservation?: CybersecPreservation.Preference
+}) {
   const provider = input.provider ?? "chatgpt"
   const variant = wireEffort({ ...input, provider })
   if (variant === undefined) return undefined
@@ -95,12 +99,21 @@ export const probe = Effect.fn("MeridianRouting.probe")(function* (input: Omit<T
   if (!url || (provider === "claude" && !trustedURL(trust.claudeInferenceURL)?.pathname.endsWith(CLAUDE_INFERENCE_PATH))) return undefined
   const model = input.model.api.id
   url.search = new URLSearchParams({ provider, model, variant }).toString()
+  const headers: Record<string, string> = {}
+  if (trust.availabilityAPIKey) headers["x-api-key"] = trust.availabilityAPIKey
+  const preservation = input.cybersecPreservation
+  if (
+    provider === "claude" && input.model.providerID === "anthropic" &&
+    (preservation === "on" || preservation === "off")
+  ) {
+    headers["x-meridian-cybersec-preservation"] = preservation
+  }
 
   const result = yield* Effect.tryPromise({
     try: async (signal) => {
       const response = await fetch(url, {
         method: "GET",
-        headers: trust.availabilityAPIKey ? { "x-api-key": trust.availabilityAPIKey } : undefined,
+        headers,
         cache: "no-store",
         credentials: "omit",
         redirect: "error",

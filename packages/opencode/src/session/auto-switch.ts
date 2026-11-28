@@ -5,6 +5,7 @@ import { OwnerQuiescence } from "@/owner/quiescence"
 import type { Session } from "./session"
 import type { SessionID } from "./schema"
 import { AutoSwitchSchema } from "./auto-switch-schema"
+import { CybersecPreservation } from "./cybersec-preservation"
 import type { Plugin } from "@/plugin"
 import type { Agent } from "@/agent/agent"
 import { MeridianRouting } from "@/provider/meridian-routing"
@@ -104,7 +105,7 @@ export const Owner = Context.Reference<() => SessionID | undefined>("AutoSwitch.
   defaultValue: () => () => root,
 })
 
-const inScope = Effect.fnUntraced(function* (sessions: Session.Interface, session: Session.Info) {
+export const inScope = Effect.fnUntraced(function* (sessions: Session.Interface, session: Session.Info) {
   const selected = (yield* Owner)()
   if (!selected || OwnerQuiescence.status().sealed) return false
   let current = session
@@ -320,11 +321,19 @@ export const read = Effect.fnUntraced(function* (sessions: Session.Interface, se
   const providers = yield* Providers
   const model = providers ? yield* providers.getModel(ProviderV2.ID.make(current.source.providerID), ModelV2.ID.make(current.source.modelID)).pipe(Effect.option) : undefined
   const provider = MeridianRouting.routeProvider(current.source.providerID)
+  const preservation = CybersecPreservation.stored(current.session)
   const validUntil = model?._tag === "Some" && provider && model.value.id === model.value.api.id
-    ? yield* MeridianRouting.probe({ provider, model: model.value, variant: current.source.variant }) : undefined
+    ? yield* MeridianRouting.probe({
+      provider,
+      model: model.value,
+      variant: current.source.variant,
+      cybersecPreservation: preservation.preference,
+    }) : undefined
   const latest = yield* inspect(sessions, sessionID)
   return status(sessionID, latest, validUntil !== undefined && validUntil >= Date.now() && idle === idleSince.get(sessionID) &&
-    latest?.revision === current.revision && latest?.policy?.policyRevision === current.policy.policyRevision &&
+    latest?.revision === current.revision && latest.policy?.policyRevision === current.policy.policyRevision &&
+    (current.source.providerID !== "anthropic" ||
+      CybersecPreservation.stored(latest.session).revision === preservation.revision) &&
     same(latest?.source ?? null, current.source))
 })
 
