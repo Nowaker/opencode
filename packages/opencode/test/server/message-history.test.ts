@@ -37,9 +37,9 @@ const clear = {
   canUndo: true,
   canRedo: false,
 } as const
-const oldest = { id: "msg_z-oldest", time: 100, text: "Human: first" } as const
-const second = { id: "msg_Z-second", time: 200, text: "Human: second" } as const
-const latest = { id: "msg_a-latest", time: 200, text: "Human: latest" } as const
+const oldest = { id: "msg_zOldest", time: 100, text: "Human: first" } as const
+const second = { id: "msg_ZSecond", time: 200, text: "Human: second" } as const
+const latest = { id: "msg_aLatest", time: 200, text: "Human: latest" } as const
 const notice = { id: "msg_notice", time: 300, text: "System: queued notification" } as const
 const synthetic = { id: "msg_synthetic", time: 350, text: "Human: synthetic lookalike", synthetic: true } as const
 
@@ -84,7 +84,7 @@ test("v1 protected history follows genuine persisted turns without changing raw 
       },
     })
     server.db.query("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)")
-      .run("prt_answer_patch", "msg_answer", sessionID, 400, 400, JSON.stringify({
+      .run("prt_answerPatch", "msg_answer", sessionID, 400, 400, JSON.stringify({
         type: "patch", hash: armed.revert.snapshot, files: [filename],
       }))
 
@@ -244,7 +244,7 @@ function seedUser(db: Database, sessionID: string, row: {
 }) {
   insertMessage(db, sessionID, { ...row, data: { role: "user", agent: "build", model } })
   db.query("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(`prt_${row.id}`, row.id, sessionID, row.time, row.time, JSON.stringify({
+    .run(`prt_${row.id.slice("msg_".length)}`, row.id, sessionID, row.time, row.time, JSON.stringify({
       type: "text", text: row.text, synthetic: row.synthetic,
     }))
 }
