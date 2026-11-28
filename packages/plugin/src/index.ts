@@ -22,6 +22,17 @@ import type { BunShell } from "./shell.js"
 import { type ToolDefinition } from "./tool.js"
 import type { LiveEvents } from "./live-events.js"
 import type { MessageHistory } from "./message-history.js"
+import type { ApprovedAction } from "./approved-action.js"
+export type {
+  ApprovedAction,
+  ApprovedActionActivity,
+  ApprovedActionBinding,
+  ApprovedActionFailure,
+  ApprovedActionOwner,
+  ApprovedActionReceipt,
+  ApprovedActionRefused,
+  ApprovedActionStored,
+} from "./approved-action.js"
 export type { LiveEvents, LiveFrame } from "./live-events.js"
 export type * from "./message-history.js"
 
@@ -67,6 +78,7 @@ export type PluginInput = {
   readonly promptOrigin?: 1
   readonly liveEvents?: LiveEvents
   readonly messageHistory?: MessageHistory
+  readonly approvedAction?: ApprovedAction
   readonly ownerQuiescence?: {
     readonly status: () => Readonly<OwnerQuiescenceStatus>
     readonly acquire: () =>
