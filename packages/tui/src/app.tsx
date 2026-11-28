@@ -33,7 +33,7 @@ import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { ProjectProvider, useProject } from "./context/project"
 import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
-import { SDKProvider, useSDK } from "./context/sdk"
+import { SDKProvider, useSDK, type BindSessionOwner, type EventSource } from "./context/sdk"
 import type { BashBackgroundOwner } from "./routes/session/bash-background-action"
 import { StartupLoading } from "./component/startup-loading"
 import { mountInstantScreen } from "./component/instant-screen"
@@ -89,7 +89,6 @@ import {
   useOpencodeKeymap,
 } from "./keymap"
 
-import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { createTuiAttention } from "./attention"
 import * as TuiAudio from "./audio"
@@ -160,6 +159,7 @@ export type TuiInput = {
   headers?: RequestInit["headers"]
   events?: EventSource
   bashBackground?: BashBackgroundOwner
+  bindSessionOwner?: BindSessionOwner
   pluginHost: TuiPluginHost
   updater?: UpdateSource
 }
@@ -326,6 +326,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                         <PluginRuntimeProvider value={pluginRuntime}>
                                           <SDKProvider
                                             bashBackground={input.bashBackground}
+                                            bindSessionOwner={input.bindSessionOwner}
                                             url={input.url}
                                             directory={input.directory}
                                             fetch={input.fetch}
@@ -582,27 +583,34 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
     })
   })
 
+  async function openStartupSession(sessionID: string) {
+    if (sdk.bindSessionOwner) await sdk.bindSessionOwner(sessionID).catch(toast.error)
+    route.navigate({ type: "session", sessionID })
+  }
+
+  function forkStartupSession(sessionID: string) {
+    void sdk.client.session
+      .fork({ sessionID })
+      .then((result) => {
+        const forkID = result.data?.id
+        if (forkID) return openStartupSession(forkID)
+        toast.show({ message: "Failed to fork session", variant: "error" })
+      })
+      .catch(toast.error)
+  }
+
   let continued = false
   createEffect(() => {
     // When using -c, session list is loaded in blocking phase, so we can navigate at "partial"
     if (continued || sync.status === "loading" || !args.continue) return
+    if (sdk.bindSessionOwner && args.sessionID && args.fork) return
     const match = sync.data.session
       .toSorted((a, b) => b.time.updated - a.time.updated)
       .find((x) => x.parentID === undefined)?.id
-    if (match) {
-      continued = true
-      if (args.fork) {
-        void sdk.client.session.fork({ sessionID: match }).then((result) => {
-          if (result.data?.id) {
-            route.navigate({ type: "session", sessionID: result.data.id })
-          } else {
-            toast.show({ message: "Failed to fork session", variant: "error" })
-          }
-        })
-      } else {
-        route.navigate({ type: "session", sessionID: match })
-      }
-    }
+    if (!match) return
+    continued = true
+    if (args.fork) return forkStartupSession(match)
+    void openStartupSession(match)
   })
 
   // Handle --session with --fork: wait for sync to be fully complete before forking
@@ -612,13 +620,7 @@ function App(props: { instant: Accessor<boolean>; onSnapshot?: () => Promise<str
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return
     forked = true
-    void sdk.client.session.fork({ sessionID: args.sessionID }).then((result) => {
-      if (result.data?.id) {
-        route.navigate({ type: "session", sessionID: result.data.id })
-      } else {
-        toast.show({ message: "Failed to fork session", variant: "error" })
-      }
-    })
+    forkStartupSession(args.sessionID)
   })
 
   createEffect(

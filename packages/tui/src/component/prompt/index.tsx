@@ -1738,6 +1738,8 @@ export function Prompt(props: PromptProps) {
     let sessionID = props.sessionID
     let finishMoveProgress = false
     if (sessionID == null) {
+      const bindOwner =
+        route.data.type === "home" && !args.sessionID && !args.continue ? sdk.bindSessionOwner : undefined
       const selectedWorkspace = workspace.selection()
       const workspaceID = selectedWorkspace?.type === "existing" ? selectedWorkspace.workspaceID : undefined
 
@@ -1770,6 +1772,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      if (bindOwner) await bindOwner(sessionID).catch(toast.error)
     }
 
     if (expected && (store.prompt.input !== expected.input || store.prompt.parts.length !== expected.parts)) return false
