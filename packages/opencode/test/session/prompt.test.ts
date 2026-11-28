@@ -3591,6 +3591,25 @@ it.instance(
 )
 
 unix(
+  "records a Bash spawn failure as a tool error and continues the same turn",
+  () =>
+    Effect.gen(function* () {
+      const { directory } = yield* TestInstance
+      const shell = path.join(directory, "bash")
+      yield* writeText(shell, "#!/bin/sh\n")
+      const { llm, result, part } = yield* runOneTool((url) => ({ ...providerCfg(url), shell }), "bash", {
+        command: "printf unreachable",
+      })
+
+      expect(part?.state.status).toBe("error")
+      expect(yield* llm.calls).toBe(2)
+      expect(JSON.stringify((yield* llm.inputs)[1])).toMatch(/permission\s*denied|eacces/i)
+      expect(result.parts.some((item) => item.type === "text" && item.text === "after the tool")).toBe(true)
+    }),
+  30_000,
+)
+
+unix(
   "bash's own timeout raises its limit above tool_timeout.default",
   () =>
     Effect.gen(function* () {

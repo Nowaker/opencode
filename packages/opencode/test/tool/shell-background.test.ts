@@ -6,8 +6,16 @@ import { Shell } from "@opencode-ai/core/shell"
 import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import type { Event } from "@opencode-ai/schema/event"
 import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
-import { Deferred, Effect, Fiber, Layer } from "effect"
-import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import type { PlatformError } from "effect/PlatformError"
+import { TestClock } from "effect/testing"
+import {
+  ChildProcessSpawner,
+  ExitCode,
+  make as makeSpawner,
+  makeHandle,
+  type ChildProcessHandle,
+} from "effect/unstable/process/ChildProcessSpawner"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -22,6 +30,7 @@ import { MessageID, SessionID } from "../../src/session/schema"
 import { ShellTool } from "../../src/tool/shell"
 import { ShellHandoff } from "../../src/tool/shell/handoff"
 import { InstanceState } from "@/effect/instance-state"
+import { writeFile } from "node:fs/promises"
 import path from "node:path"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, testEffectShared } from "../lib/effect"
@@ -449,6 +458,242 @@ describe.skipIf(process.platform === "win32")("tool.shell background", () => {
         }),
       ),
     30_000,
+  )
+
+  it.live(
+    "returns a foreground Bash error when the child exits without delivering completion",
+    () =>
+      inProject(
+        { shell: "/bin/bash" },
+        Effect.gen(function* () {
+          const command = "printf 'probe finished\\n'"
+          const jobs = yield* BackgroundJob.Service
+          // The unpatched tool promotes the stuck job. Cancel that test-owned job on red too.
+          yield* Effect.addFinalizer(() =>
+            jobs.list().pipe(
+              Effect.flatMap((entries) => {
+                const job = entries.find((entry) => entry.title === command)
+                return job ? jobs.cancel(job.id).pipe(Effect.asVoid) : Effect.void
+              }),
+            ),
+          )
+
+          const spawner = yield* ChildProcessSpawner
+          const spawned = yield* Deferred.make<ChildProcessHandle>()
+          const subscribed = yield* Deferred.make<void>()
+          const clock = yield* TestClock.make()
+          const lostCompletion = makeSpawner((command) =>
+            spawner.spawn(command).pipe(
+              Effect.tap((handle) => Deferred.succeed(spawned, handle)),
+              Effect.map((handle) =>
+                makeHandle({
+                  ...handle,
+                  exitCode: Deferred.succeed(subscribed, undefined).pipe(Effect.andThen(Effect.never)),
+                }),
+              ),
+            ),
+          )
+          const call = yield* runShell({ command, timeout: 1_000 }).pipe(
+            Effect.provideService(ChildProcessSpawner, lostCompletion),
+            Effect.provideService(Clock.Clock, clock),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+
+          yield* awaitWithTimeout(
+            Effect.gen(function* () {
+              const handle = yield* Deferred.await(spawned)
+              expect(yield* handle.exitCode).toBe(ExitCode(0))
+              expect(yield* handle.isRunning).toBe(false)
+              yield* Deferred.await(subscribed)
+            }),
+            "did not witness a real child exit with Bash completion withheld",
+            "3 seconds",
+          )
+          yield* clock.adjust("2 seconds")
+          const outcome = yield* awaitWithTimeout(Fiber.await(call), "foreground Bash did not settle", "3 seconds")
+
+          expect(outcome._tag).toBe("Failure")
+          if (Exit.isFailure(outcome)) {
+            const message = String(Cause.squash(outcome.cause))
+            expect(message).toMatch(/\b(?:exit(?:ed)?|ended|terminated)\b/i)
+            expect(message).toMatch(/\b(?:completion|close|status|code|report(?:ed|ing)?)\b/i)
+          }
+          expect((yield* jobs.list()).some((job) => job.metadata?.background === true)).toBe(false)
+        }),
+      ),
+    10_000,
+  )
+
+  it.live(
+    "keeps the final Bash output when the child exits before the deadline but the output is still draining",
+    () =>
+      inProject(
+        { shell: "/bin/bash" },
+        Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner
+          const exitSeen = yield* Deferred.make<void>()
+          const outputHeld = yield* Deferred.make<void>()
+          const releaseOutput = yield* Deferred.make<void>()
+          yield* Effect.addFinalizer(() => Deferred.succeed(releaseOutput, undefined))
+          const clock = yield* TestClock.make()
+          const gated = makeSpawner((command) =>
+            spawner.spawn(command).pipe(
+              Effect.map((handle) =>
+                makeHandle({
+                  ...handle,
+                  exitCode: handle.exitCode.pipe(Effect.tap(() => Deferred.succeed(exitSeen, undefined))),
+                  all: handle.all.pipe(
+                    Stream.mapEffect((chunk) =>
+                      Deferred.succeed(outputHeld, undefined).pipe(
+                        Effect.andThen(Deferred.await(releaseOutput)),
+                        Effect.as(chunk),
+                      ),
+                    ),
+                  ),
+                }),
+              ),
+            ),
+          )
+          const call = yield* runShell({ command: "printf 'final output'", timeout: 100 }).pipe(
+            Effect.provideService(ChildProcessSpawner, gated),
+            Effect.provideService(Clock.Clock, clock),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+
+          yield* awaitWithTimeout(
+            Effect.all([Deferred.await(exitSeen), Deferred.await(outputHeld)], { concurrency: 2 }),
+            "did not witness exit with output held",
+            "3 seconds",
+          )
+          yield* clock.adjust("500 millis")
+          yield* Deferred.succeed(releaseOutput, undefined)
+          const result = yield* awaitWithTimeout(Fiber.join(call), "Bash did not return its drained output", "3 seconds")
+
+          expect(result.metadata.exit).toBe(0)
+          expect(result.output).toBe("final output")
+        }),
+      ),
+    10_000,
+  )
+
+  it.live(
+    "observes a real Bash exit while its first foreground preview write is blocked",
+    () =>
+      inProject(
+        { shell: "/bin/bash" },
+        Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner
+          const child = yield* Deferred.make<ChildProcessHandle>()
+          const previewStarted = yield* Deferred.make<void>()
+          const releasePreview = yield* Deferred.make<void>()
+          yield* Effect.addFinalizer(() => Deferred.succeed(releasePreview, undefined))
+          const clock = yield* TestClock.make()
+          const jobs = yield* BackgroundJob.Service
+          const observe = makeSpawner((command) =>
+            spawner.spawn(command).pipe(Effect.tap((handle) => Deferred.succeed(child, handle))),
+          )
+          const call = yield* runShell(
+            { command: "printf 'preview backpressure'", timeout: 100 },
+            {
+              ...ctx,
+              metadata: ({ metadata }) =>
+                metadata?.foregroundJobID
+                  ? Deferred.succeed(previewStarted, undefined).pipe(Effect.andThen(Deferred.await(releasePreview)))
+                  : Effect.void,
+            },
+          ).pipe(
+            Effect.provideService(ChildProcessSpawner, observe),
+            Effect.provideService(Clock.Clock, clock),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+
+          yield* awaitWithTimeout(Deferred.await(previewStarted), "foreground preview never attempted a write", "3 seconds")
+          const handle = yield* Deferred.await(child)
+          expect(yield* awaitWithTimeout(handle.exitCode, "child did not exit", "3 seconds")).toBe(ExitCode(0))
+          yield* clock.adjust("500 millis")
+          yield* Deferred.succeed(releasePreview, undefined)
+          const result = yield* awaitWithTimeout(Fiber.join(call), "Bash did not settle after preview release", "3 seconds")
+
+          expect(result.metadata.exit).toBe(0)
+          expect(result.metadata).not.toHaveProperty("background")
+          expect(result.output).toBe("preview backpressure")
+          const entries = yield* jobs.list()
+          expect(entries).toHaveLength(1)
+          const [job] = entries
+          if (!job) throw new Error("missing foreground job")
+          const settled = yield* awaitWithTimeout(jobs.wait({ id: job.id }), "foreground job did not settle", "3 seconds")
+          expect(settled.info?.status).toBe("completed")
+        }),
+      ),
+    10_000,
+  )
+
+  it.live(
+    "fails a foreground Bash call that reaches its deadline without a spawn receipt",
+    () =>
+      inProject(
+        {},
+        Effect.gen(function* () {
+          const jobs = yield* BackgroundJob.Service
+          const entered = yield* Deferred.make<void>()
+          const clock = yield* TestClock.make()
+          const noSpawn = makeSpawner(() =>
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+          )
+          const call = yield* runShell({ command: "printf 'no spawn'", timeout: 1_000 }).pipe(
+            Effect.provideService(ChildProcessSpawner, noSpawn),
+            Effect.provideService(Clock.Clock, clock),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+          yield* awaitWithTimeout(Deferred.await(entered), "Bash never requested a spawn", "3 seconds")
+          const [job] = yield* jobs.list()
+          if (!job) throw new Error("Bash did not register its foreground job")
+          yield* Effect.addFinalizer(() => jobs.cancel(job.id).pipe(Effect.asVoid))
+          yield* clock.adjust("2 seconds")
+          const outcome = yield* awaitWithTimeout(Fiber.await(call), "Bash did not settle after its deadline", "3 seconds")
+
+          expect(outcome._tag).toBe("Failure")
+          expect((yield* jobs.get(job.id))?.status).toBe("cancelled")
+          expect((yield* jobs.get(job.id))?.metadata?.background).toBeUndefined()
+        }),
+      ),
+    10_000,
+  )
+
+  it.live(
+    "returns the operating-system spawn failure as a foreground Bash error",
+    () =>
+      Effect.gen(function* () {
+        const shell = path.join(yield* tmpdirScoped(), "bash")
+        // Shell selection checks for a file; the kernel will reject it at spawn.
+        yield* Effect.promise(() => writeFile(shell, "#!/bin/sh\n", { mode: 0o600 }))
+        yield* inProject(
+          { shell },
+          Effect.gen(function* () {
+            const spawner = yield* ChildProcessSpawner
+            const rejected = yield* Deferred.make<PlatformError>()
+            const observeSpawn = makeSpawner((command) =>
+              spawner.spawn(command).pipe(Effect.tapError((error) => Deferred.succeed(rejected, error))),
+            )
+            const outcome = yield* awaitWithTimeout(
+              runShell({ command: "printf 'unreachable'", timeout: 1_000 }).pipe(
+                Effect.provideService(ChildProcessSpawner, observeSpawn),
+                Effect.exit,
+              ),
+              "foreground Bash did not settle after spawn failure",
+              "5 seconds",
+            )
+            const error = yield* awaitWithTimeout(Deferred.await(rejected), "OS spawn rejection was not observed")
+
+            expect(error.reason).toMatchObject({ method: "spawn", cause: { code: "EACCES" } })
+            expect(outcome._tag).toBe("Failure")
+            if (Exit.isFailure(outcome)) {
+              expect(String(Cause.squash(outcome.cause))).toMatch(/permission\s*denied|eacces/i)
+            }
+          }),
+        )
+      }),
+    10_000,
   )
 
   it.live(

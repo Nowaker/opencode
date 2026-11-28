@@ -28,6 +28,7 @@ import { Identifier } from "@opencode-ai/core/id/id"
 import { ShellBackgroundEvent } from "@opencode-ai/schema/shell-background-event"
 import { ShellHandoff } from "./shell/handoff"
 import { ShellBackgroundOutput } from "./shell/background-output"
+import { cancelUnsettledForeground, ForegroundShellError, spawnFailureDetail } from "./shell/foreground"
 import { snapshotWorktree, snapshotWriters } from "@/snapshot/writers"
 
 export { Parameters } from "./shell/prompt"
@@ -465,12 +466,15 @@ export const ShellTool = Tool.define(
       const handoff = !input.runInBackground && ctx.callID ? ShellHandoff.make(id, ctx.abort) : undefined
       const observed = input.observation && ShellBackgroundOutput.observe(input.observation)
       const spawned = Deferred.makeUnsafe<void>()
+      const outputDrained = Deferred.makeUnsafe<void>()
+      const finishDrain = Deferred.succeed(outputDrained, undefined)
       // `full`, `file` and `sink` change together while the reader appends; one lock keeps a chunk from landing in
       // `full` after it was written out to the file.
       const outputLock = Semaphore.makeUnsafe(1)
       let full = ""
       let last = ""
       const list: Chunk[] = []
+      const bufferedOutput = () => list.map((item) => item.text).join("")
       let used = 0
       let file = ""
       let sink: ReturnType<typeof createWriteStream> | undefined
@@ -480,12 +484,17 @@ export const ShellTool = Tool.define(
       let aborted = false
       let capped = false
       let isProcessRunning = Effect.succeed(false)
+      let spawnError: string | undefined
+      // Undefined means the owned handle has not delivered its exit receipt.
+      let exitReceipt: number | null | undefined
       // A loaded host can take many seconds to spawn, and the exit event can be published later still, so the reported
       // duration runs from the spawn to the exit rather than from the call to the publish.
       const exited: { code: number | null; spawnedAt?: number; at?: number } = { code: null }
-      // Set once the call has returned and the command runs on in the background: its part is final, so the
-      // streaming preview stops.
-      let detached = false
+      // Once the call leaves cleanup to the registry, its tool part no longer takes previews.
+      let ownsJob = true
+      const releaseJob = () => {
+        ownsJob = false
+      }
       // Released once Started is published, or when the call ends without announcing one. A command can exit while
       // its start is still being announced (moving the output to a file can take a while), and a listener that saw
       // Exited first would then record a job that never ends, so Exited waits for it.
@@ -494,16 +503,16 @@ export const ShellTool = Tool.define(
         handoff?.close()
         return Deferred.succeed(announced, undefined).pipe(
           Effect.andThen(handoff?.finish ?? Effect.void),
-          Effect.andThen(() => (detached ? Effect.void : background.cancel(id))),
+          Effect.andThen(() => (ownsJob ? background.cancel(id) : Effect.void)),
         )
       })
 
       const preview_ = (output: string) =>
-        detached
-          ? Effect.void
-          : ctx.metadata({
+        ownsJob
+          ? ctx.metadata({
               metadata: { output, ...(handoff?.available() ? { foregroundJobID: id } : {}) },
             })
+          : Effect.void
 
       const closeSink = () =>
         outputLock.withPermits(1)(
@@ -601,7 +610,7 @@ export const ShellTool = Tool.define(
               : Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
                 ? "cancelled"
                 : "failed"
-          const raw = list.map((item) => item.text).join("")
+          const raw = bufferedOutput()
           const finalLines = observed?.finish()
           yield* events.publish(ShellBackgroundEvent.Exited, {
             sessionID: ctx.sessionID,
@@ -627,7 +636,13 @@ export const ShellTool = Tool.define(
       const runProcess = Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env)).pipe(
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                spawnError = spawnFailureDetail(error)
+              }),
+            ),
+          )
           isProcessRunning = handle.isRunning.pipe(Effect.orDie)
           exited.spawnedAt = Date.now()
           yield* Deferred.succeed(spawned, undefined)
@@ -655,16 +670,28 @@ export const ShellTool = Tool.define(
             )
           }
           handoff?.open(isProcessRunning)
-          if (handoff?.available()) yield* preview_(last)
+          if (handoff?.available()) {
+            yield* Effect.forkScoped(Effect.suspend(() => preview_(last)), { startImmediately: true })
+          }
           const ended = yield* Effect.raceFirst(
             handle.exitCode.pipe(
+              Effect.onExit((exit) =>
+                Effect.sync(() => {
+                  if (Exit.isSuccess(exit)) exitReceipt = exit.value
+                  else if (Cause.hasFails(exit.cause)) exitReceipt = null
+                }),
+              ),
               Effect.map((exitCode) => {
                 handoff?.close()
                 return { kind: "exit" as const, code: exitCode }
               }),
             ),
             backgroundCap.pipe(Effect.map(() => ({ kind: "capped" as const, code: null }))),
-          ).pipe(Effect.onInterrupt(() => handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.ignore)))
+          ).pipe(
+            Effect.onInterrupt(() =>
+              finishDrain.pipe(Effect.andThen(handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.ignore))),
+            ),
+          )
           if (ended.kind === "capped") {
             capped = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
@@ -673,7 +700,7 @@ export const ShellTool = Tool.define(
           exited.at = Date.now()
           yield* Fiber.join(reader).pipe(Effect.timeoutOption("1 second"), Effect.ignore)
           return ""
-        }),
+        }).pipe(Effect.ensuring(finishDrain)),
       ).pipe(
         (work) => snapshotWriters.hold(snapshotWorktree(instance), work),
         Effect.onExit((exit) => {
@@ -690,7 +717,7 @@ export const ShellTool = Tool.define(
 
       const announce = Effect.fnUntraced(function* (reason: "requested" | "timeout" | "user") {
         const outputPath = yield* outputFile()
-        detached = true
+        releaseJob()
         yield* events.publish(ShellBackgroundEvent.Started, {
           sessionID: ctx.sessionID,
           messageID: ctx.messageID,
@@ -769,21 +796,30 @@ export const ShellTool = Tool.define(
         }
       }
 
+      const failForeground = (error: ForegroundShellError) =>
+        Effect.logWarning("foreground shell failed", {
+          reason: error.reason,
+          id,
+          sessionID: ctx.sessionID,
+          messageID: ctx.messageID,
+          callID: ctx.callID,
+        }).pipe(Effect.andThen(Effect.fail(error)))
+
       const deadline = performance.now() + input.timeout + 100
       const wait = (control?: typeof handoff) =>
         Effect.raceAll([
-          background.wait({ id }).pipe(Effect.as("exit" as const)),
-          abort.pipe(Effect.as("abort" as const)),
+          background.wait({ id }).pipe(Effect.map(({ info }) => ({ kind: "exit", info }) as const)),
+          abort.pipe(Effect.as({ kind: "abort" } as const)),
           Effect.sleep(Math.max(0, deadline - performance.now())).pipe(
             Effect.map(() => {
               handoff?.close()
-              return "timeout" as const
+              return { kind: "timeout" } as const
             }),
           ),
-          ...(control ? [control.wait.pipe(Effect.as("user" as const))] : []),
+          ...(control ? [control.wait.pipe(Effect.as({ kind: "user" } as const))] : []),
         ])
 
-      let reason = yield* wait(handoff)
+      let outcome = yield* wait(handoff)
       handoff?.close()
       let movedTo: string | undefined
       if (handoff?.accepted()) {
@@ -803,23 +839,56 @@ export const ShellTool = Tool.define(
             return outputPath
           }),
         )
-        if (movedTo) reason = "user"
+        if (movedTo) outcome = { kind: "user" }
         else {
           yield* handoff.refuse
-          reason = yield* wait()
+          outcome = yield* wait()
         }
       }
-      if (reason === "abort") {
+      if (outcome.kind === "abort") {
         aborted = true
         yield* background.cancel(id)
       }
-      if (reason === "timeout") {
-        if (input.onTimeout === "background" && !BARE_SLEEP.test(input.command.trim())) {
-          if (yield* background.promote(id)) movedTo = yield* started("timeout")
-        } else {
-          expired = true
-          yield* background.cancel(id)
+      let receipt = outcome.kind === "exit" ? outcome.info : undefined
+      let drainedSnapshot: string | undefined
+      if (outcome.kind === "timeout") {
+        const hasSpawned = yield* Deferred.isDone(spawned)
+        const running = hasSpawned && exitReceipt === undefined && (yield* isProcessRunning)
+        receipt = yield* background.get(id)
+        if (receipt?.status === "running") {
+          if (exitReceipt !== undefined) {
+            // A real exit beats the deadline even if registry cleanup is still underway.
+            exited.code = exitReceipt
+            releaseJob()
+            // Native teardown can hold outputLock; the in-memory snapshot does not need to join it.
+            drainedSnapshot = yield* Deferred.await(outputDrained).pipe(Effect.map(bufferedOutput))
+          } else if (!running) {
+            receipt = yield* cancelUnsettledForeground(background, id, releaseJob)
+            if (receipt?.status === "cancelled") {
+              return yield* failForeground(
+                new ForegroundShellError(
+                  hasSpawned
+                    ? { reason: "missing-exit", message: "Bash exited without a completion receipt." }
+                    : { reason: "missing-spawn", message: "Bash did not acknowledge startup before the deadline." },
+                ),
+              )
+            }
+          } else if (input.onTimeout === "background" && !BARE_SLEEP.test(input.command.trim())) {
+            if (yield* background.promote(id)) movedTo = yield* started("timeout")
+            else receipt = yield* background.get(id)
+          } else {
+            if (yield* background.cancel(id)) expired = true
+            else receipt = yield* background.get(id)
+          }
         }
+      }
+      if (receipt?.status === "error" && !(yield* Deferred.isDone(spawned))) {
+        return yield* failForeground(
+          new ForegroundShellError({
+            reason: "startup-failed",
+            message: `Bash could not start: ${spawnError ?? "unknown startup error"}`,
+          }),
+        )
       }
 
       const meta: string[] = []
@@ -831,12 +900,12 @@ export const ShellTool = Tool.define(
       if (aborted) meta.push("User aborted the command")
       if (movedTo) {
         meta.push(
-          reason === "user"
+          outcome.kind === "user"
             ? `The user moved the command to the background as ${id}. ${notice(movedTo)}`
             : `The command was still running after the timeout of ${input.timeout} ms, so it moved to the background as ${id} instead of being stopped. ${notice(movedTo)}`,
         )
       }
-      const snapshot = yield* outputLock.withPermits(1)(Effect.sync(() => list.map((item) => item.text).join("")))
+      const snapshot = drainedSnapshot ?? (yield* outputLock.withPermits(1)(Effect.sync(bufferedOutput)))
       const end = tail(snapshot, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true
       if (!file && end.cut) {
@@ -917,7 +986,7 @@ export const ShellTool = Tool.define(
                   },
                   ctx,
                 ),
-              )
+              ).pipe(Effect.orDie)
             }),
         }
       })
