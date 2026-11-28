@@ -16,6 +16,7 @@ const GlobalHealth = Schema.Struct({
   version: Schema.String,
   sessionUnpauseSelection: Schema.Literal(true),
   autoSwitch: Schema.optionalKey(Schema.Literal(1)),
+  cybersecPreservation: Schema.optionalKey(Schema.Literal(1)),
 })
 
 const SyncEventSchemas = EventManifest.Latest.values()

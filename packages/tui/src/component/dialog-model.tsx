@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, onMount } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -8,14 +8,42 @@ import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
 import { useSync } from "../context/sync"
+import { useRoute } from "../context/route"
+import { useSDK } from "../context/sdk"
+import { useToast } from "../ui/toast"
+import { createCybersecPreservation, cybersecTransport, startCybersecSave, type CybersecSave } from "./cybersec-preservation"
+import { DialogCybersec } from "./dialog-cybersec"
 
 // `current` puts the cursor on another model than the selected one, e.g. the
-// model a past turn ran on.
-export function DialogModel(props: { providerID?: string; current?: { providerID: string; modelID: string } }) {
+// model a past turn ran on. `filter` and `cursor` bring back the dialog as it was left without moving
+// the active-model marker; `cybersecSave` is a save the cybersec choice made before returning here.
+export function DialogModel(props: {
+  providerID?: string
+  current?: { providerID: string; modelID: string }
+  filter?: string
+  cursor?: { providerID: string; modelID: string }
+  cybersecSave?: CybersecSave
+}) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
-  const [query, setQuery] = createSignal("")
+  const route = useRoute()
+  const sdk = useSDK()
+  const toast = useToast()
+  const [query, setQuery] = createSignal(props.filter ?? "")
+  const sessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
+  const request = cybersecTransport(sdk)
+  const cybersec = createCybersecPreservation({
+    sessionID,
+    request,
+    onFailure: (message) => toast.show({ message, variant: "error" }),
+  })
+  // The third footer action needs the wider dialog; outside a session there is no such action.
+  onMount(() => {
+    if (!sessionID()) return
+    dialog.setSize("large")
+    if (props.cybersecSave) cybersec.track(props.cybersecSave)
+  })
 
   const connected = useConnected()
   const providers = createDialogProviderOptions()
@@ -175,8 +203,38 @@ export function DialogModel(props: { providerID?: string; current?: { providerID
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
           },
         },
+        {
+          command: "model.dialog.cybersec",
+          title: cybersec.view(),
+          side: "right",
+          hidden: !sessionID(),
+          scope: "dialog",
+          onTrigger(option) {
+            const id = sessionID()
+            if (!id) return
+            const refusal = cybersec.refusal()
+            if (refusal) return toast.show({ message: refusal, variant: "info", duration: 3000 })
+            const value = option?.value
+            const left = {
+              filter: query(),
+              cursor: value && typeof value === "object" && "modelID" in value ? value : undefined,
+            }
+            dialog.replace(() => (
+              <DialogCybersec
+                current={cybersec.status?.preference}
+                onChoose={(preference) => {
+                  // Sent once here: the dialog factory below can run more than once.
+                  const save = startCybersecSave(request, id, preference)
+                  dialog.replace(() => <DialogModel {...props} {...left} cybersecSave={save} />)
+                }}
+              />
+            ))
+          },
+        },
       ]}
       onFilter={setQuery}
+      initialFilter={props.filter}
+      initialCursor={props.cursor}
       flat={true}
       skipFilter={true}
       title={title()}

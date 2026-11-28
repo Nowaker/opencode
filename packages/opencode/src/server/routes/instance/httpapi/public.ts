@@ -86,6 +86,11 @@ const AutoSwitchNullableComponents = new Set([
   "AutoSwitchRoute",
 ])
 
+const RequiredLegacyRequestBodies = new Set([
+  "/session/{sessionID}/auto-switch",
+  "/session/{sessionID}/cybersec-preservation",
+])
+
 function matchLegacyOpenApi(input: Record<string, unknown>) {
   const spec = input as OpenApiSpec
 
@@ -117,7 +122,7 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
       if (operation.requestBody) {
         // The legacy OpenAPI surface never marked request bodies as required.
         // Keep that SDK surface stable while the HttpApi spec is tightened.
-        if (!isV2Api && path !== "/session/{sessionID}/auto-switch") delete operation.requestBody.required
+        if (!isV2Api && !RequiredLegacyRequestBodies.has(path)) delete operation.requestBody.required
         const body = operation.requestBody.content?.["application/json"]
         if (body?.schema) body.schema = normalizeLegacySchema(structuredClone(body.schema))
         if (path === "/experimental/workspace" && method === "post") {

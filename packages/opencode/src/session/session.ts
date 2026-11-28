@@ -34,6 +34,7 @@ import { MessageV2 } from "./message-v2"
 import { MachineProvenance } from "./machine-provenance"
 import { mergeMetadata } from "@opencode-ai/schema/machine-provenance"
 import { AutoSwitchSchema } from "./auto-switch-schema"
+import { CybersecPreservation } from "./cybersec-preservation"
 import { LiveEvents } from "./live-events"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -194,10 +195,13 @@ function settlePart(part: SessionV1.Part, end: number): SessionV1.Part {
   return part
 }
 
-export function withoutAutoSwitch(metadata: Info["metadata"]) {
-  if (!metadata?.vibeterm || typeof metadata.vibeterm !== "object" ||
-    !("autoSwitch" in metadata.vibeterm || "autoSwitchEpisode" in metadata.vibeterm)) return metadata
-  const { autoSwitch, autoSwitchEpisode, ...vibeterm } = metadata.vibeterm
+export function withoutRoutingJournals(metadata: Info["metadata"]) {
+  const incoming: unknown = metadata?.vibeterm
+  if (!isRecord(incoming)) return metadata
+  if (!("autoSwitch" in incoming || "autoSwitchEpisode" in incoming || "cybersecPreservation" in incoming)) {
+    return metadata
+  }
+  const { autoSwitch, autoSwitchEpisode, cybersecPreservation, ...vibeterm } = incoming
   return { ...metadata, vibeterm }
 }
 
@@ -216,8 +220,6 @@ function forkMetadata(metadata: Info["metadata"], sessionId: SessionID, forkedFr
     },
   }
   delete result.vibeterm.lastExecution
-  delete result.vibeterm.autoSwitch
-  delete result.vibeterm.autoSwitchEpisode
   // A pause belongs to the session that was paused, never to its copy.
   delete result.pause
   return result
@@ -526,6 +528,11 @@ export interface Interface {
   }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
+  readonly setCybersecPreservation: (input: {
+    readonly sessionID: SessionID
+    readonly preference: CybersecPreservation.Preference
+    readonly current: (session: Info) => Effect.Effect<boolean>
+  }) => Effect.Effect<{ readonly status: CybersecPreservation.Status; readonly changed: boolean } | undefined, NotFound>
   readonly updateAutoSwitch: (input: {
     readonly sessionID: SessionID
     readonly revision: number
@@ -625,6 +632,7 @@ const layer: Layer.Layer<
     }) {
       const ctx = yield* InstanceState.context
       const id = SessionID.descending(input.id)
+      const metadata = withoutRoutingJournals(input.metadata)
       const result: Info = {
         id,
         slug: Slug.create(),
@@ -637,7 +645,7 @@ const layer: Layer.Layer<
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
         model: input.model,
-        metadata: input.forkedFrom ? forkMetadata(input.metadata, id, input.forkedFrom) : withoutAutoSwitch(input.metadata),
+        metadata: input.forkedFrom ? forkMetadata(metadata, id, input.forkedFrom) : metadata,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
         tokens: EmptyTokens,
@@ -668,10 +676,12 @@ const layer: Layer.Layer<
             const stored = Schema.decodeUnknownOption(AutoSwitchSchema.StoredPreference)(
               isRecord(vibeterm) ? vibeterm.autoSwitch : undefined,
             )
-            if (Option.isNone(stored) || stored.value.sessionId !== parentID) return yield* persist(result)
-            const preference = stored.value.preference
-            const returnPreference = stored.value.returnPreference ?? "inherit"
-            if (preference === "inherit" && returnPreference === "inherit") return yield* persist(result)
+            const autoSwitch = Option.isSome(stored) && stored.value.sessionId === parentID ? stored.value : undefined
+            const preference = autoSwitch?.preference ?? "inherit"
+            const returnPreference = autoSwitch?.returnPreference ?? "inherit"
+            const copyAutoSwitch = preference !== "inherit" || returnPreference !== "inherit"
+            const preservation = CybersecPreservation.stored({ id: parentID, metadata: parent?.metadata ?? undefined })
+            if (!copyAutoSwitch && preservation.preference === "inherit") return yield* persist(result)
 
             return yield* persist({
               ...result,
@@ -679,12 +689,17 @@ const layer: Layer.Layer<
                 ...result.metadata,
                 vibeterm: {
                   ...result.metadata?.vibeterm,
-                  autoSwitch: {
-                    sessionId: id,
-                    revision: 1,
-                    preference,
-                    ...(returnPreference !== "inherit" && { returnPreference }),
-                  },
+                  ...(copyAutoSwitch && {
+                    autoSwitch: {
+                      sessionId: id,
+                      revision: 1,
+                      preference,
+                      ...(returnPreference !== "inherit" && { returnPreference }),
+                    },
+                  }),
+                  ...(preservation.preference !== "inherit" && {
+                    cybersecPreservation: { sessionId: id, preference: preservation.preference, revision: 1 },
+                  }),
                 },
               },
             })
@@ -968,23 +983,64 @@ const layer: Layer.Layer<
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
       yield* DatabaseTransaction.immediate(db, () =>
         Effect.gen(function* () {
-          // Generic metadata writers cannot replace the owner journal or roll back its revision.
+          // Generic metadata writers cannot replace the owner journals or roll back their revisions.
           const current = yield* get(input.sessionID)
-          const { autoSwitch, autoSwitchEpisode } = current.metadata?.vibeterm ?? {}
+          const { autoSwitch, autoSwitchEpisode, cybersecPreservation } = current.metadata?.vibeterm ?? {}
           const {
             autoSwitch: ignoredPreference,
             autoSwitchEpisode: ignoredEpisode,
+            cybersecPreservation: ignoredPreservation,
             ...vibeterm
           } = input.metadata?.vibeterm ?? {}
           const metadata =
-            autoSwitch || autoSwitchEpisode || input.metadata?.vibeterm
-              ? { ...input.metadata, vibeterm: { ...vibeterm, autoSwitch, autoSwitchEpisode } }
+            autoSwitch || autoSwitchEpisode || cybersecPreservation !== undefined || input.metadata?.vibeterm
+              ? {
+                  ...input.metadata,
+                  vibeterm: {
+                    ...vibeterm,
+                    autoSwitch,
+                    autoSwitchEpisode,
+                    ...(cybersecPreservation !== undefined && { cybersecPreservation }),
+                  },
+                }
               : input.metadata
           yield* db.update(SessionTable).set({ metadata }).where(eq(SessionTable.id, input.sessionID)).run()
           yield* patch(input.sessionID, { metadata, time: { updated: Date.now() } })
         }),
       ).pipe(Effect.orDie)
     })
+
+    const setCybersecPreservation: Interface["setCybersecPreservation"] = (input) =>
+      live.guard(
+        input.sessionID,
+        DatabaseTransaction.batch(
+          db,
+          Effect.gen(function* () {
+            const current = yield* get(input.sessionID)
+            if (!(yield* input.current(current))) return
+            const previous = CybersecPreservation.stored(current)
+            if (previous.preference === input.preference) return { status: previous, changed: false }
+
+            const status = { preference: input.preference, revision: previous.revision + 1 }
+            const metadata = {
+              ...current.metadata,
+              vibeterm: {
+                ...current.metadata?.vibeterm,
+                cybersecPreservation: { sessionId: current.id, ...status },
+              },
+            }
+            // The v1 projector gives existing Vibeterm keys precedence over the event payload.
+            yield* db
+              .update(SessionTable)
+              .set({ metadata })
+              .where(eq(SessionTable.id, current.id))
+              .run()
+              .pipe(Effect.orDie)
+            yield* events.publish(SessionV1.Event.Updated, { sessionID: current.id, info: { ...current, metadata } })
+            return { status, changed: true }
+          }),
+        ),
+      ).pipe(Effect.catchTag("SqlError", Effect.die))
 
     const updateAutoSwitch: Interface["updateAutoSwitch"] = (input) =>
       DatabaseTransaction.immediate(db, () =>
@@ -1173,6 +1229,7 @@ const layer: Layer.Layer<
       setTitle,
       setArchived,
       setMetadata,
+      setCybersecPreservation,
       updateAutoSwitch,
       setModel,
       setAgentModel,

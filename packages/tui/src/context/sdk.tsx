@@ -9,6 +9,8 @@ export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
 }
 
+export type BindSessionOwner = (sessionID: string) => Promise<boolean>
+
 export const EVENT_BATCH_INTERVAL_MS = 100
 
 type PartDeltaEvent = GlobalEvent & {
@@ -102,6 +104,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     headers?: RequestInit["headers"]
     events?: EventSource
     bashBackground?: BashBackgroundOwner
+    bindSessionOwner?: BindSessionOwner
   }) => {
     const abort = new AbortController()
     let sse: AbortController | undefined
@@ -206,6 +209,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     return {
       bashBackground: props.bashBackground,
+      bindSessionOwner: props.bindSessionOwner,
       get client() {
         return sdk
       },

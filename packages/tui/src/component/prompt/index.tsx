@@ -62,6 +62,8 @@ import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { DialogSessionArchived } from "../dialog-session-archived"
+import { DialogCybersecSession } from "../dialog-cybersec"
+import { cybersecUsage, parseCybersecCommand, saveCybersec, type CybersecCommand } from "../cybersec-preservation"
 import { archiveDetails, archiveError, archiveRecord } from "../../prompt/archive"
 import type { SessionArchive } from "@opencode-ai/schema/session-archive"
 import { useArgs } from "../../context/args"
@@ -774,6 +776,18 @@ export function Prompt(props: PromptProps) {
         run: () => {
           autoSwitchAction(autoSwitch.useAutoReturnDefault)
           dialog.clear()
+        },
+      },
+      {
+        title: "Cybersec preservation",
+        desc: "Keep this session's Claude quota off the CVP accounts, or not",
+        name: "session.cybersec",
+        category: "Session",
+        slashName: "cybersec",
+        enabled: Boolean(props.sessionID),
+        run: () => {
+          const sessionID = props.sessionID
+          if (sessionID) dialog.replace(() => <DialogCybersecSession sessionID={sessionID} />)
         },
       },
       {
@@ -1683,6 +1697,9 @@ export function Prompt(props: PromptProps) {
     if (workspace.creating() || move.creating()) return false
     if (auto()?.visible) return false
     if (!store.prompt.input) return false
+    // `/cybersec` is answered here: it changes the session's quota routing and is never sent as a prompt.
+    const cybersecCommand = store.mode === "normal" ? parseCybersecCommand(store.prompt.input) : undefined
+    if (cybersecCommand) return runCybersecCommand(cybersecCommand)
     const agent = local.agent.current()
     if (!agent) return false
     const trimmed = store.prompt.input.trim()
@@ -1721,6 +1738,8 @@ export function Prompt(props: PromptProps) {
     let sessionID = props.sessionID
     let finishMoveProgress = false
     if (sessionID == null) {
+      const bindOwner =
+        route.data.type === "home" && !args.sessionID && !args.continue ? sdk.bindSessionOwner : undefined
       const selectedWorkspace = workspace.selection()
       const workspaceID = selectedWorkspace?.type === "existing" ? selectedWorkspace.workspaceID : undefined
 
@@ -1753,6 +1772,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      if (bindOwner) await bindOwner(sessionID).catch(toast.error)
     }
 
     if (expected && (store.prompt.input !== expected.input || store.prompt.parts.length !== expected.parts)) return false
@@ -2141,6 +2161,30 @@ export function Prompt(props: PromptProps) {
     input.cursorOffset = extmark.start
     if (inline || !content) input.insertText(content)
     else pasteTextInner(content, label, "")
+  }
+
+  async function runCybersecCommand(command: CybersecCommand) {
+    const sessionID = props.sessionID
+    if (!sessionID) {
+      toast.show({ message: "Open a session to set cybersec preservation", variant: "info", duration: 3000 })
+      return false
+    }
+    if (command.type === "usage") {
+      toast.show({ message: cybersecUsage, variant: "warning", duration: 5000 })
+      return false
+    }
+    if (command.type === "choose") {
+      clearPrompt()
+      dialog.replace(() => <DialogCybersecSession sessionID={sessionID} />)
+      return false
+    }
+    const draft = store.prompt.input
+    toast.show({ message: "Cybersec: saving...", variant: "info" })
+    const result = await saveCybersec(sdk, sessionID, command.preference)
+    toast.show({ message: result.message, variant: result.variant })
+    // A failed save keeps the command to retry; a draft edited while it saved is the user's, not the command's.
+    if (result.saved && store.prompt.input === draft) clearPrompt()
+    return result.saved
   }
 
   function clearPrompt() {

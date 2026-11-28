@@ -42,6 +42,7 @@ type StreamInput = {
   readonly providerOptions?: Record<string, any>
   readonly headers: Record<string, string>
   readonly attribution?: MeridianAttribution.RequestAttribution
+  readonly cybersecPreservation?: Effect.Effect<MeridianAttribution.PreservationPreference>
   readonly abort: AbortSignal
 }
 
@@ -138,12 +139,17 @@ export function stream(input: StreamInput): StreamResult {
           )
         const stream = provider.pipe(Stream.concat(Stream.fromQueue(results)))
         if (
-          fetch || !input.attribution || input.auth?.type === "oauth" || input.provider.options.fetch != null ||
+          fetch || (!input.attribution && !input.cybersecPreservation) ||
+          input.auth?.type === "oauth" || input.provider.options.fetch != null ||
           !MeridianAttribution.matchesBase(current.baseURL ?? input.model.api.url, input.model.api.npm)
         ) return stream
         const currentFetch = yield* FetchHttpClient.Fetch
         if (currentFetch !== globalThis.fetch) return stream
-        const taggedFetch = Object.assign(MeridianAttribution.wrapFetch(currentFetch, input.attribution), currentFetch)
+        const cybersecPreservation = input.cybersecPreservation ? yield* input.cybersecPreservation : undefined
+        const taggedFetch = Object.assign(
+          MeridianAttribution.wrapFetch(currentFetch, input.attribution, cybersecPreservation),
+          currentFetch,
+        )
         return stream.pipe(Stream.provideService(FetchHttpClient.Fetch, taggedFetch))
       }),
     ),

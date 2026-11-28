@@ -52,6 +52,7 @@ export const revertPath = `/session/${sessionID}/revert`
 export const applyPath = `/session/${sessionID}/revert/apply`
 export const unrevertPath = `/session/${sessionID}/unrevert`
 export const autoSwitchPath = `/session/${sessionID}/auto-switch`
+export const cybersecPath = `/session/${sessionID}/cybersec-preservation`
 // The requests the scenario answers through `rig.gate`, and whose bodies it reads.
 const written = (method: string) => method === "POST" || method === "PUT"
 // Every route that starts a turn on the server, and with it an LLM call.
@@ -77,6 +78,8 @@ export async function withApp(
     choices?: boolean
     /** Answers `GET /session/{id}/auto-switch`; without it the engine is an older one that does not advertise it. */
     autoSwitch?: () => Response
+    /** Answers `GET /session/{id}/cybersec-preservation`; without it the engine does not advertise it. */
+    cybersecPreservation?: () => Response
   },
   body: (rig: Rig) => Promise<void>,
 ) {
@@ -100,8 +103,15 @@ export async function withApp(
     if (url.pathname === `/session/${sessionID}/message`) return json(server.messages)
     if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
     if (url.pathname === "/global/health")
-      return json({ healthy: true, version: "0.0.0-test", sessionUnpauseSelection: true, ...(options.autoSwitch ? { autoSwitch: 1 } : {}) })
+      return json({
+        healthy: true,
+        version: "0.0.0-test",
+        sessionUnpauseSelection: true,
+        ...(options.autoSwitch ? { autoSwitch: 1 } : {}),
+        ...(options.cybersecPreservation ? { cybersecPreservation: 1 } : {}),
+      })
     if (url.pathname === autoSwitchPath && options.autoSwitch) return options.autoSwitch()
+    if (url.pathname === cybersecPath && options.cybersecPreservation) return options.cybersecPreservation()
     if (url.pathname === "/agent")
       return json(
         ["build", ...(options.choices ? ["plan"] : [])].map((name) => ({
@@ -285,6 +295,7 @@ function createRig(input: {
     frame,
     until,
     press,
+    filterFocused: () => renderer.currentFocusedRenderable instanceof InputRenderable,
     emit,
     updated,
     posts: (path: string, method = "POST") =>

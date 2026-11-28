@@ -4,6 +4,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 
 import { Session } from "@/session/session"
 import { AutoSwitchSchema } from "@/session/auto-switch-schema"
+import { CybersecPreservation } from "@/session/cybersec-preservation"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -33,6 +34,7 @@ import {
   SessionBusyError,
   SessionArchivedError,
   OwnerSealedError,
+  ServiceUnavailableError,
 } from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
@@ -114,6 +116,7 @@ export const SessionPaths = {
   status: `${root}/status`,
   get: `${root}/:sessionID`,
   autoSwitch: `${root}/:sessionID/auto-switch`,
+  cybersecPreservation: `${root}/:sessionID/cybersec-preservation`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
@@ -202,6 +205,29 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.autoSwitch.update",
             summary: "Update session auto-switch",
+          }),
+        ),
+        HttpApiEndpoint.get("cybersecPreservationStatus", SessionPaths.cybersecPreservation, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: CybersecPreservation.Status,
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ServiceUnavailableError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.cybersecPreservation.status",
+            summary: "Get session cybersec preservation preference",
+          }),
+        ),
+        HttpApiEndpoint.put("cybersecPreservationUpdate", SessionPaths.cybersecPreservation, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.Struct({ preference: CybersecPreservation.Preference }),
+          success: CybersecPreservation.Status,
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ServiceUnavailableError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.cybersecPreservation.update",
+            summary: "Set session cybersec preservation preference",
           }),
         ),
         HttpApiEndpoint.get("children", SessionPaths.children, {

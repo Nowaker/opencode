@@ -11,7 +11,11 @@ import { AppRuntime } from "@/effect/app-runtime"
 import { Effect, Schema } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { AutoSwitch } from "@/session/auto-switch"
+import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
+import { NotFoundError } from "@/storage/storage"
+import { Workspace } from "@/control-plane/workspace"
+import { WorkspaceAdapterRuntime } from "@/control-plane/workspace-adapter-runtime"
 import { Global } from "@opencode-ai/core/global"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { ErrorRecord } from "@opencode-ai/core/observability/error-record"
@@ -64,6 +68,28 @@ function withBashOwner<A>(
 export const rpc = {
   bindAutoSwitchOwner(input: { sessionID: string }) {
     return AutoSwitch.bindOwner(Schema.decodeUnknownSync(SessionID)(input.sessionID))
+  },
+  bindSessionOwner(input: { sessionID: string }) {
+    const id = Schema.decodeUnknownSync(SessionID)(input.sessionID)
+    return AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const owner = yield* AutoSwitch.Owner
+        const bound = owner()
+        if (bound !== undefined) return bound === id
+        const sessions = yield* Session.Service
+        const root = yield* sessions.get(id).pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.void))
+        if (!root || root.parentID !== undefined) return false
+        if (root.workspaceID !== undefined) {
+          const workspaces = yield* Workspace.Service
+          const workspace = yield* workspaces.get(root.workspaceID)
+          if (!workspace) return false
+          const instances = yield* InstanceStore.Service
+          const target = yield* instances.provide({ directory: process.cwd() }, WorkspaceAdapterRuntime.target(workspace))
+          if (target.type !== "local") return false
+        }
+        return AutoSwitch.bindOwner(id)
+      }),
+    )
   },
   async bashBackgroundAvailable(input: BashTarget) {
     return (await withBashOwner(input, (control) => Effect.sync(control.available))) === true

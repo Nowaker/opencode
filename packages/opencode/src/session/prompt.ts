@@ -16,6 +16,7 @@ import { AutoSwitch } from "./auto-switch"
 import { AutoSwitchAdmission } from "./auto-switch-admission"
 import { AutoSwitchSchema } from "./auto-switch-schema"
 import { AutoSwitchTranscript } from "./auto-switch-transcript"
+import { CybersecPreservation } from "./cybersec-preservation"
 
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
@@ -2156,12 +2157,19 @@ const layer = Layer.effect(
             AutoSwitch.returnEnabled(switchState) ? sticky : undefined
           const returnModel = returnRoute ? yield* provider.getModel(lastUser.model.providerID, lastUser.model.modelID).pipe(Effect.option) : undefined
           const preferredProvider = MeridianRouting.routeProvider(preferredRoute.providerID)
+          const returnPreservation = returnRoute && switchState && CybersecPreservation.stored(switchState.session)
           const returnFreshUntil = returnModel?._tag === "Some" && returnModel.value.api.id === preferredRoute.modelID &&
-            preferredProvider
-            ? yield* MeridianRouting.probe({ provider: preferredProvider, model: returnModel.value, variant: preferredRoute.variant })
+            preferredProvider && returnPreservation
+            ? yield* MeridianRouting.probe({
+              provider: preferredProvider,
+              model: returnModel.value,
+              variant: preferredRoute.variant,
+              cybersecPreservation: returnPreservation.preference,
+            })
             : undefined
-          const returning = returnFreshUntil !== undefined && returnRoute && switchState ?
+          const returning = returnFreshUntil !== undefined && returnRoute && switchState && returnPreservation ?
             { episode: returnRoute, revision: switchState.revision, policyRevision: switchState.policy?.policyRevision,
+              preservationRevision: preferredRoute.providerID === "anthropic" ? returnPreservation.revision : undefined,
               validUntil: returnFreshUntil } : undefined
           const effectiveRoute = (returning ? preferredRoute : sticky?.target) ?? preferredRoute
           if (sticky && !returning && effectiveRoute.agent !== preferredRoute.agent && lastUser.system) {
@@ -2623,6 +2631,8 @@ const layer = Layer.effect(
               const fresh = yield* inspectSwitch(sessionID)
               if (!fresh?.policy?.enabled || !AutoSwitch.returnEnabled(fresh) ||
                 fresh.revision !== returning.revision || fresh.policy.policyRevision !== returning.policyRevision ||
+                (returning.preservationRevision !== undefined &&
+                  CybersecPreservation.stored(fresh.session).revision !== returning.preservationRevision) ||
                 !AutoSwitch.same(fresh.source, preferredRoute)) return false
               return yield* AutoSwitch.save(sessions, fresh, {
                 episode: { ...returning.episode, state: "returned", returnPending: false, autoReturnedTurnID: lastUser.id },
@@ -2764,10 +2774,17 @@ const layer = Layer.effect(
                 }))
               ) {
                 gate = "target-availability"
+                const plainClaude = target.value.providerID === "anthropic"
+                const probeSession = plainClaude
+                  ? Option.getOrUndefined(yield* sessions.get(sessionID).pipe(Effect.option))
+                  : switchState.session
+                if (!probeSession) break
+                const preservation = CybersecPreservation.stored(probeSession)
                 const freshUntil = yield* MeridianRouting.probe({
                   provider: targetProvider,
                   model: target.value,
                   variant: route.variant,
+                  cybersecPreservation: preservation.preference,
                 })
                 if (freshUntil === undefined) blockedReason = "stale-evidence"
                 if (freshUntil !== undefined) {
@@ -2809,6 +2826,7 @@ const layer = Layer.effect(
                           !current ||
                           current.revision !== switchState.revision ||
                           current.policy?.policyRevision !== switchState.policy?.policyRevision ||
+                          (plainClaude && CybersecPreservation.stored(current.session).revision !== preservation.revision) ||
                           !current.policy?.enabled ||
                           !current.policy.alternates.some((item) => AutoSwitch.sameCandidate(item, route)) ||
                           !(yield* latestInputIsCurrent())

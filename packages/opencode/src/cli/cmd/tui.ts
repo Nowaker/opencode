@@ -326,6 +326,9 @@ export const TuiThreadCommand = cmd({
           fetch: transport.fetch,
           headers: transport.headers,
           events: transport.events,
+          async bindSessionOwner(sessionID) {
+            return await client.call("bindSessionOwner", { sessionID })
+          },
           bashBackground: {
             available: async (target) => await client.call("bashBackgroundAvailable", target),
             move: async (target) => await client.call("bashBackgroundMove", target),

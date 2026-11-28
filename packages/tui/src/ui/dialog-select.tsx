@@ -36,14 +36,11 @@ export interface DialogSelectProps<T> {
   renderFilter?: boolean
   locked?: boolean
   preserveSelection?: boolean
-  actions?: {
-    command: string
-    title: string
-    side?: "left" | "right"
-    hidden?: boolean
-    disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean)
-    onTrigger: (option: DialogSelectOption<T>) => void
-  }[]
+  // Filter text and cursor row the dialog opens with, e.g. when returning to it. `current` still marks the
+  // active value; the cursor is only where the user had browsed to.
+  initialFilter?: string
+  initialCursor?: T
+  actions?: DialogSelectAction<T>[]
   footerHints?: {
     title: string
     label: string
@@ -52,6 +49,18 @@ export interface DialogSelectProps<T> {
   bindings?: readonly Binding<Renderable, KeyEvent>[]
   current?: T
 }
+
+export type DialogSelectAction<T> = {
+  command: string
+  title: string
+  side?: "left" | "right"
+  hidden?: boolean
+  disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean)
+} & (
+  | { scope?: "option"; onTrigger: (option: DialogSelectOption<T>) => void }
+  // Acts on the dialog as a whole, so it also runs when no row is selected, e.g. a filter matching nothing.
+  | { scope: "dialog"; onTrigger: (option: DialogSelectOption<T> | undefined) => void }
+)
 
 export interface DialogSelectOption<T = any> {
   title: string
@@ -89,7 +98,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const [store, setStore] = createStore({
     selected: 0,
-    filter: "",
+    filter: props.initialFilter ?? "",
     input: "keyboard" as "keyboard" | "mouse",
   })
   const [focusedAction, setFocusedAction] = createSignal<number>()
@@ -97,6 +106,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   let selection: { value: T; category?: string } | undefined
   let resetSelection = false
   let visibilityGeneration = 0
+  let restoringCursor = props.initialCursor !== undefined
 
   createEffect(
     on(
@@ -184,7 +194,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const flatten = createMemo(() => props.flat && store.filter.length > 0)
 
   const grouped = createMemo<[string, DialogSelectOption<T>[]][]>(() => {
-    if (flatten()) return [["", filtered()]]
+    // No group for no matches, so a flat list shows its empty state instead of a blank.
+    if (flatten()) return filtered().length ? [["", filtered()]] : []
     const result = pipe(
       filtered(),
       groupBy((x) => x.category ?? ""),
@@ -274,15 +285,15 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   createEffect(
     on([() => store.filter, () => props.current], ([filter, current]) => {
       if (filter.length > 0) resetSelection = true
+      // A restored cursor wins its first pass over the first match and over `current`.
+      const cursor = restoringCursor ? props.initialCursor : undefined
+      restoringCursor = false
       setTimeout(() => {
-        if (filter.length > 0) {
-          moveTo(0, true, false)
-        } else if (current) {
-          const currentIndex = flat().findIndex((opt) => isDeepEqual(opt.value, current))
-          if (currentIndex >= 0) {
-            moveTo(currentIndex, true)
-          }
-        }
+        const cursorIndex = cursor === undefined ? -1 : flat().findIndex((opt) => isDeepEqual(opt.value, cursor))
+        if (cursorIndex >= 0) return moveTo(cursorIndex, true)
+        if (filter.length > 0) return moveTo(0, true, false)
+        const currentIndex = current ? flat().findIndex((opt) => isDeepEqual(opt.value, current)) : -1
+        if (currentIndex >= 0) moveTo(currentIndex, true)
       }, 0)
     }),
   )
@@ -346,7 +357,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     setStore("input", "keyboard")
     const index = focusedAction()
     if (index !== undefined) {
-      triggerAction(actionItems()[index])
+      const item = actionItems()[index]
+      if (item) triggerAction(item)
       return
     }
     const option = selected()
@@ -438,12 +450,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           title: item.title,
           category: "Dialog",
           run() {
-            if (props.locked) return
-            if (isActionDisabled(item)) return
-            setStore("input", "keyboard")
-            const option = selected()
-            if (!option) return
-            item.onTrigger(option)
+            triggerAction(item)
           },
         })),
       ],
@@ -500,13 +507,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const left = createMemo(() => visibleActions().filter((item) => item.side !== "right"))
   const right = createMemo(() => visibleActions().filter((item) => item.side === "right"))
 
-  function triggerAction(item: VisibleAction | undefined) {
-    if (props.locked) return
-    if (!item || !isActionItem(item) || isActionDisabled(item)) return
+  // The one path for an action's key, its footer click, and Enter on a focused action.
+  function triggerAction(item: Action) {
+    if (props.locked || isActionDisabled(item)) return
     setStore("input", "keyboard")
     const option = selected()
-    if (!option) return
-    item.onTrigger(option)
+    if (item.scope === "dialog") return item.onTrigger(option)
+    if (option) item.onTrigger(option)
   }
 
   function isActionItem(item: VisibleAction): item is Action & { label: string } {
@@ -584,6 +591,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               ref={(r) => {
                 input = r
                 input.traits = { status: "FILTER" }
+                if (props.initialFilter) {
+                  input.value = props.initialFilter
+                  input.gotoBufferEnd()
+                }
                 setTimeout(() => {
                   if (!input) return
                   if (input.isDestroyed) return
