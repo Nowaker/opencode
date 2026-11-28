@@ -23,6 +23,8 @@ export function classify(db: DB, input: { readonly sessionID: SessionID; readonl
       else json_object('role', json_extract(${MessageTable.data}, '$.role')) end`.mapWith(MessageTable.data) })
       .from(MessageTable).where(eq(MessageTable.session_id, input.sessionID))
       .orderBy(MessageTable.time_created, sql`${MessageTable.id} collate binary`).all()
+    // Portal's message-window cursor must accept every row ID, not just the undo/redo boundary.
+    if (rows.some(({ id }) => id.length > 256 || !/^msg_[A-Za-z0-9]+$/.test(id))) return undefined
     const parts = yield* db.select({ id: PartTable.id, messageID: PartTable.message_id, data: sql`
       case when json_extract(${PartTable.data}, '$.type') = 'file' then json_object('type', 'file')
       else ${PartTable.data} end`.mapWith(PartTable.data) })
